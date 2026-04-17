@@ -34,6 +34,8 @@ interface DatePrefs {
 
 interface TimePrefs {
   timeFormat?: TimeFormat
+  /** IANA timezone (e.g. "America/New_York"); falls back to system local when absent. */
+  timezone?: string
 }
 
 // ============================================================================
@@ -220,6 +222,109 @@ export function formatFullDateTime(date: Date, prefs?: TimePrefs): string {
   })
   const timePart = formatTime(date, prefs)
   return `${datePart}, ${timePart}`
+}
+
+/**
+ * Extract y/m/d in a specific IANA timezone without extra deps. Intl is a
+ * native, timezone-aware formatter; parsing its numeric parts gives the
+ * user-local calendar day for boundary comparisons.
+ */
+function calendarDayInZone(date: Date, timezone: string | undefined): { y: number; m: number; d: number } {
+  if (!timezone) {
+    return { y: date.getFullYear(), m: date.getMonth(), d: date.getDate() }
+  }
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date)
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0)
+  return { y: get("year"), m: get("month") - 1, d: get("day") }
+}
+
+function sameCalendarDay(a: Date, b: Date, timezone: string | undefined): boolean {
+  const dayA = calendarDayInZone(a, timezone)
+  const dayB = calendarDayInZone(b, timezone)
+  return dayA.y === dayB.y && dayA.m === dayB.m && dayA.d === dayB.d
+}
+
+function calendarDaysBetween(from: Date, to: Date, timezone: string | undefined): number {
+  if (!timezone) {
+    return differenceInDays(startOfDay(to), startOfDay(from))
+  }
+  const a = calendarDayInZone(from, timezone)
+  const b = calendarDayInZone(to, timezone)
+  // Construct UTC dates for the two calendar days so differenceInDays handles
+  // month/year rollover correctly regardless of the source timezone.
+  const aDate = new Date(Date.UTC(a.y, a.m, a.d))
+  const bDate = new Date(Date.UTC(b.y, b.m, b.d))
+  return Math.round((bDate.getTime() - aDate.getTime()) / 86_400_000)
+}
+
+/**
+ * Format a future timestamp as a compact relative-or-absolute string, in the
+ * user's timezone (INV-42).
+ *
+ *   within next hour        → "Nm"   (5m, 47m, 0m = firing now-ish)
+ *   today (>= 1h)           → "HH:mm" (user timeFormat + timezone)
+ *   tomorrow                → "tomorrow HH:mm"
+ *   within next 6 days      → "<weekday> HH:mm" (e.g. "Fri 09:00")
+ *   beyond 6 days same year → "MMM d HH:mm" (e.g. "Apr 22 14:30")
+ *   different year          → "MMM d, yy HH:mm"
+ *
+ * Past dates clamp to "now" (0m). The spec's UI clamping — we never render a
+ * reminder time that's already elapsed even if the server hasn't fired yet.
+ */
+export function formatFutureTime(date: Date, now: Date = new Date(), prefs?: TimePrefs): string {
+  const deltaMs = date.getTime() - now.getTime()
+  const tz = prefs?.timezone
+
+  if (deltaMs < 60 * 60_000) {
+    // Within the next hour — show minutes; past dates clamp to 0m.
+    const mins = Math.max(0, Math.ceil(deltaMs / 60_000))
+    return `${mins}m`
+  }
+
+  const timeStr = formatTimeInZone(date, prefs)
+
+  if (sameCalendarDay(date, now, tz)) {
+    return timeStr
+  }
+
+  const daysAhead = calendarDaysBetween(now, date, tz)
+  if (daysAhead === 1) return `tomorrow ${timeStr}`
+  if (daysAhead >= 2 && daysAhead <= 6) {
+    return `${formatPartInZone(date, tz, { weekday: "short" })} ${timeStr}`
+  }
+
+  const sameYear = calendarDayInZone(date, tz).y === calendarDayInZone(now, tz).y
+  if (sameYear) {
+    return `${formatPartInZone(date, tz, { month: "short", day: "numeric" })} ${timeStr}`
+  }
+  return `${formatPartInZone(date, tz, { month: "short", day: "numeric", year: "2-digit" })} ${timeStr}`
+}
+
+function formatTimeInZone(date: Date, prefs?: TimePrefs): string {
+  if (!prefs?.timezone) return formatTime(date, prefs)
+  const opts: Intl.DateTimeFormatOptions = {
+    timeZone: prefs.timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: prefs.timeFormat === "12h",
+  }
+  return new Intl.DateTimeFormat(prefs.timeFormat === "12h" ? "en-US" : "en-GB", opts).format(date)
+}
+
+function formatPartInZone(date: Date, timezone: string | undefined, opts: Intl.DateTimeFormatOptions): string {
+  if (!timezone) {
+    // Map Intl options back to date-fns tokens for the system-local path so
+    // tests on runners without a fixed TZ get stable output.
+    if (opts.weekday === "short") return format(date, "EEE")
+    if (opts.year === "2-digit") return format(date, "MMM d, yy")
+    return format(date, "MMM d")
+  }
+  return new Intl.DateTimeFormat("en-US", { timeZone: timezone, ...opts }).format(date)
 }
 
 // ============================================================================

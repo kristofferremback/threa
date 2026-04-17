@@ -2,18 +2,22 @@ import { cn } from "@/lib/utils"
 import { RelativeTime } from "@/components/relative-time"
 import { stripMarkdownToInline } from "@/lib/markdown"
 
-const ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
-  mention: { verb: "mentioned you in" },
-  message: { verb: "posted in" },
-  reaction: { verb: "reacted to a message in" },
+/**
+ * Per-type display shape. `actor-prefixed` rows read "<Actor> <verb> <stream>"
+ * (or "You <selfVerb> <stream>" on the Me tab). `verb-only` rows stand alone,
+ * which is how saved-reminders read — no meaningful human actor, just the
+ * event itself.
+ */
+type ActivityDisplay = { kind: "actor-prefixed"; verb: string; selfVerb: string } | { kind: "verb-only"; verb: string }
+
+const ACTIVITY_DISPLAY: Record<string, ActivityDisplay> = {
+  mention: { kind: "actor-prefixed", verb: "mentioned you in", selfVerb: "You mentioned someone in" },
+  message: { kind: "actor-prefixed", verb: "posted in", selfVerb: "You posted in" },
+  reaction: { kind: "actor-prefixed", verb: "reacted to a message in", selfVerb: "You reacted to a message in" },
+  saved_reminder: { kind: "verb-only", verb: "Reminder for message in" },
 }
 
-const SELF_ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
-  // Self-rows use first-person verbs so the Me feed reads naturally.
-  mention: { verb: "You mentioned someone in" },
-  message: { verb: "You posted in" },
-  reaction: { verb: "You reacted to a message in" },
-}
+const DEFAULT_DISPLAY: ActivityDisplay = ACTIVITY_DISPLAY.message
 
 interface ActivityPreviewProps {
   contentPreview: string
@@ -56,17 +60,16 @@ export function ActivityContent({
   isUnread,
   isSelf,
 }: ActivityContentProps) {
-  const display = isSelf
-    ? (SELF_ACTIVITY_DISPLAY[activityType] ?? SELF_ACTIVITY_DISPLAY.message)
-    : (ACTIVITY_DISPLAY[activityType] ?? ACTIVITY_DISPLAY.message)
-
+  const display = ACTIVITY_DISPLAY[activityType] ?? DEFAULT_DISPLAY
+  const verb = display.kind === "actor-prefixed" && isSelf ? display.selfVerb : display.verb
+  const showActor = display.kind === "actor-prefixed" && !isSelf
   const showEmoji = activityType === "reaction" && emoji
 
   return (
     <div className="flex-1 min-w-0">
       <div className="flex items-baseline gap-1.5 text-sm">
-        {!isSelf && <span className={cn("font-medium", isUnread && "font-semibold")}>{actorName}</span>}
-        <span className="text-muted-foreground">{display.verb}</span>
+        {showActor && <span className={cn("font-medium", isUnread && "font-semibold")}>{actorName}</span>}
+        <span className="text-muted-foreground">{verb}</span>
         <span className="font-medium truncate">{streamName}</span>
         {showEmoji && <span className="shrink-0">{emoji}</span>}
       </div>

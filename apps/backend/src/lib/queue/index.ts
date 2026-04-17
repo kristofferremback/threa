@@ -31,6 +31,7 @@ export {
   type LinkPreviewExtractJobData,
   type VideoTranscodeSubmitJobData,
   type VideoTranscodeCheckJobData,
+  type SavedReminderFireJobData,
 } from "./job-queue"
 export { ScheduleManager, type ScheduleManagerConfig } from "./schedule-manager"
 export { CleanupWorker, type CleanupWorkerConfig } from "./cleanup-worker"

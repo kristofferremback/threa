@@ -1,5 +1,19 @@
 import type { ComponentType } from "react"
-import { Sparkles, MessageSquareReply, Quote, Copy, FileText, Type, Pencil, Trash2, History, Link2 } from "lucide-react"
+import {
+  Sparkles,
+  MessageSquareReply,
+  Quote,
+  Copy,
+  FileText,
+  Type,
+  Pencil,
+  Trash2,
+  History,
+  Link2,
+  Bookmark,
+  BookmarkX,
+  Bell,
+} from "lucide-react"
 import { toast } from "sonner"
 import { stripMarkdown } from "@/lib/markdown"
 
@@ -45,6 +59,12 @@ export interface MessageActionContext {
   onQuoteReply?: () => void
   /** Callback to insert a partial quote reply with a user-selected snippet */
   onQuoteReplyWithSnippet?: (snippet: string) => void
+  /** Callback to save or unsave the message */
+  onToggleSave?: () => void
+  /** Callback to open the reminder picker (mobile: bottom sheet) */
+  onRequestReminder?: () => void
+  /** Whether the message is currently saved by the viewer */
+  isSaved?: boolean
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */
@@ -103,6 +123,33 @@ export const messageActions: MessageAction[] = [
     icon: Quote,
     when: (ctx) => !!ctx.onQuoteReply,
     action: (ctx) => ctx.onQuoteReply?.(),
+  },
+  {
+    // Split into two rows (save / unsave) so the menu entry always matches
+    // the action that will fire — a single "Save for later" row on an
+    // already-saved message was misleading and silently unsaved things.
+    id: "save-message",
+    label: "Save for later",
+    icon: Bookmark,
+    when: (ctx) => !!ctx.onToggleSave && !ctx.isSaved,
+    action: (ctx) => ctx.onToggleSave?.(),
+  },
+  {
+    id: "unsave-message",
+    label: "Remove from Saved",
+    icon: BookmarkX,
+    when: (ctx) => !!ctx.onToggleSave && !!ctx.isSaved,
+    action: (ctx) => ctx.onToggleSave?.(),
+  },
+  {
+    id: "set-reminder",
+    // Mobile hover can't show the desktop popover, so mobile users get a
+    // dedicated drawer entry that opens a bottom sheet with presets + a
+    // custom-time dialog.
+    label: "Set reminder…",
+    icon: Bell,
+    when: (ctx) => !!ctx.onRequestReminder,
+    action: (ctx) => ctx.onRequestReminder?.(),
   },
   {
     id: "edit-message",

@@ -11,7 +11,7 @@ import {
   type StreamType,
 } from "@threa/types"
 import { logger } from "../../lib/logger"
-import type { ActivityCreatedOutboxPayload } from "../../lib/outbox"
+import type { ActivityCreatedOutboxPayload, SavedReminderFiredOutboxPayload } from "../../lib/outbox"
 
 /** Maximum push subscriptions per user per workspace to bound parallel delivery calls */
 const MAX_SUBSCRIPTIONS_PER_USER = 10
@@ -207,6 +207,55 @@ export class PushService {
     })
 
     // 5. Send to active-device subscriptions and evict stale ones
+    await this.sendAndEvictStale(workspaceId, activeSubscriptions, pushPayload)
+  }
+
+  /**
+   * Deliver push for a saved-message reminder. Reminders respect the user's
+   * global notification preference — a user with push disabled gets no
+   * delivery even for a reminder they explicitly scheduled. (Sonner toast
+   * still fires via socket delivery on online devices.)
+   */
+  async deliverPushForSavedReminder(payload: SavedReminderFiredOutboxPayload): Promise<void> {
+    if (!this.canSend) return
+
+    const { workspaceId, targetUserId, savedId, messageId, streamId, saved } = payload
+
+    const prefLevel = await this.lookups.getUserNotificationLevel(workspaceId, targetUserId)
+    if (prefLevel === PrefNotificationLevels.NONE) {
+      return
+    }
+
+    const { active: activeSubscriptions, expired: expiredSubscriptions } = await this.getTargetSubscriptions(
+      workspaceId,
+      targetUserId
+    )
+
+    if (expiredSubscriptions.length > 0) {
+      await this.deliverSessionExpiredAndCleanup(workspaceId, targetUserId, expiredSubscriptions)
+    }
+
+    if (activeSubscriptions.length === 0) {
+      return
+    }
+
+    // Structured payload (INV-46): the SW composes display text. When the
+    // message is unavailable (deleted or access lost) we still notify — the
+    // user set the reminder deliberately — but include the reason so the SW
+    // can render "Reminder (message deleted)".
+    const pushPayload = JSON.stringify({
+      data: {
+        kind: "saved_reminder",
+        workspaceId,
+        savedId,
+        streamId,
+        messageId,
+        streamName: saved.message?.streamName ?? null,
+        contentPreview: saved.message?.contentMarkdown?.slice(0, 200) ?? null,
+        unavailableReason: saved.unavailableReason ?? null,
+      },
+    })
+
     await this.sendAndEvictStale(workspaceId, activeSubscriptions, pushPayload)
   }
 

@@ -5,6 +5,7 @@ import {
   type OutboxEvent,
   type StreamReadOutboxPayload,
   type StreamsReadAllOutboxPayload,
+  type SavedReminderFiredOutboxPayload,
 } from "../../lib/outbox"
 import type { PushService } from "./service"
 import { logger } from "../../lib/logger"
@@ -143,6 +144,16 @@ export class PushNotificationHandler implements OutboxHandler {
         return
       }
       await this.pushService.deliverClearForStreams(payload.workspaceId, payload.authorId, payload.streamIds)
+      return
+    }
+
+    if (event.eventType === "saved_reminder:fired") {
+      const payload = event.payload as SavedReminderFiredOutboxPayload
+      if (!payload?.workspaceId || !payload?.targetUserId || !payload?.savedId) {
+        logger.warn({ eventId: event.id }, "Skipping malformed saved_reminder:fired payload")
+        return
+      }
+      await this.pushService.deliverPushForSavedReminder(payload)
     }
   }
 }

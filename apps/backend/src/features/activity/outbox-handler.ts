@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { OutboxRepository, type ReactionOutboxPayload } from "../../lib/outbox"
+import { OutboxRepository, type ReactionOutboxPayload, type SavedReminderFiredOutboxPayload } from "../../lib/outbox"
 import { parseMessagePayload } from "../../lib/outbox"
 import { AuthorTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
@@ -98,6 +98,9 @@ export class ActivityFeedHandler implements OutboxHandler {
             // Removed rows don't currently emit a compensating event —
             // frontend subscribers detect stale entries on next fetch.
             await this.processReactionRemoved(event)
+          } else if (event.eventType === "saved_reminder:fired") {
+            const activities = await this.processSavedReminderFired(event)
+            await this.publishActivityCreated(activities)
           }
 
           seen.push(event.id)
@@ -182,6 +185,35 @@ export class ActivityFeedHandler implements OutboxHandler {
       messageId: payload.messageId,
       emoji: payload.emoji,
       actorId: payload.userId,
+    })
+  }
+
+  private async processSavedReminderFired(event: { id: bigint; payload: unknown }): Promise<Activity[]> {
+    const payload = event.payload as SavedReminderFiredOutboxPayload
+    if (
+      !payload ||
+      typeof payload.workspaceId !== "string" ||
+      typeof payload.targetUserId !== "string" ||
+      typeof payload.savedId !== "string" ||
+      typeof payload.messageId !== "string" ||
+      typeof payload.streamId !== "string"
+    ) {
+      logger.debug(
+        { eventId: event.id.toString() },
+        "ActivityFeedHandler: malformed saved_reminder:fired event, skipping"
+      )
+      return []
+    }
+    const contentPreview = payload.saved?.message?.contentMarkdown?.slice(0, 200) ?? null
+    const streamName = payload.saved?.message?.streamName ?? null
+    return this.activityService.processSavedReminderFired({
+      workspaceId: payload.workspaceId,
+      userId: payload.targetUserId,
+      savedId: payload.savedId,
+      streamId: payload.streamId,
+      messageId: payload.messageId,
+      contentPreview,
+      streamName,
     })
   }
 

@@ -530,3 +530,133 @@ describe("ActivityService.processReactionAdded", () => {
     expect(activities).toEqual([])
   })
 })
+
+describe("ActivityService.processSavedReminderFired", () => {
+  afterEach(() => {
+    mock.restore()
+  })
+
+  it("inserts a saved_reminder activity scoped to the saved row id", async () => {
+    const service = setupService()
+
+    const insertSpy = spyOn(ActivityRepository, "insert").mockImplementation(async (_db, params) => ({
+      id: "act_reminder",
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+      activityType: params.activityType,
+      streamId: params.streamId,
+      messageId: params.messageId,
+      actorId: params.actorId,
+      actorType: params.actorType,
+      context: params.context ?? {},
+      readAt: null,
+      createdAt: new Date(),
+      isSelf: false,
+      emoji: null,
+    }))
+
+    const activities = await service.processSavedReminderFired({
+      workspaceId: WORKSPACE_ID,
+      userId: TARGET_USER_ID,
+      savedId: "saved_abc",
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      contentPreview: "Remember this",
+      streamName: "#planning",
+    })
+
+    expect(activities).toHaveLength(1)
+    expect(insertSpy).toHaveBeenCalledTimes(1)
+    const call = insertSpy.mock.calls[0][1]
+    // Actor is the system, not the save. The dedup index excludes
+    // saved_reminder so each fire produces a distinct row via a plain INSERT.
+    expect(call.actorId).toBe(AuthorTypes.SYSTEM)
+    expect(call.actorType).toBe(AuthorTypes.SYSTEM)
+    expect(call.activityType).toBe(ActivityTypes.SAVED_REMINDER)
+    expect(call.context).toEqual({
+      savedId: "saved_abc",
+      contentPreview: "Remember this",
+      streamName: "#planning",
+    })
+  })
+
+  it("mints distinct activity rows for successive saves on the same message", async () => {
+    const service = setupService()
+
+    const inserted: Array<{ actorId: string; context: Record<string, unknown> }> = []
+    spyOn(ActivityRepository, "insert").mockImplementation(async (_db, params) => {
+      inserted.push({ actorId: params.actorId, context: params.context ?? {} })
+      return {
+        id: `act_${inserted.length}`,
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+        activityType: params.activityType,
+        streamId: params.streamId,
+        messageId: params.messageId,
+        actorId: params.actorId,
+        actorType: params.actorType,
+        context: params.context ?? {},
+        readAt: null,
+        createdAt: new Date(),
+        isSelf: false,
+        emoji: null,
+      }
+    })
+
+    const common = {
+      workspaceId: WORKSPACE_ID,
+      userId: TARGET_USER_ID,
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      contentPreview: null,
+      streamName: null,
+    }
+
+    await service.processSavedReminderFired({ ...common, savedId: "saved_first" })
+    await service.processSavedReminderFired({ ...common, savedId: "saved_second" })
+
+    // Actor stays "system" for both — distinctness comes from the DB-level
+    // decision to exclude saved_reminder from the dedup index, verified in
+    // the repo test. The service contract is that each call carries the
+    // originating savedId in context for back-linking.
+    expect(inserted).toHaveLength(2)
+    expect(inserted.every((i) => i.actorId === AuthorTypes.SYSTEM)).toBe(true)
+    expect(inserted.map((i) => i.context.savedId)).toEqual(["saved_first", "saved_second"])
+  })
+
+  it("handles null previews and stream names without crashing", async () => {
+    const service = setupService()
+
+    const insertSpy = spyOn(ActivityRepository, "insert").mockImplementation(async (_db, params) => ({
+      id: "act_reminder",
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+      activityType: params.activityType,
+      streamId: params.streamId,
+      messageId: params.messageId,
+      actorId: params.actorId,
+      actorType: params.actorType,
+      context: params.context ?? {},
+      readAt: null,
+      createdAt: new Date(),
+      isSelf: false,
+      emoji: null,
+    }))
+
+    await service.processSavedReminderFired({
+      workspaceId: WORKSPACE_ID,
+      userId: TARGET_USER_ID,
+      savedId: "saved_null",
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      contentPreview: null,
+      streamName: null,
+    })
+
+    expect(insertSpy.mock.calls[0][1].context).toEqual({
+      savedId: "saved_null",
+      contentPreview: "",
+      streamName: null,
+    })
+  })
+})

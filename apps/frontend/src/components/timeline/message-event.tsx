@@ -35,6 +35,9 @@ import { AttachmentList } from "./attachment-list"
 import { LinkPreviewList } from "./link-preview-list"
 import { LinkPreviewProvider, useLinkPreviewContext } from "@/lib/markdown/link-preview-context"
 import { MessageContextMenu } from "./message-context-menu"
+import { SaveMessageButton } from "./save-message-button"
+import { ReminderPickerSheet } from "./reminder-picker-sheet"
+import { useSavedForMessage, useSaveMessage, useDeleteSaved } from "@/hooks/use-saved"
 import { MessageActionDrawer } from "./message-action-drawer"
 import { ThreadIndicator } from "./thread-indicator"
 import { DeleteMessageDialog } from "./delete-message-dialog"
@@ -42,6 +45,7 @@ import { MessageEditForm } from "./message-edit-form"
 import { UnsentMessageEditForm } from "./unsent-message-edit-form"
 import { UnsentMessageActionDrawer } from "./unsent-message-action-drawer"
 import { EditedIndicator } from "./edited-indicator"
+import { SavedIndicator } from "@/components/saved/saved-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
 import { MessageReactions } from "./message-reactions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
@@ -499,6 +503,45 @@ function SentMessageEvent({
     }
   }
 
+  const savedForMessage = useSavedForMessage(workspaceId, payload.messageId)
+  const saveMessageMutation = useSaveMessage(workspaceId)
+  const unsaveMessageMutation = useDeleteSaved(workspaceId)
+  const isSaved = !!savedForMessage && savedForMessage.status === "saved"
+  const [reminderSheetOpen, setReminderSheetOpen] = useState(false)
+
+  const handleToggleSave = useCallback(() => {
+    // Mirror the desktop hover-button: swallow double-taps while a mutation is
+    // in flight and surface a toast on every outcome so the mobile drawer
+    // gives the same feedback as the desktop bookmark button.
+    if (saveMessageMutation.isPending || unsaveMessageMutation.isPending) return
+    if (!savedForMessage) {
+      saveMessageMutation.mutate(
+        { messageId: payload.messageId },
+        {
+          onSuccess: () => toast.success("Saved for later"),
+          onError: () => toast.error("Could not save message"),
+        }
+      )
+      return
+    }
+    if (savedForMessage.status !== "saved") {
+      saveMessageMutation.mutate(
+        { messageId: payload.messageId },
+        {
+          onSuccess: () => toast.success("Moved back to Saved"),
+          onError: () => toast.error("Could not restore saved item"),
+        }
+      )
+      return
+    }
+    unsaveMessageMutation.mutate(savedForMessage.id, {
+      onSuccess: () => toast.success("Removed from saved"),
+      onError: () => toast.error("Could not remove saved item"),
+    })
+  }, [savedForMessage, saveMessageMutation, unsaveMessageMutation, payload.messageId])
+
+  const handleRequestReminder = useCallback(() => setReminderSheetOpen(true), [])
+
   // Shared action context for both desktop dropdown and mobile drawer
   const actionContext = useMemo(
     () => ({
@@ -526,6 +569,9 @@ function SentMessageEvent({
       onReact: handleAddReaction,
       onOpenFullPicker: () => setMobilePickerOpen(true),
       reactions: payload.reactions,
+      isSaved,
+      onToggleSave: handleToggleSave,
+      onRequestReminder: handleRequestReminder,
       onQuoteReply: quoteReplyCtx
         ? () =>
             quoteReplyCtx.triggerQuoteReply({
@@ -571,6 +617,9 @@ function SentMessageEvent({
       handleAddReaction,
       quoteReplyCtx,
       actorName,
+      isSaved,
+      handleToggleSave,
+      handleRequestReminder,
     ]
   )
 
@@ -590,6 +639,7 @@ function SentMessageEvent({
             {payload.editedAt && (
               <EditedIndicator editedAt={payload.editedAt} onShowHistory={() => setHistoryOpen(true)} />
             )}
+            <SavedIndicator saved={savedForMessage ?? null} />
           </>
         }
         isEditing={isEditing && !isMobile}
@@ -606,6 +656,7 @@ function SentMessageEvent({
               onSelect={handleAddReaction}
               activeShortcodes={activeReactionShortcodes}
             />
+            <SaveMessageButton workspaceId={workspaceId} messageId={payload.messageId} />
             {actionContext.onQuoteReply && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -737,6 +788,15 @@ function SentMessageEvent({
           activeShortcodes={activeReactionShortcodes}
           open={mobilePickerOpen}
           onOpenChange={setMobilePickerOpen}
+        />
+      )}
+      {reminderSheetOpen && (
+        <ReminderPickerSheet
+          open={reminderSheetOpen}
+          onOpenChange={setReminderSheetOpen}
+          workspaceId={workspaceId}
+          messageId={payload.messageId}
+          saved={savedForMessage ?? null}
         />
       )}
     </>
