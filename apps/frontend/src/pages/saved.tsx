@@ -1,7 +1,7 @@
-import { useState } from "react"
-import { useParams, Link } from "react-router-dom"
+import { Navigate, useNavigate, useParams, Link } from "react-router-dom"
 import { ArrowLeft, Bookmark } from "lucide-react"
 import { toast } from "sonner"
+import { SAVED_STATUSES } from "@threa/types"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -17,13 +17,37 @@ const TABS: { value: SavedStatus; label: string }[] = [
   { value: "archived", label: "Archived" },
 ]
 
+const VALID_TABS = new Set<string>(SAVED_STATUSES)
+
+/**
+ * Route is `/w/:workspaceId/saved/:tab?` — bare `/saved` renders the default
+ * Saved tab, `/saved/done` and `/saved/archived` render the other two.
+ * Refreshes, back/forward, and shared links all land on the same view
+ * (INV-59). Unknown tab segments redirect to the default so typos don't
+ * render a blank page.
+ */
 export function SavedPage() {
-  const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [tab, setTab] = useState<SavedStatus>("saved")
+  const { workspaceId, tab: tabParam } = useParams<{ workspaceId: string; tab?: string }>()
+  const navigate = useNavigate()
 
   if (!workspaceId) return null
 
-  return <SavedPageInner workspaceId={workspaceId} tab={tab} onTabChange={setTab} />
+  if (tabParam === "saved") {
+    // The default tab uses the unsegmented URL — canonicalise so we don't
+    // have two URLs for the same view.
+    return <Navigate to={`/w/${workspaceId}/saved`} replace />
+  }
+  if (tabParam !== undefined && !VALID_TABS.has(tabParam)) {
+    return <Navigate to={`/w/${workspaceId}/saved`} replace />
+  }
+
+  const tab: SavedStatus = (tabParam as SavedStatus | undefined) ?? "saved"
+  const handleTabChange = (next: SavedStatus) => {
+    const path = next === "saved" ? `/w/${workspaceId}/saved` : `/w/${workspaceId}/saved/${next}`
+    navigate(path)
+  }
+
+  return <SavedPageInner workspaceId={workspaceId} tab={tab} onTabChange={handleTabChange} />
 }
 
 interface InnerProps {
