@@ -135,4 +135,6 @@ export { useAppUpdate } from "./use-app-update"
 
 export { useQueueDraftMessage } from "./use-queue-draft-message"
 
+export { useComposerHeightPublish } from "./use-composer-height-publish"
+
 export { useUnreadTabIndicator } from "./use-unread-tab-indicator"

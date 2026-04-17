@@ -142,6 +142,7 @@ vi.mock("@/hooks", () => ({
     clearAttachments: mockClearAttachments,
     isLoaded: mockComposerState.isLoaded,
   }),
+  useComposerHeightPublish: () => {},
 }))
 
 // Mock MessageComposer

@@ -16,6 +16,7 @@ import {
   getDraftMessageKey,
   useThreadAncestors,
   useQueueDraftMessage,
+  useComposerHeightPublish,
 } from "@/hooks"
 import { useCoordinatedLoading, usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
 import { useUser } from "@/auth"
@@ -148,6 +149,11 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
     draftPortalTargetRef.current = el
   }, [])
+
+  // Measured height of the draft composer pill; consumed by the scroll area
+  // below it (padding-bottom) so messages sit offset above the floating pill.
+  const draftComposerRef = useRef<HTMLDivElement>(null)
+  useComposerHeightPublish(draftComposerRef, { active: !draftExpanded })
 
   // Reset expand state when panel changes
   useEffect(() => {
@@ -358,7 +364,10 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                 </div>,
                 draftPortalTargetRef.current
               )}
-            <div className={draftExpanded ? "flex-1 overflow-y-auto hidden" : "flex-1 overflow-y-auto"}>
+            <div
+              className={draftExpanded ? "flex-1 overflow-y-auto hidden" : "flex-1 overflow-y-auto"}
+              style={{ paddingBottom: "var(--composer-height, 0px)" }}
+            >
               {parentMessage && (
                 <ThreadParentMessage
                   event={parentMessage}
@@ -390,8 +399,11 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                 </Empty>
               )}
             </div>
-            <div className={draftExpanded ? "border-t hidden" : "border-t"}>
-              <div className="pt-3 px-3 pb-1 sm:pt-6 sm:px-6 sm:pb-1 mx-auto max-w-[800px] w-full min-w-0">
+            <div
+              ref={draftComposerRef}
+              className={draftExpanded ? "hidden" : "pointer-events-none absolute inset-x-0 bottom-0 z-20"}
+            >
+              <div className="pointer-events-auto pt-3 px-3 pb-3 sm:pt-6 sm:px-6 sm:pb-4 mx-auto max-w-[800px] w-full min-w-0">
                 {!draftExpanded && (
                   <MessageComposer
                     content={composer.content}
