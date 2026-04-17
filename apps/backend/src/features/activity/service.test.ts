@@ -530,3 +530,120 @@ describe("ActivityService.processReactionAdded", () => {
     expect(activities).toEqual([])
   })
 })
+
+describe("ActivityService.processSavedReminderFired", () => {
+  afterEach(() => {
+    mock.restore()
+  })
+
+  it("inserts a saved_reminder activity scoped to the saved row id", async () => {
+    const service = setupService()
+
+    const insertSpy = spyOn(ActivityRepository, "insert").mockImplementation(async (_db, params) => ({
+      id: "act_reminder",
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+      activityType: params.activityType,
+      streamId: params.streamId,
+      messageId: params.messageId,
+      actorId: params.actorId,
+      actorType: params.actorType,
+      context: params.context ?? {},
+      readAt: null,
+      createdAt: new Date(),
+      isSelf: false,
+      emoji: null,
+    }))
+
+    const activities = await service.processSavedReminderFired({
+      workspaceId: WORKSPACE_ID,
+      userId: TARGET_USER_ID,
+      savedId: "saved_abc",
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      contentPreview: "Remember this",
+      streamName: "#planning",
+    })
+
+    expect(activities).toHaveLength(1)
+    expect(insertSpy).toHaveBeenCalledTimes(1)
+    const call = insertSpy.mock.calls[0][1]
+    // Dedup key for non-reaction types is (user_id, message_id, activity_type, actor_id).
+    // Using savedId as actorId gives each save-then-remind lifecycle its own row
+    // so a second fire on the same message after a re-save isn't swallowed.
+    expect(call.actorId).toBe("saved_abc")
+    expect(call.actorType).toBe(AuthorTypes.SYSTEM)
+    expect(call.activityType).toBe(ActivityTypes.SAVED_REMINDER)
+    expect(call.context).toEqual({ contentPreview: "Remember this", streamName: "#planning" })
+  })
+
+  it("mints distinct activity rows for successive saves on the same message", async () => {
+    const service = setupService()
+
+    const inserted: Array<{ actorId: string }> = []
+    spyOn(ActivityRepository, "insert").mockImplementation(async (_db, params) => {
+      inserted.push({ actorId: params.actorId })
+      return {
+        id: `act_${inserted.length}`,
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+        activityType: params.activityType,
+        streamId: params.streamId,
+        messageId: params.messageId,
+        actorId: params.actorId,
+        actorType: params.actorType,
+        context: params.context ?? {},
+        readAt: null,
+        createdAt: new Date(),
+        isSelf: false,
+        emoji: null,
+      }
+    })
+
+    const common = {
+      workspaceId: WORKSPACE_ID,
+      userId: TARGET_USER_ID,
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      contentPreview: null,
+      streamName: null,
+    }
+
+    await service.processSavedReminderFired({ ...common, savedId: "saved_first" })
+    await service.processSavedReminderFired({ ...common, savedId: "saved_second" })
+
+    expect(inserted.map((i) => i.actorId)).toEqual(["saved_first", "saved_second"])
+  })
+
+  it("handles null previews and stream names without crashing", async () => {
+    const service = setupService()
+
+    const insertSpy = spyOn(ActivityRepository, "insert").mockImplementation(async (_db, params) => ({
+      id: "act_reminder",
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+      activityType: params.activityType,
+      streamId: params.streamId,
+      messageId: params.messageId,
+      actorId: params.actorId,
+      actorType: params.actorType,
+      context: params.context ?? {},
+      readAt: null,
+      createdAt: new Date(),
+      isSelf: false,
+      emoji: null,
+    }))
+
+    await service.processSavedReminderFired({
+      workspaceId: WORKSPACE_ID,
+      userId: TARGET_USER_ID,
+      savedId: "saved_null",
+      streamId: STREAM_ID,
+      messageId: MESSAGE_ID,
+      contentPreview: null,
+      streamName: null,
+    })
+
+    expect(insertSpy.mock.calls[0][1].context).toEqual({ contentPreview: "", streamName: null })
+  })
+})
