@@ -1,52 +1,23 @@
 /**
- * Command utilities for slash command detection and parsing.
+ * Command utilities for slash command detection.
  *
- * Commands follow the format: /command [args]
- * Examples:
- *   /echo hello world
- *   /help
- *   /status away
+ * A message is treated as a command only when the ProseMirror content contains
+ * a dedicated slash command node, mirroring how mentions, channels, and emojis
+ * are represented as structural nodes rather than raw text matches.
  */
 
-export interface ParsedCommand {
-  /** Command name without the leading slash (e.g., "echo") */
-  name: string
-  /** Everything after the command name, trimmed */
-  args: string
-}
+import type { JSONContent } from "@threa/types"
 
 /**
- * Check if a message is a command (starts with /).
- */
-export function isCommand(content: string): boolean {
-  return content.trimStart().startsWith("/")
-}
-
-/**
- * Parse a command from message content.
+ * Returns true if the content contains a `slashCommand` node.
  *
- * Returns null if the content is not a valid command.
- * A valid command starts with / followed by a word character.
+ * We intentionally do not treat raw text like "/s" as a command — commands
+ * must be materialized as nodes by the editor's slash trigger.
  */
-export function parseCommand(content: string): ParsedCommand | null {
-  const trimmed = content.trimStart()
-
-  if (!trimmed.startsWith("/")) {
-    return null
+export function hasCommandNode(content: JSONContent): boolean {
+  if (content.type === "slashCommand") return true
+  for (const child of content.content ?? []) {
+    if (hasCommandNode(child)) return true
   }
-
-  // Match: / followed by command name (word chars), then optional whitespace + args
-  const match = trimmed.match(/^\/(\w+)(?:\s+(.*))?$/s)
-
-  if (!match) {
-    // Starts with / but no valid command name (e.g., "/ " or "/123")
-    return null
-  }
-
-  const [, name, args = ""] = match
-
-  return {
-    name: name.toLowerCase(),
-    args: args.trim(),
-  }
+  return false
 }

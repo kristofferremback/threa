@@ -317,4 +317,33 @@ describe("mention-renderer", () => {
       expect(result.length).toBeGreaterThanOrEqual(2)
     })
   })
+
+  describe("slash command rendering", () => {
+    const isKnown = (name: string) => name === "echo" || name === "help"
+
+    it("renders a known command as a styled chip", () => {
+      const result = renderMentions("/echo hello", noEmoji, isKnown)
+      render(<>{result}</>)
+
+      expect(screen.getByText("/echo")).toBeInTheDocument()
+    })
+
+    it("leaves an unknown command as plain text", () => {
+      const result = renderMentions("/s", noEmoji, isKnown)
+
+      expect(result).toEqual(["/s"])
+    })
+
+    it("defaults to plain text when no predicate is provided", () => {
+      const result = renderMentions("/echo hi", noEmoji)
+
+      expect(result).toEqual(["/echo hi"])
+    })
+
+    it("does not treat a slash in the middle of a line as a command", () => {
+      const result = renderMentions("see /help for more", noEmoji, isKnown)
+
+      expect(result).toEqual(["see /help for more"])
+    })
+  })
 })
