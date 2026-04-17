@@ -45,6 +45,7 @@ import { MessageEditForm } from "./message-edit-form"
 import { UnsentMessageEditForm } from "./unsent-message-edit-form"
 import { UnsentMessageActionDrawer } from "./unsent-message-action-drawer"
 import { EditedIndicator } from "./edited-indicator"
+import { SavedIndicator } from "@/components/saved/saved-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
 import { MessageReactions } from "./message-reactions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
@@ -619,6 +620,7 @@ function SentMessageEvent({
             {payload.editedAt && (
               <EditedIndicator editedAt={payload.editedAt} onShowHistory={() => setHistoryOpen(true)} />
             )}
+            <SavedIndicator saved={savedForMessage ?? null} />
           </>
         }
         isEditing={isEditing && !isMobile}
