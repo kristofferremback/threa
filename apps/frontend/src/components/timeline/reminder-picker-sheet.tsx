@@ -37,6 +37,13 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
   // clamp the server applies.
   const minLocal = useMemo(() => toLocalInput(new Date(Date.now() + 60_000)), [open, mode])
 
+  const openCustom = () => {
+    // Pre-populate with "now + 15 minutes" so the picker opens on a sensible
+    // default; the user only needs to nudge it from there.
+    if (!customDateTime) setCustomDateTime(toLocalInput(new Date(Date.now() + 15 * 60_000)))
+    setMode("custom")
+  }
+
   const resetAndClose = () => {
     setMode("presets")
     setCustomDateTime("")
@@ -91,21 +98,21 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
       <DrawerContent className="max-h-[85vh]">
-        <div className="flex flex-col px-4 pt-4 pb-safe">
-          <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col px-5 pt-3 pb-6 pb-safe">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               {mode === "custom" && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 -ml-2"
+                  className="h-9 w-9 -ml-2 rounded-full"
                   onClick={() => setMode("presets")}
                   aria-label="Back to presets"
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft className="h-5 w-5" />
                 </Button>
               )}
-              <DrawerTitle className="text-base">{resolveTitle(mode, saved)}</DrawerTitle>
+              <DrawerTitle className="text-lg font-semibold">{resolveTitle(mode, saved)}</DrawerTitle>
             </div>
             {saved && mode === "presets" && (
               <ReminderBadge remindAt={saved.remindAt} reminderSentAt={saved.reminderSentAt} className="text-xs" />
@@ -123,7 +130,7 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
                   {preset.label}
                 </SheetMenuButton>
               ))}
-              <SheetMenuButton onClick={() => setMode("custom")}>
+              <SheetMenuButton onClick={openCustom}>
                 <CalendarIcon className="h-4 w-4 text-muted-foreground" />
                 Pick a time…
               </SheetMenuButton>
@@ -137,17 +144,22 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
           ) : (
             // Keep the input + Set button grouped at the bottom of the sheet so
             // the tap target is close to the thumb that just opened the drawer.
-            <div className="flex flex-col gap-3">
-              <input
-                type="datetime-local"
-                value={customDateTime}
-                min={minLocal}
-                onChange={(e) => setCustomDateTime(e.target.value)}
-                className="w-full rounded-md border bg-background px-3 py-3 text-base"
-                autoFocus
-              />
+            <div className="flex flex-col gap-4">
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Date &amp; time
+                </span>
+                <input
+                  type="datetime-local"
+                  value={customDateTime}
+                  min={minLocal}
+                  onChange={(e) => setCustomDateTime(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-muted/30 px-4 py-4 text-base focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                  autoFocus
+                />
+              </label>
               <Button
-                className="w-full h-11"
+                className="w-full h-12 text-base"
                 onClick={handleCustom}
                 disabled={!customDateTime || saveMutation.isPending || updateMutation.isPending}
               >
