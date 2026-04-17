@@ -30,7 +30,7 @@ import {
   type RegionalCreatePayload,
 } from "./features/workspaces"
 import { InvitationShadowService } from "./features/invitation-shadows"
-import { BackofficeService, seedPlatformAdmins } from "./features/backoffice"
+import { BackofficeService, seedPlatformAdmins, reconcilePlatformAdminsAcrossRegions } from "./features/backoffice"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
 const LISTENER_ID = "control-plane"
@@ -74,6 +74,9 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     workosEnvironmentId: config.workosEnvironmentId,
   })
   await seedPlatformAdmins(pool, config.platformAdminWorkosUserIds)
+  // Fan out platform-admin flags to every region each admin has a workspace
+  // in. Best-effort — per-region failures are logged, next boot retries.
+  await reconcilePlatformAdminsAcrossRegions(pool, regionalClient)
 
   // Outbox — single handler for all control-plane events (no sharding needed)
   const cursorLock = new CursorLock({

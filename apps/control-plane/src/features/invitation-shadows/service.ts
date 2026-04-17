@@ -9,6 +9,7 @@ import {
 } from "@threa/backend-common"
 import { InvitationShadowRepository } from "./repository"
 import { WorkspaceRegistryRepository } from "../workspaces"
+import { PlatformRoleRepository } from "../backoffice/repository"
 import type { RegionalClient } from "../../lib/regional-client"
 import type { PendingInvitation } from "@threa/types"
 
@@ -93,10 +94,13 @@ export class InvitationShadowService {
       // Provision user on regional backend inside the transaction.
       // Failure here auto-rollbacks the claim — shadow stays pending for retry.
       const name = this.resolveDisplayName(user)
+      const platformRole = await PlatformRoleRepository.findByWorkosUserId(client, user.id)
+      const isPlatformAdmin = platformRole?.role === "admin"
       await this.regionalClient.acceptInvitation(shadow.region, shadow.id, {
         workosUserId: user.id,
         email: user.email,
         name,
+        isPlatformAdmin,
       })
 
       // Regional call succeeded — commit membership alongside the claim

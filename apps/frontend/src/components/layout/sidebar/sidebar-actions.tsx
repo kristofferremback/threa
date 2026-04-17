@@ -21,6 +21,8 @@ export interface SidebarActionItem {
   label: string
   icon: LucideIcon
   href?: string
+  /** When true, href is treated as an absolute URL opened in a new tab (external link). */
+  external?: boolean
   onSelect?: () => void | Promise<void>
   variant?: "default" | "destructive"
   separatorBefore?: boolean
@@ -68,30 +70,52 @@ function SidebarActionMenuEntry({ action }: { action: SidebarActionItem }) {
   const isDestructive = action.variant === "destructive"
   const content = <SidebarActionContent action={action} iconClassName="mr-2 h-4 w-4" />
 
-  return (
-    <div>
-      {action.separatorBefore && <DropdownMenuSeparator />}
-      {action.href ? (
-        <DropdownMenuItem asChild className={cn(isDestructive && "text-destructive focus:text-destructive")}>
-          <Link
-            to={action.href}
-            onClick={() => {
-              void runSidebarAction(action)
-            }}
-          >
-            {content}
-          </Link>
-        </DropdownMenuItem>
-      ) : (
-        <DropdownMenuItem
-          className={cn(isDestructive && "text-destructive focus:text-destructive")}
-          onSelect={() => {
+  let renderedItem
+  if (action.href && action.external) {
+    renderedItem = (
+      <DropdownMenuItem asChild className={cn(isDestructive && "text-destructive focus:text-destructive")}>
+        <a
+          href={action.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => {
             void runSidebarAction(action)
           }}
         >
           {content}
-        </DropdownMenuItem>
-      )}
+        </a>
+      </DropdownMenuItem>
+    )
+  } else if (action.href) {
+    renderedItem = (
+      <DropdownMenuItem asChild className={cn(isDestructive && "text-destructive focus:text-destructive")}>
+        <Link
+          to={action.href}
+          onClick={() => {
+            void runSidebarAction(action)
+          }}
+        >
+          {content}
+        </Link>
+      </DropdownMenuItem>
+    )
+  } else {
+    renderedItem = (
+      <DropdownMenuItem
+        className={cn(isDestructive && "text-destructive focus:text-destructive")}
+        onSelect={() => {
+          void runSidebarAction(action)
+        }}
+      >
+        {content}
+      </DropdownMenuItem>
+    )
+  }
+
+  return (
+    <div>
+      {action.separatorBefore && <DropdownMenuSeparator />}
+      {renderedItem}
     </div>
   )
 }
@@ -215,32 +239,54 @@ function SidebarActionDrawerEntry({ action, onClose }: { action: SidebarActionIt
     />
   )
 
+  let renderedItem
+  if (action.href && action.external) {
+    renderedItem = (
+      <a
+        href={action.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+        onClick={() => {
+          onClose()
+          void runSidebarAction(action)
+        }}
+      >
+        {content}
+      </a>
+    )
+  } else if (action.href) {
+    renderedItem = (
+      <Link
+        to={action.href}
+        className={className}
+        onClick={() => {
+          onClose()
+          void runSidebarAction(action)
+        }}
+      >
+        {content}
+      </Link>
+    )
+  } else {
+    renderedItem = (
+      <button
+        type="button"
+        className={className}
+        onClick={() => {
+          onClose()
+          void runSidebarAction(action)
+        }}
+      >
+        {content}
+      </button>
+    )
+  }
+
   return (
     <div>
       {action.separatorBefore && <Divider />}
-      {action.href ? (
-        <Link
-          to={action.href}
-          className={className}
-          onClick={() => {
-            onClose()
-            void runSidebarAction(action)
-          }}
-        >
-          {content}
-        </Link>
-      ) : (
-        <button
-          type="button"
-          className={className}
-          onClick={() => {
-            onClose()
-            void runSidebarAction(action)
-          }}
-        >
-          {content}
-        </button>
-      )}
+      {renderedItem}
     </div>
   )
 }

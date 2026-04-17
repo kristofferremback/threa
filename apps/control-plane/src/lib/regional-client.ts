@@ -26,6 +26,7 @@ export class RegionalClient {
       ownerWorkosUserId: string
       ownerEmail: string
       ownerName: string
+      isPlatformAdmin?: boolean
     }
   ): Promise<{ workspace: unknown }> {
     const url = `${this.getRegionUrl(region)}/internal/workspaces`
@@ -57,7 +58,7 @@ export class RegionalClient {
   async acceptInvitation(
     region: string,
     invitationId: string,
-    data: { workosUserId: string; email: string; name: string }
+    data: { workosUserId: string; email: string; name: string; isPlatformAdmin?: boolean }
   ): Promise<{ workspaceId: string }> {
     const url = `${this.getRegionUrl(region)}/internal/invitations/${invitationId}/accept`
     let res: Response
@@ -83,5 +84,36 @@ export class RegionalClient {
     }
 
     return res.json()
+  }
+
+  /**
+   * Upsert or revoke a user's platform-admin flag on a regional backend. Used
+   * by the boot-time reconcile sweep and by future platform-role mutations so
+   * regional backends can gate the control-panel link without a cross-service
+   * call per session.
+   */
+  async setPlatformAdmin(region: string, workosUserId: string, isAdmin: boolean): Promise<void> {
+    const url = `${this.getRegionUrl(region)}/internal/platform-admins/${encodeURIComponent(workosUserId)}`
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
+        },
+        body: JSON.stringify({ isAdmin }),
+        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      logger.error({ err, region, url, workosUserId }, "Regional setPlatformAdmin request failed")
+      throw err
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      logger.error({ region, workosUserId, status: res.status, body }, "Regional setPlatformAdmin failed")
+      throw new Error(`Regional backend returned ${res.status}: ${body}`)
+    }
   }
 }

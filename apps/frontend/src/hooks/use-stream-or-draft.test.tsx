@@ -52,7 +52,7 @@ function createWrapper(
               AuthContext.Provider,
               {
                 value: {
-                  user: { id: "workos_1", email: "kris@example.com", name: "Kris" },
+                  user: { id: "workos_1", email: "kris@example.com", name: "Kris", isPlatformAdmin: false },
                   loading: false,
                   error: null,
                   login: vi.fn(),
