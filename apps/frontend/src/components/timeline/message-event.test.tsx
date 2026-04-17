@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vites
 import { render, screen, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { ServicesProvider, type SavedService } from "@/contexts"
 import { MessageEvent } from "./message-event"
 import { EditLastMessageContext } from "./edit-last-message-context"
 import * as editorModule from "@/components/editor"
@@ -93,15 +94,10 @@ vi.mock("@/contexts", async (importOriginal) => {
   }
 })
 
-// MessageEvent calls useSaveMessage/useDeleteSaved which reach into the
-// SavedService context. Stub the hooks directly so the tests don't need a
-// ServicesProvider — saved-message UI behaviour is covered elsewhere.
-vi.mock("@/hooks/use-saved", () => ({
-  useSavedForMessage: () => null,
-  useSaveMessage: () => ({ mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue(undefined) }),
-  useUpdateSaved: () => ({ mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue(undefined) }),
-  useDeleteSaved: () => ({ mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue(undefined) }),
-}))
+// MessageEvent calls useSaveMessage/useDeleteSaved which reach the
+// SavedService context. We satisfy them by providing a no-op SavedService
+// through the real ServicesProvider in the test Wrapper below — no mocking
+// of the saved hooks themselves (INV-48).
 
 vi.mock("@/auth", () => ({
   useUser: () => ({ id: "workos_user_123" }),
@@ -155,10 +151,23 @@ beforeEach(() => {
   mockCancelEditing.mockReset()
 })
 
+// Minimal SavedService shim — the tests don't exercise save/reminder flows,
+// they just need the context lookup to succeed. `useLiveQuery` over
+// fake-indexeddb returns null for an empty savedMessages store, which is
+// exactly the "not saved" state these tests expect.
+const noopSavedService: SavedService = {
+  list: vi.fn().mockResolvedValue({ saved: [], nextCursor: null }),
+  create: vi.fn().mockResolvedValue({}),
+  update: vi.fn().mockResolvedValue({}),
+  delete: vi.fn().mockResolvedValue(undefined),
+}
+
 function Wrapper({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>{children}</TooltipProvider>
+      <ServicesProvider services={{ saved: noopSavedService }}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </ServicesProvider>
     </QueryClientProvider>
   )
 }
@@ -360,11 +369,13 @@ describe("MessageEvent", () => {
 
       render(
         <QueryClientProvider client={queryClient}>
-          <TooltipProvider>
-            <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
-              <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
-            </EditLastMessageContext.Provider>
-          </TooltipProvider>
+          <ServicesProvider services={{ saved: noopSavedService }}>
+            <TooltipProvider>
+              <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
+                <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
+              </EditLastMessageContext.Provider>
+            </TooltipProvider>
+          </ServicesProvider>
         </QueryClientProvider>
       )
 
@@ -405,11 +416,13 @@ describe("MessageEvent", () => {
         <div data-editor-zone="main">
           <div data-testid="zone-editor" contentEditable />
           <QueryClientProvider client={queryClient}>
-            <TooltipProvider>
-              <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
-                <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
-              </EditLastMessageContext.Provider>
-            </TooltipProvider>
+            <ServicesProvider services={{ saved: noopSavedService }}>
+              <TooltipProvider>
+                <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
+                  <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
+                </EditLastMessageContext.Provider>
+              </TooltipProvider>
+            </ServicesProvider>
           </QueryClientProvider>
         </div>
       )

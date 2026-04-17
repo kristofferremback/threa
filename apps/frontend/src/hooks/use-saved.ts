@@ -84,23 +84,30 @@ export async function removeSavedRow(savedId: string): Promise<void> {
  * `fetchStartedAt` is the Date.now() taken immediately before the network
  * call. Rows with `_cachedAt >= fetchStartedAt` are assumed to be from
  * concurrent socket writes and left intact.
+ *
+ * `hasMore` signals the server has more pages beyond this response. When
+ * true we skip deletion entirely — otherwise we'd wipe locally-cached
+ * page 2+ rows that were never in the server's response window.
  */
 export async function replaceSavedPage(
   workspaceId: string,
   status: SavedStatus,
   rows: SavedMessageView[],
-  fetchStartedAt: number
+  fetchStartedAt: number,
+  hasMore: boolean
 ): Promise<void> {
   const indexKey = status === "saved" ? "[workspaceId+status+_savedAtMs]" : "[workspaceId+status+_statusChangedAtMs]"
-  const existing = await db.savedMessages
-    .where(indexKey)
-    .between([workspaceId, status, -Infinity], [workspaceId, status, Infinity], true, true)
-    .toArray()
 
-  const serverIds = new Set(rows.map((row) => row.id))
-  const toDelete = existing
-    .filter((row) => !serverIds.has(row.id) && row._cachedAt < fetchStartedAt)
-    .map((row) => row.id)
+  const toDelete: string[] = hasMore
+    ? []
+    : await (async () => {
+        const existing = await db.savedMessages
+          .where(indexKey)
+          .between([workspaceId, status, -Infinity], [workspaceId, status, Infinity], true, true)
+          .toArray()
+        const serverIds = new Set(rows.map((row) => row.id))
+        return existing.filter((row) => !serverIds.has(row.id) && row._cachedAt < fetchStartedAt).map((row) => row.id)
+      })()
 
   await db.transaction("rw", db.savedMessages, async () => {
     if (toDelete.length > 0) await db.savedMessages.bulkDelete(toDelete)
@@ -126,12 +133,16 @@ export function useSavedList(workspaceId: string, status: SavedStatus) {
       // fetchStartedAt and survive reconciliation.
       const fetchStartedAt = Date.now()
       const res = await savedService.list(workspaceId, { status, limit: 50 })
-      await replaceSavedPage(workspaceId, status, res.saved, fetchStartedAt)
+      // `hasMore` gates reconciliation-delete: only prune when the server
+      // response is the complete set for this tab (nextCursor === null).
+      await replaceSavedPage(workspaceId, status, res.saved, fetchStartedAt, res.nextCursor !== null)
       return res
     },
-    // Re-run on mount after invalidation (reconnect hook in workspace-sync
-    // invalidates `savedKeys.all` so offline-missed socket events get filled
-    // in on the next render — INV-53).
+    // INV-53: socket reconnects close their own event gap by invalidating
+    // `savedKeys.all` at the top of `registerWorkspaceSocketHandlers`;
+    // `refetchOnReconnect: true` then catches the pure browser online/offline
+    // case. `refetchOnMount: true` plus `staleTime: Infinity` makes the
+    // invalidation land on the next render.
     staleTime: Infinity,
     refetchOnMount: true,
     refetchOnWindowFocus: false,

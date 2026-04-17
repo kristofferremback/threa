@@ -50,7 +50,7 @@ describe("replaceSavedPage", () => {
       _cachedAt: fetchStartedAt - 1_000,
     })
 
-    await replaceSavedPage(WORKSPACE_ID, "saved", [], fetchStartedAt)
+    await replaceSavedPage(WORKSPACE_ID, "saved", [], fetchStartedAt, false)
 
     const remaining = await db.savedMessages.toArray()
     expect(remaining).toEqual([])
@@ -78,7 +78,7 @@ describe("replaceSavedPage", () => {
       _cachedAt: fetchStartedAt + 10,
     })
 
-    await replaceSavedPage(WORKSPACE_ID, "saved", [], fetchStartedAt)
+    await replaceSavedPage(WORKSPACE_ID, "saved", [], fetchStartedAt, false)
 
     const remaining = await db.savedMessages.toArray()
     expect(remaining.map((r) => r.id)).toEqual(["saved_concurrent"])
@@ -110,7 +110,8 @@ describe("replaceSavedPage", () => {
       WORKSPACE_ID,
       "saved",
       [makeView({ id: "saved_fresh", messageId: "msg_fresh" })],
-      fetchStartedAt
+      fetchStartedAt,
+      false
     )
 
     const remaining = await db.savedMessages.toArray()
@@ -139,10 +140,45 @@ describe("replaceSavedPage", () => {
       _cachedAt: fetchStartedAt - 1_000,
     })
 
-    await replaceSavedPage(WORKSPACE_ID, "saved", [], fetchStartedAt)
+    await replaceSavedPage(WORKSPACE_ID, "saved", [], fetchStartedAt, false)
 
     const remaining = await db.savedMessages.toArray()
     expect(remaining.map((r) => r.id)).toEqual(["saved_done"])
+  })
+
+  it("skips deletion entirely when the server has more pages (hasMore=true)", async () => {
+    const fetchStartedAt = Date.now()
+    // A row already cached from a previous page-2 fetch — must survive even
+    // though it's absent from the page-1 response.
+    await db.savedMessages.put({
+      id: "saved_page2",
+      workspaceId: WORKSPACE_ID,
+      userId: "usr_me",
+      messageId: "msg_page2",
+      streamId: "stream_1",
+      status: "saved",
+      remindAt: null,
+      reminderSentAt: null,
+      savedAt: new Date().toISOString(),
+      statusChangedAt: new Date().toISOString(),
+      message: null,
+      unavailableReason: null,
+      _savedAtMs: Date.now() - 120_000,
+      _statusChangedAtMs: Date.now() - 120_000,
+      _reminderFiredAtMs: 0,
+      _cachedAt: fetchStartedAt - 1_000,
+    })
+
+    await replaceSavedPage(
+      WORKSPACE_ID,
+      "saved",
+      [makeView({ id: "saved_page1", messageId: "msg_page1" })],
+      fetchStartedAt,
+      true
+    )
+
+    const remaining = await db.savedMessages.toArray()
+    expect(remaining.map((r) => r.id).sort()).toEqual(["saved_page1", "saved_page2"])
   })
 })
 

@@ -377,6 +377,13 @@ export function registerWorkspaceSocketHandlers(
 ): () => void {
   const abortController = new AbortController()
 
+  // Close the reconnect event gap (INV-53): if the Saved view is mounted
+  // when the socket re-registers, invalidate so TanStack refetches and
+  // rehydrates IDB with any rows whose upsert/delete events we missed
+  // during the disconnect. `refetchOnReconnect: true` alone only covers
+  // browser network online/offline, not socket.io reconnects.
+  queryClient.invalidateQueries({ queryKey: savedKeys.all })
+
   // Handle stream created
   const handleStreamCreated = (payload: StreamPayload) => {
     let shouldJoinStreamRoom = false

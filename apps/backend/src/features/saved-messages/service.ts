@@ -299,15 +299,18 @@ export class SavedMessagesService {
 
 /**
  * Enqueue a reminder fire job inside the current transaction and update the
- * saved row's `reminder_queue_message_id` pointer. The queue insert is
- * idempotent on message id collisions (which should not happen here since we
- * mint a fresh `remq_<ulid>` each time).
+ * saved row's `reminder_queue_message_id` pointer. On the (cryptographically
+ * rare) ULID collision, re-mint and retry a handful of times — the previous
+ * "swallow and continue" branch was unsafe because it left the saved row
+ * pointing at a queue row that belonged to a *different* job, so a later
+ * tombstone would cancel the wrong work.
  */
+const MAX_QUEUE_ID_RETRIES = 5
+
 async function enqueueReminder(
   client: import("pg").PoolClient,
   params: { saved: SavedMessage; remindAt: Date }
 ): Promise<SavedMessage> {
-  const queueMessageId = reminderQueueId()
   const now = new Date()
   const payload: SavedReminderFireJobData = {
     workspaceId: params.saved.workspaceId,
@@ -315,21 +318,26 @@ async function enqueueReminder(
     savedMessageId: params.saved.id,
   }
 
-  try {
-    await QueueRepository.insert(client, {
-      id: queueMessageId,
-      queueName: JobQueues.SAVED_REMINDER_FIRE,
-      workspaceId: params.saved.workspaceId,
-      payload,
-      processAfter: params.remindAt,
-      insertedAt: now,
-    })
-  } catch (err) {
-    if (isUniqueViolation(err, "queue_messages_pkey")) {
-      // Ultra-rare ULID collision — log and keep going with the existing row.
-      logger.warn({ queueMessageId }, "Saved reminder queue id collision")
-    } else {
-      throw err
+  let queueMessageId = reminderQueueId()
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await QueueRepository.insert(client, {
+        id: queueMessageId,
+        queueName: JobQueues.SAVED_REMINDER_FIRE,
+        workspaceId: params.saved.workspaceId,
+        payload,
+        processAfter: params.remindAt,
+        insertedAt: now,
+      })
+      break
+    } catch (err) {
+      if (!isUniqueViolation(err, "queue_messages_pkey")) throw err
+      if (attempt >= MAX_QUEUE_ID_RETRIES) {
+        logger.error({ attempt, queueMessageId }, "Gave up after repeated reminder queue id collisions")
+        throw err
+      }
+      logger.warn({ attempt, queueMessageId }, "Saved reminder queue id collision; retrying")
+      queueMessageId = reminderQueueId()
     }
   }
 
