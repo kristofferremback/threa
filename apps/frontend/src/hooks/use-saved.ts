@@ -71,16 +71,38 @@ export async function removeSavedRow(savedId: string): Promise<void> {
 }
 
 /**
- * Replace the current cached set for a (workspace, status) page with the
- * server's authoritative page. Rows not in the new page but still in IDB are
- * left alone — they may belong to other statuses or older pages.
+ * Reconcile the cached set for a (workspace, status) page with the server's
+ * authoritative page: rows that are in IDB for this (workspace, status) but
+ * missing from the response — and weren't written locally after the fetch
+ * started — are deleted. Mirrors the stream-sync pattern (workspace-sync.ts)
+ * so entries that were removed while we were offline (or that drifted between
+ * staging deploys) don't linger in the Saved view forever.
+ *
+ * `fetchStartedAt` is the Date.now() taken immediately before the network
+ * call. Rows with `_cachedAt >= fetchStartedAt` are assumed to be from
+ * concurrent socket writes and left intact.
  */
 export async function replaceSavedPage(
-  _workspaceId: string,
-  _status: SavedStatus,
-  rows: SavedMessageView[]
+  workspaceId: string,
+  status: SavedStatus,
+  rows: SavedMessageView[],
+  fetchStartedAt: number
 ): Promise<void> {
-  await db.savedMessages.bulkPut(rows.map(toCached))
+  const indexKey = status === "saved" ? "[workspaceId+status+_savedAtMs]" : "[workspaceId+status+_statusChangedAtMs]"
+  const existing = await db.savedMessages
+    .where(indexKey)
+    .between([workspaceId, status, -Infinity], [workspaceId, status, Infinity], true, true)
+    .toArray()
+
+  const serverIds = new Set(rows.map((row) => row.id))
+  const toDelete = existing
+    .filter((row) => !serverIds.has(row.id) && row._cachedAt < fetchStartedAt)
+    .map((row) => row.id)
+
+  await db.transaction("rw", db.savedMessages, async () => {
+    if (toDelete.length > 0) await db.savedMessages.bulkDelete(toDelete)
+    if (rows.length > 0) await db.savedMessages.bulkPut(rows.map(toCached))
+  })
 }
 
 /**
@@ -97,8 +119,11 @@ export function useSavedList(workspaceId: string, status: SavedStatus) {
   const serverQuery = useQuery({
     queryKey: savedKeys.list(workspaceId, status),
     queryFn: async () => {
+      // Capture before the await so concurrent socket writes land after
+      // fetchStartedAt and survive reconciliation.
+      const fetchStartedAt = Date.now()
       const res = await savedService.list(workspaceId, { status, limit: 50 })
-      await replaceSavedPage(workspaceId, status, res.saved)
+      await replaceSavedPage(workspaceId, status, res.saved, fetchStartedAt)
       return res
     },
     // Re-run on mount after invalidation (reconnect hook in workspace-sync
