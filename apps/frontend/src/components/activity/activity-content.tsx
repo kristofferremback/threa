@@ -6,7 +6,7 @@ const ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
   mention: { verb: "mentioned you in" },
   message: { verb: "posted in" },
   reaction: { verb: "reacted to a message in" },
-  saved_reminder: { verb: "has a reminder for a message in" },
+  saved_reminder: { verb: "Reminder for message in" },
 }
 
 const SELF_ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
@@ -14,8 +14,11 @@ const SELF_ACTIVITY_DISPLAY: Record<string, { verb: string }> = {
   mention: { verb: "You mentioned someone in" },
   message: { verb: "You posted in" },
   reaction: { verb: "You reacted to a message in" },
-  saved_reminder: { verb: "has a reminder for a message in" },
+  saved_reminder: { verb: "Reminder for message in" },
 }
+
+/** Activity types that suppress the actor prefix — the verb stands on its own. */
+const ACTOR_LESS_TYPES = new Set(["saved_reminder"])
 
 interface ActivityPreviewProps {
   contentPreview: string
@@ -64,10 +67,12 @@ export function ActivityContent({
 
   const showEmoji = activityType === "reaction" && emoji
 
+  const showActor = !isSelf && !ACTOR_LESS_TYPES.has(activityType)
+
   return (
     <div className="flex-1 min-w-0">
       <div className="flex items-baseline gap-1.5 text-sm">
-        {!isSelf && <span className={cn("font-medium", isUnread && "font-semibold")}>{actorName}</span>}
+        {showActor && <span className={cn("font-medium", isUnread && "font-semibold")}>{actorName}</span>}
         <span className="text-muted-foreground">{display.verb}</span>
         <span className="font-medium truncate">{streamName}</span>
         {showEmoji && <span className="shrink-0">{emoji}</span>}

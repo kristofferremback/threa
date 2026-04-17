@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom"
+import { Bell } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { PersonaAvatar } from "@/components/persona-avatar"
@@ -45,6 +46,7 @@ export function ActivityItem({
   const isPersona = actorType === "persona"
   const isBot = actorType === "bot"
   const isSystem = actorType === "system"
+  const isReminder = activity.activityType === "saved_reminder"
 
   return (
     <Link
@@ -60,23 +62,7 @@ export function ActivityItem({
       )}
     >
       <UnreadDot isUnread={isUnread} />
-      {isPersona ? (
-        <PersonaAvatar slug={actorAvatar.slug} fallback={actorAvatar.fallback} size="sm" />
-      ) : (
-        <Avatar className="h-7 w-7 rounded-[8px] shrink-0">
-          {actorAvatar.avatarUrl && <AvatarImage src={actorAvatar.avatarUrl} alt={actorName} />}
-          <AvatarFallback
-            className={cn(
-              "text-xs text-foreground",
-              isSystem && "bg-blue-500/10 text-blue-500",
-              isBot && "bg-emerald-500/10 text-emerald-600",
-              !isSystem && !isBot && "bg-muted"
-            )}
-          >
-            {actorAvatar.fallback}
-          </AvatarFallback>
-        </Avatar>
-      )}
+      {renderAvatar({ isReminder, isPersona, isSystem, isBot, actorAvatar, actorName })}
       <ActivityContent
         actorName={actorName}
         streamName={streamName}
@@ -89,5 +75,43 @@ export function ActivityItem({
         isSelf={isSelf}
       />
     </Link>
+  )
+}
+
+function renderAvatar(params: {
+  isReminder: boolean
+  isPersona: boolean
+  isSystem: boolean
+  isBot: boolean
+  actorAvatar: ActivityItemAvatar
+  actorName: string
+}) {
+  const { isReminder, isPersona, isSystem, isBot, actorAvatar, actorName } = params
+  // Saved-reminder rows don't have a meaningful actor — render a Bell glyph
+  // instead of "T for Threa" so the avatar matches the verb ("Reminder for…").
+  if (isReminder) {
+    return (
+      <div className="h-7 w-7 shrink-0 rounded-[8px] bg-amber-500/10 text-amber-500 flex items-center justify-center">
+        <Bell className="h-4 w-4" />
+      </div>
+    )
+  }
+  if (isPersona) {
+    return <PersonaAvatar slug={actorAvatar.slug} fallback={actorAvatar.fallback} size="sm" />
+  }
+  return (
+    <Avatar className="h-7 w-7 rounded-[8px] shrink-0">
+      {actorAvatar.avatarUrl && <AvatarImage src={actorAvatar.avatarUrl} alt={actorName} />}
+      <AvatarFallback
+        className={cn(
+          "text-xs text-foreground",
+          isSystem && "bg-blue-500/10 text-blue-500",
+          isBot && "bg-emerald-500/10 text-emerald-600",
+          !isSystem && !isBot && "bg-muted"
+        )}
+      >
+        {actorAvatar.fallback}
+      </AvatarFallback>
+    </Avatar>
   )
 }

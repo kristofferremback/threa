@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Archive, Bell, Check, CircleAlert, Trash2, Undo2 } from "lucide-react"
 import type { SavedMessageView, SavedStatus } from "@threa/types"
@@ -5,8 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { RelativeTime } from "@/components/relative-time"
 import { ReminderPopoverContent } from "@/components/timeline/reminder-popover-content"
+import { ReminderPickerSheet } from "@/components/timeline/reminder-picker-sheet"
 import { ReminderBadge } from "./reminder-badge"
 
 interface SavedItemProps {
@@ -102,6 +105,8 @@ interface SavedRowActionsProps {
  */
 function SavedRowActions({ workspaceId, saved, onMarkDone, onArchive, onRestore, onDelete }: SavedRowActionsProps) {
   const status = saved.status as SavedStatus
+  const isMobile = useIsMobile()
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   return (
     <div
@@ -114,18 +119,41 @@ function SavedRowActions({ workspaceId, saved, onMarkDone, onArchive, onRestore,
         "has-[[data-state=open]]:opacity-100"
       )}
     >
-      {status === "saved" && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button size="icon" variant="ghost" className="h-7 w-7" title="Set reminder">
+      {status === "saved" &&
+        // Mobile gets the same bottom-sheet picker as the message-level "Set
+        // reminder" flow; desktop keeps the hover/click popover. Either way
+        // the underlying mutation hooks and presets are shared.
+        (isMobile ? (
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              title="Set reminder"
+              onClick={() => setSheetOpen(true)}
+            >
               <Bell className="h-3.5 w-3.5" />
             </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-72 p-0">
-            <ReminderPopoverContent workspaceId={workspaceId} messageId={saved.messageId} saved={saved} />
-          </PopoverContent>
-        </Popover>
-      )}
+            <ReminderPickerSheet
+              open={sheetOpen}
+              onOpenChange={setSheetOpen}
+              workspaceId={workspaceId}
+              messageId={saved.messageId}
+              saved={saved}
+            />
+          </>
+        ) : (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-7 w-7" title="Set reminder">
+                <Bell className="h-3.5 w-3.5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 p-0">
+              <ReminderPopoverContent workspaceId={workspaceId} messageId={saved.messageId} saved={saved} />
+            </PopoverContent>
+          </Popover>
+        ))}
       {status === "saved" && onMarkDone && (
         <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onMarkDone} title="Mark done">
           <Check className="h-3.5 w-3.5" />
