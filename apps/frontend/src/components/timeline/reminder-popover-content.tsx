@@ -26,6 +26,18 @@ export function ReminderPopoverContent({ workspaceId, messageId, saved }: Remind
   const [customOpen, setCustomOpen] = useState(false)
   const [customDateTime, setCustomDateTime] = useState("")
 
+  const openCustom = () => {
+    if (customOpen) {
+      setCustomOpen(false)
+      return
+    }
+    // Seed with the existing reminder when present, otherwise now + 15 minutes
+    // — matches the mobile sheet so both entry points feel identical.
+    const baseline = saved?.remindAt ? new Date(saved.remindAt) : new Date(Date.now() + 15 * 60_000)
+    setCustomDateTime(toDateTimeLocal(baseline))
+    setCustomOpen(true)
+  }
+
   const setReminder = (date: Date | null) => {
     if (!saved) {
       saveMutation.mutate(
@@ -105,7 +117,7 @@ export function ReminderPopoverContent({ workspaceId, messageId, saved }: Remind
             {preset.label}
           </PopoverMenuButton>
         ))}
-        <PopoverMenuButton onClick={() => setCustomOpen((o) => !o)}>
+        <PopoverMenuButton onClick={openCustom}>
           <Bell className="h-3.5 w-3.5" />
           Pick a time…
         </PopoverMenuButton>
@@ -161,6 +173,12 @@ export function ReminderPopoverContent({ workspaceId, messageId, saved }: Remind
       )}
     </div>
   )
+}
+
+/** Format a Date as `YYYY-MM-DDTHH:mm` in local time — the shape `<input type="datetime-local">` expects. */
+function toDateTimeLocal(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 interface PopoverMenuButtonProps {
