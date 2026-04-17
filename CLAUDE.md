@@ -19,6 +19,22 @@ When rules compete, use this precedence order:
 
 Default implementation mode for routine tasks: **minimal patch**. Do not refactor, rename, or generalize unless it is required to satisfy a higher-priority rule above.
 
+## Working Style
+
+Read this before asking the user anything.
+
+**Search before you ask.** If a question has a factual answer in the repo ("is there a sync path from control-plane to backend?", "which model does persona X use?", "how does auth flow through the workspace-router?"), it is your job to find it. Use Grep, Glob, and the Agent tool. Start from `docs/system-overview.md`, `docs/architecture.md`, `docs/core-concepts.md`, then `apps/*/src/` and the relevant feature folder under `apps/backend/src/features/`. Escalate to the user only when (a) the search genuinely came back empty, (b) the decision is a preference the code cannot reveal, or (c) the action is destructive or irreversible.
+
+**Prove you looked.** When you do ask, name what you already searched — file paths, grep patterns, docs read — so the user can redirect you instead of repeating the search. An unjustified clarifying question is worse than silence.
+
+**Follow instructions verbatim.** When CLAUDE.md, a skill, or the user says "always use X", "never do Y", or "use the /foo skill for Z", that is a binding constraint, not a suggestion. Re-read the relevant rule before acting in its domain — especially invariants (INV-*), the Greptile rule, and skill invocation rules.
+
+**Read before editing.** Before changing a module, read it and its neighbors. Backend features colocate (INV-51) — handler, service, repo, worker, config, tests all sit in the same folder, so the answer is usually one directory away.
+
+**Understand intent, don't pattern-match.** Two similar lines aren't a pattern; the invariant is. INV-20 is not "sprinkle `ON CONFLICT`", it is "write paths tolerate concurrent callers". Apply the rule that fits the situation, not the shape that looks familiar.
+
+**Worked example — the failure mode this replaces.** User asks: "Is there a sync path from control-plane to backend?" Wrong response: ask the user to confirm. Right response: grep `control-plane`, open `docs/system-overview.md`, discover the `provisionRegional` outbox event calling `POST /internal/workspaces` on the regional backend (lines 218-219, 274), answer with the citation. Do this every time before reaching for a clarifying question.
+
 ## Runtime and Build
 
 Default to Bun instead of Node.js:
