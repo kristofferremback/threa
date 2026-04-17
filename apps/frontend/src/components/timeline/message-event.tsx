@@ -36,6 +36,7 @@ import { LinkPreviewList } from "./link-preview-list"
 import { LinkPreviewProvider, useLinkPreviewContext } from "@/lib/markdown/link-preview-context"
 import { MessageContextMenu } from "./message-context-menu"
 import { SaveMessageButton } from "./save-message-button"
+import { ReminderPickerSheet } from "./reminder-picker-sheet"
 import { useSavedForMessage, useSaveMessage, useDeleteSaved } from "@/hooks/use-saved"
 import { MessageActionDrawer } from "./message-action-drawer"
 import { ThreadIndicator } from "./thread-indicator"
@@ -505,6 +506,7 @@ function SentMessageEvent({
   const saveMessageMutation = useSaveMessage(workspaceId)
   const unsaveMessageMutation = useDeleteSaved(workspaceId)
   const isSaved = !!savedForMessage && savedForMessage.status === "saved"
+  const [reminderSheetOpen, setReminderSheetOpen] = useState(false)
 
   const handleToggleSave = useCallback(() => {
     if (!savedForMessage) {
@@ -517,6 +519,8 @@ function SentMessageEvent({
     }
     unsaveMessageMutation.mutate(savedForMessage.id)
   }, [savedForMessage, saveMessageMutation, unsaveMessageMutation, payload.messageId])
+
+  const handleRequestReminder = useCallback(() => setReminderSheetOpen(true), [])
 
   // Shared action context for both desktop dropdown and mobile drawer
   const actionContext = useMemo(
@@ -547,6 +551,7 @@ function SentMessageEvent({
       reactions: payload.reactions,
       isSaved,
       onToggleSave: handleToggleSave,
+      onRequestReminder: handleRequestReminder,
       onQuoteReply: quoteReplyCtx
         ? () =>
             quoteReplyCtx.triggerQuoteReply({
@@ -594,6 +599,7 @@ function SentMessageEvent({
       actorName,
       isSaved,
       handleToggleSave,
+      handleRequestReminder,
     ]
   )
 
@@ -761,6 +767,15 @@ function SentMessageEvent({
           activeShortcodes={activeReactionShortcodes}
           open={mobilePickerOpen}
           onOpenChange={setMobilePickerOpen}
+        />
+      )}
+      {reminderSheetOpen && (
+        <ReminderPickerSheet
+          open={reminderSheetOpen}
+          onOpenChange={setReminderSheetOpen}
+          workspaceId={workspaceId}
+          messageId={payload.messageId}
+          saved={savedForMessage ?? null}
         />
       )}
     </>

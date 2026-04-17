@@ -11,6 +11,7 @@ import {
   History,
   Link2,
   Bookmark,
+  Bell,
 } from "lucide-react"
 import { toast } from "sonner"
 import { stripMarkdown } from "@/lib/markdown"
@@ -59,6 +60,8 @@ export interface MessageActionContext {
   onQuoteReplyWithSnippet?: (snippet: string) => void
   /** Callback to save or unsave the message */
   onToggleSave?: () => void
+  /** Callback to open the reminder picker (mobile: bottom sheet) */
+  onRequestReminder?: () => void
   /** Whether the message is currently saved by the viewer */
   isSaved?: boolean
 }
@@ -128,6 +131,16 @@ export const messageActions: MessageAction[] = [
     icon: Bookmark,
     when: (ctx) => !!ctx.onToggleSave,
     action: (ctx) => ctx.onToggleSave?.(),
+  },
+  {
+    id: "set-reminder",
+    // Mobile hover can't show the desktop popover, so mobile users get a
+    // dedicated drawer entry that opens a bottom sheet with presets + a
+    // custom-time dialog.
+    label: "Set reminder…",
+    icon: Bell,
+    when: (ctx) => !!ctx.onRequestReminder,
+    action: (ctx) => ctx.onRequestReminder?.(),
   },
   {
     id: "edit-message",
