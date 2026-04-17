@@ -15,7 +15,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { MentionableMarkdownWrapper, type MentionableMarkdownWrapperProps } from "@/components/ui/markdown-content"
 import type { MentionType } from "@/lib/markdown/mention-context"
 import { UserProfileProvider, useUserProfile } from "@/components/user-profile"
-import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
+import { WorkspaceEmojiProvider, WorkspaceCommandListProvider } from "@/components/workspace-emoji"
 import { ChannelLinkProvider } from "@/lib/markdown/channel-link-context"
 import {
   SocketProvider,
@@ -329,44 +329,46 @@ export function WorkspaceLayout() {
             <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
               <UserProfileProvider>
                 <MentionableWrapper mentionables={mentionables}>
-                  <WorkspaceEmojiProvider workspaceId={workspaceId}>
-                    <PreferencesProvider workspaceId={workspaceId}>
-                      <SettingsProvider>
-                        <WorkspaceKeyboardHandler onOpenSwitcher={openSwitcher}>
-                          <QuickSwitcherProvider openSwitcher={openSwitcher}>
-                            <PanelProvider>
-                              <MediaGalleryProvider>
-                                <TraceProvider>
-                                  <SidebarProvider>
-                                    <SidebarKeyboardHandler />
-                                    <CoordinatedLoadingGate>
-                                      <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                                        <MainContentGate>
-                                          <Outlet />
-                                        </MainContentGate>
-                                      </AppShell>
-                                    </CoordinatedLoadingGate>
-                                  </SidebarProvider>
-                                  <QuickSwitcher
-                                    workspaceId={workspaceId}
-                                    open={switcherOpen}
-                                    onOpenChange={setSwitcherOpen}
-                                    initialMode={switcherMode}
-                                  />
-                                  <SettingsDialog />
-                                  <WorkspaceSettingsDialog workspaceId={workspaceId} />
-                                  <StreamSettingsDialog workspaceId={workspaceId} />
-                                  <CreateChannelDialog workspaceId={workspaceId} />
-                                  <TraceDialogContainer />
-                                  <Toaster />
-                                </TraceProvider>
-                              </MediaGalleryProvider>
-                            </PanelProvider>
-                          </QuickSwitcherProvider>
-                        </WorkspaceKeyboardHandler>
-                      </SettingsProvider>
-                    </PreferencesProvider>
-                  </WorkspaceEmojiProvider>
+                  <WorkspaceCommandListProvider workspaceId={workspaceId}>
+                    <WorkspaceEmojiProvider workspaceId={workspaceId}>
+                      <PreferencesProvider workspaceId={workspaceId}>
+                        <SettingsProvider>
+                          <WorkspaceKeyboardHandler onOpenSwitcher={openSwitcher}>
+                            <QuickSwitcherProvider openSwitcher={openSwitcher}>
+                              <PanelProvider>
+                                <MediaGalleryProvider>
+                                  <TraceProvider>
+                                    <SidebarProvider>
+                                      <SidebarKeyboardHandler />
+                                      <CoordinatedLoadingGate>
+                                        <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                                          <MainContentGate>
+                                            <Outlet />
+                                          </MainContentGate>
+                                        </AppShell>
+                                      </CoordinatedLoadingGate>
+                                    </SidebarProvider>
+                                    <QuickSwitcher
+                                      workspaceId={workspaceId}
+                                      open={switcherOpen}
+                                      onOpenChange={setSwitcherOpen}
+                                      initialMode={switcherMode}
+                                    />
+                                    <SettingsDialog />
+                                    <WorkspaceSettingsDialog workspaceId={workspaceId} />
+                                    <StreamSettingsDialog workspaceId={workspaceId} />
+                                    <CreateChannelDialog workspaceId={workspaceId} />
+                                    <TraceDialogContainer />
+                                    <Toaster />
+                                  </TraceProvider>
+                                </MediaGalleryProvider>
+                              </PanelProvider>
+                            </QuickSwitcherProvider>
+                          </WorkspaceKeyboardHandler>
+                        </SettingsProvider>
+                      </PreferencesProvider>
+                    </WorkspaceEmojiProvider>
+                  </WorkspaceCommandListProvider>
                 </MentionableWrapper>
               </UserProfileProvider>
             </ChannelLinkProvider>

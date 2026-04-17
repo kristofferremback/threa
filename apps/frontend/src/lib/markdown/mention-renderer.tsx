@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 import { useMentionType, useMentionClick } from "./mention-context"
 import { useChannelUrl } from "./channel-link-context"
 import { useEmojiLookup } from "./emoji-context"
+import { useIsKnownCommand } from "./command-list-context"
 import { MENTION_PATTERN, isValidSlug } from "@threa/types"
 
 /**
@@ -104,19 +105,29 @@ const CHANNEL_PATTERN = /(?<![a-z0-9])#([a-z][a-z0-9-]*[a-z0-9]|[a-z])(?![a-z0-9
 const EMOJI_PATTERN = /:([a-z0-9_+-]+):/g
 
 type ToEmoji = (shortcode: string) => string | null
+type IsKnownCommand = (name: string) => boolean
 
 /**
  * Parse text and render triggers as styled chips, emojis as characters.
  * Returns an array of React nodes.
+ *
+ * A leading "/word" is only rendered as a command chip when `isKnownCommand`
+ * returns true for the name. Defaults to rejecting all, so plain text like
+ * "/s" stays as text unless a CommandListProvider is mounted.
  */
-export function renderMentions(text: string, toEmoji: ToEmoji): ReactNode[] {
+export function renderMentions(
+  text: string,
+  toEmoji: ToEmoji,
+  isKnownCommand: IsKnownCommand = () => false
+): ReactNode[] {
   const result: ReactNode[] = []
   let processText = text
   let keyIndex = 0
 
-  // Check for command at start of text (allowing leading whitespace)
+  // Check for command at start of text (allowing leading whitespace).
+  // Only treat as a command when the name matches a real registered command.
   const commandMatch = processText.match(COMMAND_PATTERN)
-  if (commandMatch) {
+  if (commandMatch && isKnownCommand(commandMatch[3])) {
     // Preserve any leading whitespace
     if (commandMatch[1]) {
       result.push(commandMatch[1])
@@ -199,21 +210,28 @@ export function renderMentions(text: string, toEmoji: ToEmoji): ReactNode[] {
  */
 export function ProcessedChildren({ children }: { children: ReactNode }): ReactNode {
   const toEmoji = useEmojiLookup()
-  return processChildrenForMentions(children, toEmoji)
+  const isKnownCommand = useIsKnownCommand()
+  return processChildrenForMentions(children, toEmoji, isKnownCommand)
 }
 
 /**
  * Process React children and render mentions/emojis in text nodes.
  * Preserves non-text children (like <strong>, <em>, etc).
  */
-export function processChildrenForMentions(children: ReactNode, toEmoji: ToEmoji): ReactNode {
+export function processChildrenForMentions(
+  children: ReactNode,
+  toEmoji: ToEmoji,
+  isKnownCommand: IsKnownCommand = () => false
+): ReactNode {
   if (typeof children === "string") {
-    const rendered = renderMentions(children, toEmoji)
+    const rendered = renderMentions(children, toEmoji, isKnownCommand)
     return rendered.length === 1 && typeof rendered[0] === "string" ? rendered[0] : <>{rendered}</>
   }
 
   if (Array.isArray(children)) {
-    return children.map((child, index) => <span key={index}>{processChildrenForMentions(child, toEmoji)}</span>)
+    return children.map((child, index) => (
+      <span key={index}>{processChildrenForMentions(child, toEmoji, isKnownCommand)}</span>
+    ))
   }
 
   return children
