@@ -8,9 +8,15 @@ import type { RegionalClient } from "../../lib/regional-client"
  * backfills regional `platform_admins`; on subsequent boots it resurrects rows
  * in regions that were down when a grant happened.
  *
- * Grant-only: revocations are not fanned out here because control-plane has
- * no historical record of where a now-non-admin user used to be known. When
- * revoke fan-out lands, it must push `false` to every region the user is in.
+ * Grant-only — does NOT push revocations. Today the only way to mutate
+ * `platform_roles` is manual SQL (there's no revoke UI/API), so the drift
+ * window is narrow in practice. When a revoke code path is added, it should
+ * push `isPlatformAdmin=false` to every region the user currently has
+ * membership in (same `workspace_memberships` + `workspace_registry` join as
+ * grant). A user who has also been removed from every workspace leaves a
+ * dead regional row behind, but they can no longer reach the frontend so it
+ * won't surface — still worth a follow-up cleanup pass when the revoke API
+ * lands.
  *
  * Per-region pushes run concurrently; individual failures are logged, next
  * boot retries. Meant to be invoked after `server.listen` so a slow region
