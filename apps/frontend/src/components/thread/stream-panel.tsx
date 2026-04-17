@@ -33,7 +33,7 @@ import {
 } from "@/components/timeline"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
-import { MessageComposer } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer } from "@/components/composer"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
 import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
@@ -399,36 +399,31 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                 </Empty>
               )}
             </div>
-            <div
-              ref={draftComposerRef}
-              className={draftExpanded ? "hidden" : "pointer-events-none absolute inset-x-0 bottom-0 z-20"}
-            >
-              <div className="pointer-events-auto pt-3 px-3 pb-3 sm:pt-6 sm:px-6 sm:pb-4 mx-auto max-w-[800px] w-full min-w-0">
-                {!draftExpanded && (
-                  <MessageComposer
-                    content={composer.content}
-                    onContentChange={composer.handleContentChange}
-                    pendingAttachments={composer.pendingAttachments}
-                    onRemoveAttachment={composer.handleRemoveAttachment}
-                    fileInputRef={composer.fileInputRef}
-                    onFileSelect={composer.handleFileSelect}
-                    onFileUpload={composer.uploadFile}
-                    imageCount={composer.imageCount}
-                    onSubmit={handleSubmit}
-                    canSubmit={composer.canSend}
-                    isSubmitting={composer.isSending}
-                    hasFailed={composer.hasFailed}
-                    submitLabel="Reply"
-                    submittingLabel="Creating..."
-                    placeholder="Write your reply..."
-                    autoFocus={!isMobile}
-                    scopeId={panelId}
-                    onExpandClick={handleDraftExpand}
-                    streamContext={draftStreamContext}
-                  />
-                )}
-              </div>
-            </div>
+            <FloatingComposerShell ref={draftComposerRef} hidden={draftExpanded}>
+              {!draftExpanded && (
+                <MessageComposer
+                  content={composer.content}
+                  onContentChange={composer.handleContentChange}
+                  pendingAttachments={composer.pendingAttachments}
+                  onRemoveAttachment={composer.handleRemoveAttachment}
+                  fileInputRef={composer.fileInputRef}
+                  onFileSelect={composer.handleFileSelect}
+                  onFileUpload={composer.uploadFile}
+                  imageCount={composer.imageCount}
+                  onSubmit={handleSubmit}
+                  canSubmit={composer.canSend}
+                  isSubmitting={composer.isSending}
+                  hasFailed={composer.hasFailed}
+                  submitLabel="Reply"
+                  submittingLabel="Creating..."
+                  placeholder="Write your reply..."
+                  autoFocus={!isMobile}
+                  scopeId={panelId}
+                  onExpandClick={handleDraftExpand}
+                  streamContext={draftStreamContext}
+                />
+              )}
+            </FloatingComposerShell>
           </>
         ) : (
           // Regular stream UI
