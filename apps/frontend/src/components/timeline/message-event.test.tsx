@@ -93,6 +93,16 @@ vi.mock("@/contexts", async (importOriginal) => {
   }
 })
 
+// MessageEvent calls useSaveMessage/useDeleteSaved which reach into the
+// SavedService context. Stub the hooks directly so the tests don't need a
+// ServicesProvider — saved-message UI behaviour is covered elsewhere.
+vi.mock("@/hooks/use-saved", () => ({
+  useSavedForMessage: () => null,
+  useSaveMessage: () => ({ mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue(undefined) }),
+  useUpdateSaved: () => ({ mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue(undefined) }),
+  useDeleteSaved: () => ({ mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue(undefined) }),
+}))
+
 vi.mock("@/auth", () => ({
   useUser: () => ({ id: "workos_user_123" }),
 }))
