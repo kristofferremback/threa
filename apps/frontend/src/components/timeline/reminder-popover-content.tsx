@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Bell, BellOff, Archive, Check, Clock, Trash2, Undo2 } from "lucide-react"
 import { toast } from "sonner"
 import type { SavedMessageView, SavedStatus } from "@threa/types"
@@ -25,6 +25,10 @@ export function ReminderPopoverContent({ workspaceId, messageId, saved }: Remind
   const deleteMutation = useDeleteSaved(workspaceId)
   const [customOpen, setCustomOpen] = useState(false)
   const [customDateTime, setCustomDateTime] = useState("")
+  // Grey out past times in the native picker. Computed once per open so the
+  // boundary doesn't jitter as the minute rolls over mid-interaction; the
+  // server-side clamp catches the seconds-granularity edge case anyway.
+  const minDateTime = useMemo(() => (customOpen ? toDateTimeLocal(new Date()) : ""), [customOpen])
 
   const openCustom = () => {
     if (customOpen) {
@@ -126,10 +130,16 @@ export function ReminderPopoverContent({ workspaceId, messageId, saved }: Remind
             <input
               type="datetime-local"
               value={customDateTime}
+              min={minDateTime}
               onChange={(e) => setCustomDateTime(e.target.value)}
               className="flex-1 text-xs rounded border bg-background px-1.5 py-1"
             />
-            <Button size="sm" className="h-7 text-xs" onClick={handleCustom}>
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleCustom}
+              disabled={!customDateTime || saveMutation.isPending || updateMutation.isPending}
+            >
               Set
             </Button>
           </div>

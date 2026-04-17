@@ -510,15 +510,34 @@ function SentMessageEvent({
   const [reminderSheetOpen, setReminderSheetOpen] = useState(false)
 
   const handleToggleSave = useCallback(() => {
+    // Mirror the desktop hover-button: swallow double-taps while a mutation is
+    // in flight and surface a toast on every outcome so the mobile drawer
+    // gives the same feedback as the desktop bookmark button.
+    if (saveMessageMutation.isPending || unsaveMessageMutation.isPending) return
     if (!savedForMessage) {
-      saveMessageMutation.mutate({ messageId: payload.messageId })
+      saveMessageMutation.mutate(
+        { messageId: payload.messageId },
+        {
+          onSuccess: () => toast.success("Saved for later"),
+          onError: () => toast.error("Could not save message"),
+        }
+      )
       return
     }
     if (savedForMessage.status !== "saved") {
-      saveMessageMutation.mutate({ messageId: payload.messageId })
+      saveMessageMutation.mutate(
+        { messageId: payload.messageId },
+        {
+          onSuccess: () => toast.success("Moved back to Saved"),
+          onError: () => toast.error("Could not restore saved item"),
+        }
+      )
       return
     }
-    unsaveMessageMutation.mutate(savedForMessage.id)
+    unsaveMessageMutation.mutate(savedForMessage.id, {
+      onSuccess: () => toast.success("Removed from saved"),
+      onError: () => toast.error("Could not remove saved item"),
+    })
   }, [savedForMessage, saveMessageMutation, unsaveMessageMutation, payload.messageId])
 
   const handleRequestReminder = useCallback(() => setReminderSheetOpen(true), [])
