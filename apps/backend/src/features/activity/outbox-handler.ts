@@ -194,6 +194,7 @@ export class ActivityFeedHandler implements OutboxHandler {
       !payload ||
       typeof payload.workspaceId !== "string" ||
       typeof payload.targetUserId !== "string" ||
+      typeof payload.savedId !== "string" ||
       typeof payload.messageId !== "string" ||
       typeof payload.streamId !== "string"
     ) {
@@ -208,6 +209,7 @@ export class ActivityFeedHandler implements OutboxHandler {
     return this.activityService.processSavedReminderFired({
       workspaceId: payload.workspaceId,
       userId: payload.targetUserId,
+      savedId: payload.savedId,
       streamId: payload.streamId,
       messageId: payload.messageId,
       contentPreview,

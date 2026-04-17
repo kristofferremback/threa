@@ -199,16 +199,20 @@ export function useDeleteSaved(workspaceId: string) {
 export type { SavedMessageListResponse }
 
 /**
- * Live count of saved items (not done/archived) for the sidebar badge.
- * Uses the same compound index as the list query for efficient count.
+ * Live count of saved items with a fired-but-unacknowledged reminder. Used by
+ * the sidebar badge — having saved things isn't itself noisy, but a fired
+ * reminder is the signal worth surfacing. Filtered in-memory since Dexie
+ * can't index on "reminderSentAt is not null"; the index still narrows to
+ * (workspace, status="saved") so we only scan a small page.
  */
 export function useLiveSavedCount(workspaceId: string): number {
   const count = useLiveQuery(async () => {
     if (!workspaceId) return 0
-    return db.savedMessages
+    const rows = await db.savedMessages
       .where("[workspaceId+status+_savedAtMs]")
       .between([workspaceId, "saved", -Infinity], [workspaceId, "saved", Infinity], true, true)
-      .count()
+      .toArray()
+    return rows.filter((row) => row.reminderSentAt !== null).length
   }, [workspaceId])
   return count ?? 0
 }

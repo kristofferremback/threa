@@ -363,12 +363,19 @@ export class ActivityService {
   /**
    * Create an activity row when a saved-message reminder fires. The payload
    * already carries a resolved `SavedMessageView` so we can build the context
-   * without additional DB lookups. actor is "system" — matches push semantics
-   * and keeps the (user, message, type, actor) dedup stable.
+   * without additional DB lookups.
+   *
+   * `actorId` is the saved row's ULID (not a user id) to sidestep the
+   * `(user_id, message_id, activity_type, actor_id)` dedup index — each
+   * save-then-remind lifecycle mints a fresh savedId, so saving, firing,
+   * dismissing, re-saving, and re-firing on the same message creates a new
+   * activity row instead of silently upserting the stale one. The semantic
+   * actor is still "system" (we hide the name in the UI for saved_reminder).
    */
   async processSavedReminderFired(params: {
     workspaceId: string
     userId: string
+    savedId: string
     streamId: string
     messageId: string
     contentPreview: string | null
@@ -384,7 +391,7 @@ export class ActivityService {
       activityType: ActivityTypes.SAVED_REMINDER,
       streamId: params.streamId,
       messageId: params.messageId,
-      actorId: "system",
+      actorId: params.savedId,
       actorType: AuthorTypes.SYSTEM,
       context,
     })

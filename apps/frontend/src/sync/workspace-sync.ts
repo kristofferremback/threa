@@ -1,4 +1,3 @@
-import { toast } from "sonner"
 import { db, type CachedStream, type CachedStreamMembership, type CachedUnreadState } from "@/db"
 import { seedWorkspaceCache } from "@/stores/workspace-store"
 import type { Socket } from "socket.io-client"
@@ -1262,23 +1261,12 @@ export function registerWorkspaceSocketHandlers(
 
   const handleSavedReminderFired = (payload: SavedReminderFiredPayload) => {
     if (payload.workspaceId !== workspaceId) return
-    // Update the cached row so the badge flips to "reminded" immediately.
+    // Update the cached row so the badge flips to "reminded" immediately. The
+    // persistent surface is the Activity feed (backend emits `activity:created`
+    // for the saved_reminder row) — we deliberately don't pop a toast here so
+    // there's one canonical notification path.
     void persistSavedRows(workspaceId, [payload.saved])
     queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "saved") })
-    // In-app toast so the user sees something even without push notifications.
-    // The backend also creates a persistent activity row (saved_reminder); this
-    // is the ephemeral surface.
-    const preview = payload.saved.message?.contentMarkdown?.slice(0, 120) ?? null
-    const streamLabel = payload.saved.message?.streamName ?? "a saved message"
-    toast.info(`Reminder: ${streamLabel}`, {
-      description: preview,
-      action: {
-        label: "Open",
-        onClick: () => {
-          window.location.assign(`/w/${workspaceId}/s/${payload.streamId}?m=${payload.messageId}`)
-        },
-      },
-    })
   }
 
   // Register all handlers
