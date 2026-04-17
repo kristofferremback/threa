@@ -568,21 +568,24 @@ describe("ActivityService.processSavedReminderFired", () => {
     expect(activities).toHaveLength(1)
     expect(insertSpy).toHaveBeenCalledTimes(1)
     const call = insertSpy.mock.calls[0][1]
-    // Dedup key for non-reaction types is (user_id, message_id, activity_type, actor_id).
-    // Using savedId as actorId gives each save-then-remind lifecycle its own row
-    // so a second fire on the same message after a re-save isn't swallowed.
-    expect(call.actorId).toBe("saved_abc")
+    // Actor is the system, not the save. The dedup index excludes
+    // saved_reminder so each fire produces a distinct row via a plain INSERT.
+    expect(call.actorId).toBe(AuthorTypes.SYSTEM)
     expect(call.actorType).toBe(AuthorTypes.SYSTEM)
     expect(call.activityType).toBe(ActivityTypes.SAVED_REMINDER)
-    expect(call.context).toEqual({ contentPreview: "Remember this", streamName: "#planning" })
+    expect(call.context).toEqual({
+      savedId: "saved_abc",
+      contentPreview: "Remember this",
+      streamName: "#planning",
+    })
   })
 
   it("mints distinct activity rows for successive saves on the same message", async () => {
     const service = setupService()
 
-    const inserted: Array<{ actorId: string }> = []
+    const inserted: Array<{ actorId: string; context: Record<string, unknown> }> = []
     spyOn(ActivityRepository, "insert").mockImplementation(async (_db, params) => {
-      inserted.push({ actorId: params.actorId })
+      inserted.push({ actorId: params.actorId, context: params.context ?? {} })
       return {
         id: `act_${inserted.length}`,
         workspaceId: params.workspaceId,
@@ -612,7 +615,13 @@ describe("ActivityService.processSavedReminderFired", () => {
     await service.processSavedReminderFired({ ...common, savedId: "saved_first" })
     await service.processSavedReminderFired({ ...common, savedId: "saved_second" })
 
-    expect(inserted.map((i) => i.actorId)).toEqual(["saved_first", "saved_second"])
+    // Actor stays "system" for both — distinctness comes from the DB-level
+    // decision to exclude saved_reminder from the dedup index, verified in
+    // the repo test. The service contract is that each call carries the
+    // originating savedId in context for back-linking.
+    expect(inserted).toHaveLength(2)
+    expect(inserted.every((i) => i.actorId === AuthorTypes.SYSTEM)).toBe(true)
+    expect(inserted.map((i) => i.context.savedId)).toEqual(["saved_first", "saved_second"])
   })
 
   it("handles null previews and stream names without crashing", async () => {
@@ -644,6 +653,10 @@ describe("ActivityService.processSavedReminderFired", () => {
       streamName: null,
     })
 
-    expect(insertSpy.mock.calls[0][1].context).toEqual({ contentPreview: "", streamName: null })
+    expect(insertSpy.mock.calls[0][1].context).toEqual({
+      savedId: "saved_null",
+      contentPreview: "",
+      streamName: null,
+    })
   })
 })

@@ -41,13 +41,7 @@ export interface InsertActivityParams {
   activityType: string
   streamId: string
   messageId: string
-  /**
-   * Usually a user/persona/bot/system id. For `saved_reminder` activities
-   * this is the saved row's ULID so the partial unique index
-   * (user_id, message_id, activity_type, actor_id) mints a fresh row per
-   * save-then-remind lifecycle instead of silently upserting. See
-   * ActivityService.processSavedReminderFired.
-   */
+  /** User/persona/bot/system id of the actor whose action produced this row. */
   actorId: string
   actorType: string
   context?: Record<string, unknown>
@@ -98,9 +92,15 @@ function mapRowToActivity(row: ActivityRow): Activity {
 
 /**
  * Pick the ON CONFLICT target for the given activity type. Reactions dedup by
- * (user, message, actor, emoji); other types dedup by (user, message, type, actor).
- * Both are partial unique indexes — the WHERE clause is required so Postgres
- * can match the conflict target to the correct index.
+ * (user, message, actor, emoji); most other types dedup by (user, message,
+ * type, actor). Both are partial unique indexes — the WHERE clause is required
+ * so Postgres can match the conflict target to the correct index.
+ *
+ * `saved_reminder` is intentionally excluded from the non-reaction dedup index
+ * (see migration 20260417200220) because the firing service is already
+ * idempotent via `reminder_sent_at IS NULL`, and each save-then-remind
+ * lifecycle should produce a distinct feed row. For that type we emit a plain
+ * INSERT with no ON CONFLICT clause.
  */
 function conflictClauseFor(activityType: string) {
   if (activityType === ActivityTypes.REACTION) {
@@ -108,8 +108,11 @@ function conflictClauseFor(activityType: string) {
       "ON CONFLICT (user_id, message_id, actor_id, emoji) WHERE activity_type = 'reaction' DO UPDATE SET id = user_activity.id"
     )
   }
+  if (activityType === ActivityTypes.SAVED_REMINDER) {
+    return sql.raw("")
+  }
   return sql.raw(
-    "ON CONFLICT (user_id, message_id, activity_type, actor_id) WHERE activity_type <> 'reaction' DO UPDATE SET id = user_activity.id"
+    "ON CONFLICT (user_id, message_id, activity_type, actor_id) WHERE activity_type NOT IN ('reaction', 'saved_reminder') DO UPDATE SET id = user_activity.id"
   )
 }
 
