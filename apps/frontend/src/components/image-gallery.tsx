@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -60,8 +60,23 @@ function GalleryVideo({ current }: { current: Extract<GalleryItem, { type: "vide
   )
 }
 
-function GalleryMediaContent({ current }: { current: GalleryItem }) {
+function GalleryMediaContent({ current, isActive = true }: { current: GalleryItem; isActive?: boolean }) {
   if (current.type === "video") {
+    // Non-active video slides show poster so the <video> element doesn't load
+    if (!isActive) {
+      return current.thumbnailUrl ? (
+        <img
+          src={current.thumbnailUrl}
+          alt={current.filename}
+          className="max-w-full max-h-full object-contain select-none"
+          draggable={false}
+        />
+      ) : (
+        <div className="h-16 w-16 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+          <Play className="h-7 w-7 text-white/60 ml-0.5" fill="currentColor" />
+        </div>
+      )
+    }
     if (!current.url)
       return (
         <div className="flex flex-col items-center gap-3">
@@ -127,20 +142,32 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
   const isMobile = useIsMobile()
   const [panelOpen, setPanelOpen] = useState(true)
   const [showArrows, setShowArrows] = useState(false)
+  // containerWidth drives both slide sizing and strip transform calculations on mobile
+  const [containerWidth, setContainerWidth] = useState(0)
 
-  // Mobile swipe state
+  // Mobile strip refs — all DOM manipulation goes through these to avoid re-render jank
+  const containerRef = useRef<HTMLDivElement>(null)
+  const stripRef = useRef<HTMLDivElement>(null)
+  const dismissWrapperRef = useRef<HTMLDivElement>(null)
+
+  // Touch gesture state (all refs — no setState during active gesture)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
+  // Strip translateX at the moment the finger touches down (handles mid-animation starts)
+  const touchStartStripX = useRef(0)
   const touchDeltaX = useRef(0)
   const touchDeltaY = useRef(0)
-  const [swipeOffset, setSwipeOffset] = useState(0)
-  const [swipeOffsetY, setSwipeOffsetY] = useState(0)
   const isSwiping = useRef(false)
   const swipeAxis = useRef<"x" | "y" | null>(null)
-  // Suppress the synthetic click after a swipe that actually committed an action
   const didSwipe = useRef(false)
+  const lastTouchX = useRef(0)
+  const lastTouchTime = useRef(0)
+  const velocityX = useRef(0) // px/ms — used for flick-to-next even on short drags
 
-  // Scroll active thumbnail into view
+  // Ref mirror of currentIndex so ResizeObserver can read it without stale closures
+  const currentIndexRef = useRef(currentIndex)
+  currentIndexRef.current = currentIndex
+
   const thumbnailRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
   // Only sync currentIndex when the gallery opens — not on every initialIndex
@@ -156,8 +183,6 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
   }, [isOpen, initialIndex])
 
   // Re-anchor currentIndex when the items array shifts underneath it.
-  // Skip the first run after open — the sync-on-open effect already set the
-  // correct index and viewedIdRef still holds the stale pre-open value.
   const viewedIdRef = useRef<string | null>(null)
   viewedIdRef.current = items[currentIndex]?.attachmentId ?? null
   useEffect(() => {
@@ -178,6 +203,38 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" })
   }, [currentIndex])
 
+  // Measure container width synchronously before first paint so slides size correctly
+  useLayoutEffect(() => {
+    if (!isOpen || !isMobile || !containerRef.current) return
+    setContainerWidth(containerRef.current.offsetWidth)
+  }, [isOpen, isMobile])
+
+  // Re-anchor the strip on resize (e.g. screen rotation)
+  useEffect(() => {
+    if (!isMobile || !containerRef.current) return
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width
+      if (w <= 0) return
+      setContainerWidth(w)
+      if (stripRef.current) {
+        stripRef.current.style.transition = "none"
+        stripRef.current.style.transform = `translateX(${-currentIndexRef.current * w}px)`
+      }
+    })
+    ro.observe(containerRef.current)
+    return () => ro.disconnect()
+  }, [isMobile])
+
+  // Position the strip at the current index whenever the gallery opens or the
+  // container dimensions first become known. currentIndex is intentionally
+  // excluded so that in-progress swipe animations aren't interrupted by state updates.
+  useLayoutEffect(() => {
+    if (!isOpen || !isMobile || containerWidth === 0 || !stripRef.current) return
+    stripRef.current.style.transition = "none"
+    stripRef.current.style.transform = `translateX(${-currentIndex * containerWidth}px)`
+    // currentIndex intentionally excluded — position only on open/resize, not on every nav
+  }, [isOpen, isMobile, containerWidth])
+
   const current = items[currentIndex] ?? null
   const hasPrev = currentIndex > 0
   const hasNext = currentIndex < items.length - 1
@@ -186,11 +243,17 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
   const goTo = useCallback(
     (index: number) => {
       if (index < 0 || index >= items.length) return
+      // On mobile, animate the strip directly before updating state so the
+      // user sees a smooth slide rather than a hard cut.
+      if (isMobile && stripRef.current && containerWidth > 0) {
+        stripRef.current.style.transition = "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)"
+        stripRef.current.style.transform = `translateX(${-index * containerWidth}px)`
+      }
       setCurrentIndex(index)
       const next = items[index]
       if (next) onItemChange?.(next.attachmentId)
     },
-    [items, onItemChange]
+    [items, onItemChange, isMobile, containerWidth]
   )
 
   const goPrev = useCallback(() => goTo(currentIndex - 1), [goTo, currentIndex])
@@ -247,11 +310,27 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [isOpen, currentIndex, goTo])
 
-  // Mobile touch handlers — stopPropagation on all to prevent sidebar swipe and message long-press
+  // ─── Mobile touch handlers ──────────────────────────────────────────────────
+  // All handlers manipulate the DOM directly (no setState) so the gesture stays
+  // at 60fps without React rendering in the hot path.
+
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     e.stopPropagation()
+    // Read where the strip actually is right now (could be mid-animation)
+    // so we can continue from that exact position rather than jumping.
+    if (stripRef.current) {
+      const matrix = new DOMMatrix(getComputedStyle(stripRef.current).transform)
+      touchStartStripX.current = matrix.m41
+      stripRef.current.style.transition = "none"
+    }
+    if (dismissWrapperRef.current) {
+      dismissWrapperRef.current.style.transition = "none"
+    }
     touchStartX.current = e.touches[0].clientX
     touchStartY.current = e.touches[0].clientY
+    lastTouchX.current = e.touches[0].clientX
+    lastTouchTime.current = Date.now()
+    velocityX.current = 0
     touchDeltaX.current = 0
     touchDeltaY.current = 0
     isSwiping.current = false
@@ -266,21 +345,32 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
       touchDeltaX.current = dx
       touchDeltaY.current = dy
 
-      // Lock axis after a minimum threshold
+      // Rolling velocity — last frame's delta / elapsed ms
+      const now = Date.now()
+      const dt = now - lastTouchTime.current
+      if (dt > 0) velocityX.current = (e.touches[0].clientX - lastTouchX.current) / dt
+      lastTouchX.current = e.touches[0].clientX
+      lastTouchTime.current = now
+
       if (!isSwiping.current && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
         isSwiping.current = true
         swipeAxis.current = Math.abs(dx) >= Math.abs(dy) ? "x" : "y"
       }
-
       if (!isSwiping.current) return
 
       if (swipeAxis.current === "x") {
-        // Horizontal: navigate between items
+        if (!stripRef.current) return
         const atEdge = (dx > 0 && !hasPrev) || (dx < 0 && !hasNext)
-        setSwipeOffset(atEdge ? dx * 0.3 : dx)
+        const effectiveDx = atEdge ? dx * 0.3 : dx
+        // Move the entire strip — both images slide together seamlessly
+        stripRef.current.style.transform = `translateX(${touchStartStripX.current + effectiveDx}px)`
       } else {
-        // Vertical: only track downward swipe for dismiss (dampen upward)
-        setSwipeOffsetY(dy > 0 ? dy : dy * 0.1)
+        if (!dismissWrapperRef.current) return
+        // Vertical: drag down to dismiss; resist upward drags
+        const effectiveDy = dy > 0 ? dy : dy * 0.1
+        const opacity = Math.max(0.2, 1 - effectiveDy / 300)
+        dismissWrapperRef.current.style.transform = `translateY(${effectiveDy}px)`
+        dismissWrapperRef.current.style.opacity = String(opacity)
       }
     },
     [hasPrev, hasNext]
@@ -291,36 +381,62 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
       e.stopPropagation()
       const dx = touchDeltaX.current
       const dy = touchDeltaY.current
-      const threshold = 50
-      const wasSwiping = isSwiping.current
+      const vx = velocityX.current
 
-      if (wasSwiping) {
-        let acted = false
+      if (isSwiping.current) {
         if (swipeAxis.current === "x") {
-          if (dx < -threshold && hasNext) {
-            goNext()
-            acted = true
-          } else if (dx > threshold && hasPrev) {
-            goPrev()
-            acted = true
+          const w = containerRef.current?.offsetWidth ?? window.innerWidth
+          // Either traveled far enough OR flicked fast enough
+          const distThreshold = w * 0.25
+          const velThreshold = 0.3 // px/ms
+
+          const goingNext = (dx < -distThreshold || vx < -velThreshold) && hasNext
+          const goingPrev = (dx > distThreshold || vx > velThreshold) && hasPrev
+          let targetIndex = currentIndex
+          if (goingNext) targetIndex = currentIndex + 1
+          else if (goingPrev) targetIndex = currentIndex - 1
+
+          if (stripRef.current) {
+            stripRef.current.style.transition = "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)"
+            stripRef.current.style.transform = `translateX(${-targetIndex * w}px)`
           }
-        } else if (swipeAxis.current === "y" && dy > threshold) {
-          onClose()
-          acted = true
+
+          if (targetIndex !== currentIndex) {
+            didSwipe.current = true
+            setCurrentIndex(targetIndex)
+            const next = items[targetIndex]
+            if (next) onItemChange?.(next.attachmentId)
+          } else {
+            didSwipe.current = false
+          }
+        } else if (swipeAxis.current === "y") {
+          if (dy > 80) {
+            // Commit dismiss — slide off screen
+            if (dismissWrapperRef.current) {
+              dismissWrapperRef.current.style.transition = "transform 0.3s ease-out, opacity 0.3s ease-out"
+              dismissWrapperRef.current.style.transform = `translateY(${window.innerHeight}px)`
+              dismissWrapperRef.current.style.opacity = "0"
+            }
+            didSwipe.current = true
+            setTimeout(() => onClose(), 300)
+          } else {
+            // Below threshold — spring back
+            if (dismissWrapperRef.current) {
+              dismissWrapperRef.current.style.transition = "transform 0.2s ease-out, opacity 0.2s ease-out"
+              dismissWrapperRef.current.style.transform = ""
+              dismissWrapperRef.current.style.opacity = "1"
+            }
+          }
         }
-        // Only suppress the following click if the swipe actually navigated/closed
-        didSwipe.current = acted
       }
 
-      setSwipeOffset(0)
-      setSwipeOffsetY(0)
       isSwiping.current = false
       swipeAxis.current = null
     },
-    [hasNext, hasPrev, goNext, goPrev, onClose]
+    [currentIndex, hasNext, hasPrev, items, onItemChange, onClose]
   )
 
-  // Mobile: tap left/right zones to navigate (suppressed after swipe)
+  // Mobile: tap left/right zones to navigate (suppressed after a committed swipe)
   const handleMobileTap = useCallback(
     (e: React.MouseEvent) => {
       if (!isMobile || !isMultiple) return
@@ -329,12 +445,77 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
         return
       }
       const rect = e.currentTarget.getBoundingClientRect()
-      const tapX = e.clientX - rect.left
-      const zone = tapX / rect.width
+      const zone = (e.clientX - rect.left) / rect.width
       if (zone < 0.3 && hasPrev) goPrev()
       else if (zone > 0.7 && hasNext) goNext()
     },
     [isMobile, isMultiple, hasPrev, hasNext, goPrev, goNext]
+  )
+
+  // ─── Action bar (shared between mobile/desktop) ─────────────────────────────
+  const actionBar = (
+    <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+      {isMultiple && (
+        <span className="text-xs text-white/70 mr-1 tabular-nums">
+          {currentIndex + 1} / {items.length}
+        </span>
+      )}
+      {current?.type === "video" ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white hover:bg-white/20 rounded-full">
+              <Download className="h-5 w-5" />
+              <span className="sr-only">Download video</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[160px]">
+            <DropdownMenuItem onClick={handleDownloadProcessed}>Download processed</DropdownMenuItem>
+            <DropdownMenuItem onClick={handleDownloadRaw}>Download original</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+            onClick={handleDownload}
+          >
+            <Download className="h-5 w-5" />
+            <span className="sr-only">Download image</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+            onClick={handleCopy}
+          >
+            <Copy className="h-5 w-5" />
+            <span className="sr-only">Copy image</span>
+          </Button>
+        </>
+      )}
+      {!isMobile && isMultiple && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+          onClick={() => setPanelOpen((v) => !v)}
+        >
+          {panelOpen ? <PanelRightClose className="h-5 w-5" /> : <PanelRightOpen className="h-5 w-5" />}
+          <span className="sr-only">{panelOpen ? "Hide" : "Show"} preview panel</span>
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+        onClick={onClose}
+      >
+        <X className="h-5 w-5" />
+        <span className="sr-only">Close</span>
+      </Button>
+    </div>
   )
 
   return (
@@ -355,149 +536,95 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
           </DialogDescription>
 
           <div className="relative flex h-full overflow-hidden">
-            {/* Main media area — fixed to fill the container so arrows stay centred */}
-            <div
-              className="relative flex-1 min-w-0 min-h-0 flex items-center justify-center"
-              onMouseEnter={() => !isMobile && setShowArrows(true)}
-              onMouseLeave={() => !isMobile && setShowArrows(false)}
-              {...(isMobile
-                ? {
-                    onTouchStart: handleTouchStart,
-                    onTouchMove: handleTouchMove,
-                    onTouchEnd: handleTouchEnd,
-                    onClick: handleMobileTap,
-                  }
-                : {})}
-            >
-              {/* Top action bar */}
-              <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-                {isMultiple && (
-                  <span className="text-xs text-white/70 mr-1 tabular-nums">
-                    {currentIndex + 1} / {items.length}
-                  </span>
-                )}
-                {current.type === "video" ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
+            {isMobile ? (
+              // ── Mobile: seamless horizontal strip carousel ────────────────
+              // dismissWrapperRef handles the vertical "drag down to close" gesture.
+              // containerRef clips the strip; stripRef holds all slides side-by-side
+              // and moves as one unit so the entering image slides in simultaneously
+              // with the exiting one — matching velocity and direction.
+              <div ref={dismissWrapperRef} className="relative flex-1 min-w-0 min-h-0">
+                {actionBar}
+
+                <div
+                  ref={containerRef}
+                  className="absolute inset-0 overflow-hidden"
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  onClick={handleMobileTap}
+                >
+                  {/* Strip: all slides laid out horizontally; transform moves them as one */}
+                  <div ref={stripRef} className="flex h-full" style={{ willChange: "transform" }}>
+                    {items.map((item, i) => (
+                      <div
+                        key={item.attachmentId}
+                        className="shrink-0 flex items-center justify-center p-8"
+                        style={{ width: containerWidth || "100%", height: "100%" }}
                       >
-                        <Download className="h-5 w-5" />
-                        <span className="sr-only">Download video</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="min-w-[160px]">
-                      <DropdownMenuItem onClick={handleDownloadProcessed}>Download processed</DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleDownloadRaw}>Download original</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : (
+                        <GalleryMediaContent current={item} isActive={Math.abs(i - currentIndex) <= 1} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Filename bar sits above the strip so it doesn't scroll with it */}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 pointer-events-none z-10">
+                  <span className="text-sm text-white">{current.filename}</span>
+                </div>
+              </div>
+            ) : (
+              // ── Desktop: single-image view with hover arrows ──────────────
+              <div
+                className="relative flex-1 min-w-0 min-h-0 flex items-center justify-center"
+                onMouseEnter={() => setShowArrows(true)}
+                onMouseLeave={() => setShowArrows(false)}
+              >
+                {actionBar}
+
+                <div className="absolute inset-0 flex items-center justify-center p-10">
+                  <GalleryMediaContent current={current} />
+                </div>
+
+                {isMultiple && (
                   <>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
-                      onClick={handleDownload}
+                    <button
+                      type="button"
+                      className={cn(
+                        "absolute left-2 top-1/2 -translate-y-1/2 z-10",
+                        "h-10 w-10 rounded-full bg-black/50 flex items-center justify-center",
+                        "text-white hover:bg-black/70 transition-opacity duration-200",
+                        !hasPrev && "invisible",
+                        showArrows ? "opacity-100" : "opacity-0"
+                      )}
+                      onClick={goPrev}
+                      aria-label="Previous"
                     >
-                      <Download className="h-5 w-5" />
-                      <span className="sr-only">Download image</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
-                      onClick={handleCopy}
+                      <ChevronLeft className="h-6 w-6" />
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "absolute right-2 top-1/2 -translate-y-1/2 z-10",
+                        "h-10 w-10 rounded-full bg-black/50 flex items-center justify-center",
+                        "text-white hover:bg-black/70 transition-opacity duration-200",
+                        !hasNext && "invisible",
+                        showArrows ? "opacity-100" : "opacity-0"
+                      )}
+                      onClick={goNext}
+                      aria-label="Next"
                     >
-                      <Copy className="h-5 w-5" />
-                      <span className="sr-only">Copy image</span>
-                    </Button>
+                      <ChevronRight className="h-6 w-6" />
+                    </button>
                   </>
                 )}
-                {/* Desktop: toggle preview panel */}
-                {!isMobile && isMultiple && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
-                    onClick={() => setPanelOpen((v) => !v)}
-                  >
-                    {panelOpen ? <PanelRightClose className="h-5 w-5" /> : <PanelRightOpen className="h-5 w-5" />}
-                    <span className="sr-only">{panelOpen ? "Hide" : "Show"} preview panel</span>
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 text-white hover:bg-white/20 rounded-full"
-                  onClick={onClose}
-                >
-                  <X className="h-5 w-5" />
-                  <span className="sr-only">Close</span>
-                </Button>
+
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                  <span className="text-sm text-white">{current.filename}</span>
+                </div>
               </div>
+            )}
 
-              {/* Media content with mobile swipe offset */}
-              <div
-                className="absolute inset-0 flex items-center justify-center p-10"
-                style={
-                  isMobile
-                    ? {
-                        transform:
-                          swipeOffset !== 0 || swipeOffsetY !== 0
-                            ? `translate(${swipeOffset}px, ${swipeOffsetY}px)`
-                            : undefined,
-                        opacity: swipeOffsetY > 0 ? Math.max(0.2, 1 - swipeOffsetY / 300) : 1,
-                        transition: isSwiping.current ? "none" : "transform 200ms ease-out, opacity 200ms ease-out",
-                      }
-                    : undefined
-                }
-              >
-                <GalleryMediaContent current={current} />
-              </div>
-
-              {/* Desktop: hover arrows */}
-              {!isMobile && isMultiple && (
-                <>
-                  <button
-                    type="button"
-                    className={cn(
-                      "absolute left-2 top-1/2 -translate-y-1/2 z-10",
-                      "h-10 w-10 rounded-full bg-black/50 flex items-center justify-center",
-                      "text-white hover:bg-black/70 transition-opacity duration-200",
-                      !hasPrev && "invisible",
-                      showArrows ? "opacity-100" : "opacity-0"
-                    )}
-                    onClick={goPrev}
-                    aria-label="Previous"
-                  >
-                    <ChevronLeft className="h-6 w-6" />
-                  </button>
-                  <button
-                    type="button"
-                    className={cn(
-                      "absolute right-2 top-1/2 -translate-y-1/2 z-10",
-                      "h-10 w-10 rounded-full bg-black/50 flex items-center justify-center",
-                      "text-white hover:bg-black/70 transition-opacity duration-200",
-                      !hasNext && "invisible",
-                      showArrows ? "opacity-100" : "opacity-0"
-                    )}
-                    onClick={goNext}
-                    aria-label="Next"
-                  >
-                    <ChevronRight className="h-6 w-6" />
-                  </button>
-                </>
-              )}
-
-              {/* Filename bar */}
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                <span className="text-sm text-white">{current.filename}</span>
-              </div>
-            </div>
-
-            {/* Desktop: preview panel */}
+            {/* Desktop: thumbnail preview panel */}
             {!isMobile && isMultiple && panelOpen && (
               <div className="w-[140px] shrink-0 border-l border-white/10 bg-black/80 flex flex-col">
                 <ScrollArea className="flex-1">
