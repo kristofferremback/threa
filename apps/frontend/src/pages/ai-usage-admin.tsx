@@ -126,7 +126,7 @@ export function AIUsageAdminPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-11 items-center gap-2 border-b px-4">
+      <header className="flex h-12 items-center gap-2 border-b px-4">
         <SidebarToggle location="page" />
         <Link to={`/w/${workspaceId}`}>
           <Button variant="ghost" size="icon" className="h-8 w-8">

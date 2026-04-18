@@ -7,11 +7,12 @@ import { cn } from "@/lib/utils"
 interface SidebarToggleProps {
   /**
    * Where this toggle is rendered:
-   * - "sidebar": inside the sidebar header; visible only when the sidebar is open
-   * - "page": inside a page/stream header; visible only when the sidebar is closed
-   *
-   * Both locations anchor the button to the same viewport x-coordinate (~16px)
-   * so users can toggle without moving the cursor.
+   * - "sidebar": inside the sidebar header; always rendered — the sidebar's
+   *   own container clips it (desktop) or slides it off-screen (mobile) when
+   *   closed, so no discrete show/hide is needed here.
+   * - "page": inside a page/stream header; slides left and fades as the
+   *   sidebar pins open, reading as a "swap" with the sidebar copy which
+   *   sits at the same viewport x.
    */
   location: "sidebar" | "page"
   className?: string
@@ -19,11 +20,14 @@ interface SidebarToggleProps {
 
 export function SidebarToggle({ location, className }: SidebarToggleProps) {
   const { state, isMobile, togglePinned } = useSidebar()
-  const isOpen = state === "pinned" || state === "preview"
-  // Icon reflects whether clicking will collapse (currently open) or expand.
-  const willCollapse = isMobile ? isOpen : state === "pinned"
+  const isPinned = state === "pinned"
+  // Icon reflects what clicking will do.
+  const willCollapse = isPinned || (isMobile && state === "preview")
 
-  const visible = location === "sidebar" ? isOpen : !isOpen
+  // Page toggle is only hidden when the sidebar is truly pinned open. In
+  // `preview` (desktop hover) it stays visible so the user can still see the
+  // affordance — clicking it locks the hover-preview into pinned.
+  const hidden = location === "page" && isPinned
 
   // Desktop page headers sit 6px right of the viewport edge (urgency strip
   // occupies the first 6px). Pull the button 6px left so it lands at the same
@@ -34,12 +38,12 @@ export function SidebarToggle({ location, className }: SidebarToggleProps) {
   return (
     <div
       className={cn(
-        "flex items-center transition-opacity duration-150",
+        "flex items-center transition-[transform,opacity] duration-200 ease-out",
         offsetClass,
-        visible ? "opacity-100" : "pointer-events-none opacity-0",
+        hidden && "pointer-events-none -translate-x-2 opacity-0",
         className
       )}
-      aria-hidden={!visible}
+      aria-hidden={hidden}
     >
       <Tooltip>
         <TooltipTrigger asChild>
@@ -48,7 +52,7 @@ export function SidebarToggle({ location, className }: SidebarToggleProps) {
             size="icon"
             className="h-8 w-8"
             onClick={togglePinned}
-            tabIndex={visible ? 0 : -1}
+            tabIndex={hidden ? -1 : 0}
             aria-label={willCollapse ? "Collapse sidebar" : "Pin sidebar"}
           >
             {willCollapse ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}

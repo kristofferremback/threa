@@ -188,9 +188,9 @@ export function AppShell({ sidebar, children }: AppShellProps) {
            translates the entire area uniformly */}
       <div ref={pullRef} className="relative flex flex-1 flex-col overflow-hidden">
         {/* Workspace-wide loading indicator — hairline along the bottom of the
-             sidebar/page header row (h-11). Spans the full viewport so it links
+             sidebar/page header row (h-12). Spans the full viewport so it links
              the two headers visually now that the top bar is gone. */}
-        <div className="pointer-events-none absolute left-0 right-0 top-11 z-[55]">
+        <div className="pointer-events-none absolute left-0 right-0 top-12 z-[55]">
           <TopbarLoadingIndicator visible={showLoadingIndicator} />
         </div>
 

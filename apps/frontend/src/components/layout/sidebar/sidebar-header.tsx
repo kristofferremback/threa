@@ -21,7 +21,8 @@ interface SidebarHeaderProps {
 
 export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideViewToggle }: SidebarHeaderProps) {
   const { openSwitcher } = useQuickSwitcher()
-  const { collapseOnMobile } = useSidebar()
+  const { state, collapseOnMobile } = useSidebar()
+  const isOpen = state === "pinned" || state === "preview"
 
   const handleOpenSwitcher = (mode: "stream" | "command" | "search") => () => {
     collapseOnMobile()
@@ -30,13 +31,19 @@ export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideV
 
   return (
     <div className="flex-shrink-0 border-b">
-      {/* Top row — mirrors the h-11 page-header row so the sidebar toggle sits
+      {/* Top row — mirrors the h-12 page-header row so the sidebar toggle sits
            in the identical viewport position whether the sidebar is open or not. */}
-      <div className="flex h-11 items-center gap-1 px-4">
+      <div className="flex h-12 items-center gap-1 px-4">
         <SidebarToggle location="sidebar" />
+        {/* Logo + workspace name drift 4px left as the sidebar opens, paired
+             with the page-header toggle sliding off to the left — together
+             they read as a coordinated "everything shifts left" swap. */}
         <Link
           to="/workspaces"
-          className="flex min-w-0 items-center gap-2 truncate transition-opacity hover:opacity-80"
+          className={cn(
+            "flex min-w-0 items-center gap-2 truncate transition-[transform,opacity] duration-200 ease-out hover:opacity-80",
+            isOpen ? "translate-x-0" : "translate-x-1"
+          )}
           onClick={collapseOnMobile}
         >
           <ThreaLogo size="sm" />

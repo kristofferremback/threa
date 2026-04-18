@@ -589,7 +589,7 @@ export function MemoryPage() {
     <div className="flex h-full flex-col bg-background">
       {/* Header */}
       <header className="border-b bg-card/50">
-        <div className="flex h-11 items-center gap-2 px-4">
+        <div className="flex h-12 items-center gap-2 px-4">
           <SidebarToggle location="page" />
           <Link to={`/w/${workspaceId}`}>
             <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">

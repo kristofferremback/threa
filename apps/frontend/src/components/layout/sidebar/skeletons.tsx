@@ -3,8 +3,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 export function HeaderSkeleton() {
   return (
     <div className="flex-shrink-0 border-b">
-      {/* Matches the new h-11 top row: toggle + logo + name + theme dropdown */}
-      <div className="flex h-11 items-center gap-1 px-4">
+      {/* Matches the new h-12 top row: toggle + logo + name + theme dropdown */}
+      <div className="flex h-12 items-center gap-1 px-4">
         <Skeleton className="h-8 w-8 rounded-md" />
         <Skeleton className="ml-1 h-4 w-24" />
         <Skeleton className="ml-auto h-7 w-7 rounded-md" />

@@ -104,7 +104,7 @@ function SavedPageInner({ workspaceId, tab }: InnerProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-11 items-center justify-between border-b px-4 gap-2">
+      <header className="flex h-12 items-center justify-between border-b px-4 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <SidebarToggle location="page" />
           <Link
