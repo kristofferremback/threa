@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react"
-import { useParams, Link } from "react-router-dom"
+import { useMemo } from "react"
+import { Navigate, useParams, Link } from "react-router-dom"
 import { Bell, ArrowLeft, Check } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { cn } from "@/lib/utils"
 import { useActivityFeed, useMarkActivityRead, useMarkAllActivityRead, useActors } from "@/hooks"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
@@ -17,23 +18,57 @@ import type { AuthorType, Activity } from "@threa/types"
 
 type ActivityFilter = "all" | "unread" | "me"
 
+const VALID_FILTERS = new Set<string>(["all", "unread", "me"])
+
+/**
+ * Route is `/w/:workspaceId/activity/:filter?` — bare `/activity` renders the
+ * default "all" filter, `/activity/unread` and `/activity/me` render the other
+ * two. Refreshes, back/forward, and shared links all land on the same view
+ * (INV-59). Unknown filter segments redirect to the default.
+ */
 export function ActivityPage() {
-  const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [filter, setFilter] = useState<ActivityFilter>("all")
-  const { data: activities, isLoading } = useActivityFeed(workspaceId ?? "", {
+  const { workspaceId, filter: filterParam } = useParams<{ workspaceId: string; filter?: string }>()
+
+  if (!workspaceId) return null
+
+  if (filterParam === "all") {
+    return <Navigate to={`/w/${workspaceId}/activity`} replace />
+  }
+  if (filterParam !== undefined && !VALID_FILTERS.has(filterParam)) {
+    return <Navigate to={`/w/${workspaceId}/activity`} replace />
+  }
+
+  const filter: ActivityFilter = (filterParam as ActivityFilter | undefined) ?? "all"
+
+  return <ActivityPageInner workspaceId={workspaceId} filter={filter} />
+}
+
+interface InnerProps {
+  workspaceId: string
+  filter: ActivityFilter
+}
+
+function ActivityPageInner({ workspaceId, filter }: InnerProps) {
+  const { data: activities, isLoading } = useActivityFeed(workspaceId, {
     unreadOnly: filter === "unread",
     mineOnly: filter === "me",
   })
-  const markRead = useMarkActivityRead(workspaceId ?? "")
-  const markAllRead = useMarkAllActivityRead(workspaceId ?? "")
-  const { getActorName, getActorAvatar } = useActors(workspaceId ?? "")
-  const { toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
-  const idbStreams = useWorkspaceStreams(workspaceId ?? "")
-  const { unreadActivityCount } = useActivityCounts(workspaceId ?? "")
+  const markRead = useMarkActivityRead(workspaceId)
+  const markAllRead = useMarkAllActivityRead(workspaceId)
+  const { getActorName, getActorAvatar } = useActors(workspaceId)
+  const { toEmoji } = useWorkspaceEmoji(workspaceId)
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const { unreadActivityCount } = useActivityCounts(workspaceId)
 
   const streamById = useMemo(() => {
     return new Map(idbStreams.map((s) => [s.id, s]))
   }, [idbStreams])
+
+  // Filter tabs are links, not buttons (INV-40). The Tabs primitive is still
+  // used for the visual "active" styling — controlled via `value` — but each
+  // trigger is an <a>, so cmd-click / right-click / middle-click all work.
+  const filterHref = (next: ActivityFilter) =>
+    next === "all" ? `/w/${workspaceId}/activity` : `/w/${workspaceId}/activity/${next}`
 
   function resolveActivityStreamName(activity: Activity): string {
     const stream = streamById.get(activity.streamId)
@@ -70,8 +105,6 @@ export function ActivityPage() {
     return streamFallbackLabel("thread", "activity")
   }
 
-  if (!workspaceId) return null
-
   let content = <ActivitySkeleton />
   if (!isLoading) {
     if (!activities?.length) {
@@ -101,10 +134,12 @@ export function ActivityPage() {
       <header className="flex h-11 items-center justify-between border-b px-4 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <SidebarToggle location="page" />
-          <Link to={`/w/${workspaceId}`}>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+          <Link
+            to={`/w/${workspaceId}`}
+            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}
+            aria-label="Back to workspace"
+          >
+            <ArrowLeft className="h-4 w-4" />
           </Link>
           <div className="flex items-center gap-2 min-w-0">
             <Bell className="h-5 w-5 text-muted-foreground shrink-0" />
@@ -113,16 +148,22 @@ export function ActivityPage() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Tabs value={filter} onValueChange={(v) => setFilter(v as ActivityFilter)}>
+          <Tabs value={filter}>
             <TabsList className="h-8">
-              <TabsTrigger value="all" className="text-xs px-2.5 py-1">
-                All
+              <TabsTrigger value="all" asChild>
+                <Link to={filterHref("all")} className="text-xs px-2.5 py-1">
+                  All
+                </Link>
               </TabsTrigger>
-              <TabsTrigger value="unread" className="text-xs px-2.5 py-1">
-                Unread
+              <TabsTrigger value="unread" asChild>
+                <Link to={filterHref("unread")} className="text-xs px-2.5 py-1">
+                  Unread
+                </Link>
               </TabsTrigger>
-              <TabsTrigger value="me" className="text-xs px-2.5 py-1">
-                Me
+              <TabsTrigger value="me" asChild>
+                <Link to={filterHref("me")} className="text-xs px-2.5 py-1">
+                  Me
+                </Link>
               </TabsTrigger>
             </TabsList>
           </Tabs>

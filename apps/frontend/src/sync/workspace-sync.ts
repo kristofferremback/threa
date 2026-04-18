@@ -15,7 +15,11 @@ import type {
   UserPreferences,
   LastMessagePreview,
   ActivityCreatedPayload,
+  SavedUpsertedPayload,
+  SavedDeletedPayload,
+  SavedReminderFiredPayload,
 } from "@threa/types"
+import { persistSavedRows, removeSavedRow, savedKeys } from "@/hooks/use-saved"
 import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
 import { applyStreamBootstrapInCurrentTransaction } from "./stream-sync"
 
@@ -372,6 +376,13 @@ export function registerWorkspaceSocketHandlers(
   }
 ): () => void {
   const abortController = new AbortController()
+
+  // Close the reconnect event gap (INV-53): if the Saved view is mounted
+  // when the socket re-registers, invalidate so TanStack refetches and
+  // rehydrates IDB with any rows whose upsert/delete events we missed
+  // during the disconnect. `refetchOnReconnect: true` alone only covers
+  // browser network online/offline, not socket.io reconnects.
+  queryClient.invalidateQueries({ queryKey: savedKeys.all })
 
   // Handle stream created
   const handleStreamCreated = (payload: StreamPayload) => {
@@ -1237,6 +1248,34 @@ export function registerWorkspaceSocketHandlers(
     }
   }
 
+  // Saved messages — write-through to IDB and invalidate TanStack caches so
+  // cross-device saves reflect on every open tab without a refresh.
+  const handleSavedUpserted = (payload: SavedUpsertedPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void persistSavedRows(workspaceId, [payload.saved])
+    queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "saved") })
+    queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "done") })
+    queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "archived") })
+  }
+
+  const handleSavedDeleted = (payload: SavedDeletedPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void removeSavedRow(payload.savedId)
+    queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "saved") })
+    queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "done") })
+    queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "archived") })
+  }
+
+  const handleSavedReminderFired = (payload: SavedReminderFiredPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    // Update the cached row so the badge flips to "reminded" immediately. The
+    // persistent surface is the Activity feed (backend emits `activity:created`
+    // for the saved_reminder row) — we deliberately don't pop a toast here so
+    // there's one canonical notification path.
+    void persistSavedRows(workspaceId, [payload.saved])
+    queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "saved") })
+  }
+
   // Register all handlers
   socket.on("stream:created", handleStreamCreated)
   socket.on("stream:updated", handleStreamUpdated)
@@ -1255,6 +1294,9 @@ export function registerWorkspaceSocketHandlers(
   socket.on("bot:created", handleBotCreated)
   socket.on("bot:updated", handleBotUpdated)
   socket.on("activity:created", handleActivityCreated)
+  socket.on("saved:upserted", handleSavedUpserted)
+  socket.on("saved:deleted", handleSavedDeleted)
+  socket.on("saved_reminder:fired", handleSavedReminderFired)
   socket.on("attachment:transcoded", handleAttachmentTranscoded)
 
   return () => {
@@ -1278,6 +1320,9 @@ export function registerWorkspaceSocketHandlers(
     socket.off("bot:created", handleBotCreated)
     socket.off("bot:updated", handleBotUpdated)
     socket.off("activity:created", handleActivityCreated)
+    socket.off("saved:upserted", handleSavedUpserted)
+    socket.off("saved:deleted", handleSavedDeleted)
+    socket.off("saved_reminder:fired", handleSavedReminderFired)
     socket.off("attachment:transcoded", handleAttachmentTranscoded)
   }
 }

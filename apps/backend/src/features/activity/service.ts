@@ -361,6 +361,48 @@ export class ActivityService {
   }
 
   /**
+   * Create an activity row when a saved-message reminder fires. The payload
+   * already carries a resolved `SavedMessageView` so we can build the context
+   * without additional DB lookups.
+   *
+   * Each save-then-remind lifecycle must produce its own feed row — saving,
+   * firing, dismissing, re-saving, and re-firing the same message should not
+   * silently upsert the older row. The dedup index explicitly excludes
+   * `saved_reminder` (see migration 20260417200220) so the repository emits a
+   * plain INSERT and every fire mints a distinct row. Single-delivery per
+   * savedId is enforced at the service boundary via `reminder_sent_at IS NULL`.
+   *
+   * The savedId is stashed in `context` so the feed can link back to the
+   * specific saved row if we ever want to.
+   */
+  async processSavedReminderFired(params: {
+    workspaceId: string
+    userId: string
+    savedId: string
+    streamId: string
+    messageId: string
+    contentPreview: string | null
+    streamName: string | null
+  }): Promise<Activity[]> {
+    const context: Record<string, unknown> = {
+      savedId: params.savedId,
+      contentPreview: params.contentPreview ?? "",
+      streamName: params.streamName,
+    }
+    const row = await ActivityRepository.insert(this.pool, {
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+      activityType: ActivityTypes.SAVED_REMINDER,
+      streamId: params.streamId,
+      messageId: params.messageId,
+      actorId: AuthorTypes.SYSTEM,
+      actorType: AuthorTypes.SYSTEM,
+      context,
+    })
+    return row ? [row] : []
+  }
+
+  /**
    * Batch-check which user IDs have access to a stream.
    * Public streams: all pass. Private: single batch membership query.
    */

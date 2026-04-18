@@ -7,12 +7,14 @@ export {
   useMessageService,
   useConversationService,
   useActivityService,
+  useSavedService,
   type Services,
   type WorkspaceService,
   type StreamService,
   type MessageService,
   type ConversationService,
   type ActivityService,
+  type SavedService,
 } from "./services-context"
 export {
   SocketProvider,
@@ -37,6 +39,6 @@ export {
   type CoordinatedPhase,
   type StreamState,
 } from "./coordinated-loading-context"
-export { SidebarProvider, useSidebar, type ViewMode, type UrgencyBlock } from "./sidebar-context"
+export { SidebarProvider, useSidebar, type ViewMode, type UrgencyBlock, type CollapseState } from "./sidebar-context"
 export { TraceProvider, useTrace } from "./trace-context"
 export { MediaGalleryProvider, useMediaGallery } from "./media-gallery-context"

@@ -35,6 +35,7 @@ export const JobQueues = {
   LINK_PREVIEW_EXTRACT: "link_preview.extract",
   VIDEO_TRANSCODE_SUBMIT: "video.transcode_submit",
   VIDEO_TRANSCODE_CHECK: "video.transcode_check",
+  SAVED_REMINDER_FIRE: "saved.reminder_fire",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -172,6 +173,18 @@ export interface VideoTranscodeCheckJobData {
   workspaceId: string
 }
 
+/**
+ * Saved-message reminder fire job. Enqueued when a saved row gets a remindAt;
+ * the worker looks up the row, emits `saved_reminder:fired` outbox event, and
+ * updates `reminder_sent_at` idempotently. The job is a no-op if the row has
+ * already been marked done/archived or the reminder was already delivered.
+ */
+export interface SavedReminderFireJobData {
+  workspaceId: string
+  userId: string
+  savedMessageId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -192,6 +205,7 @@ export interface JobDataMap {
   [JobQueues.LINK_PREVIEW_EXTRACT]: LinkPreviewExtractJobData
   [JobQueues.VIDEO_TRANSCODE_SUBMIT]: VideoTranscodeSubmitJobData
   [JobQueues.VIDEO_TRANSCODE_CHECK]: VideoTranscodeCheckJobData
+  [JobQueues.SAVED_REMINDER_FIRE]: SavedReminderFireJobData
 }
 
 /**

@@ -120,6 +120,10 @@ export {
   ACTIVITY_TYPES,
   type ActivityType,
   ActivityTypes,
+  // Saved messages
+  SAVED_STATUSES,
+  type SavedStatus,
+  SavedStatuses,
   // Text processing
   TEXT_FORMATS,
   type TextFormat,
@@ -262,6 +266,15 @@ export type {
   // Activity
   Activity,
   ActivityCreatedPayload,
+  // Saved messages
+  SavedMessageView,
+  SavedMessageSnapshot,
+  SaveMessageInput,
+  UpdateSavedMessageInput,
+  SavedMessageListResponse,
+  SavedUpsertedPayload,
+  SavedDeletedPayload,
+  SavedReminderFiredPayload,
   // Emojis
   EmojiEntry,
   // Commands

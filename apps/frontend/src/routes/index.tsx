@@ -49,11 +49,15 @@ export const router = createBrowserRouter([
         lazy: async () => ({ Component: (await import("@/pages/drafts")).DraftsPage }),
       },
       {
+        path: "saved/:tab?",
+        lazy: async () => ({ Component: (await import("@/pages/saved")).SavedPage }),
+      },
+      {
         path: "threads",
         lazy: async () => ({ Component: (await import("@/pages/threads")).ThreadsPage }),
       },
       {
-        path: "activity",
+        path: "activity/:filter?",
         lazy: async () => ({ Component: (await import("@/pages/activity")).ActivityPage }),
       },
       {

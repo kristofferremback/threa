@@ -1,9 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { useAuth } from "@/auth"
-import { useActivityCounts, useAllDrafts, createDmDraftId, useDraftScratchpads, useUnreadCounts } from "@/hooks"
+import {
+  useActivityCounts,
+  useAllDrafts,
+  createDmDraftId,
+  useDraftScratchpads,
+  useLiveSavedCount,
+  useUnreadCounts,
+} from "@/hooks"
 import { useSyncStatus } from "@/sync/sync-status"
 import { useSyncEngine } from "@/sync/sync-engine"
 import {
@@ -38,8 +45,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const {
     viewMode,
     setViewMode,
-    collapsedSections,
-    toggleSectionCollapsed,
+    getSectionState,
+    cycleSectionState,
+    setSectionState,
     setSidebarHeight,
     setScrollContainerOffset,
     collapseOnMobile,
@@ -66,7 +74,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const currentUser = workspaceUsers.find((u) => u.workosUserId === user?.id) ?? null
 
   const draftCount = allDrafts.length
+  const savedCount = useLiveSavedCount(workspaceId)
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
+  const isSavedPage = splat === "saved" || window.location.pathname.endsWith("/saved")
   const isActivityPage = splat === "activity" || window.location.pathname.endsWith("/activity")
   const isMemoryPage = splat === "memory" || location.pathname.endsWith("/memory")
 
@@ -259,8 +269,6 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     return { scratchpads, channels, dms: [...realDms, ...systemStreams, ...virtualDmStreams] }
   }, [processedStreams, getUnreadCount, virtualDmStreams])
 
-  const isSectionCollapsed = useCallback((section: string) => collapsedSections.includes(section), [collapsedSections])
-
   // Track sidebar and scroll container dimensions for position calculations
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
@@ -353,6 +361,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           workspaceId={workspaceId}
           isDraftsPage={isDraftsPage}
           draftCount={draftCount}
+          isSavedPage={isSavedPage}
+          savedCount={savedCount}
           isActivityPage={isActivityPage}
           isMemoryPage={isMemoryPage}
           unreadActivityCount={unreadActivityCount}
@@ -371,8 +381,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           streamsByType={streamsByType}
           getUnreadCount={getUnreadCount}
           getMentionCount={getMentionCount}
-          isSectionCollapsed={isSectionCollapsed}
-          onToggleSectionCollapsed={toggleSectionCollapsed}
+          getSectionState={getSectionState}
+          cycleSectionState={cycleSectionState}
+          setSectionState={setSectionState}
           onCreateScratchpad={handleCreateScratchpad}
           onCreateChannel={handleCreateChannel}
           scrollContainerRef={scrollContainerRef}
