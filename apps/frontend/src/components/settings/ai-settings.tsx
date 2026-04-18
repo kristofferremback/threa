@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { serializeToMarkdown, parseMarkdown } from "@/components/editor/editor-markdown"
 import { EditorActionBar, RichEditor, type RichEditorHandle } from "@/components/editor"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { usePreferences } from "@/contexts"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -50,81 +49,76 @@ export function AISettings() {
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Scratchpad Instructions</CardTitle>
-          <CardDescription>
-            Add standing guidance that Ariadne should follow in your personal scratchpads. This is injected after the
-            base system prompt for scratchpads and scratchpad-root threads only.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="input-glow-wrapper">
-            <div
-              className="rounded-[16px] border border-input bg-card p-3"
-              onClick={(event) => {
-                if (
-                  (event.target as HTMLElement).closest("button,a,input,textarea,[contenteditable],[role='button']")
-                ) {
-                  return
-                }
-                editorRef.current?.focus()
-              }}
-            >
-              <RichEditor
-                ref={editorRef}
-                value={contentJson}
-                onChange={setContentJson}
-                onSubmit={handleSave}
-                placeholder="Tell Ariadne how to think and help in your scratchpads..."
-                messageSendMode="cmdEnter"
-                staticToolbarOpen={formatOpen}
-                disableSelectionToolbar={isMobile}
-                ariaLabel="Scratchpad custom prompt editor"
-                className="min-h-0 [&_.tiptap]:min-h-[180px] [&_.tiptap]:max-h-[320px]"
-                enableMentions={false}
-                enableChannels={false}
-                enableCommands={false}
-                enableEmoji={false}
-              />
+    <section className="space-y-4">
+      <div>
+        <h3 className="text-sm font-medium">Scratchpad Instructions</h3>
+        <p className="text-sm text-muted-foreground">
+          Add standing guidance that Ariadne should follow in your personal scratchpads. This is injected after the base
+          system prompt for scratchpads and scratchpad-root threads only.
+        </p>
+      </div>
 
-              <div className="mt-2 border-t pt-2" onMouseDown={(event) => event.preventDefault()}>
-                <EditorActionBar
-                  editorHandle={editorRef.current}
-                  disabled={isLoading}
-                  formatOpen={formatOpen}
-                  onFormatOpenChange={setFormatOpen}
-                  showAttach={false}
-                  showMention={false}
-                  showEmoji={false}
-                  trailingContent={
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleReset}
-                        disabled={!isDirty || isLoading}
-                      >
-                        Reset
-                      </Button>
-                      <Button type="button" size="sm" onClick={handleSave} disabled={!isDirty || isLoading}>
-                        Save
-                      </Button>
-                    </div>
-                  }
-                />
-              </div>
-            </div>
-          </div>
+      <div className="input-glow-wrapper">
+        <div
+          className="rounded-lg border border-input bg-card p-3"
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("button,a,input,textarea,[contenteditable],[role='button']")) {
+              return
+            }
+            editorRef.current?.focus()
+          }}
+        >
+          <RichEditor
+            ref={editorRef}
+            value={contentJson}
+            onChange={setContentJson}
+            onSubmit={handleSave}
+            placeholder="Tell Ariadne how to think and help in your scratchpads..."
+            messageSendMode="cmdEnter"
+            staticToolbarOpen={formatOpen}
+            disableSelectionToolbar={isMobile}
+            ariaLabel="Scratchpad custom prompt editor"
+            className="min-h-0 [&_.tiptap]:min-h-[180px] [&_.tiptap]:max-h-[320px]"
+            enableMentions={false}
+            enableChannels={false}
+            enableCommands={false}
+            enableEmoji={false}
+          />
 
-          <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-            <span>Delete everything and save to remove the custom prompt.</span>
-            <span>{MODIFIER_LABEL}+Enter to save</span>
+          <div className="mt-2 border-t pt-2" onMouseDown={(event) => event.preventDefault()}>
+            <EditorActionBar
+              editorHandle={editorRef.current}
+              disabled={isLoading}
+              formatOpen={formatOpen}
+              onFormatOpenChange={setFormatOpen}
+              showAttach={false}
+              showMention={false}
+              showEmoji={false}
+              trailingContent={
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleReset}
+                    disabled={!isDirty || isLoading}
+                  >
+                    Reset
+                  </Button>
+                  <Button type="button" size="sm" onClick={handleSave} disabled={!isDirty || isLoading}>
+                    Save
+                  </Button>
+                </div>
+              }
+            />
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <span>Delete everything and save to remove the custom prompt.</span>
+        <span>{MODIFIER_LABEL}+Enter to save</span>
+      </div>
+    </section>
   )
 }

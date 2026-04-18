@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { RotateCcw } from "lucide-react"
 import { usePreferences } from "@/contexts"
@@ -260,28 +260,26 @@ function ShortcutCategory({
   if (actions.length === 0) return null
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {actions.map((action) => (
-            <ShortcutRow
-              key={action.id}
-              action={action}
-              customBindings={customBindings}
-              capturingId={capturingId}
-              onStartCapture={onStartCapture}
-              onCancelCapture={onCancelCapture}
-              onSaveBinding={onSaveBinding}
-              onResetBinding={onResetBinding}
-            />
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <section className="space-y-3">
+      <div>
+        <h3 className="text-sm font-medium">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      <div className="space-y-3">
+        {actions.map((action) => (
+          <ShortcutRow
+            key={action.id}
+            action={action}
+            customBindings={customBindings}
+            capturingId={capturingId}
+            onStartCapture={onStartCapture}
+            onCancelCapture={onCancelCapture}
+            onSaveBinding={onSaveBinding}
+            onResetBinding={onResetBinding}
+          />
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -345,12 +343,12 @@ export function KeyboardSettings({ onCaptureStateChange }: KeyboardSettingsProps
   return (
     <div className="space-y-6">
       {hasConflicts && (
-        <Card className="border-destructive">
-          <CardHeader>
-            <CardTitle className="text-destructive">Shortcut Conflicts</CardTitle>
-            <CardDescription>Some shortcuts are using the same key binding</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <>
+          <section className="space-y-3">
+            <div>
+              <h3 className="text-sm font-medium text-destructive">Shortcut Conflicts</h3>
+              <p className="text-sm text-muted-foreground">Some shortcuts are using the same key binding</p>
+            </div>
             <ul className="space-y-2 text-sm">
               {Array.from(conflicts.entries()).map(([key, actionIds]) => (
                 <li key={key}>
@@ -366,56 +364,70 @@ export function KeyboardSettings({ onCaptureStateChange }: KeyboardSettingsProps
                 </li>
               ))}
             </ul>
-          </CardContent>
-        </Card>
+          </section>
+          <Separator />
+        </>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Send Messages</CardTitle>
-          <CardDescription>Choose how to send messages in the composer</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RadioGroup
-            value={messageSendMode}
-            onValueChange={(value) => updatePreference("messageSendMode", value as MessageSendMode)}
-            className="space-y-3"
-          >
-            {MESSAGE_SEND_MODE_OPTIONS.map((option) => (
-              <div key={option} className="flex items-start space-x-3">
-                <RadioGroupItem value={option} id={`send-mode-${option}`} className="mt-1" />
-                <div className="grid gap-0.5">
-                  <Label htmlFor={`send-mode-${option}`} className="cursor-pointer font-medium">
-                    {SEND_MODE_CONFIG[option].label}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">{SEND_MODE_CONFIG[option].description}</p>
-                </div>
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-medium">Send Messages</h3>
+          <p className="text-sm text-muted-foreground">Choose how to send messages in the composer</p>
+        </div>
+        <RadioGroup
+          value={messageSendMode}
+          onValueChange={(value) => updatePreference("messageSendMode", value as MessageSendMode)}
+          className="space-y-3"
+        >
+          {MESSAGE_SEND_MODE_OPTIONS.map((option) => (
+            <div key={option} className="flex items-start space-x-3">
+              <RadioGroupItem value={option} id={`send-mode-${option}`} className="mt-1" />
+              <div className="grid gap-0.5">
+                <Label htmlFor={`send-mode-${option}`} className="cursor-pointer font-medium">
+                  {SEND_MODE_CONFIG[option].label}
+                </Label>
+                <p className="text-sm text-muted-foreground">{SEND_MODE_CONFIG[option].description}</p>
               </div>
-            ))}
-          </RadioGroup>
-        </CardContent>
-      </Card>
+            </div>
+          ))}
+        </RadioGroup>
+      </section>
 
-      <ShortcutCategory
-        title="Navigation"
-        description="Keyboard shortcuts for navigating Threa"
-        actions={shortcuts.navigation}
-        {...sharedProps}
-      />
+      {shortcuts.navigation.length > 0 && (
+        <>
+          <Separator />
+          <ShortcutCategory
+            title="Navigation"
+            description="Keyboard shortcuts for navigating Threa"
+            actions={shortcuts.navigation}
+            {...sharedProps}
+          />
+        </>
+      )}
 
-      <ShortcutCategory
-        title="View"
-        description="Keyboard shortcuts for view controls"
-        actions={shortcuts.view}
-        {...sharedProps}
-      />
+      {shortcuts.view.length > 0 && (
+        <>
+          <Separator />
+          <ShortcutCategory
+            title="View"
+            description="Keyboard shortcuts for view controls"
+            actions={shortcuts.view}
+            {...sharedProps}
+          />
+        </>
+      )}
 
-      <ShortcutCategory
-        title="Editing"
-        description="Keyboard shortcuts for formatting in the editor"
-        actions={shortcuts.editing}
-        {...sharedProps}
-      />
+      {shortcuts.editing.length > 0 && (
+        <>
+          <Separator />
+          <ShortcutCategory
+            title="Editing"
+            description="Keyboard shortcuts for formatting in the editor"
+            actions={shortcuts.editing}
+            {...sharedProps}
+          />
+        </>
+      )}
 
       {hasCustomBindings && (
         <div className="flex justify-end">
