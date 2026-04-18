@@ -195,13 +195,14 @@ export const ActivityRepository = {
     db: Querier,
     userId: string,
     workspaceId: string,
-    opts?: { limit?: number; cursor?: string; unreadOnly?: boolean; mineOnly?: boolean }
+    opts?: { limit?: number; cursor?: string; unreadOnly?: boolean; mineOnly?: boolean; othersOnly?: boolean }
   ): Promise<Activity[]> {
     const limit = opts?.limit ?? 50
     const hasCursor = opts?.cursor !== undefined
     const cursor = opts?.cursor ?? ""
     const unreadOnly = opts?.unreadOnly ?? false
     const mineOnly = opts?.mineOnly ?? false
+    const othersOnly = opts?.othersOnly ?? false
 
     const result = await db.query<ActivityRow>(sql`
       SELECT ${sql.raw(USER_ACTIVITY_COLUMNS)}
@@ -210,6 +211,7 @@ export const ActivityRepository = {
         AND workspace_id = ${workspaceId}
         AND (${!unreadOnly} OR read_at IS NULL)
         AND (${!mineOnly} OR is_self = TRUE)
+        AND (${!othersOnly} OR is_self = FALSE)
         AND (${!hasCursor} OR created_at < (
           SELECT created_at FROM user_activity
           WHERE id = ${cursor} AND user_id = ${userId} AND workspace_id = ${workspaceId}

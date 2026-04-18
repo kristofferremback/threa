@@ -451,7 +451,7 @@ export class ActivityService {
   async listFeed(
     userId: string,
     workspaceId: string,
-    opts?: { limit?: number; cursor?: string; unreadOnly?: boolean; mineOnly?: boolean }
+    opts?: { limit?: number; cursor?: string; unreadOnly?: boolean; mineOnly?: boolean; othersOnly?: boolean }
   ) {
     return ActivityRepository.listByUser(this.pool, userId, workspaceId, opts)
   }

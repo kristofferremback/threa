@@ -6,6 +6,7 @@ export interface ListActivityParams {
   cursor?: string
   unreadOnly?: boolean
   mineOnly?: boolean
+  othersOnly?: boolean
 }
 
 export const activityApi = {
@@ -15,6 +16,7 @@ export const activityApi = {
     if (params?.cursor) query.set("cursor", params.cursor)
     if (params?.unreadOnly) query.set("unreadOnly", "true")
     if (params?.mineOnly) query.set("mineOnly", "true")
+    if (params?.othersOnly) query.set("othersOnly", "true")
 
     const qs = query.toString()
     const path = `/api/workspaces/${workspaceId}/activity${qs ? `?${qs}` : ""}`
