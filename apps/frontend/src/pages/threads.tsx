@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom"
 import { MessageSquareText, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ItemList, type QuickSwitcherItem } from "@/components/quick-switcher"
+import { SidebarToggle } from "@/components/layout"
 import { StreamTypes } from "@threa/types"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useActors } from "@/hooks"
@@ -59,7 +60,8 @@ export function ThreadsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-11 items-center gap-3 border-b px-4">
+      <header className="flex h-12 items-center gap-2 border-b px-4">
+        <SidebarToggle location="page" />
         <Link to={`/w/${workspaceId}`}>
           <Button variant="ghost" size="icon" className="h-8 w-8">
             <ArrowLeft className="h-4 w-4" />

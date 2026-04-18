@@ -8,6 +8,7 @@ import { BudgetControlsPanel } from "@/components/ai-usage/budget-controls-panel
 import { BudgetHealthHero } from "@/components/ai-usage/budget-health-hero"
 import { computeMetrics, type BudgetMetrics } from "@/components/ai-usage/metrics"
 import { TopSpendersCard, UsageSplitCard } from "@/components/ai-usage/usage-breakdown"
+import { SidebarToggle } from "@/components/layout"
 
 export function AIUsageAdminPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
@@ -125,7 +126,8 @@ export function AIUsageAdminPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-11 items-center gap-3 border-b px-4">
+      <header className="flex h-12 items-center gap-2 border-b px-4">
+        <SidebarToggle location="page" />
         <Link to={`/w/${workspaceId}`}>
           <Button variant="ghost" size="icon" className="h-8 w-8">
             <ArrowLeft className="h-4 w-4" />

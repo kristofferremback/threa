@@ -10,6 +10,7 @@ import { useSavedList, useUpdateSaved, useDeleteSaved } from "@/hooks"
 import { SavedItem } from "@/components/saved/saved-item"
 import { SavedEmpty } from "@/components/saved/saved-empty"
 import { SavedSkeleton } from "@/components/saved/saved-skeleton"
+import { SidebarToggle } from "@/components/layout"
 import type { SavedStatus } from "@threa/types"
 
 const TABS: { value: SavedStatus; label: string }[] = [
@@ -103,8 +104,9 @@ function SavedPageInner({ workspaceId, tab }: InnerProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-11 items-center justify-between border-b px-4 gap-2">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="flex h-12 items-center justify-between border-b px-4 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <SidebarToggle location="page" />
           <Link
             to={`/w/${workspaceId}`}
             className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}

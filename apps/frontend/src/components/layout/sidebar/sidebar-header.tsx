@@ -1,10 +1,13 @@
-import { Search as SearchIcon } from "lucide-react"
+import { Search as SearchIcon, Terminal, FileText } from "lucide-react"
 import { Link } from "react-router-dom"
-import { useQuickSwitcher, type ViewMode } from "@/contexts"
+import { useQuickSwitcher, usePreferences, type ViewMode } from "@/contexts"
 import { useSidebar } from "@/contexts"
 import { cn } from "@/lib/utils"
 import { ThemeDropdown } from "@/components/theme-dropdown"
 import { ThreaLogo } from "@/components/threa-logo"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { SidebarToggle } from "@/components/layout/sidebar-toggle"
+import { getEffectiveKeyBinding, formatKeyBinding, formatKeyBindingText } from "@/lib/keyboard-shortcuts"
 
 interface SidebarHeaderProps {
   workspaceName: string
@@ -16,45 +19,76 @@ interface SidebarHeaderProps {
 
 export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideViewToggle }: SidebarHeaderProps) {
   const { openSwitcher } = useQuickSwitcher()
-  const { collapseOnMobile } = useSidebar()
+  const { state, collapseOnMobile } = useSidebar()
+  const { preferences } = usePreferences()
+  const customBindings = preferences?.keyboardShortcuts ?? {}
+  const streamBinding = getEffectiveKeyBinding("openQuickSwitcher", customBindings)
+  const commandBinding = getEffectiveKeyBinding("openCommands", customBindings)
+  const searchBinding = getEffectiveKeyBinding("openSearch", customBindings)
+  const isOpen = state === "pinned" || state === "preview"
 
-  const handleOpenSearch = () => {
+  const handleOpenSwitcher = (mode: "stream" | "command" | "search") => () => {
     collapseOnMobile()
-    openSwitcher("search")
+    openSwitcher(mode)
   }
 
   return (
-    <div className="flex-shrink-0 border-b px-4 py-3">
-      {/* Logo + workspace name + actions */}
-      <div className="flex items-center justify-between mb-3">
+    <div className="flex-shrink-0 border-b">
+      {/* Top row — mirrors the h-12 page-header row so the sidebar toggle sits
+           in the identical viewport position whether the sidebar is open or not. */}
+      <div className="flex h-12 items-center gap-1 px-4">
+        <SidebarToggle location="sidebar" />
+        {/* Logo + workspace name drift 4px left as the sidebar opens, paired
+             with the page-header toggle sliding off to the left — together
+             they read as a coordinated "everything shifts left" swap. */}
         <Link
           to="/workspaces"
-          className="flex items-center gap-2 hover:opacity-80 transition-opacity truncate"
+          className={cn(
+            "flex min-w-0 items-center gap-2 truncate transition-[transform,opacity] duration-200 ease-out hover:opacity-80",
+            isOpen ? "translate-x-0" : "translate-x-1"
+          )}
           onClick={collapseOnMobile}
         >
           <ThreaLogo size="sm" />
-          <span className="font-semibold text-sm truncate">{workspaceName}</span>
+          <span className="truncate text-sm font-semibold">{workspaceName}</span>
         </Link>
-        <ThemeDropdown />
+        <div className="ml-auto flex items-center">
+          <ThemeDropdown />
+        </div>
       </div>
 
-      {/* Search box */}
-      <button
-        onClick={handleOpenSearch}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-background border border-border rounded-lg text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
-      >
-        <SearchIcon className="h-3.5 w-3.5" />
-        <span>Search messages</span>
-      </button>
+      {/* Quick-action pills — replaces the former full-width search box. The
+           three affordances (stream / command palette / message search) are the
+           entry points to the three quick-switcher modes. */}
+      <div className="flex items-center gap-1 px-3 pt-2">
+        <QuickActionPill
+          onClick={handleOpenSwitcher("stream")}
+          icon={FileText}
+          label="Jump to stream"
+          binding={streamBinding}
+        />
+        <QuickActionPill
+          onClick={handleOpenSwitcher("command")}
+          icon={Terminal}
+          label="Commands"
+          binding={commandBinding}
+        />
+        <QuickActionPill
+          onClick={handleOpenSwitcher("search")}
+          icon={SearchIcon}
+          label="Search messages"
+          binding={searchBinding}
+        />
+      </div>
 
       {/* View toggle - hidden when no streams */}
       {!hideViewToggle && (
-        <div className="flex items-center gap-2 mt-3">
-          <div className="flex gap-1 bg-muted rounded-md p-0.5">
+        <div className="flex items-center gap-2 px-3 pb-3 pt-2">
+          <div className="flex gap-1 rounded-md bg-muted p-0.5">
             <button
               onClick={() => onViewModeChange("smart")}
               className={cn(
-                "px-2 py-1 rounded text-xs font-medium transition-all",
+                "rounded px-2 py-1 text-xs font-medium transition-all",
                 viewMode === "smart" ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -63,7 +97,7 @@ export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideV
             <button
               onClick={() => onViewModeChange("all")}
               className={cn(
-                "px-2 py-1 rounded text-xs font-medium transition-all",
+                "rounded px-2 py-1 text-xs font-medium transition-all",
                 viewMode === "all" ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -72,6 +106,49 @@ export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideV
           </div>
         </div>
       )}
+
+      {/* When the view toggle is hidden we still need trailing breathing room
+           under the pill row so the list below doesn't butt against the border. */}
+      {hideViewToggle && <div className="h-3" aria-hidden="true" />}
     </div>
+  )
+}
+
+interface QuickActionPillProps {
+  onClick: () => void
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  /** Effective user-configured binding, e.g. "mod+k"; undefined if disabled. */
+  binding: string | undefined
+}
+
+function QuickActionPill({ onClick, icon: Icon, label, binding }: QuickActionPillProps) {
+  const shortcutLabel = binding ? formatKeyBinding(binding) : null
+  const ariaLabel = binding ? `${label} (${formatKeyBindingText(binding)})` : label
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={ariaLabel}
+          className={cn(
+            "flex h-8 flex-1 items-center justify-center rounded-md border border-border bg-background",
+            "text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          )}
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="flex items-center gap-2">
+        <span>{label}</span>
+        {shortcutLabel && (
+          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {shortcutLabel}
+          </kbd>
+        )}
+      </TooltipContent>
+    </Tooltip>
   )
 }

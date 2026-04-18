@@ -1,74 +1,12 @@
 import { type ReactNode, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
-import { PanelLeftClose, PanelLeft, Command, RefreshCw } from "lucide-react"
-import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
+import { RefreshCw } from "lucide-react"
+import { useSidebar, useCoordinatedLoading } from "@/contexts"
 import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh, workspaceKeys, streamKeys } from "@/hooks"
-import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
 import { ConnectionStatus } from "./connection-status"
 import { cn } from "@/lib/utils"
-
-/** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl on Windows/Linux) */
-const MOD_KEY = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl"
-
-interface TopbarProps {
-  isPinned: boolean
-  onToggleSidebar: () => void
-}
-
-function Topbar({ isPinned, onToggleSidebar }: TopbarProps) {
-  const { openSwitcher } = useQuickSwitcher()
-  const { showLoadingIndicator } = useCoordinatedLoading()
-
-  return (
-    <div className="relative flex h-11 items-center border-b bg-background/80 backdrop-blur-sm">
-      {/* Loading indicator - subtle shimmer at bottom border */}
-      <TopbarLoadingIndicator visible={showLoadingIndicator} />
-      {/* Left section - sidebar toggle */}
-      <div className="flex w-[100px] items-center px-3">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={onToggleSidebar}
-              aria-label={isPinned ? "Collapse sidebar" : "Pin sidebar"}
-            >
-              {isPinned ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{isPinned ? "Collapse sidebar" : "Pin sidebar"}</TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* Center section - placeholder for label tabs (future) */}
-      <div className="flex flex-1 items-center justify-center">
-        {/* Label tabs will go here when groups are implemented */}
-      </div>
-
-      {/* Right section - quick actions */}
-      <div className="flex w-[100px] items-center justify-end px-3">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1 px-2 text-xs text-muted-foreground"
-              onClick={() => openSwitcher("stream")}
-            >
-              <Command className="h-3 w-3" />
-              <span>K</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Quick switcher ({MOD_KEY}K)</TooltipContent>
-        </Tooltip>
-      </div>
-    </div>
-  )
-}
 
 // Pull indicator styling per mode — INV-47
 const pullModeConfig = {
@@ -146,12 +84,12 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     urgencyBlocks,
     setHovering,
     collapse,
-    togglePinned,
     showPreview,
     startResizing,
     stopResizing,
     setWidth,
   } = useSidebar()
+  const { showLoadingIndicator } = useCoordinatedLoading()
 
   const { handleResizeStart } = useResizeDrag({
     width,
@@ -189,8 +127,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
-  const isPinned = state === "pinned"
-  const isOpen = isPreview || isPinned
+  const isOpen = state === "pinned" || isPreview
   let wrapperWidth = `${width}px`
   if (isMobile) {
     wrapperWidth = "0px"
@@ -247,12 +184,16 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
   return (
     <div className="flex w-screen flex-col overflow-hidden" style={{ height: "var(--viewport-height, 100dvh)" }}>
-      {/* Topbar - spans full width */}
-      <Topbar isPinned={isMobile ? isOpen : isPinned} onToggleSidebar={togglePinned} />
-
-      {/* Pull-to-refresh container — wraps everything below the topbar so pulling
-           anywhere (sidebar or main content) translates the entire area uniformly */}
+      {/* Pull-to-refresh container — pulling anywhere (sidebar or main content)
+           translates the entire area uniformly */}
       <div ref={pullRef} className="relative flex flex-1 flex-col overflow-hidden">
+        {/* Workspace-wide loading indicator — hairline along the bottom of the
+             sidebar/page header row (h-12). Spans the full viewport so it links
+             the two headers visually now that the top bar is gone. */}
+        <div className="pointer-events-none absolute left-0 right-0 top-12 z-[55]">
+          <TopbarLoadingIndicator visible={showLoadingIndicator} />
+        </div>
+
         {/* Pull-to-refresh indicator */}
         <div
           className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-2 pointer-events-none"

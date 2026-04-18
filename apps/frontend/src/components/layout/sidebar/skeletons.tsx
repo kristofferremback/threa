@@ -2,16 +2,20 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export function HeaderSkeleton() {
   return (
-    <div className="flex-shrink-0 border-b px-4 py-3">
-      <div className="flex items-center justify-between mb-3">
-        <Skeleton className="h-4 w-24" />
-        <div className="flex items-center gap-1">
-          <Skeleton className="h-7 w-7 rounded-md" />
-          <Skeleton className="h-7 w-7 rounded-md" />
-        </div>
+    <div className="flex-shrink-0 border-b">
+      {/* Matches the new h-12 top row: toggle + logo + name + theme dropdown */}
+      <div className="flex h-12 items-center gap-1 px-4">
+        <Skeleton className="h-8 w-8 rounded-md" />
+        <Skeleton className="ml-1 h-4 w-24" />
+        <Skeleton className="ml-auto h-7 w-7 rounded-md" />
       </div>
-      <Skeleton className="h-9 w-full rounded-lg" />
-      <div className="flex items-center gap-2 mt-3">
+      {/* Matches the three quick-action pills */}
+      <div className="flex items-center gap-1 px-3 pt-2">
+        <Skeleton className="h-8 flex-1 rounded-md" />
+        <Skeleton className="h-8 flex-1 rounded-md" />
+        <Skeleton className="h-8 flex-1 rounded-md" />
+      </div>
+      <div className="flex items-center gap-2 px-3 pb-3 pt-2">
         <Skeleton className="h-7 w-24 rounded-md" />
       </div>
     </div>
