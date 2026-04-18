@@ -52,6 +52,7 @@ function ActivityPageInner({ workspaceId, filter }: InnerProps) {
   const { data: activities, isLoading } = useActivityFeed(workspaceId, {
     unreadOnly: filter === "unread",
     mineOnly: filter === "me",
+    othersOnly: filter === "all",
   })
   const markRead = useMarkActivityRead(workspaceId)
   const markAllRead = useMarkAllActivityRead(workspaceId)

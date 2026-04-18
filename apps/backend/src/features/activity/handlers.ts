@@ -16,12 +16,14 @@ export function createActivityHandlers({ activityService }: Dependencies) {
       const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined
       const unreadOnly = req.query.unreadOnly === "true"
       const mineOnly = req.query.mineOnly === "true"
+      const othersOnly = req.query.othersOnly === "true"
 
       const activities = await activityService.listFeed(userId, workspaceId, {
         limit,
         cursor,
         unreadOnly,
         mineOnly,
+        othersOnly,
       })
 
       res.json({ activities })

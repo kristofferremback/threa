@@ -7,18 +7,22 @@ import type { Activity, WorkspaceBootstrap } from "@threa/types"
 export const activityKeys = {
   all: ["activity"] as const,
   list: (workspaceId: string) => ["activity", workspaceId] as const,
-  listFiltered: (workspaceId: string, filters: { unreadOnly: boolean; mineOnly: boolean }) =>
+  listFiltered: (workspaceId: string, filters: { unreadOnly: boolean; mineOnly: boolean; othersOnly: boolean }) =>
     ["activity", workspaceId, filters] as const,
 }
 
-export function useActivityFeed(workspaceId: string, opts?: { unreadOnly?: boolean; mineOnly?: boolean }) {
+export function useActivityFeed(
+  workspaceId: string,
+  opts?: { unreadOnly?: boolean; mineOnly?: boolean; othersOnly?: boolean }
+) {
   const activityService = useActivityService()
   const unreadOnly = opts?.unreadOnly ?? false
   const mineOnly = opts?.mineOnly ?? false
+  const othersOnly = opts?.othersOnly ?? false
 
   return useQuery({
-    queryKey: activityKeys.listFiltered(workspaceId, { unreadOnly, mineOnly }),
-    queryFn: () => activityService.list(workspaceId, { limit: 50, unreadOnly, mineOnly }),
+    queryKey: activityKeys.listFiltered(workspaceId, { unreadOnly, mineOnly, othersOnly }),
+    queryFn: () => activityService.list(workspaceId, { limit: 50, unreadOnly, mineOnly, othersOnly }),
     // Subscribe-then-bootstrap pattern:
     // staleTime: Infinity prevents auto-refetch; socket events invalidate when needed.
     // refetchOnMount: true triggers refetch when data is stale (after invalidation).
