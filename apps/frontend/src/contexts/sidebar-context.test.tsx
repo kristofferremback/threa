@@ -48,14 +48,14 @@ describe("SidebarContext.togglePinned (desktop)", () => {
   })
 })
 
-describe("SidebarContext.cycleSectionState", () => {
+describe("SidebarContext.toggleSectionState", () => {
   beforeEach(() => {
     localStorage.removeItem(SIDEBAR_STATE_KEY)
   })
 
-  it("quick-links defaults to auto", () => {
+  it("quick-links defaults to open", () => {
     const { result } = renderHook(() => useSidebar(), { wrapper })
-    expect(result.current.getSectionState("quick-links", "auto")).toBe("auto")
+    expect(result.current.getSectionState("quick-links", "open")).toBe("open")
   })
 
   it("other section defaults to collapsed", () => {
@@ -66,40 +66,58 @@ describe("SidebarContext.cycleSectionState", () => {
   it("unknown sections fall back to the provided default", () => {
     const { result } = renderHook(() => useSidebar(), { wrapper })
     expect(result.current.getSectionState("channels")).toBe("open")
-    expect(result.current.getSectionState("channels", "auto")).toBe("auto")
+    expect(result.current.getSectionState("channels:rest", "collapsed")).toBe("collapsed")
   })
 
-  it("cycles a section through auto → collapsed → open → auto", () => {
+  it("flips a section between open and collapsed", () => {
     const { result } = renderHook(() => useSidebar(), { wrapper })
 
-    expect(result.current.getSectionState("quick-links", "auto")).toBe("auto")
+    expect(result.current.getSectionState("quick-links")).toBe("open")
 
-    act(() => result.current.cycleSectionState("quick-links", "auto"))
-    expect(result.current.getSectionState("quick-links", "auto")).toBe("collapsed")
+    act(() => result.current.toggleSectionState("quick-links"))
+    expect(result.current.getSectionState("quick-links")).toBe("collapsed")
 
-    act(() => result.current.cycleSectionState("quick-links", "auto"))
-    expect(result.current.getSectionState("quick-links", "auto")).toBe("open")
-
-    act(() => result.current.cycleSectionState("quick-links", "auto"))
-    expect(result.current.getSectionState("quick-links", "auto")).toBe("auto")
+    act(() => result.current.toggleSectionState("quick-links"))
+    expect(result.current.getSectionState("quick-links")).toBe("open")
   })
 
-  it("cycles an unknown section from its default", () => {
+  it("toggles an unknown section starting from its provided default", () => {
     const { result } = renderHook(() => useSidebar(), { wrapper })
 
-    act(() => result.current.cycleSectionState("channels")) // from open → auto
-    expect(result.current.getSectionState("channels")).toBe("auto")
+    act(() => result.current.toggleSectionState("channels:rest", "collapsed"))
+    expect(result.current.getSectionState("channels:rest", "collapsed")).toBe("open")
   })
 
   it("persists section states to localStorage", () => {
     const { result } = renderHook(() => useSidebar(), { wrapper })
 
-    act(() => result.current.cycleSectionState("quick-links", "auto")) // auto -> collapsed
+    act(() => result.current.toggleSectionState("quick-links"))
 
     const raw = localStorage.getItem(SIDEBAR_STATE_KEY)
     expect(raw).toBeTruthy()
     const parsed = JSON.parse(raw as string)
     expect(parsed.sectionStates["quick-links"]).toBe("collapsed")
+  })
+
+  it("persists nested subsection states alongside parent sections", () => {
+    const { result } = renderHook(() => useSidebar(), { wrapper })
+
+    act(() => result.current.toggleSectionState("channels:rest", "collapsed"))
+    act(() => result.current.toggleSectionState("other:rest", "collapsed"))
+
+    const raw = localStorage.getItem(SIDEBAR_STATE_KEY)
+    const parsed = JSON.parse(raw as string)
+    expect(parsed.sectionStates["channels:rest"]).toBe("open")
+    expect(parsed.sectionStates["other:rest"]).toBe("open")
+  })
+
+  it("rehydrates nested subsection states across provider remounts", () => {
+    const first = renderHook(() => useSidebar(), { wrapper })
+    act(() => first.result.current.toggleSectionState("scratchpads:rest", "collapsed"))
+    first.unmount()
+
+    const second = renderHook(() => useSidebar(), { wrapper })
+    expect(second.result.current.getSectionState("scratchpads:rest", "collapsed")).toBe("open")
   })
 
   it("migrates legacy collapsedSections into sectionStates", () => {
@@ -130,7 +148,24 @@ describe("SidebarContext.cycleSectionState", () => {
     )
 
     const { result } = renderHook(() => useSidebar(), { wrapper })
-    expect(result.current.getSectionState("quick-links", "auto")).toBe("open")
+    expect(result.current.getSectionState("quick-links")).toBe("open")
+  })
+
+  it("migrates legacy 'auto' values to 'open'", () => {
+    localStorage.setItem(
+      SIDEBAR_STATE_KEY,
+      JSON.stringify({
+        openState: "open",
+        width: 260,
+        viewMode: "smart",
+        sectionStates: { "quick-links": "auto", channels: "auto", other: "collapsed" },
+      })
+    )
+
+    const { result } = renderHook(() => useSidebar(), { wrapper })
+    expect(result.current.getSectionState("quick-links")).toBe("open")
+    expect(result.current.getSectionState("channels")).toBe("open")
+    expect(result.current.getSectionState("other")).toBe("collapsed")
   })
 
   it("ignores invalid persisted values", () => {
@@ -140,12 +175,12 @@ describe("SidebarContext.cycleSectionState", () => {
         openState: "open",
         width: 260,
         viewMode: "smart",
-        sectionStates: { "quick-links": "nonsense", channels: "auto" },
+        sectionStates: { "quick-links": "nonsense", channels: "collapsed" },
       })
     )
 
     const { result } = renderHook(() => useSidebar(), { wrapper })
-    expect(result.current.getSectionState("quick-links", "auto")).toBe("auto")
-    expect(result.current.getSectionState("channels")).toBe("auto")
+    expect(result.current.getSectionState("quick-links")).toBe("open")
+    expect(result.current.getSectionState("channels")).toBe("collapsed")
   })
 })

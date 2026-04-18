@@ -7,16 +7,16 @@ import { SidebarQuickLinks } from "./quick-links"
 
 type SidebarValue = ReturnType<typeof Contexts.useSidebar>
 
-function stubSidebar(quickLinksState: CollapseState = "auto"): { cycleSectionState: ReturnType<typeof vi.fn> } {
-  const cycleSectionState = vi.fn()
+function stubSidebar(quickLinksState: CollapseState = "open"): { toggleSectionState: ReturnType<typeof vi.fn> } {
+  const toggleSectionState = vi.fn()
   const value = {
     collapseOnMobile: vi.fn(),
     getSectionState: (section: string, defaultState: CollapseState = "open") =>
       section === "quick-links" ? quickLinksState : defaultState,
-    cycleSectionState,
+    toggleSectionState,
   } as unknown as SidebarValue
   vi.spyOn(Contexts, "useSidebar").mockReturnValue(value)
-  return { cycleSectionState }
+  return { toggleSectionState }
 }
 
 function renderQuickLinks(props: Partial<Parameters<typeof SidebarQuickLinks>[0]> = {}) {
@@ -42,7 +42,7 @@ describe("SidebarQuickLinks", () => {
     vi.restoreAllMocks()
   })
 
-  it("renders all four links in open mode", () => {
+  it("renders all links when open", () => {
     stubSidebar("open")
     renderQuickLinks()
 
@@ -52,28 +52,7 @@ describe("SidebarQuickLinks", () => {
     expect(screen.getByText("Activity")).toBeInTheDocument()
   })
 
-  it("in auto mode shows only items with a signal", () => {
-    stubSidebar("auto")
-    renderQuickLinks({ draftCount: 3 })
-
-    expect(screen.getByText("Drafts")).toBeInTheDocument()
-    expect(screen.queryByText("Threads")).not.toBeInTheDocument()
-    expect(screen.queryByText("Memory")).not.toBeInTheDocument()
-    expect(screen.queryByText("Activity")).not.toBeInTheDocument()
-  })
-
-  it("in auto mode with no signals renders no items but keeps the header", () => {
-    stubSidebar("auto")
-    renderQuickLinks()
-
-    expect(screen.queryByText("Drafts")).not.toBeInTheDocument()
-    expect(screen.queryByText("Threads")).not.toBeInTheDocument()
-    expect(screen.queryByText("Memory")).not.toBeInTheDocument()
-    expect(screen.queryByText("Activity")).not.toBeInTheDocument()
-    expect(screen.getByText("Quick Links")).toBeInTheDocument()
-  })
-
-  it("in collapsed mode renders only the header", () => {
+  it("renders only the header when collapsed", () => {
     stubSidebar("collapsed")
     renderQuickLinks({ draftCount: 2, unreadActivityCount: 5 })
 
@@ -82,39 +61,43 @@ describe("SidebarQuickLinks", () => {
     expect(screen.queryByText("Activity")).not.toBeInTheDocument()
   })
 
-  it("shows a dot on the header in collapsed mode when something is signaling", () => {
+  it("shows an aggregate unread badge on the collapsed header when activity is unread", () => {
     stubSidebar("collapsed")
-    renderQuickLinks({ unreadActivityCount: 1 })
+    renderQuickLinks({ unreadActivityCount: 3 })
 
-    expect(screen.getByLabelText("Unread activity")).toBeInTheDocument()
+    // The "3" is rendered inside the aggregate badge on the collapsed header.
+    expect(screen.getByText("3")).toBeInTheDocument()
   })
 
-  it("does not show the dot in collapsed mode when nothing is signaling", () => {
+  it("does not show an aggregate on the collapsed header when nothing is signaling", () => {
     stubSidebar("collapsed")
-    renderQuickLinks()
+    renderQuickLinks({ draftCount: 4, savedCount: 7 })
 
-    expect(screen.queryByLabelText("Unread activity")).not.toBeInTheDocument()
+    // Drafts and saved counts are persistent artifacts, not unread signal, so
+    // they do not surface on the collapsed header.
+    expect(screen.queryByText("4")).not.toBeInTheDocument()
+    expect(screen.queryByText("7")).not.toBeInTheDocument()
   })
 
-  it("cycles state when the header is clicked", async () => {
+  it("toggles state when the header is clicked", async () => {
     const user = userEvent.setup()
-    const { cycleSectionState } = stubSidebar("open")
+    const { toggleSectionState } = stubSidebar("open")
     renderQuickLinks()
 
     await user.click(screen.getByText("Quick Links"))
-    expect(cycleSectionState).toHaveBeenCalledTimes(1)
-    expect(cycleSectionState).toHaveBeenCalledWith("quick-links", "auto")
+    expect(toggleSectionState).toHaveBeenCalledTimes(1)
+    expect(toggleSectionState).toHaveBeenCalledWith("quick-links", "open")
   })
 
-  it("displays the activity unread badge in open mode", () => {
+  it("displays the activity unread badge inline when open", () => {
     stubSidebar("open")
     renderQuickLinks({ unreadActivityCount: 4 })
 
     expect(screen.getByText("4")).toBeInTheDocument()
   })
 
-  it("displays the draft count in auto mode", () => {
-    stubSidebar("auto")
+  it("displays the draft count inline when open", () => {
+    stubSidebar("open")
     renderQuickLinks({ draftCount: 2 })
 
     expect(screen.getByText("(2)")).toBeInTheDocument()

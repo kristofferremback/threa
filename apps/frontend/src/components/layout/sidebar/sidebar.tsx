@@ -46,8 +46,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     viewMode,
     setViewMode,
     getSectionState,
-    cycleSectionState,
-    setSectionState,
+    toggleSectionState,
     setSidebarHeight,
     setScrollContainerOffset,
     collapseOnMobile,
@@ -305,8 +304,12 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     return (
       <SidebarShell
         header={<HeaderSkeleton />}
-        quickLinks={<QuickLinksSkeleton />}
-        streamList={<StreamListSkeleton />}
+        body={
+          <>
+            <QuickLinksSkeleton />
+            <StreamListSkeleton />
+          </>
+        }
       />
     )
   }
@@ -316,8 +319,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     return (
       <SidebarShell
         header={<HeaderSkeleton />}
-        quickLinks={null}
-        streamList={
+        body={
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
             <p className="text-sm text-muted-foreground mb-3">Failed to load workspace</p>
             <Button variant="outline" size="sm" onClick={() => syncEngine.retryWorkspace()} className="gap-2">
@@ -348,6 +350,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   return (
     <SidebarShell
       sidebarRef={sidebarRef}
+      scrollContainerRef={scrollContainerRef}
       header={
         <SidebarHeader
           workspaceName={workspace?.name ?? ""}
@@ -356,38 +359,39 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           hideViewToggle={!hasUserStreams}
         />
       }
-      quickLinks={
-        <SidebarQuickLinks
-          workspaceId={workspaceId}
-          isDraftsPage={isDraftsPage}
-          draftCount={draftCount}
-          isSavedPage={isSavedPage}
-          savedCount={savedCount}
-          isActivityPage={isActivityPage}
-          isMemoryPage={isMemoryPage}
-          unreadActivityCount={unreadActivityCount}
-        />
-      }
-      streamList={
-        <SidebarStreamList
-          workspaceId={workspaceId}
-          viewMode={viewMode}
-          isLoading={isLoading}
-          hasError={Boolean(error)}
-          hasUserStreams={hasUserStreams}
-          activeStreamId={activeStreamId}
-          processedStreams={processedStreams}
-          streamsBySection={streamsBySection}
-          streamsByType={streamsByType}
-          getUnreadCount={getUnreadCount}
-          getMentionCount={getMentionCount}
-          getSectionState={getSectionState}
-          cycleSectionState={cycleSectionState}
-          setSectionState={setSectionState}
-          onCreateScratchpad={handleCreateScratchpad}
-          onCreateChannel={handleCreateChannel}
-          scrollContainerRef={scrollContainerRef}
-        />
+      body={
+        <>
+          <div className="mb-2">
+            <SidebarQuickLinks
+              workspaceId={workspaceId}
+              isDraftsPage={isDraftsPage}
+              draftCount={draftCount}
+              isSavedPage={isSavedPage}
+              savedCount={savedCount}
+              isActivityPage={isActivityPage}
+              isMemoryPage={isMemoryPage}
+              unreadActivityCount={unreadActivityCount}
+            />
+          </div>
+          <SidebarStreamList
+            workspaceId={workspaceId}
+            viewMode={viewMode}
+            isLoading={isLoading}
+            hasError={Boolean(error)}
+            hasUserStreams={hasUserStreams}
+            activeStreamId={activeStreamId}
+            processedStreams={processedStreams}
+            streamsBySection={streamsBySection}
+            streamsByType={streamsByType}
+            getUnreadCount={getUnreadCount}
+            getMentionCount={getMentionCount}
+            getSectionState={getSectionState}
+            toggleSectionState={toggleSectionState}
+            onCreateScratchpad={handleCreateScratchpad}
+            onCreateChannel={handleCreateChannel}
+            scrollContainerRef={scrollContainerRef}
+          />
+        </>
       }
       footer={<SidebarFooter workspaceId={workspaceId} currentUser={currentUser} />}
     />

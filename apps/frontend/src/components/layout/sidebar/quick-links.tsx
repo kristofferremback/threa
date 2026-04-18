@@ -23,12 +23,12 @@ interface QuickLinkItem {
   icon: ComponentType<{ className?: string }>
   label: string
   isActive: boolean
-  hasSignal: boolean
+  unreadCount: number
   signalSlot: ReactNode
 }
 
 const SECTION_KEY = "quick-links"
-const DEFAULT_STATE = "auto"
+const DEFAULT_STATE = "open"
 
 export function SidebarQuickLinks({
   workspaceId,
@@ -40,7 +40,7 @@ export function SidebarQuickLinks({
   isMemoryPage,
   unreadActivityCount,
 }: SidebarQuickLinksProps) {
-  const { collapseOnMobile, getSectionState, cycleSectionState } = useSidebar()
+  const { collapseOnMobile, getSectionState, toggleSectionState } = useSidebar()
   const state = getSectionState(SECTION_KEY, DEFAULT_STATE)
 
   const items: QuickLinkItem[] = [
@@ -50,7 +50,7 @@ export function SidebarQuickLinks({
       icon: FileEdit,
       label: "Drafts",
       isActive: isDraftsPage,
-      hasSignal: draftCount > 0,
+      unreadCount: draftCount,
       signalSlot: draftCount > 0 ? <span className="ml-auto text-xs text-muted-foreground">({draftCount})</span> : null,
     },
     {
@@ -59,7 +59,7 @@ export function SidebarQuickLinks({
       icon: Bookmark,
       label: "Saved",
       isActive: isSavedPage,
-      hasSignal: savedCount > 0,
+      unreadCount: savedCount,
       signalSlot: savedCount > 0 ? <span className="ml-auto text-xs text-muted-foreground">({savedCount})</span> : null,
     },
     {
@@ -68,7 +68,7 @@ export function SidebarQuickLinks({
       icon: MessageSquareText,
       label: "Threads",
       isActive: false,
-      hasSignal: false,
+      unreadCount: 0,
       signalSlot: null,
     },
     {
@@ -77,7 +77,7 @@ export function SidebarQuickLinks({
       icon: Brain,
       label: "Memory",
       isActive: isMemoryPage,
-      hasSignal: false,
+      unreadCount: 0,
       signalSlot: null,
     },
     {
@@ -86,44 +86,44 @@ export function SidebarQuickLinks({
       icon: Bell,
       label: "Activity",
       isActive: isActivityPage,
-      hasSignal: unreadActivityCount > 0,
+      unreadCount: unreadActivityCount,
       signalSlot: unreadActivityCount > 0 ? <UnreadBadge count={unreadActivityCount} className="ml-auto" /> : null,
     },
   ]
 
-  const anySignal = items.some((item) => item.hasSignal)
-  const visibleByState: Record<typeof state, QuickLinkItem[]> = {
-    open: items,
-    auto: items.filter((item) => item.hasSignal),
-    collapsed: [],
-  }
-  const visibleItems = visibleByState[state]
+  // Aggregate only "real" attention-worthy signals — drafts and saved counts
+  // are persistent artifacts, not unread activity. The activity feed is the
+  // only source of new-attention signal in the quick links today.
+  const unreadAggregate = unreadActivityCount
+
+  const isOpen = state === "open"
 
   return (
     <div className="space-y-1">
       <SectionHeader
         label="Quick Links"
         state={state}
-        onCycle={() => cycleSectionState(SECTION_KEY, DEFAULT_STATE)}
-        anySignal={anySignal}
+        onToggle={() => toggleSectionState(SECTION_KEY, DEFAULT_STATE)}
+        unreadAggregate={unreadAggregate}
       />
 
-      {visibleItems.map(({ key, to, icon: Icon, label, isActive, hasSignal, signalSlot }) => (
-        <Link
-          key={key}
-          to={to}
-          onClick={collapseOnMobile}
-          className={cn(
-            "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-            isActive ? "bg-primary/10" : "hover:bg-muted/50",
-            !isActive && !hasSignal && "text-muted-foreground"
-          )}
-        >
-          <Icon className="h-4 w-4" />
-          {label}
-          {signalSlot}
-        </Link>
-      ))}
+      {isOpen &&
+        items.map(({ key, to, icon: Icon, label, isActive, unreadCount, signalSlot }) => (
+          <Link
+            key={key}
+            to={to}
+            onClick={collapseOnMobile}
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              isActive ? "bg-primary/10" : "hover:bg-muted/50",
+              !isActive && unreadCount === 0 && "text-muted-foreground"
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+            {signalSlot}
+          </Link>
+        ))}
     </div>
   )
 }
