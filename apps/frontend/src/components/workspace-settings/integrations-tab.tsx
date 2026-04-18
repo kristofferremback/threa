@@ -1,27 +1,19 @@
-import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Github, ExternalLink } from "lucide-react"
-import { useAuth } from "@/auth/hooks"
 import { integrationsApi } from "@/api/integrations"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useWorkspaceUsers } from "@/stores/workspace-store"
+import { useWorkspaceMetadata } from "@/stores/workspace-store"
 
 interface IntegrationsTabProps {
   workspaceId: string
 }
 
 export function IntegrationsTab({ workspaceId }: IntegrationsTabProps) {
-  const { user } = useAuth()
   const queryClient = useQueryClient()
-  const workspaceUsers = useWorkspaceUsers(workspaceId)
-
-  const currentWorkspaceUser = useMemo(
-    () => workspaceUsers.find((workspaceUser) => workspaceUser.workosUserId === user?.id) ?? null,
-    [user?.id, workspaceUsers]
-  )
-  const canManage = currentWorkspaceUser?.role === "admin" || currentWorkspaceUser?.role === "owner"
+  const metadata = useWorkspaceMetadata(workspaceId)
+  const canManage = metadata?.viewerPermissions?.includes("workspace:admin") ?? false
 
   const query = useQuery({
     queryKey: ["workspace-integrations", workspaceId, "github"],

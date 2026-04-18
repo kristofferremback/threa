@@ -4,7 +4,13 @@ export type { AuthResult, AuthService } from "./auth/auth-service"
 export { StubAuthService } from "./auth/auth-service.stub"
 export type { DevLoginResult } from "./auth/auth-service.stub"
 export { WorkosOrgServiceImpl, getWorkosErrorCode } from "./auth/workos-org-service"
-export type { WorkosOrgService, WorkosAppInvitation, WorkosUserSummary } from "./auth/workos-org-service"
+export type {
+  WorkosOrgService,
+  WorkosAppInvitation,
+  WorkosOrganizationMembership,
+  WorkosRoleSummary,
+  WorkosUserSummary,
+} from "./auth/workos-org-service"
 export { StubWorkosOrgService } from "./auth/workos-org-service.stub"
 export { createAuthMiddleware } from "./auth/middleware"
 export { WorkosApiKeyService } from "./auth/api-key-service"

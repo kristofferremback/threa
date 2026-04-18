@@ -1,6 +1,8 @@
 import type { Request, Response, NextFunction } from "express"
 import type { Pool } from "pg"
+import type { WorkosOrgService } from "@threa/backend-common"
 import { UserRepository, type User } from "../features/workspaces"
+import { resolveWorkspaceAuthorization } from "./workspace-authz-resolver"
 
 declare global {
   namespace Express {
@@ -13,9 +15,10 @@ declare global {
 
 interface Dependencies {
   pool: Pool
+  workosOrgService: WorkosOrgService
 }
 
-export function createWorkspaceUserMiddleware({ pool }: Dependencies) {
+export function createWorkspaceUserMiddleware({ pool, workosOrgService }: Dependencies) {
   return async function workspaceUserMiddleware(req: Request, res: Response, next: NextFunction) {
     const { workspaceId } = req.params
 
@@ -38,8 +41,35 @@ export function createWorkspaceUserMiddleware({ pool }: Dependencies) {
       return res.status(403).json({ error: "Not a user in this workspace" })
     }
 
+    const authz = await resolveWorkspaceAuthorization({
+      pool,
+      workosOrgService,
+      workspaceId,
+      workosUserId,
+      userId: user.id,
+      source: "session",
+    })
+    if (authz.status === "missing_org") {
+      return res.status(500).json({ error: "Workspace is not configured for WorkOS authorization" })
+    }
+    if (authz.status === "missing_membership") {
+      return res.status(403).json({ error: "Not authorized in this workspace" })
+    }
+
+    if (user.role !== authz.value.compatibilityRole) {
+      await UserRepository.update(pool, workspaceId, user.id, { role: authz.value.compatibilityRole })
+    }
+
     req.workspaceId = workspaceId
-    req.user = user
+    req.authz = authz.value
+    req.user = {
+      ...user,
+      role: authz.value.compatibilityRole,
+      isOwner: authz.value.isOwner,
+      assignedRole: authz.value.assignedRoles[0] ?? null,
+      assignedRoles: authz.value.assignedRoles,
+      canEditRole: authz.value.canEditRole,
+    }
     next()
   }
 }

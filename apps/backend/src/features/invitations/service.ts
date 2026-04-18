@@ -14,6 +14,7 @@ interface SendInvitationsParams {
   invitedBy: string // user_id
   emails: string[]
   role: "admin" | "user"
+  roleSlug: string
 }
 
 interface SendResult {
@@ -39,7 +40,7 @@ export class InvitationService {
   ) {}
 
   async sendInvitations(params: SendInvitationsParams): Promise<SendResult> {
-    const { workspaceId, invitedBy, role } = params
+    const { workspaceId, invitedBy, role, roleSlug } = params
     const emails = params.emails.map((e) => e.toLowerCase().trim())
 
     const skipped: SendResult["skipped"] = []
@@ -86,6 +87,7 @@ export class InvitationService {
           workspaceId,
           email,
           role,
+          roleSlug,
           invitedBy,
           expiresAt,
         })
@@ -95,6 +97,7 @@ export class InvitationService {
           invitationId: id,
           email,
           role,
+          roleSlug,
           inviterWorkosUserId,
         })
 
@@ -235,6 +238,7 @@ export class InvitationService {
       invitedBy: invitation.invitedBy,
       emails: [invitation.email],
       role: invitation.role,
+      roleSlug: invitation.roleSlug,
     })
 
     return result.sent[0] ?? null

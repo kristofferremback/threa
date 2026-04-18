@@ -41,7 +41,19 @@ import type {
   WorkspaceIntegrationStatus,
   GitHubPreviewType,
 } from "./constants"
+import type { WorkspacePermissionScope } from "./api-keys"
 import type { ThreaDocument } from "./prosemirror"
+
+export interface WorkspaceRoleRef {
+  slug: string
+  name: string
+}
+
+export interface WorkspaceRole extends WorkspaceRoleRef {
+  description: string | null
+  permissions: WorkspacePermissionScope[]
+  type: string
+}
 
 export interface Workspace {
   id: string
@@ -59,6 +71,10 @@ export interface User {
   workosUserId: string
   email: string
   role: WorkspaceUserRole
+  isOwner?: boolean
+  assignedRole?: WorkspaceRoleRef | null
+  assignedRoles?: WorkspaceRoleRef[]
+  canEditRole?: boolean
   slug: string
   name: string
   description: string | null
@@ -130,6 +146,8 @@ export interface WorkspaceInvitation {
   workspaceId: string
   email: string
   role: WorkspaceUserRole
+  roleSlug?: string
+  assignedRole?: WorkspaceRoleRef | null
   invitedBy: string
   status: InvitationStatus
   createdAt: string

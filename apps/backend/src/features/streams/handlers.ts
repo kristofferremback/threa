@@ -662,10 +662,6 @@ export function createStreamHandlers({
       const workspaceId = req.workspaceId!
       const { streamId, memberId } = req.params
 
-      if (actor.role !== "owner" && actor.role !== "admin") {
-        throw new HttpError("Only workspace owners and admins can remove members", { status: 403, code: "FORBIDDEN" })
-      }
-
       await streamService.validateStreamAccess(streamId, workspaceId, actor.id)
       await streamService.removeMember(streamId, memberId)
       res.status(204).send()

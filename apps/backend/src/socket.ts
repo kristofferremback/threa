@@ -1,17 +1,17 @@
 import type { Server, Socket } from "socket.io"
 import crypto from "crypto"
-import { parseCookies, SESSION_COOKIE_NAME } from "@threa/backend-common"
-import type { AuthService } from "@threa/backend-common"
+import { parseCookies } from "@threa/backend-common"
+import type { AuthService, WorkosOrgService } from "@threa/backend-common"
 import { DEVICE_KEY_LENGTH } from "@threa/types"
 import type { StreamService } from "./features/streams"
 import type { PushService } from "./features/push"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository, PersonaRepository } from "./features/agents"
 import type { SessionAbortRegistry } from "./features/agents"
-import { UserRepository } from "./features/workspaces"
 import { HttpError } from "./lib/errors"
 import { logger } from "./lib/logger"
 import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/observability"
+import { authorizeWorkspaceSocket } from "./socket-auth"
 
 /**
  * Normalize room to pattern for metrics.
@@ -52,6 +52,7 @@ interface SocketMetricsState {
 interface Dependencies {
   pool: import("pg").Pool
   authService: AuthService
+  workosOrgService: WorkosOrgService
   streamService: StreamService
   pushService: PushService
   userSocketRegistry: UserSocketRegistry
@@ -70,7 +71,8 @@ function deriveDeviceKey(userAgent: string | undefined): string {
 }
 
 export function registerSocketHandlers(io: Server, deps: Dependencies) {
-  const { pool, authService, streamService, pushService, userSocketRegistry, sessionAbortRegistry } = deps
+  const { pool, authService, workosOrgService, streamService, pushService, userSocketRegistry, sessionAbortRegistry } =
+    deps
 
   // ===========================================================================
   // Authentication middleware
@@ -127,13 +129,19 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       const workspaceMatch = room.match(/^ws:([^:]+)$/)
       if (workspaceMatch) {
         const wsId = workspaceMatch[1]
-        const workspaceUser = await UserRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
-        if (!workspaceUser) {
+        const authorization = await authorizeWorkspaceSocket({
+          pool,
+          workosOrgService,
+          workspaceId: wsId,
+          workosUserId,
+        })
+        if (!authorization.ok) {
           socket.emit("error", { message: "Not authorized to join this workspace" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           callback?.({ ok: false, error: "Not authorized to join this workspace" })
           return
         }
+        const { workspaceUser } = authorization
         socket.join(room)
 
         // Auto-join user room for targeted event delivery (activity, commands, read state)
@@ -164,14 +172,20 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       const streamMatch = room.match(/^ws:([^:]+):stream:(.+)$/)
       if (streamMatch) {
         const [, wsId, streamId] = streamMatch
-        // Resolve user for stream access validation
-        const workspaceUser = await UserRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
-        if (!workspaceUser) {
+        const authorization = await authorizeWorkspaceSocket({
+          pool,
+          workosOrgService,
+          workspaceId: wsId,
+          workosUserId,
+          requiredPermission: "messages:read",
+        })
+        if (!authorization.ok) {
           socket.emit("error", { message: "Not authorized to join this stream" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           callback?.({ ok: false, error: "Not authorized to join this stream" })
           return
         }
+        const { workspaceUser } = authorization
         try {
           await streamService.validateStreamAccess(streamId, wsId, workspaceUser.id)
         } catch (error) {
@@ -221,14 +235,20 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
           callback?.({ ok: false, error: "Session not found" })
           return
         }
-        // Resolve user for stream access validation
-        const workspaceUser = await UserRepository.findByWorkosUserIdInWorkspace(pool, wsId, workosUserId)
-        if (!workspaceUser) {
+        const authorization = await authorizeWorkspaceSocket({
+          pool,
+          workosOrgService,
+          workspaceId: wsId,
+          workosUserId,
+          requiredPermission: "messages:read",
+        })
+        if (!authorization.ok) {
           socket.emit("error", { message: "Not authorized to join this session" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           callback?.({ ok: false, error: "Not authorized to join this session" })
           return
         }
+        const { workspaceUser } = authorization
         try {
           await streamService.validateStreamAccess(session.streamId, wsId, workspaceUser.id)
         } catch (error) {
@@ -319,15 +339,18 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
             callback?.({ ok: false, error: "Session not found" })
             return
           }
-          const workspaceUser = await UserRepository.findByWorkosUserIdInWorkspace(
+          const authorization = await authorizeWorkspaceSocket({
             pool,
-            workspaceIdFromPayload,
-            workosUserId
-          )
-          if (!workspaceUser) {
+            workosOrgService,
+            workspaceId: workspaceIdFromPayload,
+            workosUserId,
+            requiredPermission: "messages:read",
+          })
+          if (!authorization.ok) {
             callback?.({ ok: false, error: "Not authorized" })
             return
           }
+          const { workspaceUser } = authorization
           try {
             await streamService.validateStreamAccess(session.streamId, workspaceIdFromPayload, workspaceUser.id)
           } catch (error) {

@@ -13,6 +13,7 @@ import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import type { WorkosOrgService } from "@threa/backend-common"
+import type { WorkspacePermissionScope, WorkspaceRole } from "@threa/types"
 import { UserApiKeyRepository } from "../user-api-keys"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
@@ -20,6 +21,32 @@ import type { AvatarService } from "./avatar-service"
 function deriveSlugFromEmail(email: string): string {
   const prefix = email.split("@")[0]
   return generateSlug(prefix)
+}
+
+const ADMIN_COMPATIBILITY_PERMISSIONS = new Set<WorkspacePermissionScope>(["members:write", "workspace:admin"])
+
+function compatibilityRoleFromPermissions(permissions: Iterable<WorkspacePermissionScope>): "admin" | "user" {
+  for (const permission of permissions) {
+    if (ADMIN_COMPATIBILITY_PERMISSIONS.has(permission)) {
+      return "admin"
+    }
+  }
+  return "user"
+}
+
+function getMembershipRoleSlugs(membership: {
+  roles: Array<{ slug: string }>
+  role: { slug: string } | null
+}): string[] {
+  if (membership.roles.length > 0) {
+    return membership.roles.map((role) => role.slug)
+  }
+
+  if (membership.role) {
+    return [membership.role.slug]
+  }
+
+  return []
 }
 
 export interface CreateWorkspaceParams {
@@ -100,7 +127,7 @@ export class WorkspaceService {
           workosUserId: params.ownerWorkosUserId,
           email: params.ownerEmail,
           name: params.ownerName,
-          role: "owner",
+          role: "admin",
         })
 
         return ws
@@ -139,7 +166,7 @@ export class WorkspaceService {
         workosUserId: params.workosUserId,
         email: params.email,
         name: params.userName,
-        role: "owner",
+        role: "admin",
         setupCompleted: params.setupCompleted,
       })
 
@@ -251,6 +278,164 @@ export class WorkspaceService {
 
   async getUsers(workspaceId: string): Promise<User[]> {
     return UserRepository.listByWorkspace(this.pool, workspaceId)
+  }
+
+  async getUsersWithRoles(workspaceId: string): Promise<User[]> {
+    const users = await this.getUsers(workspaceId)
+    if (users.length === 0) {
+      return users
+    }
+
+    const workspace = await WorkspaceRepository.findById(this.pool, workspaceId)
+    const orgId = await this.ensureWorkosOrganization(workspaceId)
+    if (!workspace || !orgId || !this.workosOrgService) {
+      return users
+    }
+
+    const [roles, memberships] = await Promise.all([
+      this.workosOrgService.listRolesForOrganization(orgId),
+      this.workosOrgService.listOrganizationMemberships(orgId),
+    ])
+    const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
+    const membershipByUserId = new Map(memberships.map((membership) => [membership.userId, membership]))
+
+    return users.map((user) => {
+      const membership = membershipByUserId.get(user.workosUserId)
+      const assignedRoleSlugs = membership ? getMembershipRoleSlugs(membership) : []
+      const assignedRoles = assignedRoleSlugs.map((slug) => ({
+        slug,
+        name: rolesBySlug.get(slug)?.name ?? slug,
+      }))
+      const permissions = new Set(assignedRoles.flatMap((role) => rolesBySlug.get(role.slug)?.permissions ?? []))
+
+      return {
+        ...user,
+        role: assignedRoles.length > 0 ? compatibilityRoleFromPermissions(permissions) : user.role,
+        isOwner: workspace.createdBy === user.id,
+        assignedRole: assignedRoles[0] ?? null,
+        assignedRoles,
+        canEditRole: assignedRoles.length <= 1,
+      }
+    })
+  }
+
+  async listAssignableRoles(workspaceId: string): Promise<WorkspaceRole[]> {
+    const orgId = await this.ensureWorkosOrganization(workspaceId)
+    if (!orgId || !this.workosOrgService) {
+      throw new HttpError("Workspace is not configured for WorkOS authorization", {
+        status: 500,
+        code: "WORKSPACE_AUTHORIZATION_NOT_CONFIGURED",
+      })
+    }
+    return this.workosOrgService.listRolesForOrganization(orgId)
+  }
+
+  async updateUserRole(workspaceId: string, userId: string, roleSlug: string): Promise<User> {
+    if (!this.workosOrgService) {
+      throw new HttpError("WorkOS role management is not configured", {
+        status: 500,
+        code: "WORKOS_ROLE_MANAGEMENT_NOT_CONFIGURED",
+      })
+    }
+
+    const [workspace, localUser, orgId] = await Promise.all([
+      WorkspaceRepository.findById(this.pool, workspaceId),
+      UserRepository.findById(this.pool, workspaceId, userId),
+      this.ensureWorkosOrganization(workspaceId),
+    ])
+    if (!workspace || !localUser) {
+      throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+    }
+    if (!orgId) {
+      throw new HttpError("Workspace is not configured for WorkOS authorization", {
+        status: 500,
+        code: "WORKSPACE_AUTHORIZATION_NOT_CONFIGURED",
+      })
+    }
+
+    const [roles, memberships] = await Promise.all([
+      this.workosOrgService.listRolesForOrganization(orgId),
+      this.workosOrgService.listOrganizationMemberships(orgId),
+    ])
+    const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
+    const nextRole = rolesBySlug.get(roleSlug)
+    if (!nextRole) {
+      throw new HttpError("Role not found", { status: 404, code: "ROLE_NOT_FOUND" })
+    }
+
+    const targetMembership = memberships.find(
+      (membership) => membership.userId === localUser.workosUserId && membership.status === "active"
+    )
+    if (!targetMembership) {
+      throw new HttpError("WorkOS organization membership not found", {
+        status: 404,
+        code: "WORKOS_MEMBERSHIP_NOT_FOUND",
+      })
+    }
+
+    const currentRoleSlugs = getMembershipRoleSlugs(targetMembership)
+    if (currentRoleSlugs.length > 1) {
+      throw new HttpError("This user has multiple roles and cannot be edited in-app yet", {
+        status: 409,
+        code: "MULTIPLE_ROLES_NOT_EDITABLE",
+      })
+    }
+
+    const targetCurrentlyAdmin = currentRoleSlugs.some((slug) =>
+      (rolesBySlug.get(slug)?.permissions ?? []).some((permission) => ADMIN_COMPATIBILITY_PERMISSIONS.has(permission))
+    )
+    const targetWillBeAdmin = nextRole.permissions.some((permission) => ADMIN_COMPATIBILITY_PERMISSIONS.has(permission))
+
+    if (targetCurrentlyAdmin && !targetWillBeAdmin) {
+      const otherAdminExists = memberships.some((membership) => {
+        if (membership.userId === localUser.workosUserId || membership.status !== "active") {
+          return false
+        }
+        const membershipRoleSlugs = getMembershipRoleSlugs(membership)
+        return membershipRoleSlugs.some((slug) =>
+          (rolesBySlug.get(slug)?.permissions ?? []).some((permission) =>
+            ADMIN_COMPATIBILITY_PERMISSIONS.has(permission)
+          )
+        )
+      })
+      if (!otherAdminExists) {
+        throw new HttpError("Workspace must retain at least one member who can manage roles", {
+          status: 409,
+          code: "LAST_ADMIN_NOT_ALLOWED",
+        })
+      }
+    }
+
+    await this.workosOrgService.updateOrganizationMembership({
+      organizationMembershipId: targetMembership.id,
+      roleSlug,
+    })
+
+    const decoratedUpdatedUser = await withTransaction(this.pool, async (client) => {
+      const updatedUser = await UserRepository.update(client, workspaceId, userId, {
+        role: compatibilityRoleFromPermissions(nextRole.permissions),
+      })
+      if (!updatedUser) {
+        throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+      }
+
+      const decoratedUser: User = {
+        ...updatedUser,
+        isOwner: workspace.createdBy === updatedUser.id,
+        assignedRole: { slug: nextRole.slug, name: nextRole.name },
+        assignedRoles: [{ slug: nextRole.slug, name: nextRole.name }],
+        canEditRole: true,
+      }
+
+      await OutboxRepository.insert(client, "workspace_user:updated", {
+        workspaceId,
+        user: serializeBigInt(decoratedUser),
+      })
+
+      return decoratedUser
+    })
+
+    return decoratedUpdatedUser
   }
 
   async isMember(workspaceId: string, workosUserId: string): Promise<boolean> {

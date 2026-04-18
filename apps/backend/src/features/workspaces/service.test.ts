@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { WorkspaceService } from "./service"
 import * as db from "../../db"
+import { WorkspaceRepository } from "./repository"
+import { UserRepository } from "./user-repository"
+import { OutboxRepository } from "../../lib/outbox"
 
 type MockWorkosOrgService = {
   hasAcceptedWorkspaceCreationInvitation: ReturnType<typeof mock<(email: string) => Promise<boolean>>>
+  listRolesForOrganization?: ReturnType<typeof mock<(organizationId: string) => Promise<any[]>>>
+  listOrganizationMemberships?: ReturnType<typeof mock<(organizationId: string) => Promise<any[]>>>
+  updateOrganizationMembership?: ReturnType<typeof mock<(params: any) => Promise<any>>>
 }
 
 function createWorkspaceService(
@@ -14,6 +20,8 @@ function createWorkspaceService(
     requireWorkspaceCreationInvite,
   })
 }
+
+const mockWithTransaction = spyOn(db, "withTransaction")
 
 describe("WorkspaceService.createWorkspace invite gating", () => {
   const workosUserId = "workos_user_1"
@@ -27,8 +35,6 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
     createdAt: new Date(),
     updatedAt: new Date(),
   }
-
-  const mockWithTransaction = spyOn(db, "withTransaction")
 
   beforeEach(() => {
     mockWithTransaction.mockReset().mockResolvedValue(mockWorkspace as never)
@@ -156,5 +162,192 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
     expect(workspace).toEqual(mockWorkspace)
     expect(workosOrgService.hasAcceptedWorkspaceCreationInvitation).toHaveBeenCalledWith("user@example.com")
     expect(mockWithTransaction).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("WorkspaceService.updateUserRole", () => {
+  const mockFindWorkspace = spyOn(WorkspaceRepository, "findById")
+  const mockGetWorkosOrganizationId = spyOn(WorkspaceRepository, "getWorkosOrganizationId")
+  const mockFindUser = spyOn(UserRepository, "findById")
+  const mockUpdateUser = spyOn(UserRepository, "update")
+  const mockInsertOutbox = spyOn(OutboxRepository, "insert")
+
+  beforeEach(() => {
+    mockWithTransaction.mockReset()
+    mockFindWorkspace.mockReset()
+    mockGetWorkosOrganizationId.mockReset()
+    mockFindUser.mockReset()
+    mockUpdateUser.mockReset()
+    mockInsertOutbox.mockReset()
+
+    mockFindWorkspace.mockResolvedValue({
+      id: "ws_1",
+      name: "Workspace",
+      slug: "workspace",
+      createdBy: "owner_1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never)
+    mockGetWorkosOrganizationId.mockResolvedValue("org_1")
+    mockFindUser.mockResolvedValue({
+      id: "user_1",
+      workspaceId: "ws_1",
+      workosUserId: "wos_1",
+      email: "user@example.com",
+      role: "user",
+      slug: "user",
+      name: "User",
+      description: null,
+      avatarUrl: null,
+      timezone: null,
+      locale: null,
+      pronouns: null,
+      phone: null,
+      githubUsername: null,
+      setupCompleted: true,
+      joinedAt: new Date(),
+      assignedRole: null,
+      assignedRoles: [],
+      canEditRole: false,
+    } as never)
+    mockWithTransaction.mockImplementation((async (...args: Parameters<typeof db.withTransaction>) => {
+      const callback = args[1]
+      return callback({} as never)
+    }) as typeof db.withTransaction)
+    mockInsertOutbox.mockResolvedValue(undefined as never)
+  })
+
+  test("updates WorkOS membership and dual-writes the compatibility role", async () => {
+    const workosOrgService: MockWorkosOrgService = {
+      hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(true)),
+      listRolesForOrganization: mock<(organizationId: string) => Promise<any[]>>(() =>
+        Promise.resolve([
+          { slug: "member", name: "Member", permissions: ["messages:read"], description: null, type: "system" },
+          {
+            slug: "support-admin",
+            name: "Support Admin",
+            permissions: ["messages:read", "members:write"],
+            description: null,
+            type: "custom",
+          },
+        ])
+      ),
+      listOrganizationMemberships: mock<(organizationId: string) => Promise<any[]>>(() =>
+        Promise.resolve([
+          {
+            id: "om_1",
+            organizationId: "org_1",
+            userId: "wos_1",
+            status: "active",
+            role: { slug: "member" },
+            roles: [{ slug: "member" }],
+          },
+          {
+            id: "om_2",
+            organizationId: "org_1",
+            userId: "wos_2",
+            status: "active",
+            role: { slug: "support-admin" },
+            roles: [{ slug: "support-admin" }],
+          },
+        ])
+      ),
+      updateOrganizationMembership: mock<(params: any) => Promise<any>>((params) =>
+        Promise.resolve({
+          id: params.organizationMembershipId,
+          organizationId: "org_1",
+          userId: "wos_1",
+          status: "active",
+          role: { slug: params.roleSlug },
+          roles: [{ slug: params.roleSlug }],
+        })
+      ),
+    }
+    mockUpdateUser.mockResolvedValue({
+      id: "user_1",
+      workspaceId: "ws_1",
+      workosUserId: "wos_1",
+      email: "user@example.com",
+      role: "admin",
+      slug: "user",
+      name: "User",
+      description: null,
+      avatarUrl: null,
+      timezone: null,
+      locale: null,
+      pronouns: null,
+      phone: null,
+      githubUsername: null,
+      setupCompleted: true,
+      joinedAt: new Date(),
+      assignedRole: null,
+      assignedRoles: [],
+      canEditRole: false,
+    } as never)
+
+    const service = createWorkspaceService(false, workosOrgService)
+    const user = await service.updateUserRole("ws_1", "user_1", "support-admin")
+
+    expect(workosOrgService.updateOrganizationMembership).toHaveBeenCalledWith({
+      organizationMembershipId: "om_1",
+      roleSlug: "support-admin",
+    })
+    expect(mockUpdateUser).toHaveBeenCalledWith(expect.anything(), "ws_1", "user_1", { role: "admin" })
+    expect(mockInsertOutbox).toHaveBeenCalledWith(expect.anything(), "workspace_user:updated", {
+      workspaceId: "ws_1",
+      user: expect.objectContaining({
+        id: "user_1",
+        role: "admin",
+        assignedRole: { slug: "support-admin", name: "Support Admin" },
+        assignedRoles: [{ slug: "support-admin", name: "Support Admin" }],
+        canEditRole: true,
+      }),
+    })
+    expect(user).toMatchObject({
+      role: "admin",
+      assignedRole: { slug: "support-admin", name: "Support Admin" },
+      canEditRole: true,
+    })
+  })
+
+  test("blocks removing the last role-managing member", async () => {
+    const workosOrgService: MockWorkosOrgService = {
+      hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(true)),
+      listRolesForOrganization: mock<(organizationId: string) => Promise<any[]>>(() =>
+        Promise.resolve([
+          { slug: "member", name: "Member", permissions: ["messages:read"], description: null, type: "system" },
+          {
+            slug: "admin",
+            name: "Admin",
+            permissions: ["messages:read", "members:write"],
+            description: null,
+            type: "system",
+          },
+        ])
+      ),
+      listOrganizationMemberships: mock<(organizationId: string) => Promise<any[]>>(() =>
+        Promise.resolve([
+          {
+            id: "om_1",
+            organizationId: "org_1",
+            userId: "wos_1",
+            status: "active",
+            role: { slug: "admin" },
+            roles: [{ slug: "admin" }],
+          },
+        ])
+      ),
+      updateOrganizationMembership: mock<(params: any) => Promise<any>>(() => Promise.resolve({})),
+    }
+
+    const service = createWorkspaceService(false, workosOrgService)
+
+    await expect(service.updateUserRole("ws_1", "user_1", "member")).rejects.toMatchObject({
+      name: "HttpError",
+      status: 409,
+      code: "LAST_ADMIN_NOT_ALLOWED",
+    })
+    expect(workosOrgService.updateOrganizationMembership).not.toHaveBeenCalled()
+    expect(mockUpdateUser).not.toHaveBeenCalled()
   })
 })

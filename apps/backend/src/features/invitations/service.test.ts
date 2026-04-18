@@ -157,6 +157,7 @@ describe("InvitationService.sendInvitations", () => {
       invitedBy: "usr_1",
       emails: ["test@example.com"],
       role: "user",
+      roleSlug: "member",
     })
 
     const sentCall = mockInsertOutbox.mock.calls.find((call) => call[1] === "invitation:sent")
@@ -165,6 +166,7 @@ describe("InvitationService.sendInvitations", () => {
       workspaceId: "ws_1",
       email: "test@example.com",
       role: "user",
+      roleSlug: "member",
       inviterWorkosUserId: "workos_user_1",
     })
   })
@@ -177,6 +179,7 @@ describe("InvitationService.sendInvitations", () => {
       invitedBy: "usr_1",
       emails: ["existing@example.com", "new@example.com"],
       role: "user",
+      roleSlug: "member",
     })
 
     expect(result.skipped).toEqual([{ email: "existing@example.com", reason: "already_user" }])
@@ -192,6 +195,7 @@ describe("InvitationService.sendInvitations", () => {
       invitedBy: "usr_1",
       emails: ["pending@example.com"],
       role: "user",
+      roleSlug: "member",
     })
 
     expect(result.skipped).toEqual([{ email: "pending@example.com", reason: "pending_invitation" }])

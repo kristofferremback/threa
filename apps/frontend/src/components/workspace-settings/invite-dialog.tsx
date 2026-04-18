@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import {
   ResponsiveDialog,
@@ -12,19 +12,35 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { invitationsApi } from "@/api/invitations"
-import type { SendInvitationsResponse } from "@threa/types"
+import type { SendInvitationsResponse, WorkspaceRole } from "@threa/types"
+
+function compatibilityRoleForInvite(roleSlug: string, roles: WorkspaceRole[]): "admin" | "user" {
+  const role = roles.find((candidate) => candidate.slug === roleSlug)
+  if (!role) {
+    return roleSlug === "admin" ? "admin" : "user"
+  }
+
+  return role.permissions.includes("members:write") || role.permissions.includes("workspace:admin") ? "admin" : "user"
+}
 
 interface InviteDialogProps {
   workspaceId: string
+  roles: WorkspaceRole[]
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
 }
 
-export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: InviteDialogProps) {
+export function InviteDialog({ workspaceId, roles, open, onOpenChange, onSuccess }: InviteDialogProps) {
   const [emailsText, setEmailsText] = useState("")
-  const [role, setRole] = useState<"admin" | "user">("user")
+  const [roleSlug, setRoleSlug] = useState("")
   const [result, setResult] = useState<SendInvitationsResponse | null>(null)
+
+  useEffect(() => {
+    if (!roleSlug && roles.length > 0) {
+      setRoleSlug(roles[0].slug)
+    }
+  }, [roleSlug, roles])
 
   const sendMutation = useMutation({
     mutationFn: () => {
@@ -33,7 +49,11 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
         .map((e) => e.trim())
         .filter((e) => e.length > 0)
 
-      return invitationsApi.send(workspaceId, { emails, role })
+      return invitationsApi.send(workspaceId, {
+        emails,
+        role: compatibilityRoleForInvite(roleSlug, roles),
+        roleSlug,
+      })
     },
     onSuccess: (data) => {
       setResult(data)
@@ -43,7 +63,7 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
 
   const handleClose = () => {
     setEmailsText("")
-    setRole("user")
+    setRoleSlug(roles[0]?.slug ?? "")
     setResult(null)
     onOpenChange(false)
   }
@@ -64,7 +84,7 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
                 </p>
                 {result.sent.map((inv) => (
                   <p key={inv.id} className="text-sm text-muted-foreground">
-                    {inv.email}
+                    {inv.email} · {inv.assignedRole?.name ?? inv.roleSlug}
                   </p>
                 ))}
               </div>
@@ -102,13 +122,16 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
 
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as "admin" | "user")}>
+              <Select value={roleSlug} onValueChange={setRoleSlug}>
                 <SelectTrigger id="role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  {roles.map((role) => (
+                    <SelectItem key={role.slug} value={role.slug}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -117,7 +140,10 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
-              <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending || !emailsText.trim()}>
+              <Button
+                onClick={() => sendMutation.mutate()}
+                disabled={sendMutation.isPending || !emailsText.trim() || !roleSlug}
+              >
                 {sendMutation.isPending ? "Sending..." : "Send Invitations"}
               </Button>
             </ResponsiveDialogFooter>

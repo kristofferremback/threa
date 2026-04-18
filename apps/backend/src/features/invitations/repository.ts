@@ -7,6 +7,7 @@ interface InvitationRow {
   workspace_id: string
   email: string
   role: string
+  role_slug: string
   invited_by: string
   workos_invitation_id: string | null
   status: string
@@ -21,6 +22,8 @@ export interface Invitation {
   workspaceId: string
   email: string
   role: "admin" | "user"
+  roleSlug: string
+  assignedRole: { slug: string; name: string } | null
   invitedBy: string
   workosInvitationId: string | null
   status: InvitationStatus
@@ -35,6 +38,7 @@ export interface InsertInvitationParams {
   workspaceId: string
   email: string
   role: "admin" | "user"
+  roleSlug: string
   invitedBy: string
   expiresAt: Date
 }
@@ -45,6 +49,8 @@ function mapRow(row: InvitationRow): Invitation {
     workspaceId: row.workspace_id,
     email: row.email,
     role: row.role as Invitation["role"],
+    roleSlug: row.role_slug,
+    assignedRole: { slug: row.role_slug, name: row.role_slug },
     invitedBy: row.invited_by,
     workosInvitationId: row.workos_invitation_id,
     status: row.status as InvitationStatus,
@@ -55,13 +61,21 @@ function mapRow(row: InvitationRow): Invitation {
   }
 }
 
-const SELECT_FIELDS = `id, workspace_id, email, role, invited_by, workos_invitation_id, status, created_at, expires_at, accepted_at, revoked_at`
+const SELECT_FIELDS = `id, workspace_id, email, role, role_slug, invited_by, workos_invitation_id, status, created_at, expires_at, accepted_at, revoked_at`
 
 export const InvitationRepository = {
   async insert(db: Querier, params: InsertInvitationParams): Promise<Invitation> {
     const result = await db.query<InvitationRow>(sql`
-      INSERT INTO workspace_invitations (id, workspace_id, email, role, invited_by, expires_at)
-      VALUES (${params.id}, ${params.workspaceId}, ${params.email}, ${params.role}, ${params.invitedBy}, ${params.expiresAt})
+      INSERT INTO workspace_invitations (id, workspace_id, email, role, role_slug, invited_by, expires_at)
+      VALUES (
+        ${params.id},
+        ${params.workspaceId},
+        ${params.email},
+        ${params.role},
+        ${params.roleSlug},
+        ${params.invitedBy},
+        ${params.expiresAt}
+      )
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
     return mapRow(result.rows[0])

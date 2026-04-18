@@ -1,4 +1,4 @@
-export const API_KEY_SCOPES = {
+export const WORKSPACE_PERMISSION_SCOPES = {
   MESSAGES_SEARCH: "messages:search",
   STREAMS_READ: "streams:read",
   MESSAGES_READ: "messages:read",
@@ -6,60 +6,98 @@ export const API_KEY_SCOPES = {
   USERS_READ: "users:read",
   MEMOS_READ: "memos:read",
   ATTACHMENTS_READ: "attachments:read",
+  MEMBERS_WRITE: "members:write",
+  WORKSPACE_ADMIN: "workspace:admin",
 } as const
 
-export type ApiKeyScope = (typeof API_KEY_SCOPES)[keyof typeof API_KEY_SCOPES]
+export type WorkspacePermissionScope = (typeof WORKSPACE_PERMISSION_SCOPES)[keyof typeof WORKSPACE_PERMISSION_SCOPES]
 
-export interface ApiKeyPermission {
-  slug: ApiKeyScope
+export interface WorkspacePermission {
+  slug: WorkspacePermissionScope
   name: string
   description: string
 }
 
 /**
- * Human-readable permission definitions for API keys.
+ * Human-readable workspace permission definitions.
  * Used in the UI and as the source of truth for WorkOS dashboard configuration.
  *
  * WorkOS setup: Authorization > Configuration > Organization API key permissions
  */
-export const API_KEY_PERMISSIONS: ApiKeyPermission[] = [
+export const WORKSPACE_PERMISSIONS: WorkspacePermission[] = [
   {
-    slug: API_KEY_SCOPES.MESSAGES_SEARCH,
+    slug: WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
     name: "Search messages",
     description:
       "Grants access to search messages in public streams in a workspace. Application level stream grants can extend permissions to private streams.",
   },
   {
-    slug: API_KEY_SCOPES.STREAMS_READ,
+    slug: WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
     name: "Read streams",
     description: "Grants access to list and search accessible streams in a workspace.",
   },
   {
-    slug: API_KEY_SCOPES.MESSAGES_READ,
+    slug: WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
     name: "Read messages",
     description: "Grants access to read messages in accessible streams.",
   },
   {
-    slug: API_KEY_SCOPES.MESSAGES_WRITE,
+    slug: WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
     name: "Write messages",
     description: "Grants access to send, update, and delete messages in accessible streams.",
   },
   {
-    slug: API_KEY_SCOPES.USERS_READ,
+    slug: WORKSPACE_PERMISSION_SCOPES.USERS_READ,
     name: "Read users",
     description: "Grants access to list and search workspace users.",
   },
   {
-    slug: API_KEY_SCOPES.MEMOS_READ,
+    slug: WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
     name: "Read memos",
     description: "Grants access to search preserved workspace memos and inspect their provenance.",
   },
   {
-    slug: API_KEY_SCOPES.ATTACHMENTS_READ,
+    slug: WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
     name: "Read attachments",
     description: "Grants access to search accessible attachments, inspect extracted content, and fetch download URLs.",
   },
+  {
+    slug: WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE,
+    name: "Manage members",
+    description: "Grants access to invite users, manage workspace memberships, and update member roles.",
+  },
+  {
+    slug: WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN,
+    name: "Administer workspace",
+    description: "Grants access to workspace-wide administration such as integrations, bots, and budgets.",
+  },
 ]
+
+export const API_KEY_SCOPES = {
+  MESSAGES_SEARCH: WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
+  STREAMS_READ: WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
+  MESSAGES_READ: WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+  MESSAGES_WRITE: WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
+  USERS_READ: WORKSPACE_PERMISSION_SCOPES.USERS_READ,
+  MEMOS_READ: WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
+  ATTACHMENTS_READ: WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
+} as const
+
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[keyof typeof API_KEY_SCOPES]
+
+export interface ApiKeyPermission extends Omit<WorkspacePermission, "slug"> {
+  slug: ApiKeyScope
+}
+
+const API_KEY_SCOPE_SET = new Set<ApiKeyScope>(Object.values(API_KEY_SCOPES))
+
+/**
+ * Compatibility alias during the rollout to the shared workspace permission catalog.
+ * Keep API key surfaces limited to the existing public scope set.
+ */
+export const API_KEY_PERMISSIONS: ApiKeyPermission[] = WORKSPACE_PERMISSIONS.filter((permission) =>
+  API_KEY_SCOPE_SET.has(permission.slug as ApiKeyScope)
+) as ApiKeyPermission[]
 
 // --- User-scoped API keys ---
 

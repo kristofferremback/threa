@@ -1,10 +1,12 @@
 import type { Pool } from "pg"
 import { App, Octokit } from "octokit"
+import type { WorkosOrgService } from "@threa/backend-common"
 import { logger } from "../../lib/logger"
 import { HttpError } from "../../lib/errors"
 import { workspaceIntegrationId } from "../../lib/id"
 import type { GitHubAppConfig } from "../../lib/env"
 import { UserRepository } from "../workspaces"
+import { resolveWorkspaceAuthorization } from "../../middleware/workspace-authz-resolver"
 import {
   WorkspaceIntegrationProviders,
   WorkspaceIntegrationStatuses,
@@ -109,6 +111,7 @@ export class GitHubClient {
 interface WorkspaceIntegrationServiceDeps {
   pool: Pool
   github: GitHubAppConfig
+  workosOrgService: WorkosOrgService
 }
 
 export class WorkspaceIntegrationService {
@@ -188,7 +191,16 @@ export class WorkspaceIntegrationService {
     if (!access.user) {
       throw new HttpError("Not a member of this workspace", { status: 403, code: "FORBIDDEN" })
     }
-    if (access.user.role !== "admin" && access.user.role !== "owner") {
+
+    const authz = await resolveWorkspaceAuthorization({
+      pool: this.deps.pool,
+      workosOrgService: this.deps.workosOrgService,
+      workspaceId,
+      workosUserId: params.workosUserId,
+      userId: access.user.id,
+      source: "session",
+    })
+    if (authz.status !== "ok" || !authz.value.permissions.has("workspace:admin")) {
       throw new HttpError("Only admins can connect GitHub", { status: 403, code: "FORBIDDEN" })
     }
 

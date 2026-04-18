@@ -30,6 +30,10 @@ export interface User {
   workosUserId: string
   email: string
   role: "owner" | "admin" | "user"
+  isOwner?: boolean
+  assignedRole?: { slug: string; name: string } | null
+  assignedRoles?: Array<{ slug: string; name: string }>
+  canEditRole?: boolean
   slug: string
   name: string
   description: string | null
@@ -57,6 +61,7 @@ export interface InsertUserParams {
 }
 
 export interface UpdateUserParams {
+  role?: "owner" | "admin" | "user"
   slug?: string
   name?: string
   description?: string | null
@@ -88,6 +93,10 @@ function mapRowToUser(row: UserRow): User {
     workosUserId: row.workos_user_id,
     email: row.email,
     role: row.role as User["role"],
+    isOwner: row.role === "owner",
+    assignedRole: null,
+    assignedRoles: [],
+    canEditRole: false,
     slug: row.slug,
     name: row.name,
     description: row.description,
@@ -294,6 +303,10 @@ export const UserRepository = {
     const values: unknown[] = []
     let paramIndex = 1
 
+    if (params.role !== undefined) {
+      sets.push(`role = $${paramIndex++}`)
+      values.push(params.role)
+    }
     if (params.slug !== undefined) {
       sets.push(`slug = $${paramIndex++}`)
       values.push(params.slug)

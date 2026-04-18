@@ -8,6 +8,7 @@ const sendInvitationsSchema = z.object({
     .min(1, "At least one email is required")
     .max(20, "Maximum 20 emails per request"),
   role: z.enum(["admin", "user"]).optional().default("user"),
+  roleSlug: z.string().min(1).optional(),
 })
 
 interface Dependencies {
@@ -29,12 +30,14 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
       }
 
       const { emails, role } = result.data
+      const roleSlug = result.data.roleSlug ?? (role === "admin" ? "admin" : "member")
 
       const sendResult = await invitationService.sendInvitations({
         workspaceId,
         invitedBy: userId,
         emails,
         role,
+        roleSlug,
       })
 
       res.status(201).json(sendResult)

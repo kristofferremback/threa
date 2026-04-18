@@ -9,6 +9,28 @@ function createPoolStub() {
   } as any
 }
 
+function createWorkosOrgServiceStub(permissions: string[] = ["messages:read"]) {
+  return {
+    getOrganizationMembership: async () => ({
+      id: "om_1",
+      userId: "wos_1",
+      organizationId: "org_1",
+      status: "active",
+      role: { slug: "member" },
+      roles: [{ slug: "member" }],
+    }),
+    listRolesForOrganization: async () => [
+      {
+        slug: "member",
+        name: "Member",
+        description: null,
+        permissions,
+        type: "EnvironmentRole",
+      },
+    ],
+  } as any
+}
+
 function createReq(overrides: Partial<Request> = {}): Request {
   return {
     headers: {},
@@ -47,11 +69,14 @@ function runMiddleware(middleware: any, req: Request): Promise<{ nextCalled: boo
 }
 
 describe("createPublicApiAuthMiddleware", () => {
-  function createMiddleware(overrides: { userApiKeyService?: any; botApiKeyService?: any; pool?: any } = {}) {
+  function createMiddleware(
+    overrides: { userApiKeyService?: any; botApiKeyService?: any; pool?: any; workosOrgService?: any } = {}
+  ) {
     return createPublicApiAuthMiddleware({
       userApiKeyService: { validateKey: async () => null } as any,
       botApiKeyService: { validateKey: async () => null } as any,
       pool: createPoolStub(),
+      workosOrgService: createWorkosOrgServiceStub(),
       ...overrides,
     })
   }
@@ -99,29 +124,41 @@ describe("createPublicApiAuthMiddleware", () => {
             : null,
       },
       pool: {
-        query: async () => ({
-          rows: [
-            {
-              id: "user_1",
-              workspace_id: "ws_1",
-              name: "Test User",
-              email: "test@example.com",
-              role: "admin",
-              slug: "test",
-              workos_user_id: "wos_1",
-              description: null,
-              avatar_url: null,
-              timezone: null,
-              locale: null,
-              pronouns: null,
-              phone: null,
-              github_username: null,
-              setup_completed: true,
-              joined_at: new Date(),
-            },
-          ],
-          rowCount: 1,
-        }),
+        query: async (query: { text?: string }) => {
+          const text = query?.text ?? ""
+          if (text.includes("FROM users u")) {
+            return {
+              rows: [
+                {
+                  id: "user_1",
+                  workspace_id: "ws_1",
+                  name: "Test User",
+                  email: "test@example.com",
+                  role: "admin",
+                  slug: "test",
+                  workos_user_id: "wos_1",
+                  description: null,
+                  avatar_url: null,
+                  timezone: null,
+                  locale: null,
+                  pronouns: null,
+                  phone: null,
+                  github_username: null,
+                  setup_completed: true,
+                  joined_at: new Date(),
+                },
+              ],
+              rowCount: 1,
+            }
+          }
+          if (text.includes("FROM workspaces")) {
+            return {
+              rows: [{ created_by: "user_1", workos_organization_id: "org_1" }],
+              rowCount: 1,
+            }
+          }
+          return { rows: [], rowCount: 0 }
+        },
       } as any,
     })
 
@@ -231,6 +268,14 @@ describe("requireApiKeyScope", () => {
       name: "Test",
       scopes: new Set(["messages:search"]),
     }
+    req.authz = {
+      source: "user_api_key",
+      organizationId: "org_1",
+      organizationMembershipId: "om_1",
+      permissions: new Set(["messages:search"]),
+      assignedRoles: [{ slug: "member", name: "Member" }],
+      canEditRole: true,
+    }
 
     let nextCalled = false
     let error: any = null
@@ -253,6 +298,14 @@ describe("requireApiKeyScope", () => {
       botId: "bot_1",
       name: "Bot Key",
       scopes: new Set(["messages:write"]),
+    }
+    req.authz = {
+      source: "bot_api_key",
+      organizationId: null,
+      organizationMembershipId: null,
+      permissions: new Set(["messages:write"]),
+      assignedRoles: [],
+      canEditRole: false,
     }
 
     let nextCalled = false
@@ -277,6 +330,14 @@ describe("requireApiKeyScope", () => {
       name: "Test",
       scopes: new Set(["streams:read"]),
     }
+    req.authz = {
+      source: "user_api_key",
+      organizationId: "org_1",
+      organizationMembershipId: "om_1",
+      permissions: new Set(["streams:read"]),
+      assignedRoles: [{ slug: "member", name: "Member" }],
+      canEditRole: true,
+    }
 
     let error: any = null
     const next: NextFunction = (err?: any) => {
@@ -297,6 +358,14 @@ describe("requireApiKeyScope", () => {
       botId: "bot_1",
       name: "Bot Key",
       scopes: new Set(["messages:read"]),
+    }
+    req.authz = {
+      source: "bot_api_key",
+      organizationId: null,
+      organizationMembershipId: null,
+      permissions: new Set(["messages:read"]),
+      assignedRoles: [],
+      canEditRole: false,
     }
 
     let error: any = null

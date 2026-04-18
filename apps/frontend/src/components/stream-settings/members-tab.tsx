@@ -21,7 +21,7 @@ import { X, UserPlus, BotIcon } from "lucide-react"
 import { useAddStreamMember, useRemoveStreamMember, streamKeys } from "@/hooks"
 import { useStreamService } from "@/contexts"
 import { botsApi } from "@/api/bots"
-import { useWorkspaceUsers, useWorkspaceBots } from "@/stores/workspace-store"
+import { useWorkspaceUsers, useWorkspaceBots, useWorkspaceMetadata } from "@/stores/workspace-store"
 import { StreamTypes, type StreamMember } from "@threa/types"
 import { getInitials } from "@/lib/initials"
 import { getAvatarColor } from "@/lib/avatar-color"
@@ -50,12 +50,12 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
     staleTime: Infinity,
   })
   const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const workspaceMetadata = useWorkspaceMetadata(workspaceId)
 
   const streamType = bootstrap?.stream?.type
   const canAddMembers = streamType === StreamTypes.CHANNEL || streamType === StreamTypes.THREAD
   const streamMembers = bootstrap?.members ?? []
-  const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentUserId)
-  const canManageMembers = currentWorkspaceUser?.role === "owner" || currentWorkspaceUser?.role === "admin"
+  const canManageMembers = workspaceMetadata?.viewerPermissions?.includes("members:write") ?? false
 
   const streamMemberIds = useMemo(() => new Set(streamMembers.map((m) => m.memberId)), [streamMembers])
 
@@ -64,10 +64,23 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
       .map((sm) => {
         const workspaceUser = workspaceUsers.find((u) => u.id === sm.memberId)
         return workspaceUser
-          ? { ...sm, name: workspaceUser.name, slug: workspaceUser.slug, role: workspaceUser.role }
+          ? {
+              ...sm,
+              name: workspaceUser.name,
+              slug: workspaceUser.slug,
+              role: workspaceUser.role,
+              isOwner: workspaceUser.isOwner,
+              assignedRole: workspaceUser.assignedRole,
+            }
           : null
       })
-      .filter(Boolean) as (StreamMember & { name: string; slug: string; role: string })[]
+      .filter(Boolean) as (StreamMember & {
+      name: string
+      slug: string
+      role: string
+      isOwner: boolean | undefined
+      assignedRole: { slug: string; name: string } | null
+    })[]
   }, [streamMembers, workspaceUsers])
 
   const filteredMembers = useMemo(() => {
@@ -152,8 +165,9 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant={member.role === "owner" ? "default" : "secondary"} className="text-xs">
-                    {member.role}
+                  {member.isOwner && <Badge variant="default">Owner</Badge>}
+                  <Badge variant="secondary" className="text-xs">
+                    {member.assignedRole?.name ?? member.role}
                   </Badge>
                   {canManageMembers && member.memberId !== currentUserId && (
                     <Button

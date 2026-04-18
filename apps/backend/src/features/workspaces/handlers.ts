@@ -12,6 +12,7 @@ import { getEffectiveLevel } from "../streams"
 import { BotRepository, serializeBot } from "../public-api"
 import { displayNameFromWorkos, type WorkosOrgService } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
+import { getWorkspacePermissions, hasWorkspacePermission } from "../../middleware/authorization"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -34,6 +35,10 @@ const updateProfileSchema = z.object({
 
 const checkSlugAvailableSchema = z.object({
   slug: z.string().min(1, "slug query parameter is required"),
+})
+
+const updateUserRoleSchema = z.object({
+  roleSlug: z.string().min(1, "roleSlug is required"),
 })
 
 export { createWorkspaceSchema }
@@ -61,6 +66,21 @@ export function createWorkspaceHandlers({
   workosOrgService,
   pool,
 }: Dependencies) {
+  async function decorateInvitations(
+    workspaceId: string,
+    invitations: Awaited<ReturnType<InvitationService["listInvitations"]>>
+  ) {
+    const roles = await workspaceService.listAssignableRoles(workspaceId)
+    const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
+    return invitations.map((invitation) => ({
+      ...invitation,
+      assignedRole: {
+        slug: invitation.roleSlug,
+        name: rolesBySlug.get(invitation.roleSlug)?.name ?? invitation.roleSlug,
+      },
+    }))
+  }
+
   return {
     async list(req: Request, res: Response) {
       // Pre-workspace route: uses WorkOS identity (no workspace user context yet)
@@ -110,7 +130,7 @@ export function createWorkspaceHandlers({
 
     async getUsers(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const users = await workspaceService.getUsers(workspaceId)
+      const users = await workspaceService.getUsersWithRoles(workspaceId)
       res.json({ users })
     },
 
@@ -120,7 +140,7 @@ export function createWorkspaceHandlers({
 
       const [workspace, users, streams, personas, bots, emojiWeights, userPreferences, dmPeers] = await Promise.all([
         workspaceService.getWorkspaceById(workspaceId),
-        workspaceService.getUsers(workspaceId),
+        workspaceService.getUsersWithRoles(workspaceId),
         streamService.listWithPreviews(workspaceId, userId),
         workspaceService.getPersonasForWorkspace(workspaceId),
         BotRepository.listByWorkspace(pool, workspaceId),
@@ -181,13 +201,14 @@ export function createWorkspaceHandlers({
         .map((m) => m.streamId)
 
       // Include invitations for admin+ members
-      const userRole = req.user!.role
-      const isAdmin = userRole === "admin" || userRole === "owner"
-      const invitations = isAdmin ? await invitationService.listInvitations(workspaceId) : undefined
+      const invitations = hasWorkspacePermission(req, "members:write")
+        ? await decorateInvitations(workspaceId, await invitationService.listInvitations(workspaceId))
+        : undefined
 
       res.json({
         data: {
           workspace,
+          viewerPermissions: getWorkspacePermissions(req),
           users,
           streams: resolvedStreams,
           streamMemberships,
@@ -286,6 +307,28 @@ export function createWorkspaceHandlers({
       const workspaceId = req.workspaceId!
 
       const user = await workspaceService.removeUserAvatar(userId, workspaceId)
+      res.json({ user })
+    },
+
+    async listRoles(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const roles = await workspaceService.listAssignableRoles(workspaceId)
+      res.json({ roles })
+    },
+
+    async updateUserRole(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const { userId } = req.params
+
+      const result = updateUserRoleSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const user = await workspaceService.updateUserRole(workspaceId, userId, result.data.roleSlug)
       res.json({ user })
     },
 

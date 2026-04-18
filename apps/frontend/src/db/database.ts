@@ -21,6 +21,10 @@ export interface CachedWorkspaceUser {
   workosUserId: string
   email: string
   role: "owner" | "admin" | "user"
+  isOwner?: boolean
+  assignedRole?: { slug: string; name: string } | null
+  assignedRoles?: Array<{ slug: string; name: string }>
+  canEditRole?: boolean
   slug: string
   name: string
   description: string | null
@@ -329,6 +333,7 @@ export interface CachedWorkspaceMetadata {
   emojis: Array<{ shortcode: string; emoji: string; type: string; group: string; order: number; aliases: string[] }>
   emojiWeights: Record<string, number>
   commands: Array<{ name: string; description: string }>
+  viewerPermissions?: string[]
   _cachedAt: number
 }
 
