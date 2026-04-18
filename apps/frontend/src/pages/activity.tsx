@@ -12,6 +12,7 @@ import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { ActivityItem } from "@/components/activity/activity-item"
 import { ActivityEmpty } from "@/components/activity/activity-empty"
 import { ActivitySkeleton } from "@/components/activity/activity-skeleton"
+import { SidebarToggle } from "@/components/layout"
 import type { AuthorType, Activity } from "@threa/types"
 
 type ActivityFilter = "all" | "unread" | "me"
@@ -98,7 +99,8 @@ export function ActivityPage() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-11 items-center justify-between border-b px-4 gap-2">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <SidebarToggle location="page" />
           <Link to={`/w/${workspaceId}`}>
             <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
               <ArrowLeft className="h-4 w-4" />

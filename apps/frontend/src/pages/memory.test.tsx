@@ -2,6 +2,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { render, screen, userEvent } from "@/test"
 import { MemoryPage } from "./memory"
+import { SidebarProvider } from "@/contexts"
 
 const mockUseMemoSearch = vi.fn()
 const mockUseMemoDetail = vi.fn()
@@ -27,11 +28,13 @@ vi.mock("@/components/relative-time", () => ({
 
 function renderPage(initialEntry = "/w/ws_1/memory?memo=memo_1") {
   return render(
-    <MemoryRouter initialEntries={[initialEntry]}>
-      <Routes>
-        <Route path="/w/:workspaceId/memory" element={<MemoryPage />} />
-      </Routes>
-    </MemoryRouter>
+    <SidebarProvider>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route path="/w/:workspaceId/memory" element={<MemoryPage />} />
+        </Routes>
+      </MemoryRouter>
+    </SidebarProvider>
   )
 }
 

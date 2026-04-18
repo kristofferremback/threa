@@ -18,7 +18,7 @@ import { usePanel, useSidebar } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
-import { ThreadPanelSlot } from "@/components/layout"
+import { ThreadPanelSlot, SidebarToggle } from "@/components/layout"
 import { ConversationList } from "@/components/conversations"
 import { StreamErrorView } from "@/components/stream-error-view"
 import { StreamTypes, type StreamType } from "@threa/types"
@@ -205,6 +205,7 @@ export function StreamPage() {
     <div className="flex h-full flex-col">
       <header className="flex h-11 items-center justify-between border-b px-4">
         <div className="flex items-center gap-2 flex-1 min-w-0">
+          <SidebarToggle location="page" />
           {headerTitle}
           {stream && !isThread && !isDraft && !isChannel && !isUnnamedScratchpad && (
             <Badge variant="secondary">{getStreamTypeLabel(stream.type)}</Badge>

@@ -34,6 +34,7 @@ import {
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { FloatingComposerShell, MessageComposer } from "@/components/composer"
+import { SidebarToggle } from "@/components/layout"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
 import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
@@ -318,6 +319,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     <SidePanel data-editor-zone="panel">
       <SidePanelHeader className="relative">
         <StreamLoadingIndicator isLoading={showLoadingIndicator} />
+        {/* Mobile: thread view takes over the full screen, so the sidebar
+             toggle needs to be reachable from here too. */}
+        {isMobile && <SidebarToggle location="page" />}
         {/* Mobile back button — replaces X close on small screens */}
         {isMobile && (
           <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>

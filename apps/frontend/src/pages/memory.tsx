@@ -30,6 +30,7 @@ import { Drawer, DrawerContent } from "@/components/ui/drawer"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { RelativeTime } from "@/components/relative-time"
+import { SidebarToggle } from "@/components/layout"
 import { cn } from "@/lib/utils"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import type { MemoExplorerDetail, MemoExplorerResult, MemoExplorerStreamRef } from "@/api"
@@ -588,7 +589,8 @@ export function MemoryPage() {
     <div className="flex h-full flex-col bg-background">
       {/* Header */}
       <header className="border-b bg-card/50">
-        <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex h-11 items-center gap-2 px-4">
+          <SidebarToggle location="page" />
           <Link to={`/w/${workspaceId}`}>
             <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
               <ArrowLeft className="h-4 w-4" />
@@ -602,7 +604,7 @@ export function MemoryPage() {
                 value={localQuery}
                 onChange={(event) => handleQueryChange(event.target.value)}
                 placeholder="Search workspace memory..."
-                className="h-9 pl-9 bg-background/80 border-border/50 focus-visible:border-primary/40"
+                className="h-8 pl-9 bg-background/80 border-border/50 focus-visible:border-primary/40"
               />
             </div>
           </div>
