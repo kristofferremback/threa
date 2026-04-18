@@ -561,7 +561,7 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
                         className="shrink-0 flex items-center justify-center p-8"
                         style={{ width: containerWidth || "100%", height: "100%" }}
                       >
-                        <GalleryMediaContent current={item} isActive={i === currentIndex} />
+                        <GalleryMediaContent current={item} isActive={Math.abs(i - currentIndex) <= 1} />
                       </div>
                     ))}
                   </div>
