@@ -15,23 +15,11 @@ type SidebarOpenState = "open" | "collapsed"
 type ViewMode = "smart" | "all"
 
 /**
- * Tri-state visibility for a collapsible sidebar section (quick-links group,
- * smart/all stream sections):
- * - open: show all items (fully expanded)
- * - auto: show only items with a signal (unread/mention/count); nothing shown if none signal
- * - collapsed: show only the header; a dot indicates something is signaling
+ * Binary open/collapsed state for a collapsible sidebar section.
+ * Sections with activity still surface an aggregate badge when collapsed so
+ * the user's attention is pulled to them.
  */
-type CollapseState = "open" | "auto" | "collapsed"
-
-const COLLAPSE_CYCLE: Record<CollapseState, CollapseState> = {
-  open: "auto",
-  auto: "collapsed",
-  collapsed: "open",
-}
-
-function isCollapseState(value: unknown): value is CollapseState {
-  return value === "open" || value === "auto" || value === "collapsed"
-}
+type CollapseState = "open" | "collapsed"
 
 /** Urgency block for position-matched collapsed strip */
 interface UrgencyBlock {
@@ -50,7 +38,7 @@ interface SidebarPersistedState {
   openState: SidebarOpenState
   width: number
   viewMode: ViewMode
-  /** Per-section tri-state. Absent keys fall back to per-section defaults at the callsite. */
+  /** Per-section open/collapsed state. Absent keys fall back to per-section defaults at the callsite. */
   sectionStates: Record<string, CollapseState>
 }
 
@@ -64,7 +52,7 @@ const DEFAULT_PERSISTED_STATE: SidebarPersistedState = {
   width: DEFAULT_SIDEBAR_WIDTH,
   viewMode: "smart",
   sectionStates: {
-    "quick-links": "auto",
+    "quick-links": "open",
     other: "collapsed",
   },
 }
@@ -76,7 +64,7 @@ interface SidebarContextValue {
   width: number
   /** Current view mode (smart/all) */
   viewMode: ViewMode
-  /** Tri-state collapse state per section key. Use `getSectionState` for reads with defaults. */
+  /** Open/collapsed state per section key. Use `getSectionState` for reads with defaults. */
   sectionStates: Record<string, CollapseState>
   /** Read a section's state, falling back to the provided default (default: "open"). */
   getSectionState: (section: string, defaultState?: CollapseState) => CollapseState
@@ -90,7 +78,7 @@ interface SidebarContextValue {
   urgencyBlocks: Map<string, UrgencyBlock>
   /** Total height of sidebar (for position calculations) */
   sidebarHeight: number
-  /** Offset from sidebar top to scroll container top (header + quick links) */
+  /** Offset from sidebar top to scroll container top (header) */
   scrollContainerOffset: number
   /** Show preview state on hover (only from collapsed) */
   showPreview: () => void
@@ -113,11 +101,11 @@ interface SidebarContextValue {
   /** Set view mode */
   setViewMode: (mode: ViewMode) => void
   /**
-   * Cycle a section through open → auto → collapsed → open.
-   * If no state has been stored yet, cycles from `defaultState` (default: "open").
+   * Flip a section between open and collapsed.
+   * If no state has been stored yet, flips from `defaultState` (default: "open").
    */
-  cycleSectionState: (section: string, defaultState?: CollapseState) => void
-  /** Force a section to a specific state (e.g. "open") without cycling. */
+  toggleSectionState: (section: string, defaultState?: CollapseState) => void
+  /** Force a section to a specific state without toggling. */
   setSectionState: (section: string, state: CollapseState) => void
   /** Set urgency block for a stream item (opacity is added automatically) */
   setUrgencyBlock: (streamId: string, block: Omit<UrgencyBlock, "opacity"> | null) => void
@@ -137,10 +125,17 @@ interface SidebarProviderProps {
   children: ReactNode
 }
 
-/** Shape of legacy persisted state (pre-sectionStates migration). */
+/** Shape of legacy persisted state (pre-binary migration). */
 interface LegacyPersistedShape {
   collapsedSections?: unknown
   quickLinksState?: unknown
+}
+
+/** Coerce any persisted value (including legacy "auto") into the binary shape. */
+function coerceCollapseState(value: unknown): CollapseState | null {
+  if (value === "open" || value === "auto") return "open"
+  if (value === "collapsed") return "collapsed"
+  return null
 }
 
 function readSectionStates(
@@ -150,7 +145,8 @@ function readSectionStates(
 
   if (parsed.sectionStates && typeof parsed.sectionStates === "object") {
     for (const [key, value] of Object.entries(parsed.sectionStates)) {
-      if (isCollapseState(value)) next[key] = value
+      const coerced = coerceCollapseState(value)
+      if (coerced) next[key] = coerced
     }
   }
 
@@ -162,8 +158,9 @@ function readSectionStates(
   }
 
   // Migrate legacy `quickLinksState` if present and the new key isn't set
-  if (isCollapseState(parsed.quickLinksState) && !("quick-links" in next)) {
-    next["quick-links"] = parsed.quickLinksState
+  const legacyQuickLinks = coerceCollapseState(parsed.quickLinksState)
+  if (legacyQuickLinks && !("quick-links" in next)) {
+    next["quick-links"] = legacyQuickLinks
   }
 
   return Object.keys(next).length > 0 ? next : DEFAULT_PERSISTED_STATE.sectionStates
@@ -391,15 +388,15 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     [persistedState.sectionStates]
   )
 
-  const cycleSectionState = useCallback((section: string, defaultState: CollapseState = "open") => {
+  const toggleSectionState = useCallback((section: string, defaultState: CollapseState = "open") => {
     setPersistedState((current) => {
       const fromState = current.sectionStates[section] ?? defaultState
       const next = {
         ...current,
         sectionStates: {
           ...current.sectionStates,
-          [section]: COLLAPSE_CYCLE[fromState],
-        },
+          [section]: fromState === "open" ? "collapsed" : "open",
+        } satisfies Record<string, CollapseState>,
       }
       storeState(next)
       return next
@@ -494,7 +491,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
         stopResizing,
         setWidth,
         setViewMode,
-        cycleSectionState,
+        toggleSectionState,
         setSectionState,
         setUrgencyBlock,
         setSidebarHeight,

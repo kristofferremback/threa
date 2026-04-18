@@ -24,9 +24,6 @@ interface SmartSectionConfig {
   icon: string
   compact: boolean
   showPreviewOnHover: boolean
-  showCollapsedHint: boolean
-  /** When true, `auto` mode shows all items (not just signaling ones). Useful for sections like Pinned where filtering defeats the point. */
-  alwaysShowAll: boolean
   sortType: SortType
 }
 
@@ -37,8 +34,6 @@ export const SMART_SECTIONS: Record<SectionKey, SmartSectionConfig> = {
     icon: "⚡",
     compact: false, // Shows full preview always
     showPreviewOnHover: false,
-    showCollapsedHint: false,
-    alwaysShowAll: false,
     sortType: "importance",
   },
   recent: {
@@ -46,8 +41,6 @@ export const SMART_SECTIONS: Record<SectionKey, SmartSectionConfig> = {
     icon: "🕐",
     compact: true,
     showPreviewOnHover: true,
-    showCollapsedHint: false,
-    alwaysShowAll: false,
     sortType: "activity",
   },
   pinned: {
@@ -55,8 +48,6 @@ export const SMART_SECTIONS: Record<SectionKey, SmartSectionConfig> = {
     icon: "📌",
     compact: true,
     showPreviewOnHover: true,
-    showCollapsedHint: false,
-    alwaysShowAll: true,
     sortType: "activity",
   },
   other: {
@@ -64,8 +55,6 @@ export const SMART_SECTIONS: Record<SectionKey, SmartSectionConfig> = {
     icon: "📂",
     compact: true,
     showPreviewOnHover: true,
-    showCollapsedHint: true,
-    alwaysShowAll: false,
     sortType: "activity",
   },
 }
