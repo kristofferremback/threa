@@ -31,7 +31,7 @@ export function ResponsiveSettingsNav<T extends string>({
     <ResponsiveTabs tabs={tabs} labels={labels} value={value} onValueChange={onValueChange}>
       <div
         data-slot="settings-nav"
-        className="hidden h-full min-h-0 flex-col overflow-y-auto border-r bg-muted/20 p-3 scrollbar-thin sm:flex"
+        className="hidden h-full min-h-0 flex-col gap-0.5 overflow-y-auto border-r p-2 scrollbar-thin sm:flex"
       >
         {tabs.map((tab) => {
           const item = items[tab]
@@ -42,13 +42,22 @@ export function ResponsiveSettingsNav<T extends string>({
               key={tab}
               type="button"
               onClick={() => onValueChange(tab)}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
-                "rounded-xl px-3 py-2.5 text-left transition-colors",
-                isActive ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/70"
+                "rounded-md px-3 py-2 text-left transition-colors",
+                isActive
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
               )}
             >
               <div className="text-sm font-medium">{item.label}</div>
-              {item.description ? <div className="mt-0.5 text-xs">{item.description}</div> : null}
+              {item.description ? (
+                <div
+                  className={cn("mt-0.5 text-xs", isActive ? "text-accent-foreground/75" : "text-muted-foreground/80")}
+                >
+                  {item.description}
+                </div>
+              ) : null}
             </button>
           )
         })}

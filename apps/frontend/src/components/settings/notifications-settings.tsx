@@ -1,9 +1,9 @@
 import { useState } from "react"
 import { useParams } from "react-router-dom"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 import { usePreferences } from "@/contexts"
 import { usePushNotifications } from "@/hooks/use-push-notifications"
 import { PREF_NOTIFICATION_LEVEL_OPTIONS, type PrefNotificationLevel } from "@threa/types"
@@ -54,84 +54,60 @@ function TestNotificationButton({ workspaceId }: { workspaceId: string }) {
   )
 }
 
-function PushNotificationCard({ workspaceId }: { workspaceId: string }) {
+function PushNotificationSection({ workspaceId }: { workspaceId: string }) {
   const { permission, isSubscribed, optedOut, pushDisabledOnServer, requestPermission, unsubscribe } =
     usePushNotifications(workspaceId)
 
-  if (permission === "unsupported") {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Push Notifications</CardTitle>
-          <CardDescription>Get notified even when you're away from the app</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">Push notifications are not supported in this browser.</p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (permission === "denied") {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Push Notifications</CardTitle>
-          <CardDescription>Get notified even when you're away from the app</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Push notifications are blocked. Enable them in your browser settings to receive notifications.
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Push Notifications</CardTitle>
-        <CardDescription>Get notified even when you're away from the app</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {permission === "default" && (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Enable push notifications to get notified when you receive messages and mentions.
-            </p>
-            <Button onClick={requestPermission} variant="outline" size="sm">
-              Enable push notifications
+    <section className="space-y-3">
+      <div>
+        <h3 className="text-sm font-medium">Push Notifications</h3>
+        <p className="text-sm text-muted-foreground">Get notified even when you're away from the app</p>
+      </div>
+      {permission === "unsupported" && (
+        <p className="text-sm text-muted-foreground">Push notifications are not supported in this browser.</p>
+      )}
+      {permission === "denied" && (
+        <p className="text-sm text-muted-foreground">
+          Push notifications are blocked. Enable them in your browser settings to receive notifications.
+        </p>
+      )}
+      {permission === "default" && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Enable push notifications to get notified when you receive messages and mentions.
+          </p>
+          <Button onClick={requestPermission} variant="outline" size="sm">
+            Enable push notifications
+          </Button>
+        </div>
+      )}
+      {permission === "granted" && isSubscribed && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">Push notifications are enabled for this device.</p>
+          <div className="flex gap-2">
+            <Button onClick={unsubscribe} variant="outline" size="sm">
+              Disable push notifications
             </Button>
+            <TestNotificationButton workspaceId={workspaceId} />
           </div>
-        )}
-        {permission === "granted" && isSubscribed && (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Push notifications are enabled for this device.</p>
-            <div className="flex gap-2">
-              <Button onClick={unsubscribe} variant="outline" size="sm">
-                Disable push notifications
-              </Button>
-              <TestNotificationButton workspaceId={workspaceId} />
-            </div>
-          </div>
-        )}
-        {permission === "granted" && !isSubscribed && optedOut && (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Push notifications are disabled for this device.</p>
-            <Button onClick={requestPermission} variant="outline" size="sm">
-              Enable push notifications
-            </Button>
-          </div>
-        )}
-        {permission === "granted" && !isSubscribed && !optedOut && pushDisabledOnServer && (
-          <p className="text-sm text-muted-foreground">Push notifications are not available on this server.</p>
-        )}
-        {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && (
-          <p className="text-sm text-muted-foreground">Subscribing to push notifications...</p>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+      {permission === "granted" && !isSubscribed && optedOut && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">Push notifications are disabled for this device.</p>
+          <Button onClick={requestPermission} variant="outline" size="sm">
+            Enable push notifications
+          </Button>
+        </div>
+      )}
+      {permission === "granted" && !isSubscribed && !optedOut && pushDisabledOnServer && (
+        <p className="text-sm text-muted-foreground">Push notifications are not available on this server.</p>
+      )}
+      {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && (
+        <p className="text-sm text-muted-foreground">Subscribing to push notifications...</p>
+      )}
+    </section>
   )
 }
 
@@ -143,33 +119,36 @@ export function NotificationsSettings() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Notification Level</CardTitle>
-          <CardDescription>Choose when you want to be notified</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RadioGroup
-            value={notificationLevel}
-            onValueChange={(value) => updatePreference("notificationLevel", value as PrefNotificationLevel)}
-            className="space-y-4"
-          >
-            {PREF_NOTIFICATION_LEVEL_OPTIONS.map((option) => (
-              <div key={option} className="flex items-start space-x-3">
-                <RadioGroupItem value={option} id={`notify-${option}`} className="mt-1" />
-                <div className="grid gap-1">
-                  <Label htmlFor={`notify-${option}`} className="cursor-pointer">
-                    {NOTIFICATION_LABELS[option]}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">{NOTIFICATION_DESCRIPTIONS[option]}</p>
-                </div>
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-medium">Notification Level</h3>
+          <p className="text-sm text-muted-foreground">Choose when you want to be notified</p>
+        </div>
+        <RadioGroup
+          value={notificationLevel}
+          onValueChange={(value) => updatePreference("notificationLevel", value as PrefNotificationLevel)}
+          className="space-y-4"
+        >
+          {PREF_NOTIFICATION_LEVEL_OPTIONS.map((option) => (
+            <div key={option} className="flex items-start space-x-3">
+              <RadioGroupItem value={option} id={`notify-${option}`} className="mt-1" />
+              <div className="grid gap-1">
+                <Label htmlFor={`notify-${option}`} className="cursor-pointer">
+                  {NOTIFICATION_LABELS[option]}
+                </Label>
+                <p className="text-sm text-muted-foreground">{NOTIFICATION_DESCRIPTIONS[option]}</p>
               </div>
-            ))}
-          </RadioGroup>
-        </CardContent>
-      </Card>
+            </div>
+          ))}
+        </RadioGroup>
+      </section>
 
-      {workspaceId && <PushNotificationCard workspaceId={workspaceId} />}
+      {workspaceId && (
+        <>
+          <Separator />
+          <PushNotificationSection workspaceId={workspaceId} />
+        </>
+      )}
     </div>
   )
 }

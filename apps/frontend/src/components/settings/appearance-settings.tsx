@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Separator } from "@/components/ui/separator"
 import { usePreferences } from "@/contexts"
 import {
   THEME_OPTIONS,
@@ -83,133 +83,133 @@ export function AppearanceSettings() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Theme</CardTitle>
-          <CardDescription>Choose how Threa looks to you</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RadioGroup
-            value={theme}
-            onValueChange={(value) => updatePreference("theme", value as Theme)}
-            className="grid grid-cols-3 gap-4"
-          >
-            {THEME_OPTIONS.map((option) => (
-              <div key={option}>
-                <RadioGroupItem value={option} id={`theme-${option}`} className="peer sr-only" />
-                <Label
-                  htmlFor={`theme-${option}`}
-                  className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
-                >
-                  {THEME_LABELS[option]}
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-medium">Theme</h3>
+          <p className="text-sm text-muted-foreground">Choose how Threa looks to you</p>
+        </div>
+        <RadioGroup
+          value={theme}
+          onValueChange={(value) => updatePreference("theme", value as Theme)}
+          className="grid grid-cols-3 gap-4"
+        >
+          {THEME_OPTIONS.map((option) => (
+            <div key={option}>
+              <RadioGroupItem value={option} id={`theme-${option}`} className="peer sr-only" />
+              <Label
+                htmlFor={`theme-${option}`}
+                className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+              >
+                {THEME_LABELS[option]}
+              </Label>
+            </div>
+          ))}
+        </RadioGroup>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-medium">Message Display</h3>
+          <p className="text-sm text-muted-foreground">Choose how messages are displayed</p>
+        </div>
+        <RadioGroup
+          value={messageDisplay}
+          onValueChange={(value) => updatePreference("messageDisplay", value as MessageDisplay)}
+          className="space-y-3"
+        >
+          {MESSAGE_DISPLAY_OPTIONS.map((option) => (
+            <div key={option} className="flex items-start space-x-3">
+              <RadioGroupItem value={option} id={`display-${option}`} className="mt-1" />
+              <div className="grid gap-1">
+                <Label htmlFor={`display-${option}`} className="cursor-pointer">
+                  {MESSAGE_DISPLAY_LABELS[option]}
                 </Label>
+                <p className="text-sm text-muted-foreground">{MESSAGE_DISPLAY_DESCRIPTIONS[option]}</p>
               </div>
-            ))}
-          </RadioGroup>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Message Display</CardTitle>
-          <CardDescription>Choose how messages are displayed</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RadioGroup
-            value={messageDisplay}
-            onValueChange={(value) => updatePreference("messageDisplay", value as MessageDisplay)}
-            className="space-y-3"
-          >
-            {MESSAGE_DISPLAY_OPTIONS.map((option) => (
-              <div key={option} className="flex items-start space-x-3">
-                <RadioGroupItem value={option} id={`display-${option}`} className="mt-1" />
-                <div className="grid gap-1">
-                  <Label htmlFor={`display-${option}`} className="cursor-pointer">
-                    {MESSAGE_DISPLAY_LABELS[option]}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">{MESSAGE_DISPLAY_DESCRIPTIONS[option]}</p>
-                </div>
-              </div>
-            ))}
-          </RadioGroup>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Code Blocks</CardTitle>
-          <CardDescription>Collapse long code blocks by default to keep messages scannable</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-start gap-4">
-            <div className="grid gap-1 flex-1">
-              <Label htmlFor="code-block-collapse-threshold" className="cursor-pointer">
-                Collapse threshold
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Code blocks with more than this many lines start collapsed. You can always click to expand or collapse
-                individual blocks.
-              </p>
             </div>
-            <Input
-              id="code-block-collapse-threshold"
-              type="number"
-              inputMode="numeric"
-              min={CODE_BLOCK_COLLAPSE_THRESHOLD_MIN}
-              max={CODE_BLOCK_COLLAPSE_THRESHOLD_MAX}
-              value={codeThresholdDraft}
-              onChange={(event) => setCodeThresholdDraft(event.target.value)}
-              onBlur={commitCodeThreshold}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault()
-                  commitCodeThreshold()
-                }
-              }}
-              className="w-24"
-            />
-          </div>
-        </CardContent>
-      </Card>
+          ))}
+        </RadioGroup>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Block Quotes</CardTitle>
-          <CardDescription>
+      <Separator />
+
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-medium">Code Blocks</h3>
+          <p className="text-sm text-muted-foreground">
+            Collapse long code blocks by default to keep messages scannable
+          </p>
+        </div>
+        <div className="flex items-start gap-4">
+          <div className="grid gap-1 flex-1">
+            <Label htmlFor="code-block-collapse-threshold" className="cursor-pointer">
+              Collapse threshold
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              Code blocks with more than this many lines start collapsed. You can always click to expand or collapse
+              individual blocks.
+            </p>
+          </div>
+          <Input
+            id="code-block-collapse-threshold"
+            type="number"
+            inputMode="numeric"
+            min={CODE_BLOCK_COLLAPSE_THRESHOLD_MIN}
+            max={CODE_BLOCK_COLLAPSE_THRESHOLD_MAX}
+            value={codeThresholdDraft}
+            onChange={(event) => setCodeThresholdDraft(event.target.value)}
+            onBlur={commitCodeThreshold}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                commitCodeThreshold()
+              }
+            }}
+            className="w-24"
+          />
+        </div>
+      </section>
+
+      <Separator />
+
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-medium">Block Quotes</h3>
+          <p className="text-sm text-muted-foreground">
             Collapse long quotes and quote replies by default to keep messages scannable
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-start gap-4">
-            <div className="grid gap-1 flex-1">
-              <Label htmlFor="blockquote-collapse-threshold" className="cursor-pointer">
-                Collapse threshold
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Block quotes and quote replies with more than this many lines start collapsed. You can always click to
-                expand or collapse individual quotes.
-              </p>
-            </div>
-            <Input
-              id="blockquote-collapse-threshold"
-              type="number"
-              inputMode="numeric"
-              min={BLOCKQUOTE_COLLAPSE_THRESHOLD_MIN}
-              max={BLOCKQUOTE_COLLAPSE_THRESHOLD_MAX}
-              value={blockquoteThresholdDraft}
-              onChange={(event) => setBlockquoteThresholdDraft(event.target.value)}
-              onBlur={commitBlockquoteThreshold}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault()
-                  commitBlockquoteThreshold()
-                }
-              }}
-              className="w-24"
-            />
+          </p>
+        </div>
+        <div className="flex items-start gap-4">
+          <div className="grid gap-1 flex-1">
+            <Label htmlFor="blockquote-collapse-threshold" className="cursor-pointer">
+              Collapse threshold
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              Block quotes and quote replies with more than this many lines start collapsed. You can always click to
+              expand or collapse individual quotes.
+            </p>
           </div>
-        </CardContent>
-      </Card>
+          <Input
+            id="blockquote-collapse-threshold"
+            type="number"
+            inputMode="numeric"
+            min={BLOCKQUOTE_COLLAPSE_THRESHOLD_MIN}
+            max={BLOCKQUOTE_COLLAPSE_THRESHOLD_MAX}
+            value={blockquoteThresholdDraft}
+            onChange={(event) => setBlockquoteThresholdDraft(event.target.value)}
+            onBlur={commitBlockquoteThreshold}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                commitBlockquoteThreshold()
+              }
+            }}
+            className="w-24"
+          />
+        </div>
+      </section>
     </div>
   )
 }
