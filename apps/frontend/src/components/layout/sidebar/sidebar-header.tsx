@@ -19,13 +19,12 @@ interface SidebarHeaderProps {
 
 export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideViewToggle }: SidebarHeaderProps) {
   const { openSwitcher } = useQuickSwitcher()
-  const { state, collapseOnMobile } = useSidebar()
+  const { collapseOnMobile } = useSidebar()
   const { preferences } = usePreferences()
   const customBindings = preferences?.keyboardShortcuts ?? {}
   const streamBinding = getEffectiveKeyBinding("openQuickSwitcher", customBindings)
   const commandBinding = getEffectiveKeyBinding("openCommands", customBindings)
   const searchBinding = getEffectiveKeyBinding("openSearch", customBindings)
-  const isOpen = state === "pinned" || state === "preview"
 
   const handleOpenSwitcher = (mode: "stream" | "command" | "search") => () => {
     collapseOnMobile()
@@ -38,15 +37,9 @@ export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideV
            in the identical viewport position whether the sidebar is open or not. */}
       <div className="flex h-12 items-center gap-1 px-4">
         <SidebarToggle location="sidebar" />
-        {/* Logo + workspace name drift 4px left as the sidebar opens, paired
-             with the page-header toggle sliding off to the left — together
-             they read as a coordinated "everything shifts left" swap. */}
         <Link
           to="/workspaces"
-          className={cn(
-            "flex min-w-0 items-center gap-2 truncate transition-[transform,opacity] duration-200 ease-out hover:opacity-80",
-            isOpen ? "translate-x-0" : "translate-x-1"
-          )}
+          className="flex min-w-0 items-center gap-2 truncate transition-opacity hover:opacity-80"
           onClick={collapseOnMobile}
         >
           <ThreaLogo size="sm" />
