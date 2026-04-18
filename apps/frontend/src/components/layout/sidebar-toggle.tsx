@@ -35,12 +35,14 @@ export function SidebarToggle({ location, className }: SidebarToggleProps) {
   // the sidebar (padding is already measured from the sidebar's own edge).
   const offsetClass = location === "page" && !isMobile ? "-ml-1.5" : ""
 
+  // When hidden we also collapse the wrapper's flex footprint so following
+  // header elements (back arrow, title) shift fully to the viewport edge — as
+  // if the toggle were never rendered. `-mr-2` cancels the parent `gap-2`.
   return (
     <div
       className={cn(
-        "flex items-center transition-[transform,opacity] duration-200 ease-out",
-        offsetClass,
-        hidden && "pointer-events-none -translate-x-2 opacity-0",
+        "flex items-center overflow-hidden transition-[width,margin,transform,opacity] duration-200 ease-out",
+        hidden ? "pointer-events-none ml-0 -mr-2 w-0 -translate-x-2 opacity-0" : cn("w-8 opacity-100", offsetClass),
         className
       )}
       aria-hidden={hidden}

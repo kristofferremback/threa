@@ -1,15 +1,13 @@
 import { Search as SearchIcon, Terminal, FileText } from "lucide-react"
 import { Link } from "react-router-dom"
-import { useQuickSwitcher, type ViewMode } from "@/contexts"
+import { useQuickSwitcher, usePreferences, type ViewMode } from "@/contexts"
 import { useSidebar } from "@/contexts"
 import { cn } from "@/lib/utils"
 import { ThemeDropdown } from "@/components/theme-dropdown"
 import { ThreaLogo } from "@/components/threa-logo"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SidebarToggle } from "@/components/layout/sidebar-toggle"
-
-/** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl on Windows/Linux) */
-const MOD_KEY = typeof navigator !== "undefined" && navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
+import { getEffectiveKeyBinding, formatKeyBinding, formatKeyBindingText } from "@/lib/keyboard-shortcuts"
 
 interface SidebarHeaderProps {
   workspaceName: string
@@ -22,6 +20,11 @@ interface SidebarHeaderProps {
 export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideViewToggle }: SidebarHeaderProps) {
   const { openSwitcher } = useQuickSwitcher()
   const { state, collapseOnMobile } = useSidebar()
+  const { preferences } = usePreferences()
+  const customBindings = preferences?.keyboardShortcuts ?? {}
+  const streamBinding = getEffectiveKeyBinding("openQuickSwitcher", customBindings)
+  const commandBinding = getEffectiveKeyBinding("openCommands", customBindings)
+  const searchBinding = getEffectiveKeyBinding("openSearch", customBindings)
   const isOpen = state === "pinned" || state === "preview"
 
   const handleOpenSwitcher = (mode: "stream" | "command" | "search") => () => {
@@ -62,19 +65,19 @@ export function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideV
           onClick={handleOpenSwitcher("stream")}
           icon={FileText}
           label="Jump to stream"
-          shortcut={`${MOD_KEY}K`}
+          binding={streamBinding}
         />
         <QuickActionPill
           onClick={handleOpenSwitcher("command")}
           icon={Terminal}
           label="Commands"
-          shortcut={`${MOD_KEY}Shift+P`}
+          binding={commandBinding}
         />
         <QuickActionPill
           onClick={handleOpenSwitcher("search")}
           icon={SearchIcon}
           label="Search messages"
-          shortcut={`${MOD_KEY}/`}
+          binding={searchBinding}
         />
       </div>
 
@@ -115,17 +118,20 @@ interface QuickActionPillProps {
   onClick: () => void
   icon: React.ComponentType<{ className?: string }>
   label: string
-  shortcut: string
+  /** Effective user-configured binding, e.g. "mod+k"; undefined if disabled. */
+  binding: string | undefined
 }
 
-function QuickActionPill({ onClick, icon: Icon, label, shortcut }: QuickActionPillProps) {
+function QuickActionPill({ onClick, icon: Icon, label, binding }: QuickActionPillProps) {
+  const shortcutLabel = binding ? formatKeyBinding(binding) : null
+  const ariaLabel = binding ? `${label} (${formatKeyBindingText(binding)})` : label
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
           onClick={onClick}
-          aria-label={label}
+          aria-label={ariaLabel}
           className={cn(
             "flex h-8 flex-1 items-center justify-center rounded-md border border-border bg-background",
             "text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
@@ -137,7 +143,11 @@ function QuickActionPill({ onClick, icon: Icon, label, shortcut }: QuickActionPi
       </TooltipTrigger>
       <TooltipContent side="bottom" className="flex items-center gap-2">
         <span>{label}</span>
-        <kbd className="rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">{shortcut}</kbd>
+        {shortcutLabel && (
+          <kbd className="rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {shortcutLabel}
+          </kbd>
+        )}
       </TooltipContent>
     </Tooltip>
   )
