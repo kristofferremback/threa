@@ -2,15 +2,15 @@ import type { RefObject } from "react"
 import type { CollapseState } from "@/contexts"
 import { Button } from "@/components/ui/button"
 import { SMART_SECTIONS } from "./config"
-import { SmartSection, SplitStreamSection } from "./sections"
+import { SmartSection, TieredStreamSection } from "./sections"
 import type { StreamItemData } from "./types"
 
-/** Rest subsection default state: collapsed so an open parent with lots of "quiet" items stays tight. */
-const REST_DEFAULT: CollapseState = "collapsed"
+/** Default state of the "more" expander: collapsed so quiet tails stay hidden. */
+const MORE_DEFAULT: CollapseState = "collapsed"
 
-/** Key for the "Rest" subsection of a parent section. */
-function restKey(parent: string): string {
-  return `${parent}:rest`
+/** Key for the inline "more" expander of a parent section. */
+function moreKey(parent: string): string {
+  return `${parent}:more`
 }
 
 interface SidebarStreamListProps {
@@ -117,7 +117,7 @@ export function SidebarStreamList({
           scrollContainerRef={scrollContainerRef}
         />
         {streamsBySection.other.length > 0 && (
-          <SplitStreamSection
+          <TieredStreamSection
             sectionKey="other"
             label={SMART_SECTIONS.other.label}
             icon={SMART_SECTIONS.other.icon}
@@ -129,8 +129,8 @@ export function SidebarStreamList({
             getMentionCount={getMentionCount}
             state={getSectionState("other", "collapsed")}
             onToggle={() => toggleSectionState("other", "collapsed")}
-            restState={getSectionState(restKey("other"), REST_DEFAULT)}
-            onToggleRest={() => toggleSectionState(restKey("other"), REST_DEFAULT)}
+            moreState={getSectionState(moreKey("other"), MORE_DEFAULT)}
+            onToggleMore={() => toggleSectionState(moreKey("other"), MORE_DEFAULT)}
             compact={SMART_SECTIONS.other.compact}
             showPreviewOnHover={SMART_SECTIONS.other.showPreviewOnHover}
             scrollContainerRef={scrollContainerRef}
@@ -142,7 +142,7 @@ export function SidebarStreamList({
 
   return (
     <>
-      <SplitStreamSection
+      <TieredStreamSection
         sectionKey="scratchpads"
         label="Scratchpads"
         items={streamsByType.scratchpads}
@@ -153,8 +153,8 @@ export function SidebarStreamList({
         getMentionCount={getMentionCount}
         state={getSectionState("scratchpads")}
         onToggle={() => toggleSectionState("scratchpads")}
-        restState={getSectionState(restKey("scratchpads"), REST_DEFAULT)}
-        onToggleRest={() => toggleSectionState(restKey("scratchpads"), REST_DEFAULT)}
+        moreState={getSectionState(moreKey("scratchpads"), MORE_DEFAULT)}
+        onToggleMore={() => toggleSectionState(moreKey("scratchpads"), MORE_DEFAULT)}
         scrollContainerRef={scrollContainerRef}
         onAdd={() => void onCreateScratchpad()}
         addTooltip="+ New Scratchpad"
@@ -162,7 +162,7 @@ export function SidebarStreamList({
         showPreviewOnHover
       />
 
-      <SplitStreamSection
+      <TieredStreamSection
         sectionKey="channels"
         label="Channels"
         items={streamsByType.channels}
@@ -173,8 +173,8 @@ export function SidebarStreamList({
         getMentionCount={getMentionCount}
         state={getSectionState("channels")}
         onToggle={() => toggleSectionState("channels")}
-        restState={getSectionState(restKey("channels"), REST_DEFAULT)}
-        onToggleRest={() => toggleSectionState(restKey("channels"), REST_DEFAULT)}
+        moreState={getSectionState(moreKey("channels"), MORE_DEFAULT)}
+        onToggleMore={() => toggleSectionState(moreKey("channels"), MORE_DEFAULT)}
         scrollContainerRef={scrollContainerRef}
         onAdd={() => void onCreateChannel()}
         addTooltip="+ New Channel"
@@ -183,7 +183,7 @@ export function SidebarStreamList({
       />
 
       {streamsByType.dms.length > 0 && (
-        <SplitStreamSection
+        <TieredStreamSection
           sectionKey="dms"
           label="Direct Messages"
           items={streamsByType.dms}
@@ -194,8 +194,8 @@ export function SidebarStreamList({
           getMentionCount={getMentionCount}
           state={getSectionState("dms")}
           onToggle={() => toggleSectionState("dms")}
-          restState={getSectionState(restKey("dms"), REST_DEFAULT)}
-          onToggleRest={() => toggleSectionState(restKey("dms"), REST_DEFAULT)}
+          moreState={getSectionState(moreKey("dms"), MORE_DEFAULT)}
+          onToggleMore={() => toggleSectionState(moreKey("dms"), MORE_DEFAULT)}
           scrollContainerRef={scrollContainerRef}
           compact
           showPreviewOnHover

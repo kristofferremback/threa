@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Plus } from "lucide-react"
+import { ChevronDown, ChevronRight, ChevronUp, Plus } from "lucide-react"
 import type { ReactNode, RefObject } from "react"
 import type { CollapseState } from "@/contexts"
 import { cn } from "@/lib/utils"
@@ -241,26 +241,38 @@ export function StreamSection({
   )
 }
 
-interface SplitStreamSectionProps extends Omit<StreamSectionProps, "action" | "state" | "onToggle"> {
-  /** Parent section key (drives the "rest" subsection persistence key). */
+interface TieredStreamSectionProps extends Omit<StreamSectionProps, "action" | "state" | "onToggle"> {
+  /** Parent section key (drives the "more" persistence key). */
   sectionKey: string
   /** Current parent open/collapsed state. */
   state: CollapseState
   /** Toggle the parent section. */
   onToggle: () => void
-  /** Current state of the nested "Rest" subsection. */
-  restState: CollapseState
-  /** Toggle the nested "Rest" subsection. */
-  onToggleRest: () => void
+  /**
+   * Current state of the inline "more" expander. `"open"` shows the full tail,
+   * `"collapsed"` keeps it hidden behind the more button.
+   */
+  moreState: CollapseState
+  /** Toggle the inline "more" expander. */
+  onToggleMore: () => void
   action?: ReactNode
 }
 
+/** Soft cap on visible items when the more expander is collapsed. */
+const TIER_VISIBLE_LIMIT = 10
+
 /**
- * Two-level section: when open, streams split into a "With activity" block
- * (unread + mentions, ordered by recency) and a "Rest" subsection with its
- * own open/collapsed toggle. Either subsection is hidden if it has no items.
+ * Single-list section with a tiered reveal:
+ *
+ * - All streams with activity (unread / mentions) always render at the top,
+ *   sorted by recency.
+ * - The list is then filled with quieter streams up to {@link TIER_VISIBLE_LIMIT}
+ *   total items.
+ * - Any remaining streams hide behind an inline "more" divider that expands
+ *   to the full list. The divider aligns with the stream items (same padding)
+ *   and is persisted per-section.
  */
-export function SplitStreamSection({
+export function TieredStreamSection({
   label,
   icon,
   items,
@@ -271,22 +283,31 @@ export function SplitStreamSection({
   getMentionCount,
   state,
   onToggle,
-  restState,
-  onToggleRest,
+  moreState,
+  onToggleMore,
   action,
   compact = false,
   showPreviewOnHover = false,
   scrollContainerRef,
   onAdd,
   addTooltip,
-}: SplitStreamSectionProps) {
+}: TieredStreamSectionProps) {
   const isCollapsed = state === "collapsed"
   const unreadAggregate = sumUnread(items, getUnreadCount)
   const mentionAggregate = sumMentions(items, getMentionCount)
+
   const activeItems = filterActiveByRecency(items, getUnreadCount, getMentionCount)
   const activeIds = new Set(activeItems.map((s) => s.id))
-  const restItems = items.filter((s) => !activeIds.has(s.id))
-  const isRestCollapsed = restState === "collapsed"
+  const quietItems = items.filter((s) => !activeIds.has(s.id))
+
+  // Fill the visible tier with quiet items up to the soft cap. Actives always
+  // render in full, even if that pushes past the cap.
+  const quietFillCount = Math.max(0, TIER_VISIBLE_LIMIT - activeItems.length)
+  const quietVisible = quietItems.slice(0, quietFillCount)
+  const quietHidden = quietItems.slice(quietFillCount)
+  const hasMore = quietHidden.length > 0
+  const isMoreOpen = moreState === "open"
+  const visibleItems = isMoreOpen ? [...activeItems, ...quietItems] : [...activeItems, ...quietVisible]
 
   const renderItem = (stream: StreamItemData) => (
     <StreamItem
@@ -316,22 +337,47 @@ export function SplitStreamSection({
         addTooltip={addTooltip}
       />
 
-      {!isCollapsed && activeItems.length > 0 && (
-        <div className="mt-1">
-          <SectionHeader label="With activity" nested />
-          <div className="flex flex-col gap-0.5">{activeItems.map(renderItem)}</div>
-        </div>
+      {!isCollapsed && visibleItems.length > 0 && (
+        <div className="mt-1 flex flex-col gap-0.5">{visibleItems.map(renderItem)}</div>
       )}
 
-      {!isCollapsed && restItems.length > 0 && (
-        <div className="mt-1">
-          <SectionHeader label="Rest" state={restState} onToggle={onToggleRest} nested />
-          {!isRestCollapsed && <div className="flex flex-col gap-0.5">{restItems.map(renderItem)}</div>}
-        </div>
+      {!isCollapsed && hasMore && (
+        <MoreDivider isOpen={isMoreOpen} hiddenCount={quietHidden.length} onToggle={onToggleMore} />
       )}
 
       {!isCollapsed && action}
     </div>
+  )
+}
+
+interface MoreDividerProps {
+  isOpen: boolean
+  hiddenCount: number
+  onToggle: () => void
+}
+
+/**
+ * Slim divider with a centered "more" (or "less") label and a chevron. Sits
+ * flush with stream items via matching horizontal padding so it feels like a
+ * peer of the list, not a separate control.
+ */
+function MoreDivider({ isOpen, hiddenCount, onToggle }: MoreDividerProps) {
+  const Chevron = isOpen ? ChevronUp : ChevronDown
+  const label = isOpen ? "less" : `${hiddenCount} more`
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={isOpen}
+      className="mt-0.5 flex w-full items-center gap-2 px-3 py-1 text-[11px] uppercase tracking-wide text-muted-foreground/70 hover:text-foreground transition-colors"
+    >
+      <span className="h-px flex-1 bg-border/70" aria-hidden />
+      <span className="flex items-center gap-1">
+        {label}
+        <Chevron className="h-3 w-3" aria-hidden />
+      </span>
+      <span className="h-px flex-1 bg-border/70" aria-hidden />
+    </button>
   )
 }
 
