@@ -4,6 +4,7 @@ import {
   renderLoginPage,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
+  SESSION_COOKIE_NAME,
   type StubAuthService,
 } from "@threa/backend-common"
 import type { WorkspaceService } from "../features/workspaces"
@@ -51,7 +52,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
       name: user.name,
     })
 
-    res.cookie("wos_session", session, {
+    res.cookie(SESSION_COOKIE_NAME, session, {
       httpOnly: true,
       secure: false,
       sameSite: "lax",
@@ -72,7 +73,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
 
     const { user, session } = await authStubService.devLogin({ email, name })
 
-    res.cookie("wos_session", session, {
+    res.cookie(SESSION_COOKIE_NAME, session, {
       httpOnly: true,
       secure: false,
       sameSite: "lax",
