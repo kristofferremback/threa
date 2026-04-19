@@ -205,7 +205,9 @@ export async function startServer(): Promise<ServerInstance> {
   const avatarService = new AvatarService(storage)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
-  const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
+  const authService = config.useStubAuth
+    ? new StubAuthService({ workosOrgService })
+    : new WorkosAuthService(config.workos)
 
   // Attachment service
   const malwareScanner = createMalwareScanner(storage, config.attachments)

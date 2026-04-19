@@ -1,4 +1,5 @@
 import type { AuthResult, AuthService } from "./auth-service"
+import type { WorkosOrgService } from "./workos-org-service"
 
 export interface DevLoginResult {
   user: { id: string; email: string; name: string }
@@ -11,6 +12,13 @@ interface StubSessionPayload {
   role?: string | null
   roles?: string[]
   permissions?: string[]
+}
+
+interface OrgSessionClaims {
+  organizationId: string
+  role: string | null
+  roles: string[]
+  permissions: string[]
 }
 
 function encodeStubSession(payload: StubSessionPayload): string {
@@ -43,6 +51,42 @@ function decodeStubSession(sealedSession: string): StubSessionPayload | null {
 export class StubAuthService implements AuthService {
   private users: Map<string, { id: string; email: string; firstName: string | null; lastName: string | null }> =
     new Map()
+  private workosOrgService: WorkosOrgService | null
+
+  constructor(options: { workosOrgService?: WorkosOrgService } = {}) {
+    this.workosOrgService = options.workosOrgService ?? null
+  }
+
+  /**
+   * Look up the user's claims in the given org by reading the stub WorkOS
+   * mirror: role slugs on their membership, then the permission set defined by
+   * the org's role catalog. Real WorkOS embeds these in the sealed session;
+   * mirroring that lets middleware treat stub sessions like real ones.
+   */
+  private async deriveOrgClaims(organizationId: string, userId: string): Promise<OrgSessionClaims> {
+    if (!this.workosOrgService) {
+      return { organizationId, role: null, roles: [], permissions: [] }
+    }
+
+    const [membership, orgRoles] = await Promise.all([
+      this.workosOrgService.getOrganizationMembership({ organizationId, userId }),
+      this.workosOrgService.listRolesForOrganization(organizationId),
+    ])
+
+    const membershipRoleSlugs = membership?.roles?.map((role) => role.slug) ?? []
+    const roleSlugs =
+      membershipRoleSlugs.length > 0 ? membershipRoleSlugs : membership?.role ? [membership.role.slug] : []
+
+    const rolesBySlug = new Map(orgRoles.map((role) => [role.slug, role]))
+    const permissions = Array.from(new Set(roleSlugs.flatMap((slug) => rolesBySlug.get(slug)?.permissions ?? [])))
+
+    return {
+      organizationId,
+      role: roleSlugs[0] ?? null,
+      roles: roleSlugs,
+      permissions,
+    }
+  }
 
   /**
    * Dev login endpoint - creates/ensures in-memory auth user and registers session.
@@ -138,24 +182,25 @@ export class StubAuthService implements AuthService {
     }
 
     const organizationId = params.organizationId ?? authenticated.session?.organizationId ?? null
-    const role = organizationId ? "member" : null
-    const roles = role ? [role] : []
+    const claims: OrgSessionClaims | null = organizationId
+      ? await this.deriveOrgClaims(organizationId, authenticated.user.id)
+      : null
 
     return {
       success: true,
       user: authenticated.user,
       session: {
         organizationId,
-        role,
-        roles,
-        permissions: [],
+        role: claims?.role ?? null,
+        roles: claims?.roles ?? [],
+        permissions: claims?.permissions ?? [],
       },
       sealedSession: encodeStubSession({
         userId: authenticated.user.id,
         organizationId,
-        role,
-        roles,
-        permissions: [],
+        role: claims?.role ?? null,
+        roles: claims?.roles ?? [],
+        permissions: claims?.permissions ?? [],
       }),
       refreshed: true,
     }

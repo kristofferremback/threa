@@ -55,8 +55,10 @@ export async function startServer(): Promise<ControlPlaneInstance> {
   await runMigrations(pool, MIGRATIONS_GLOB)
   logger.info("Control plane database migrations complete")
 
-  const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
   const workosOrgService = config.useStubAuth ? new StubWorkosOrgService() : new WorkosOrgServiceImpl(config.workos)
+  const authService = config.useStubAuth
+    ? new StubAuthService({ workosOrgService })
+    : new WorkosAuthService(config.workos)
 
   const regionalClient = new RegionalClient(config.regions, config.internalApiKey)
   const kvClient: KvClient = config.cloudflareKv ? new CloudflareKvClient(config.cloudflareKv) : new NoopKvClient()
