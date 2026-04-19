@@ -87,7 +87,6 @@ async function cleanupStaleData(): Promise<void> {
         outbox,
         outbox_listeners,
         stream_events,
-        stream_event_projections,
         stream_members,
         streams,
         workspaces,

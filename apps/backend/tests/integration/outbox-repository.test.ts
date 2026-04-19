@@ -58,13 +58,18 @@ describe("OutboxRepository", () => {
         // Insert some test events
         await OutboxRepository.insert(client, "message:created", testEventPayload("stream_1"))
         const second = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_2"))
-        await OutboxRepository.insert(client, "message:created", testEventPayload("stream_3"))
+        const third = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_3"))
 
         // Fetch events after the second one
         const events = await OutboxRepository.fetchAfterId(client, second.id)
 
-        expect(events.length).toBe(1)
-        expect(events[0].eventType).toBe("message:created")
+        // Assert presence/absence rather than length — the test runs under
+        // READ COMMITTED, so background workers on the test server can commit
+        // unrelated outbox rows in parallel and inflate the count.
+        const ids = events.map((e) => e.id)
+        expect(ids).toContain(third.id)
+        expect(ids).not.toContain(second.id)
+        expect(events.find((e) => e.id === third.id)?.eventType).toBe("message:created")
       })
     })
 
