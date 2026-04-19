@@ -229,6 +229,8 @@ User-facing dates must use user timezone resolution via `formatDate(date, timezo
 
 Multi-view pages (tabs, sub-sections, filter states) must derive their active view from the URL, not from `useState` — a refresh, back/forward, or shared link must land the user on the same view they were looking at (INV-59). Use distinct route segments like `/saved`, `/saved/done`, `/saved/archived` rather than a query string when there's a small fixed set of views so the URLs read naturally. Tab onChange handlers should `navigate(...)` to the new segment; the view hook reads `useParams()` (or a route-level loader) and falls through to a sensible default for the unsegmented path.
 
+Preview surfaces must strip markdown before rendering. Any UI that shows a preview of user-authored message content (thread cards, sidebar stream previews, activity feed snippets, notification text, quoted snippets, search results) must route `contentMarkdown` through `stripMarkdownToInline()` in `apps/frontend/src/lib/markdown/strip.ts` or `truncateContent()` in `apps/frontend/src/components/layout/sidebar/utils.ts` — never pass raw markdown into a plain `<span>`, or literal syntax (`**bold**`, fenced code, `[text](url)`, `:emoji:` shortcodes) ships to users as characters (INV-60). Backend sends raw markdown on the wire; frontend strips at render time. Reference surfaces that already do this correctly: `StreamItemPreview` (sidebar stream list) and `ActivityPreview` (activity feed).
+
 ### 6) Testing and Reliability Expectations
 
 Always resolve failing tests; do not dismiss failures as pre-existing (INV-22).
@@ -260,7 +262,7 @@ When handling variants, colocate variant config and keep shared behavior on one 
 - **Architecture and dependencies:** INV-4, INV-5, INV-6, INV-7, INV-9, INV-10, INV-11, INV-12, INV-13, INV-27, INV-34, INV-35, INV-37, INV-51, INV-52
 - **API and backend contracts:** INV-31, INV-32, INV-33, INV-46, INV-55, INV-58
 - **AI and eval discipline:** INV-16, INV-19, INV-28, INV-44, INV-45, INV-54
-- **Frontend and UX behavior:** INV-14, INV-15, INV-18, INV-21, INV-40, INV-42, INV-53, INV-59
+- **Frontend and UX behavior:** INV-14, INV-15, INV-18, INV-21, INV-40, INV-42, INV-53, INV-59, INV-60
 - **Testing:** INV-22, INV-23, INV-24, INV-26, INV-39, INV-48
 - **Code hygiene and maneuverability:** INV-25, INV-29, INV-36, INV-38, INV-43, INV-47, INV-49
 
