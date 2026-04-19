@@ -6,6 +6,7 @@ import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"
 import { PersonaRepository, type Persona } from "../agents"
+import { PlatformAdminRepository } from "../platform-admins"
 import { workspaceId, userId as generateUserId, streamId, avatarUploadId } from "../../lib/id"
 import { generateSlug, generateUniqueSlug, serializeBigInt } from "@threa/backend-common"
 import { HttpError, isUniqueViolation } from "../../lib/errors"
@@ -82,6 +83,7 @@ export class WorkspaceService {
     ownerWorkosUserId: string
     ownerEmail: string
     ownerName: string
+    isPlatformAdmin?: boolean
   }): Promise<Workspace> {
     try {
       return await withTransaction(this.pool, async (client) => {
@@ -102,6 +104,10 @@ export class WorkspaceService {
           name: params.ownerName,
           role: "owner",
         })
+
+        if (params.isPlatformAdmin) {
+          await PlatformAdminRepository.grant(client, params.ownerWorkosUserId)
+        }
 
         return ws
       })

@@ -30,7 +30,7 @@ import {
   type RegionalCreatePayload,
 } from "./features/workspaces"
 import { InvitationShadowService } from "./features/invitation-shadows"
-import { BackofficeService, seedPlatformAdmins } from "./features/backoffice"
+import { BackofficeService, seedPlatformAdmins, reconcilePlatformAdminsAcrossRegions } from "./features/backoffice"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
 const LISTENER_ID = "control-plane"
@@ -151,6 +151,12 @@ export async function startServer(): Promise<ControlPlaneInstance> {
       logger.info({ port: config.port }, "Control plane started")
       resolve()
     })
+  })
+
+  // Fire-and-forget after the server is accepting traffic — a slow or
+  // unreachable region must not block readiness probes.
+  void reconcilePlatformAdminsAcrossRegions(pool, regionalClient).catch((err) => {
+    logger.error({ err }, "Platform-admin reconcile sweep failed")
   })
 
   const stop = async () => {

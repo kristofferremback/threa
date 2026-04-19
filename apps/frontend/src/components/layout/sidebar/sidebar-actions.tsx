@@ -21,6 +21,8 @@ export interface SidebarActionItem {
   label: string
   icon: LucideIcon
   href?: string
+  /** When true, href is treated as an absolute URL opened in a new tab (external link). */
+  external?: boolean
   onSelect?: () => void | Promise<void>
   variant?: "default" | "destructive"
   separatorBefore?: boolean
@@ -64,34 +66,60 @@ function SidebarActionContent({ action, iconClassName }: { action: SidebarAction
   )
 }
 
+/**
+ * Href variant renderer — picks between an external `<a target=_blank>` and an
+ * internal react-router `<Link>`. Buttons (non-href actions) use a separate
+ * branch because radix `DropdownMenuItem` wants `onSelect`, not a child click.
+ */
+function SidebarActionHrefElement({
+  action,
+  className,
+  onClick,
+  children,
+}: {
+  action: SidebarActionItem & { href: string }
+  className?: string
+  onClick: () => void
+  children: ReactNode
+}) {
+  if (action.external) {
+    return (
+      <a href={action.href} target="_blank" rel="noopener noreferrer" className={className} onClick={onClick}>
+        {children}
+      </a>
+    )
+  }
+  return (
+    <Link to={action.href} className={className} onClick={onClick}>
+      {children}
+    </Link>
+  )
+}
+
 function SidebarActionMenuEntry({ action }: { action: SidebarActionItem }) {
   const isDestructive = action.variant === "destructive"
+  const itemClassName = cn(isDestructive && "text-destructive focus:text-destructive")
   const content = <SidebarActionContent action={action} iconClassName="mr-2 h-4 w-4" />
+  const handleClick = () => {
+    void runSidebarAction(action)
+  }
+
+  const renderedItem = action.href ? (
+    <DropdownMenuItem asChild className={itemClassName}>
+      <SidebarActionHrefElement action={{ ...action, href: action.href }} onClick={handleClick}>
+        {content}
+      </SidebarActionHrefElement>
+    </DropdownMenuItem>
+  ) : (
+    <DropdownMenuItem className={itemClassName} onSelect={handleClick}>
+      {content}
+    </DropdownMenuItem>
+  )
 
   return (
     <div>
       {action.separatorBefore && <DropdownMenuSeparator />}
-      {action.href ? (
-        <DropdownMenuItem asChild className={cn(isDestructive && "text-destructive focus:text-destructive")}>
-          <Link
-            to={action.href}
-            onClick={() => {
-              void runSidebarAction(action)
-            }}
-          >
-            {content}
-          </Link>
-        </DropdownMenuItem>
-      ) : (
-        <DropdownMenuItem
-          className={cn(isDestructive && "text-destructive focus:text-destructive")}
-          onSelect={() => {
-            void runSidebarAction(action)
-          }}
-        >
-          {content}
-        </DropdownMenuItem>
-      )}
+      {renderedItem}
     </div>
   )
 }
@@ -215,32 +243,25 @@ function SidebarActionDrawerEntry({ action, onClose }: { action: SidebarActionIt
     />
   )
 
+  const handleClick = () => {
+    onClose()
+    void runSidebarAction(action)
+  }
+
+  const renderedItem = action.href ? (
+    <SidebarActionHrefElement action={{ ...action, href: action.href }} className={className} onClick={handleClick}>
+      {content}
+    </SidebarActionHrefElement>
+  ) : (
+    <button type="button" className={className} onClick={handleClick}>
+      {content}
+    </button>
+  )
+
   return (
     <div>
       {action.separatorBefore && <Divider />}
-      {action.href ? (
-        <Link
-          to={action.href}
-          className={className}
-          onClick={() => {
-            onClose()
-            void runSidebarAction(action)
-          }}
-        >
-          {content}
-        </Link>
-      ) : (
-        <button
-          type="button"
-          className={className}
-          onClick={() => {
-            onClose()
-            void runSidebarAction(action)
-          }}
-        >
-          {content}
-        </button>
-      )}
+      {renderedItem}
     </div>
   )
 }

@@ -24,6 +24,7 @@ import { createSavedMessagesHandlers } from "./features/saved-messages"
 import { createPushHandlers } from "./features/push"
 import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createInternalHandlers } from "./handlers/internal-handlers"
+import { createPlatformAdminHandlers, PlatformAdminService } from "./features/platform-admins"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./features/agents"
 import { createLinkPreviewHandlers } from "./features/link-previews"
@@ -139,7 +140,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const rateLimits = createRateLimiters(rateLimiterConfig)
   const opsAccess = createOpsAccessMiddleware()
 
-  const authHandlers = createAuthHandlers()
+  const platformAdminService = new PlatformAdminService(pool)
+  const authHandlers = createAuthHandlers({ platformAdminService })
   const avatarUpload = createAvatarUploadMiddleware()
   const workspace = createWorkspaceHandlers({
     workspaceService,
@@ -182,9 +184,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   if (internalApiKey) {
     const internalAuth = createInternalAuthMiddleware(internalApiKey)
     const internal = createInternalHandlers({ workspaceService, invitationService })
+    const platformAdmin = createPlatformAdminHandlers({ platformAdminService })
 
     app.post("/internal/workspaces", internalAuth, internal.createWorkspace)
     app.post("/internal/invitations/:id/accept", internalAuth, internal.acceptInvitation)
+    app.put("/internal/platform-admins/:workosUserId", internalAuth, platformAdmin.set)
   }
 
   // Global baseline rate limit

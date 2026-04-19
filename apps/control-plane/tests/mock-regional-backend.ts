@@ -54,6 +54,13 @@ export async function startMockRegionalBackend(): Promise<MockRegionalBackend> {
       return
     }
 
+    // PUT /internal/platform-admins/:workosUserId — mock platform-admin fan-out
+    if (req.method === "PUT" && url.match(/^\/internal\/platform-admins\/[^/]+$/)) {
+      res.writeHead(204)
+      res.end()
+      return
+    }
+
     // Fallback 404
     res.writeHead(404, { "Content-Type": "application/json" })
     res.end(JSON.stringify({ error: "Not found" }))

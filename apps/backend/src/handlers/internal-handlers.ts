@@ -11,12 +11,15 @@ const createWorkspaceSchema = z.object({
   ownerWorkosUserId: z.string().min(1),
   ownerEmail: z.string().email(),
   ownerName: z.string().min(1),
+  // Optional for back-compat with pre-mirror control planes.
+  isPlatformAdmin: z.boolean().optional(),
 })
 
 const acceptInvitationSchema = z.object({
   workosUserId: z.string().min(1),
   email: z.string().email(),
   name: z.string().min(1),
+  isPlatformAdmin: z.boolean().optional(),
 })
 
 interface InternalHandlersDeps {
@@ -39,17 +42,7 @@ export function createInternalHandlers(deps: InternalHandlersDeps) {
         throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
       }
 
-      const { id, name, slug, ownerWorkosUserId, ownerEmail, ownerName } = result.data
-
-      const workspace = await workspaceService.createWorkspaceFromControlPlane({
-        id,
-        name,
-        slug,
-        ownerWorkosUserId,
-        ownerEmail,
-        ownerName,
-      })
-
+      const workspace = await workspaceService.createWorkspaceFromControlPlane(result.data)
       res.status(201).json({ workspace })
     },
 
@@ -68,7 +61,8 @@ export function createInternalHandlers(deps: InternalHandlersDeps) {
         throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
       }
 
-      const workspaceId = await invitationService.acceptInvitation(invitationId, result.data)
+      const { isPlatformAdmin, ...identity } = result.data
+      const workspaceId = await invitationService.acceptInvitation(invitationId, identity, { isPlatformAdmin })
 
       if (!workspaceId) {
         throw new HttpError("Invitation not found or already processed", {

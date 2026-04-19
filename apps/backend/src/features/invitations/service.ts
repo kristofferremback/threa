@@ -2,10 +2,20 @@ import { Pool } from "pg"
 import { withTransaction, type Querier } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
 import { UserRepository, type WorkspaceService } from "../workspaces"
+import { PlatformAdminRepository } from "../platform-admins"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
 import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
+
+interface AcceptInvitationOptions {
+  /**
+   * When true, grant platform-admin in the same transaction as the invitation
+   * acceptance so the user's /api/auth/me reflects it without waiting for the
+   * next control-plane reconcile sweep.
+   */
+  isPlatformAdmin?: boolean
+}
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
@@ -106,16 +116,21 @@ export class InvitationService {
     return { sent, skipped }
   }
 
-  async acceptInvitation(invitationId: string, identity: WorkosIdentity): Promise<string | null> {
+  async acceptInvitation(
+    invitationId: string,
+    identity: WorkosIdentity,
+    options?: AcceptInvitationOptions
+  ): Promise<string | null> {
     return withTransaction(this.pool, async (client) => {
-      return this.acceptInvitationInTransaction(client, invitationId, identity)
+      return this.acceptInvitationInTransaction(client, invitationId, identity, options)
     })
   }
 
   private async acceptInvitationInTransaction(
     client: Querier,
     invitationId: string,
-    identity: WorkosIdentity
+    identity: WorkosIdentity,
+    options?: AcceptInvitationOptions
   ): Promise<string | null> {
     const now = new Date()
     const updated = await InvitationRepository.updateStatus(client, invitationId, "accepted", {
@@ -159,6 +174,10 @@ export class InvitationService {
       workosUserId: identity.workosUserId,
       userName: identity.name,
     })
+
+    if (options?.isPlatformAdmin) {
+      await PlatformAdminRepository.grant(client, identity.workosUserId)
+    }
 
     return invitation.workspaceId
   }

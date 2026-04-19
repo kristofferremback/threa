@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useMemo, useState, type ComponentPropsWithoutRef } from "react"
-import { ChevronUp, DollarSign, LogOut, Settings, User as UserIcon } from "lucide-react"
+import { ChevronUp, DollarSign, ExternalLink, LogOut, Settings, User as UserIcon } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useAuth } from "@/auth"
 import { useSettings, useSidebar } from "@/contexts"
@@ -9,6 +9,8 @@ import { getInitials } from "@/lib/initials"
 import { cn } from "@/lib/utils"
 import { getAvatarUrl, type User } from "@threa/types"
 import { SidebarActionDrawer, SidebarActionMenu, type SidebarActionItem } from "./sidebar-actions"
+
+const CONTROL_PANEL_URL = import.meta.env.VITE_CONTROL_PANEL_URL ?? "https://admin.threa.io"
 
 interface SidebarFooterProps {
   workspaceId: string
@@ -68,10 +70,11 @@ function SidebarFooterHeader({ avatarSrc, currentUser }: { avatarSrc?: string | 
 export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) {
   const [, setSearchParams] = useSearchParams()
   const { openSettings } = useSettings()
-  const { logout } = useAuth()
+  const { user: authUser, logout } = useAuth()
   const { collapseOnMobile } = useSidebar()
   const isMobile = useIsMobile()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const isPlatformAdmin = authUser?.isPlatformAdmin ?? false
 
   const handleOpenSettings = useCallback(
     (tab: "profile" | "appearance") => {
@@ -94,8 +97,8 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
   }, [collapseOnMobile, setSearchParams])
 
   const avatarSrc = currentUser ? getAvatarUrl(workspaceId, currentUser.avatarUrl, 64) : null
-  const menuActions = useMemo<SidebarActionItem[]>(
-    () => [
+  const menuActions = useMemo<SidebarActionItem[]>(() => {
+    const actions: SidebarActionItem[] = [
       {
         id: "profile",
         label: "Profile",
@@ -122,16 +125,27 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
         onSelect: collapseOnMobile,
         separatorBefore: true,
       },
-      {
-        id: "logout",
-        label: "Log out",
-        icon: LogOut,
-        onSelect: () => logout(),
+    ]
+    if (isPlatformAdmin) {
+      actions.push({
+        id: "control-panel",
+        label: "Control Panel",
+        icon: ExternalLink,
+        href: CONTROL_PANEL_URL,
+        external: true,
+        onSelect: collapseOnMobile,
         separatorBefore: true,
-      },
-    ],
-    [handleOpenSettings, openWorkspaceSettings, collapseOnMobile, logout, workspaceId]
-  )
+      })
+    }
+    actions.push({
+      id: "logout",
+      label: "Log out",
+      icon: LogOut,
+      onSelect: () => logout(),
+      separatorBefore: true,
+    })
+    return actions
+  }, [handleOpenSettings, openWorkspaceSettings, collapseOnMobile, logout, workspaceId, isPlatformAdmin])
 
   if (!currentUser) return null
 

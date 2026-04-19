@@ -11,6 +11,7 @@ import {
   type WorkosOrgService,
 } from "@threa/backend-common"
 import { WorkspaceRegistryRepository } from "./repository"
+import { PlatformRoleRepository } from "../backoffice/repository"
 import type { RegionalClient } from "../../lib/regional-client"
 import type { KvClient } from "../../lib/cloudflare-kv-client"
 
@@ -200,6 +201,12 @@ export class ControlPlaneWorkspaceService {
 
   /** Outbox handler: provision workspace in the regional backend */
   async provisionRegional(payload: RegionalCreatePayload): Promise<void> {
+    // Fetched at dispatch time (not at outbox insert time) so the regional
+    // mirror reflects the latest platform-admin state even if the role was
+    // granted between workspace creation and dispatch.
+    const platformRole = await PlatformRoleRepository.findByWorkosUserId(this.pool, payload.ownerWorkosUserId)
+    const isPlatformAdmin = platformRole?.role === "admin"
+
     await this.regionalClient.createWorkspace(payload.region, {
       id: payload.workspaceId,
       name: payload.name,
@@ -207,6 +214,7 @@ export class ControlPlaneWorkspaceService {
       ownerWorkosUserId: payload.ownerWorkosUserId,
       ownerEmail: payload.ownerEmail,
       ownerName: payload.ownerName,
+      isPlatformAdmin,
     })
     logger.info({ workspaceId: payload.workspaceId, region: payload.region }, "Workspace provisioned in region")
   }
