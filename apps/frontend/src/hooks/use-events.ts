@@ -43,6 +43,65 @@ export function getMinimumSequence(events: Array<Pick<StreamEvent, "sequence">> 
   return min
 }
 
+/**
+ * Grace period before `idbResolved=false` flips the timeline to a skeleton.
+ * Short enough that fast resolves don't flash a skeleton; long enough that a
+ * stuck resolve never leaves the timeline visibly blank with no indicator.
+ *
+ * Sibling of `LOADING_DELAY_MS` (300ms) in `coordinated-loading-context.tsx`
+ * which governs the initial workspace-level load. This one is shorter because
+ * it applies after initial load, on a per-stream switch, where users expect
+ * faster feedback. When tuning either, consider both.
+ */
+export const IDB_SKELETON_DELAY_MS = 200
+
+export interface TimelineLoadStateInput {
+  /** `true` once `useLiveQuery` has returned a result stamped with the current streamId. */
+  idbResolved: boolean
+  /** `true` when either IDB or the cached bootstrap snapshot has something to render. */
+  hasAnyEvents: boolean
+  /** `true` while the stream bootstrap query is in-flight. */
+  isBootstrapLoading: boolean
+  /**
+   * `true` once IDB has been unresolved for `IDB_SKELETON_DELAY_MS`. Callers
+   * pass `false` until the timeout fires so fast stream switches don't flash
+   * a skeleton.
+   */
+  idbResolveTimedOut: boolean
+}
+
+export interface TimelineLoadState {
+  /** Render a skeleton — we're actively waiting on data. */
+  isLoading: boolean
+  /** Render "No messages yet" — both data sources confirmed empty. */
+  isConfirmedEmpty: boolean
+}
+
+/**
+ * Decide whether the timeline should render a skeleton, an empty state, or
+ * pass through to the virtualized scroll area.
+ *
+ * Invariant: a blank scroll area is never a terminal state. Either we have
+ * events, we're loading (skeleton), or we're confirmed empty (empty state).
+ */
+export function computeTimelineLoadState({
+  idbResolved,
+  hasAnyEvents,
+  isBootstrapLoading,
+  idbResolveTimedOut,
+}: TimelineLoadStateInput): TimelineLoadState {
+  if (!idbResolved) {
+    // Grace window: pretend neither loading nor empty so fast stream switches
+    // render briefly blank without a skeleton flash. Past the timeout, flip to
+    // the skeleton so slow devices don't appear frozen.
+    return { isLoading: idbResolveTimedOut, isConfirmedEmpty: false }
+  }
+  return {
+    isLoading: !hasAnyEvents && isBootstrapLoading,
+    isConfirmedEmpty: !hasAnyEvents && !isBootstrapLoading,
+  }
+}
+
 export function getDisplayFloor(bootstrapFloor: bigint | null, olderFloor: bigint | null): bigint | null {
   if (bootstrapFloor === null) return olderFloor
   if (olderFloor === null) return bootstrapFloor
@@ -290,18 +349,26 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return filterEventsForDisplay(effectiveEvents, displayFloor) as unknown as StreamEvent[]
   }, [effectiveEvents, olderData, newerData, jumpState, displayFloor])
 
-  // Hard loading: neither source has anything AND bootstrap is still fetching.
-  // Gated on `idbResolved` so we don't claim "loading" during the ~10-50ms
-  // window where useLiveQuery is still resolving for the new stream — during
-  // that window we render an empty scroll area instead of a skeleton, which
-  // would only flash for a frame or two before IDB catches up anyway.
-  const isLoading = idbResolved && !hasAnyEvents && isBootstrapLoading
+  // When IDB has been unresolved long enough that a user would notice, flip
+  // the timeline to the skeleton instead of leaving it blank. Fast switches
+  // clear the timer before it fires, so the flicker-free path is preserved
+  // for the common case.
+  const [idbResolveTimedOut, setIdbResolveTimedOut] = useState(false)
+  useEffect(() => {
+    if (idbResolved) {
+      setIdbResolveTimedOut(false)
+      return
+    }
+    const timer = setTimeout(() => setIdbResolveTimedOut(true), IDB_SKELETON_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [idbResolved])
 
-  // Only render "No messages yet" once we're *certain* the stream is empty —
-  // both bootstrap and useLiveQuery must have resolved. During the 10-50ms
-  // gap after a stream switch where useLiveQuery hasn't re-resolved yet,
-  // `events` is briefly empty but we shouldn't show the empty state UI.
-  const isConfirmedEmpty = idbResolved && !isBootstrapLoading
+  const { isLoading, isConfirmedEmpty } = computeTimelineLoadState({
+    idbResolved,
+    hasAnyEvents,
+    isBootstrapLoading,
+    idbResolveTimedOut,
+  })
 
   useEffect(() => {
     if (!import.meta.env.DEV || !suppressBootstrapError || !error) return

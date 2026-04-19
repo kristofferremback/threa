@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  computeTimelineLoadState,
   filterEventsForDisplay,
   getCachedWindowFloor,
   getDisplayFloor,
@@ -75,5 +76,73 @@ describe("useEvents helpers", () => {
     expect(initial.floor).toBe(100n)
     expect(appendRefetch.floor).toBe(100n)
     expect(replaceRefetch.floor).toBe(200n)
+  })
+})
+
+describe("computeTimelineLoadState", () => {
+  it("stays blank while IDB is resolving within the grace window", () => {
+    expect(
+      computeTimelineLoadState({
+        idbResolved: false,
+        hasAnyEvents: false,
+        isBootstrapLoading: true,
+        idbResolveTimedOut: false,
+      })
+    ).toEqual({ isLoading: false, isConfirmedEmpty: false })
+  })
+
+  it("flips to skeleton once IDB resolution exceeds the grace window", () => {
+    expect(
+      computeTimelineLoadState({
+        idbResolved: false,
+        hasAnyEvents: false,
+        isBootstrapLoading: false,
+        idbResolveTimedOut: true,
+      })
+    ).toEqual({ isLoading: true, isConfirmedEmpty: false })
+  })
+
+  it("shows skeleton when IDB resolves empty and bootstrap is still fetching", () => {
+    expect(
+      computeTimelineLoadState({
+        idbResolved: true,
+        hasAnyEvents: false,
+        isBootstrapLoading: true,
+        idbResolveTimedOut: false,
+      })
+    ).toEqual({ isLoading: true, isConfirmedEmpty: false })
+  })
+
+  it("shows confirmed-empty once IDB is resolved and bootstrap has settled", () => {
+    expect(
+      computeTimelineLoadState({
+        idbResolved: true,
+        hasAnyEvents: false,
+        isBootstrapLoading: false,
+        idbResolveTimedOut: false,
+      })
+    ).toEqual({ isLoading: false, isConfirmedEmpty: true })
+  })
+
+  it("renders neither skeleton nor empty state when events are available", () => {
+    expect(
+      computeTimelineLoadState({
+        idbResolved: true,
+        hasAnyEvents: true,
+        isBootstrapLoading: true,
+        idbResolveTimedOut: false,
+      })
+    ).toEqual({ isLoading: false, isConfirmedEmpty: false })
+  })
+
+  it("does not claim confirmed-empty once events are present after bootstrap settles", () => {
+    expect(
+      computeTimelineLoadState({
+        idbResolved: true,
+        hasAnyEvents: true,
+        isBootstrapLoading: false,
+        idbResolveTimedOut: false,
+      })
+    ).toEqual({ isLoading: false, isConfirmedEmpty: false })
   })
 })
