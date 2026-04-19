@@ -63,11 +63,77 @@ function getSessionSlotKey(sessionId: string, triggerMessageId: string | null): 
   return triggerMessageId ? `trigger:${triggerMessageId}` : `session:${sessionId}`
 }
 
-/** Represents either a regular event, a group of command events, or a group of agent session events */
+/**
+ * Represents either a regular event, a group of command events, or a group of agent
+ * session events.
+ *
+ * For `event` items rendering a message (`message_created` or `companion_response`),
+ * optional author-grouping metadata (`groupContinuation`, `gutterTime`) annotates
+ * consecutive same-author runs so the renderer can collapse the repeated header
+ * row. Each message still occupies its own TimelineItem — Virtuoso measures one
+ * row per message, preserving scroll-to-message precision and per-item
+ * re-measurement on reactions/edits.
+ */
 export type TimelineItem =
-  | { type: "event"; event: StreamEvent }
+  | {
+      type: "event"
+      event: StreamEvent
+      /**
+       * True when this event is a continuation of a same-author run (messages 2..N
+       * within 5 minutes of the previous message, no non-message event between).
+       * The head of a run carries `groupContinuation: false | undefined`. The
+       * renderer formats the gutter time label from `event.createdAt` at render
+       * time so the format tracks user preferences (INV-42).
+       */
+      groupContinuation?: boolean
+    }
   | { type: "command_group"; commandId: string; events: StreamEvent[] }
   | { type: "session_group"; sessionId: string; sessionVersion: number; events: StreamEvent[] }
+
+/** Event types that participate in author-grouping (render as message bodies). */
+const MESSAGE_EVENT_TYPES = new Set<StreamEvent["eventType"]>(["message_created", "companion_response"])
+
+/** Window (ms) within which same-author messages collapse into a single run. */
+const AUTHOR_GROUP_WINDOW_MS = 5 * 60 * 1000
+
+function isGroupableMessage(event: StreamEvent): boolean {
+  if (!MESSAGE_EVENT_TYPES.has(event.eventType)) return false
+  // Soft-deleted messages render as a placeholder, not a grouped message body.
+  const payload = event.payload as { deletedAt?: string } | undefined
+  return !payload?.deletedAt
+}
+
+/**
+ * Walks a timeline and annotates consecutive same-author `message_created` /
+ * `companion_response` events with author-grouping metadata. Same actor + actor
+ * type + within 5 minutes + no non-message item between = continuation.
+ *
+ * Any non-event TimelineItem (command/session groups), non-message event type,
+ * or deleted/pending message breaks the current run.
+ *
+ * Pure and export-only so the grouping rule can be covered in isolation (INV-56
+ * does not apply — this runs per-stream on already-fetched events).
+ */
+export function annotateAuthorGroups(items: TimelineItem[]): TimelineItem[] {
+  let previousMessage: { event: StreamEvent; timeMs: number } | null = null
+  return items.map((item) => {
+    if (item.type !== "event" || !isGroupableMessage(item.event)) {
+      previousMessage = null
+      return item
+    }
+    const currentTimeMs = new Date(item.event.createdAt).getTime()
+    const belongsToRun =
+      previousMessage != null &&
+      previousMessage.event.actorId === item.event.actorId &&
+      previousMessage.event.actorType === item.event.actorType &&
+      currentTimeMs - previousMessage.timeMs <= AUTHOR_GROUP_WINDOW_MS
+
+    previousMessage = { event: item.event, timeMs: currentTimeMs }
+
+    if (!belongsToRun) return item
+    return { ...item, groupContinuation: true }
+  })
+}
 
 /** Event types that render as null in EventItem (handled elsewhere or invisible) */
 const ZERO_HEIGHT_EVENT_TYPES = new Set([
@@ -254,6 +320,10 @@ export function TimelineItemContent({ item, ctx }: { item: TimelineItem; ctx: Ti
           agentActivity={ctx.hideSessionCards ? ctx.agentActivity : undefined}
           isNew={ctx.newMessageIds?.has(item.event.id)}
           deferSecondaryHydration={ctx.phase !== "ready"}
+          // Continuations directly under an UnreadDivider promote back to head so
+          // the first unread message in a run still reads as a fresh turn for the
+          // viewer (fixes the "continuation starting an unread block" edge case).
+          groupContinuation={item.groupContinuation && !showUnreadDivider}
         />
       )}
     </>

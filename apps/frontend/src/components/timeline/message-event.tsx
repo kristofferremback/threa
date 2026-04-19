@@ -85,6 +85,13 @@ interface MessageEventProps {
   activity?: MessageAgentActivity
   /** Defer non-critical per-message hydration until coordinated reveal completes */
   deferSecondaryHydration?: boolean
+  /**
+   * When true, render as a same-author continuation: no header row, compact
+   * gutter time instead of the full author/time block. Rendering detail lands
+   * in a follow-up commit — currently unused so the timeline keeps its
+   * existing layout while the grouping pipeline is validated.
+   */
+  groupContinuation?: boolean
 }
 
 interface MessageLayoutProps {
@@ -975,6 +982,7 @@ export function MessageEvent({
   isNew,
   activity,
   deferSecondaryHydration = false,
+  groupContinuation: _groupContinuation = false,
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
