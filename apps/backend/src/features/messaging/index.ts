@@ -31,7 +31,7 @@ export {
   MESSAGE_METADATA_MAX_VALUE_LENGTH,
   MESSAGE_METADATA_MAX_SERIALIZED_BYTES,
   MESSAGE_METADATA_RESERVED_PREFIX,
-} from "./metadata-schema"
+} from "../messaging-metadata"
 
 // Handlers
 export { createMessageHandlers } from "./handlers"
