@@ -18,6 +18,7 @@ import {
   type EventType,
   type SourceItem,
   type JSONContent,
+  type ThreadSummary,
 } from "@threa/types"
 
 // Event payloads
@@ -42,6 +43,12 @@ export interface MessageCreatedPayload {
   sentVia?: string
   /** External references attached by the sender (string->string). Omitted when empty. */
   metadata?: Record<string, string>
+  /**
+   * Populated at bootstrap enrichment time when this message has at least one
+   * non-deleted reply. Not present on initial `message_created` emission (the
+   * outbox path carries no replies yet).
+   */
+  threadSummary?: ThreadSummary
 }
 
 export interface MessageEditedPayload {
@@ -604,12 +611,14 @@ export class EventService {
    *
    * Filters out operational events (message_edited, message_deleted) that are
    * redundant after enrichment, then injects editedAt/deletedAt/contentJson/contentMarkdown
-   * from the messages projection and threadId/replyCount from the thread data map into
-   * each message_created event's payload.
+   * from the messages projection, threadId/replyCount from the thread data map,
+   * and threadSummary (latest-reply preview + participants) into each
+   * message_created event's payload.
    */
   async enrichBootstrapEvents(
     events: StreamEvent[],
-    threadDataMap: Map<string, { threadId: string; replyCount: number }>
+    threadDataMap: Map<string, { threadId: string; replyCount: number }>,
+    threadSummaryMap: Map<string, ThreadSummary> = new Map()
   ): Promise<StreamEvent[]> {
     const messageCreatedEvents = events.filter((e) => e.eventType === "message_created")
     const messageIds = messageCreatedEvents.map((e) => (e.payload as MessageCreatedPayload).messageId)
@@ -649,6 +658,10 @@ export class EventService {
         if (threadData) {
           enrichments.threadId = threadData.threadId
           enrichments.replyCount = threadData.replyCount
+        }
+        const threadSummary = threadSummaryMap.get(payload.messageId)
+        if (threadSummary) {
+          enrichments.threadSummary = threadSummary
         }
         if (message?.deletedAt) {
           enrichments.deletedAt = message.deletedAt.toISOString()

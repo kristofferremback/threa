@@ -25,6 +25,7 @@ import {
   type Visibility,
   type CompanionMode,
   type NotificationLevel,
+  type ThreadSummary,
 } from "@threa/types"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../../lib/schemas"
 import { isAllowedLevel } from "./notification-config"
@@ -977,5 +978,14 @@ export class StreamService {
    */
   async getThreadsWithReplyCounts(streamId: string): Promise<Map<string, { threadId: string; replyCount: number }>> {
     return StreamRepository.findThreadsWithReplyCounts(this.pool, streamId)
+  }
+
+  /**
+   * Get a map of parent messageId -> ThreadSummary for all messages in a stream
+   * whose thread has at least one non-deleted reply. See
+   * {@link StreamRepository.findThreadSummaries}.
+   */
+  async getThreadSummaries(streamId: string): Promise<Map<string, ThreadSummary>> {
+    return StreamRepository.findThreadSummaries(this.pool, streamId)
   }
 }

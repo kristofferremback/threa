@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import type { AuthorType, StreamType, Visibility, CompanionMode } from "@threa/types"
+import type { AuthorType, StreamType, Visibility, CompanionMode, ThreadSummary } from "@threa/types"
 import { parseArchiveStatusFilter, type ArchiveStatus } from "../../lib/sql-filters"
 
 export type { StreamType, Visibility, CompanionMode, ArchiveStatus }
@@ -753,6 +753,90 @@ export const StreamRepository = {
       map.set(row.parent_message_id, {
         threadId: row.id,
         replyCount: parseInt(row.reply_count, 10),
+      })
+    }
+    return map
+  },
+
+  /**
+   * For each message in `parentStreamId` that has a thread with at least one
+   * non-deleted reply, compute a ThreadSummary: last-reply timestamp, up to
+   * three distinct user participant IDs, and the latest reply's
+   * messageId/actorId/contentMarkdown.
+   *
+   * Returns a map keyed by parent message ID. Messages without replies (or
+   * with only deleted replies) are absent from the map — callers must treat
+   * absence as "no summary."
+   *
+   * Single CTE-based query (INV-56). `contentMarkdown` is emitted raw; callers
+   * rendering it in preview UI strip via `stripMarkdownToInline()` (INV-60).
+   */
+  async findThreadSummaries(db: Querier, parentStreamId: string): Promise<Map<string, ThreadSummary>> {
+    const result = await db.query<{
+      parent_message_id: string
+      latest_message_id: string
+      latest_author_id: string
+      latest_author_type: string
+      latest_content_markdown: string
+      last_reply_at: Date
+      participant_user_ids: string[]
+    }>(sql`
+      WITH thread_messages AS (
+        SELECT
+          s.parent_message_id,
+          m.id,
+          m.sequence,
+          m.author_id,
+          m.author_type,
+          m.content_markdown,
+          m.created_at
+        FROM streams s
+        JOIN messages m ON m.stream_id = s.id
+        WHERE s.parent_stream_id = ${parentStreamId}
+          AND s.parent_message_id IS NOT NULL
+          AND m.deleted_at IS NULL
+      ),
+      latest AS (
+        SELECT DISTINCT ON (parent_message_id)
+          parent_message_id, id, author_id, author_type, content_markdown, created_at
+        FROM thread_messages
+        ORDER BY parent_message_id, sequence DESC
+      ),
+      participants_distinct AS (
+        SELECT DISTINCT parent_message_id, author_id
+        FROM thread_messages
+        WHERE author_type = 'user'
+      ),
+      participants AS (
+        SELECT
+          parent_message_id,
+          (ARRAY_AGG(author_id))[1:3] AS author_ids
+        FROM participants_distinct
+        GROUP BY parent_message_id
+      )
+      SELECT
+        l.parent_message_id,
+        l.id AS latest_message_id,
+        l.author_id AS latest_author_id,
+        l.author_type AS latest_author_type,
+        l.content_markdown AS latest_content_markdown,
+        l.created_at AS last_reply_at,
+        COALESCE(p.author_ids, ARRAY[]::TEXT[]) AS participant_user_ids
+      FROM latest l
+      LEFT JOIN participants p USING (parent_message_id)
+    `)
+
+    const map = new Map<string, ThreadSummary>()
+    for (const row of result.rows) {
+      map.set(row.parent_message_id, {
+        lastReplyAt: row.last_reply_at.toISOString(),
+        participantUserIds: row.participant_user_ids,
+        latestReply: {
+          messageId: row.latest_message_id,
+          actorId: row.latest_author_id,
+          actorType: row.latest_author_type as AuthorType,
+          contentMarkdown: row.latest_content_markdown,
+        },
       })
     }
     return map
