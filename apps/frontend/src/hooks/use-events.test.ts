@@ -135,7 +135,7 @@ describe("computeTimelineLoadState", () => {
     ).toEqual({ isLoading: false, isConfirmedEmpty: false })
   })
 
-  it("reports bootstrap-settled via isConfirmedEmpty even when events are present (call site gates on item count)", () => {
+  it("does not claim confirmed-empty once events are present after bootstrap settles", () => {
     expect(
       computeTimelineLoadState({
         idbResolved: true,
@@ -143,6 +143,6 @@ describe("computeTimelineLoadState", () => {
         isBootstrapLoading: false,
         idbResolveTimedOut: false,
       })
-    ).toEqual({ isLoading: false, isConfirmedEmpty: true })
+    ).toEqual({ isLoading: false, isConfirmedEmpty: false })
   })
 })

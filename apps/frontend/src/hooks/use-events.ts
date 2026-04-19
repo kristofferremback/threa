@@ -47,6 +47,11 @@ export function getMinimumSequence(events: Array<Pick<StreamEvent, "sequence">> 
  * Grace period before `idbResolved=false` flips the timeline to a skeleton.
  * Short enough that fast resolves don't flash a skeleton; long enough that a
  * stuck resolve never leaves the timeline visibly blank with no indicator.
+ *
+ * Sibling of `LOADING_DELAY_MS` (300ms) in `coordinated-loading-context.tsx`
+ * which governs the initial workspace-level load. This one is shorter because
+ * it applies after initial load, on a per-stream switch, where users expect
+ * faster feedback. When tuning either, consider both.
  */
 export const IDB_SKELETON_DELAY_MS = 200
 
@@ -93,7 +98,7 @@ export function computeTimelineLoadState({
   }
   return {
     isLoading: !hasAnyEvents && isBootstrapLoading,
-    isConfirmedEmpty: !isBootstrapLoading,
+    isConfirmedEmpty: !hasAnyEvents && !isBootstrapLoading,
   }
 }
 
