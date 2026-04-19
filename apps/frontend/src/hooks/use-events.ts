@@ -45,12 +45,8 @@ export function getMinimumSequence(events: Array<Pick<StreamEvent, "sequence">> 
 
 /**
  * Grace period before `idbResolved=false` flips the timeline to a skeleton.
- * Dexie's `useLiveQuery` typically resolves in <50ms on desktop; any blank
- * flash during that window is imperceptible. On slower devices (mobile
- * Safari under memory pressure, cold IDB opens) the resolve window can
- * stretch to hundreds of ms, and without a skeleton the user sees a DM
- * with no messages, no "No messages yet", and no loading indicator — a
- * dead-looking page they have to pull-to-refresh to unstick.
+ * Short enough that fast resolves don't flash a skeleton; long enough that a
+ * stuck resolve never leaves the timeline visibly blank with no indicator.
  */
 export const IDB_SKELETON_DELAY_MS = 200
 
@@ -78,13 +74,10 @@ export interface TimelineLoadState {
 
 /**
  * Decide whether the timeline should render a skeleton, an empty state, or
- * pass through to the virtualized scroll area. Pulled out as a pure function
- * so the state machine is easy to unit-test and reason about.
+ * pass through to the virtualized scroll area.
  *
- * The key invariant: never render a blank scroll area as a terminal state.
- * Either we have events, we're loading (skeleton), or we're confirmed empty
- * (empty state). Before this was split out, an `idbResolved=false` window
- * longer than a frame would produce a blank page with no indicator.
+ * Invariant: a blank scroll area is never a terminal state. Either we have
+ * events, we're loading (skeleton), or we're confirmed empty (empty state).
  */
 export function computeTimelineLoadState({
   idbResolved,
