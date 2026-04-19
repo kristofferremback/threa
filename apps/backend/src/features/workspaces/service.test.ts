@@ -7,9 +7,32 @@ import { OutboxRepository } from "../../lib/outbox"
 
 type MockWorkosOrgService = {
   hasAcceptedWorkspaceCreationInvitation: ReturnType<typeof mock<(email: string) => Promise<boolean>>>
+  getOrganizationByExternalId?: ReturnType<typeof mock<(externalId: string) => Promise<{ id: string } | null>>>
+  createOrganization?: ReturnType<
+    typeof mock<(params: { name: string; externalId: string }) => Promise<{ id: string }>>
+  >
+  ensureOrganizationMembership?: ReturnType<
+    typeof mock<(params: { organizationId: string; userId: string; roleSlug?: string }) => Promise<void>>
+  >
   listRolesForOrganization?: ReturnType<typeof mock<(organizationId: string) => Promise<any[]>>>
   listOrganizationMemberships?: ReturnType<typeof mock<(organizationId: string) => Promise<any[]>>>
   updateOrganizationMembership?: ReturnType<typeof mock<(params: any) => Promise<any>>>
+}
+
+function createMockWorkosOrgService(overrides: Partial<MockWorkosOrgService> = {}): MockWorkosOrgService {
+  return {
+    hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(true)),
+    getOrganizationByExternalId: mock<(externalId: string) => Promise<{ id: string } | null>>(() =>
+      Promise.resolve(null)
+    ),
+    createOrganization: mock<(params: { name: string; externalId: string }) => Promise<{ id: string }>>(() =>
+      Promise.resolve({ id: "org_1" })
+    ),
+    ensureOrganizationMembership: mock<
+      (params: { organizationId: string; userId: string; roleSlug?: string }) => Promise<void>
+    >(() => Promise.resolve()),
+    ...overrides,
+  }
 }
 
 function createWorkspaceService(
@@ -55,9 +78,9 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
   })
 
   test("does not bypass invite checks when invite requirement is enabled", async () => {
-    const workosOrgService: MockWorkosOrgService = {
+    const workosOrgService = createMockWorkosOrgService({
       hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(false)),
-    }
+    })
     const service = createWorkspaceService(true, workosOrgService)
 
     await expect(
@@ -99,9 +122,9 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
   })
 
   test("normalizes email before invite validation", async () => {
-    const workosOrgService: MockWorkosOrgService = {
+    const workosOrgService = createMockWorkosOrgService({
       hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(false)),
-    }
+    })
     const service = createWorkspaceService(true, workosOrgService)
 
     await expect(
@@ -123,9 +146,9 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
   })
 
   test("rejects workspace creation when user lacks accepted invitation", async () => {
-    const workosOrgService: MockWorkosOrgService = {
+    const workosOrgService = createMockWorkosOrgService({
       hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(false)),
-    }
+    })
     const service = createWorkspaceService(true, workosOrgService)
 
     await expect(
@@ -147,10 +170,9 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
   })
 
   test("allows workspace creation when user has an accepted invitation", async () => {
-    const workosOrgService: MockWorkosOrgService = {
-      hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(true)),
-    }
+    const workosOrgService = createMockWorkosOrgService()
     const service = createWorkspaceService(true, workosOrgService)
+    spyOn(service, "ensureWorkosOrganization").mockResolvedValue("org_1")
 
     const workspace = await service.createWorkspace({
       name: "Test Workspace",
@@ -162,6 +184,30 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
     expect(workspace).toEqual(mockWorkspace)
     expect(workosOrgService.hasAcceptedWorkspaceCreationInvitation).toHaveBeenCalledWith("user@example.com")
     expect(mockWithTransaction).toHaveBeenCalledTimes(1)
+    expect(workosOrgService.ensureOrganizationMembership!).toHaveBeenCalledWith({
+      organizationId: "org_1",
+      userId: workosUserId,
+      roleSlug: "admin",
+    })
+  })
+
+  test("provisions the owner's WorkOS membership after workspace creation", async () => {
+    const workosOrgService = createMockWorkosOrgService()
+    const service = createWorkspaceService(false, workosOrgService)
+    spyOn(service, "ensureWorkosOrganization").mockResolvedValue("org_1")
+
+    await service.createWorkspace({
+      name: "Provisioned Workspace",
+      workosUserId,
+      email,
+      userName,
+    })
+
+    expect(workosOrgService.ensureOrganizationMembership!).toHaveBeenCalledWith({
+      organizationId: "org_1",
+      userId: workosUserId,
+      roleSlug: "admin",
+    })
   })
 })
 
@@ -349,5 +395,50 @@ describe("WorkspaceService.updateUserRole", () => {
     })
     expect(workosOrgService.updateOrganizationMembership).not.toHaveBeenCalled()
     expect(mockUpdateUser).not.toHaveBeenCalled()
+  })
+})
+
+describe("WorkspaceService.addUser", () => {
+  test("provisions WorkOS membership for newly added users", async () => {
+    const workosOrgService = createMockWorkosOrgService()
+    const service = createWorkspaceService(false, workosOrgService)
+    const addedUser = {
+      id: "user_2",
+      workspaceId: "ws_1",
+      workosUserId: "wos_2",
+      email: "member@example.com",
+      role: "user" as const,
+      slug: "member",
+      name: "Member",
+      description: null,
+      avatarUrl: null,
+      timezone: null,
+      locale: null,
+      pronouns: null,
+      phone: null,
+      githubUsername: null,
+      setupCompleted: false,
+      joinedAt: new Date(),
+      assignedRole: null,
+      assignedRoles: [],
+      canEditRole: false,
+    }
+
+    mockWithTransaction.mockReset().mockResolvedValueOnce(addedUser as never)
+    spyOn(service, "ensureWorkosOrganization").mockResolvedValue("org_1")
+
+    const user = await service.addUser("ws_1", {
+      workosUserId: "wos_2",
+      email: "member@example.com",
+      name: "Member",
+      role: "user",
+    })
+
+    expect(user).toEqual(addedUser)
+    expect(workosOrgService.ensureOrganizationMembership!).toHaveBeenCalledWith({
+      organizationId: "org_1",
+      userId: "wos_2",
+      roleSlug: "member",
+    })
   })
 })

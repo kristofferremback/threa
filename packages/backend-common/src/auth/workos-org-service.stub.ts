@@ -1,4 +1,5 @@
 import { ulid } from "ulid"
+import { WORKSPACE_PERMISSION_SCOPES, type WorkspacePermissionScope } from "@threa/types"
 import { logger } from "../logger"
 import type {
   WorkosAppInvitation,
@@ -7,6 +8,48 @@ import type {
   WorkosRoleSummary,
   WorkosUserSummary,
 } from "./workos-org-service"
+
+const DEFAULT_SYSTEM_ROLES: WorkosRoleSummary[] = [
+  {
+    slug: "admin",
+    name: "Admin",
+    description: "Full workspace administration including integrations, bots, and member management",
+    permissions: [
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
+      WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
+      WORKSPACE_PERMISSION_SCOPES.USERS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
+      WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE,
+      WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN,
+    ] satisfies WorkspacePermissionScope[],
+    type: "system",
+  },
+  {
+    slug: "member",
+    name: "Member",
+    description: "Default workspace member",
+    permissions: [
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
+      WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
+      WORKSPACE_PERMISSION_SCOPES.USERS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
+      WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
+    ] satisfies WorkspacePermissionScope[],
+    type: "system",
+  },
+]
+
+function cloneRoles(roles: WorkosRoleSummary[]): WorkosRoleSummary[] {
+  return roles.map((role) => ({
+    ...role,
+    permissions: [...role.permissions],
+  }))
+}
 
 export class StubWorkosOrgService implements WorkosOrgService {
   private orgsByExternalId = new Map<string, string>()
@@ -19,6 +62,7 @@ export class StubWorkosOrgService implements WorkosOrgService {
   async createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }> {
     const id = `org_stub_${ulid()}`
     this.orgsByExternalId.set(params.externalId, id)
+    this.orgRoles.set(id, cloneRoles(DEFAULT_SYSTEM_ROLES))
     logger.info({ orgId: id, name: params.name, externalId: params.externalId }, "Stub: Created organization")
     return { id }
   }
@@ -95,7 +139,7 @@ export class StubWorkosOrgService implements WorkosOrgService {
   }
 
   async listRolesForOrganization(organizationId: string): Promise<WorkosRoleSummary[]> {
-    return this.orgRoles.get(organizationId) ?? []
+    return cloneRoles(this.orgRoles.get(organizationId) ?? DEFAULT_SYSTEM_ROLES)
   }
 
   async listOrganizationMemberships(organizationId: string): Promise<WorkosOrganizationMembership[]> {

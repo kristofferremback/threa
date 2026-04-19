@@ -49,6 +49,10 @@ function getMembershipRoleSlugs(membership: {
   return []
 }
 
+function workosRoleSlugFromCompatibilityRole(role: User["role"]): "admin" | "member" {
+  return role === "admin" || role === "owner" ? "admin" : "member"
+}
+
 export interface CreateWorkspaceParams {
   name: string
   workosUserId: string
@@ -111,7 +115,7 @@ export class WorkspaceService {
     ownerName: string
   }): Promise<Workspace> {
     try {
-      return await withTransaction(this.pool, async (client) => {
+      const workspace = await withTransaction(this.pool, async (client) => {
         const ownerUserId = generateUserId()
 
         const ws = await WorkspaceRepository.insert(client, {
@@ -132,6 +136,9 @@ export class WorkspaceService {
 
         return ws
       })
+
+      await this.ensureWorkosMembership(params.id, params.ownerWorkosUserId, "admin")
+      return workspace
     } catch (error) {
       // Idempotency guard: if this exact workspace PK already exists, return it.
       // Only catch PK collisions — slug or other constraint violations are real errors.
@@ -148,7 +155,7 @@ export class WorkspaceService {
       await this.assertWorkspaceCreationAllowed(params.email)
     }
 
-    return withTransaction(this.pool, async (client) => {
+    const workspace = await withTransaction(this.pool, async (client) => {
       const id = workspaceId()
       const ownerUserId = generateUserId()
       const slug = await generateUniqueSlug(params.name, (slug) => WorkspaceRepository.slugExists(client, slug))
@@ -172,6 +179,9 @@ export class WorkspaceService {
 
       return ws
     })
+
+    await this.ensureWorkosMembership(workspace.id, params.workosUserId, "admin")
+    return workspace
   }
 
   private async assertWorkspaceCreationAllowed(email: string): Promise<void> {
@@ -203,7 +213,7 @@ export class WorkspaceService {
       setupCompleted?: boolean
     }
   ): Promise<User> {
-    return withTransaction(this.pool, async (client) => {
+    const user = await withTransaction(this.pool, async (client) => {
       return this.createUserInTransaction(client, {
         workspaceId: wsId,
         workosUserId: params.workosUserId,
@@ -213,6 +223,9 @@ export class WorkspaceService {
         setupCompleted: params.setupCompleted,
       })
     })
+
+    await this.ensureWorkosMembership(wsId, params.workosUserId, params.role ?? "user")
+    return user
   }
 
   async createUserInTransaction(
@@ -667,6 +680,29 @@ export class WorkspaceService {
 
     // Re-read to get the winning org ID (handles concurrent creation race)
     return WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
+  }
+
+  private async ensureWorkosMembership(workspaceId: string, workosUserId: string, role: User["role"]): Promise<void> {
+    if (!this.workosOrgService) return
+
+    const orgId = await this.ensureWorkosOrganization(workspaceId)
+    if (!orgId) {
+      logger.error({ workspaceId, workosUserId }, "Failed to provision WorkOS organization for workspace user")
+      return
+    }
+
+    try {
+      await this.workosOrgService.ensureOrganizationMembership({
+        organizationId: orgId,
+        userId: workosUserId,
+        roleSlug: workosRoleSlugFromCompatibilityRole(role),
+      })
+    } catch (error) {
+      logger.error(
+        { err: error, workspaceId, workosUserId, roleSlug: workosRoleSlugFromCompatibilityRole(role) },
+        "Failed to provision WorkOS organization membership for workspace user"
+      )
+    }
   }
 
   private async shouldPreferEmailSlug(orgId: string | null, email: string): Promise<boolean> {
