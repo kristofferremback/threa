@@ -2,6 +2,7 @@ import { Pool } from "pg"
 import { withTransaction, withClient, type Querier } from "../../db"
 import { WorkspaceRepository, Workspace } from "./repository"
 import { UserRepository, type User } from "./user-repository"
+import { WorkosAuthzMirrorRepository } from "./workos-authz-mirror-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"
@@ -13,7 +14,7 @@ import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import type { WorkosOrgService } from "@threa/backend-common"
-import type { WorkspacePermissionScope, WorkspaceRole } from "@threa/types"
+import type { WorkspaceAuthzSnapshot, WorkspacePermissionScope, WorkspaceRole } from "@threa/types"
 import { UserApiKeyRepository } from "../user-api-keys"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
@@ -32,21 +33,6 @@ function compatibilityRoleFromPermissions(permissions: Iterable<WorkspacePermiss
     }
   }
   return "user"
-}
-
-function getMembershipRoleSlugs(membership: {
-  roles: Array<{ slug: string }>
-  role: { slug: string } | null
-}): string[] {
-  if (membership.roles.length > 0) {
-    return membership.roles.map((role) => role.slug)
-  }
-
-  if (membership.role) {
-    return [membership.role.slug]
-  }
-
-  return []
 }
 
 function workosRoleSlugFromCompatibilityRole(role: User["role"]): "admin" | "member" {
@@ -293,29 +279,31 @@ export class WorkspaceService {
     return UserRepository.listByWorkspace(this.pool, workspaceId)
   }
 
-  async getUsersWithRoles(workspaceId: string): Promise<User[]> {
-    const users = await this.getUsers(workspaceId)
+  private async decorateUsersWithMirrorData(
+    db: Querier,
+    workspaceId: string,
+    users: User[],
+    workspace?: Workspace | null
+  ): Promise<User[]> {
     if (users.length === 0) {
       return users
     }
 
-    const workspace = await WorkspaceRepository.findById(this.pool, workspaceId)
-    const orgId = await this.ensureWorkosOrganization(workspaceId)
-    if (!workspace || !orgId || !this.workosOrgService) {
+    const resolvedWorkspace = workspace ?? (await WorkspaceRepository.findById(db, workspaceId))
+    if (!resolvedWorkspace) {
       return users
     }
 
-    const [roles, memberships] = await Promise.all([
-      this.workosOrgService.listRolesForOrganization(orgId),
-      this.workosOrgService.listOrganizationMemberships(orgId),
+    const [roles, assignments] = await Promise.all([
+      WorkosAuthzMirrorRepository.listRoles(db, workspaceId),
+      WorkosAuthzMirrorRepository.listMembershipAssignments(db, workspaceId),
     ])
     const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
-    const membershipByUserId = new Map(memberships.map((membership) => [membership.userId, membership]))
+    const assignmentsByWorkosUserId = new Map(assignments.map((assignment) => [assignment.workosUserId, assignment]))
 
     return users.map((user) => {
-      const membership = membershipByUserId.get(user.workosUserId)
-      const assignedRoleSlugs = membership ? getMembershipRoleSlugs(membership) : []
-      const assignedRoles = assignedRoleSlugs.map((slug) => ({
+      const assignment = assignmentsByWorkosUserId.get(user.workosUserId)
+      const assignedRoles = (assignment?.roleSlugs ?? []).map((slug) => ({
         slug,
         name: rolesBySlug.get(slug)?.name ?? slug,
       }))
@@ -324,7 +312,7 @@ export class WorkspaceService {
       return {
         ...user,
         role: assignedRoles.length > 0 ? compatibilityRoleFromPermissions(permissions) : user.role,
-        isOwner: workspace.createdBy === user.id,
+        isOwner: resolvedWorkspace.createdBy === user.id,
         assignedRole: assignedRoles[0] ?? null,
         assignedRoles,
         canEditRole: assignedRoles.length <= 1,
@@ -332,15 +320,20 @@ export class WorkspaceService {
     })
   }
 
+  async getUsersWithRoles(workspaceId: string): Promise<User[]> {
+    const users = await this.getUsers(workspaceId)
+    return this.decorateUsersWithMirrorData(this.pool, workspaceId, users)
+  }
+
   async listAssignableRoles(workspaceId: string): Promise<WorkspaceRole[]> {
-    const orgId = await this.ensureWorkosOrganization(workspaceId)
-    if (!orgId || !this.workosOrgService) {
+    const orgId = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
+    if (!orgId) {
       throw new HttpError("Workspace is not configured for WorkOS authorization", {
         status: 500,
         code: "WORKSPACE_AUTHORIZATION_NOT_CONFIGURED",
       })
     }
-    return this.workosOrgService.listRolesForOrganization(orgId)
+    return WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId)
   }
 
   async updateUserRole(workspaceId: string, userId: string, roleSlug: string): Promise<User> {
@@ -351,24 +344,16 @@ export class WorkspaceService {
       })
     }
 
-    const [workspace, localUser, orgId] = await Promise.all([
+    const [workspace, localUser] = await Promise.all([
       WorkspaceRepository.findById(this.pool, workspaceId),
       UserRepository.findById(this.pool, workspaceId, userId),
-      this.ensureWorkosOrganization(workspaceId),
     ])
     if (!workspace || !localUser) {
       throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
     }
-    if (!orgId) {
-      throw new HttpError("Workspace is not configured for WorkOS authorization", {
-        status: 500,
-        code: "WORKSPACE_AUTHORIZATION_NOT_CONFIGURED",
-      })
-    }
-
-    const [roles, memberships] = await Promise.all([
-      this.workosOrgService.listRolesForOrganization(orgId),
-      this.workosOrgService.listOrganizationMemberships(orgId),
+    const [roles, assignment] = await Promise.all([
+      WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId),
+      WorkosAuthzMirrorRepository.findMembershipAssignment(this.pool, workspaceId, localUser.workosUserId),
     ])
     const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
     const nextRole = rolesBySlug.get(roleSlug)
@@ -376,17 +361,14 @@ export class WorkspaceService {
       throw new HttpError("Role not found", { status: 404, code: "ROLE_NOT_FOUND" })
     }
 
-    const targetMembership = memberships.find(
-      (membership) => membership.userId === localUser.workosUserId && membership.status === "active"
-    )
-    if (!targetMembership) {
+    if (!assignment) {
       throw new HttpError("WorkOS organization membership not found", {
         status: 404,
         code: "WORKOS_MEMBERSHIP_NOT_FOUND",
       })
     }
 
-    const currentRoleSlugs = getMembershipRoleSlugs(targetMembership)
+    const currentRoleSlugs = assignment.roleSlugs
     if (currentRoleSlugs.length > 1) {
       throw new HttpError("This user has multiple roles and cannot be edited in-app yet", {
         status: 409,
@@ -400,17 +382,11 @@ export class WorkspaceService {
     const targetWillBeAdmin = nextRole.permissions.some((permission) => ADMIN_COMPATIBILITY_PERMISSIONS.has(permission))
 
     if (targetCurrentlyAdmin && !targetWillBeAdmin) {
-      const otherAdminExists = memberships.some((membership) => {
-        if (membership.userId === localUser.workosUserId || membership.status !== "active") {
-          return false
-        }
-        const membershipRoleSlugs = getMembershipRoleSlugs(membership)
-        return membershipRoleSlugs.some((slug) =>
-          (rolesBySlug.get(slug)?.permissions ?? []).some((permission) =>
-            ADMIN_COMPATIBILITY_PERMISSIONS.has(permission)
-          )
-        )
-      })
+      const otherAdminExists = await WorkosAuthzMirrorRepository.hasOtherRoleManager(
+        this.pool,
+        workspaceId,
+        assignment.organizationMembershipId
+      )
       if (!otherAdminExists) {
         throw new HttpError("Workspace must retain at least one member who can manage roles", {
           status: 409,
@@ -420,14 +396,21 @@ export class WorkspaceService {
     }
 
     await this.workosOrgService.updateOrganizationMembership({
-      organizationMembershipId: targetMembership.id,
+      organizationMembershipId: assignment.organizationMembershipId,
       roleSlug,
     })
 
     const decoratedUpdatedUser = await withTransaction(this.pool, async (client) => {
-      const updatedUser = await UserRepository.update(client, workspaceId, userId, {
-        role: compatibilityRoleFromPermissions(nextRole.permissions),
+      await WorkosAuthzMirrorRepository.upsertMembershipRoles({
+        db: client,
+        workspaceId,
+        organizationMembershipId: assignment.organizationMembershipId,
+        workosUserId: localUser.workosUserId,
+        roleSlugs: [roleSlug],
       })
+      await WorkosAuthzMirrorRepository.syncCompatibilityRoles(client, workspaceId)
+
+      const updatedUser = await UserRepository.findById(client, workspaceId, userId)
       if (!updatedUser) {
         throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
@@ -449,6 +432,37 @@ export class WorkspaceService {
     })
 
     return decoratedUpdatedUser
+  }
+
+  async applyWorkosAuthzSnapshot(snapshot: WorkspaceAuthzSnapshot): Promise<boolean> {
+    return withTransaction(this.pool, async (client) => {
+      const workspace = await WorkspaceRepository.findById(client, snapshot.workspaceId)
+      if (!workspace) {
+        throw new HttpError("Workspace not found", { status: 404, code: "WORKSPACE_NOT_FOUND" })
+      }
+
+      const applied = await WorkosAuthzMirrorRepository.applySnapshot(client, snapshot)
+      if (!applied) {
+        return false
+      }
+
+      await WorkosAuthzMirrorRepository.syncCompatibilityRoles(client, snapshot.workspaceId)
+
+      const decoratedUsers = await this.decorateUsersWithMirrorData(
+        client,
+        snapshot.workspaceId,
+        await UserRepository.listByWorkspace(client, snapshot.workspaceId),
+        workspace
+      )
+      for (const user of decoratedUsers) {
+        await OutboxRepository.insert(client, "workspace_user:updated", {
+          workspaceId: snapshot.workspaceId,
+          user: serializeBigInt(user),
+        })
+      }
+
+      return true
+    })
   }
 
   async isMember(workspaceId: string, workosUserId: string): Promise<boolean> {

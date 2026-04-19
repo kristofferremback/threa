@@ -1,6 +1,7 @@
-import type { WorkosOrgService } from "@threa/backend-common"
+import type { AuthSessionClaims } from "@threa/backend-common"
+import type { WorkspacePermissionScope } from "@threa/types"
 import type { Pool } from "pg"
-import { WorkspaceRepository } from "../features/workspaces"
+import { WorkspaceRepository, WorkosAuthzMirrorRepository } from "../features/workspaces"
 import { compatibilityRoleFromPermissions, type WorkspaceAuthorizationContext } from "./authorization"
 
 export interface ResolvedWorkspaceAuthorization extends WorkspaceAuthorizationContext {
@@ -11,18 +12,20 @@ export interface ResolvedWorkspaceAuthorization extends WorkspaceAuthorizationCo
 export type WorkspaceAuthorizationResolution =
   | { status: "ok"; value: ResolvedWorkspaceAuthorization }
   | { status: "missing_org" }
+  | { status: "org_mismatch"; organizationId: string }
   | { status: "missing_membership" }
 
-function getMembershipRoles(membership: {
-  roles: Array<{ slug: string }>
-  role: { slug: string } | null
-}): Array<{ slug: string }> {
-  if (membership.roles.length > 0) {
-    return membership.roles
+function getAssignedRoleSlugs(source: { roles?: string[]; role?: string | null; roleSlugs?: string[] }): string[] {
+  if (source.roleSlugs && source.roleSlugs.length > 0) {
+    return source.roleSlugs
   }
 
-  if (membership.role) {
-    return [membership.role]
+  if (source.roles && source.roles.length > 0) {
+    return source.roles
+  }
+
+  if (source.role) {
+    return [source.role]
   }
 
   return []
@@ -30,11 +33,11 @@ function getMembershipRoles(membership: {
 
 export async function resolveWorkspaceAuthorization(params: {
   pool: Pool
-  workosOrgService: WorkosOrgService
   workspaceId: string
-  workosUserId: string
   userId: string
   source: WorkspaceAuthorizationContext["source"]
+  session?: AuthSessionClaims
+  workosUserId?: string
   scopeFilter?: (permission: string) => boolean
 }): Promise<WorkspaceAuthorizationResolution> {
   const workspaceMetadata = await WorkspaceRepository.getAuthorizationMetadata(params.pool, params.workspaceId)
@@ -42,22 +45,55 @@ export async function resolveWorkspaceAuthorization(params: {
     return { status: "missing_org" }
   }
 
-  const [membership, roles] = await Promise.all([
-    params.workosOrgService.getOrganizationMembership({
-      organizationId: workspaceMetadata.workosOrganizationId,
-      userId: params.workosUserId,
-    }),
-    params.workosOrgService.listRolesForOrganization(workspaceMetadata.workosOrganizationId),
-  ])
+  const roles = await WorkosAuthzMirrorRepository.listRoles(params.pool, params.workspaceId)
+  const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
 
-  if (!membership || membership.status !== "active") {
+  if (params.source === "session") {
+    if (!params.session?.organizationId || params.session.organizationId !== workspaceMetadata.workosOrganizationId) {
+      return { status: "org_mismatch", organizationId: workspaceMetadata.workosOrganizationId }
+    }
+
+    const assignedRoles = getAssignedRoleSlugs(params.session).map((slug) => ({
+      slug,
+      name: rolesBySlug.get(slug)?.name ?? slug,
+    }))
+    const permissions = new Set<WorkspacePermissionScope>(
+      (params.session.permissions ?? []).filter((permission) =>
+        params.scopeFilter ? params.scopeFilter(permission) : true
+      ) as WorkspacePermissionScope[]
+    )
+
+    return {
+      status: "ok",
+      value: {
+        source: params.source,
+        organizationId: workspaceMetadata.workosOrganizationId,
+        organizationMembershipId: null,
+        permissions,
+        assignedRoles,
+        canEditRole: assignedRoles.length <= 1,
+        compatibilityRole: compatibilityRoleFromPermissions(permissions),
+        isOwner: workspaceMetadata.createdBy === params.userId,
+      },
+    }
+  }
+
+  if (!params.workosUserId) {
     return { status: "missing_membership" }
   }
 
-  const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
-  const assignedRoles = getMembershipRoles(membership).map((role) => ({
-    slug: role.slug,
-    name: rolesBySlug.get(role.slug)?.name ?? role.slug,
+  const membership = await WorkosAuthzMirrorRepository.findMembershipAssignment(
+    params.pool,
+    params.workspaceId,
+    params.workosUserId
+  )
+  if (!membership) {
+    return { status: "missing_membership" }
+  }
+
+  const assignedRoles = membership.roleSlugs.map((slug) => ({
+    slug,
+    name: rolesBySlug.get(slug)?.name ?? slug,
   }))
 
   const permissions = new Set(
@@ -72,7 +108,7 @@ export async function resolveWorkspaceAuthorization(params: {
     value: {
       source: params.source,
       organizationId: workspaceMetadata.workosOrganizationId,
-      organizationMembershipId: membership.id,
+      organizationMembershipId: membership.organizationMembershipId,
       permissions,
       assignedRoles,
       canEditRole: assignedRoles.length <= 1,

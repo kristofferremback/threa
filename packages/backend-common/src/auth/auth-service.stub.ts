@@ -5,9 +5,40 @@ export interface DevLoginResult {
   session: string
 }
 
+interface StubSessionPayload {
+  userId: string
+  organizationId?: string | null
+  role?: string | null
+  roles?: string[]
+  permissions?: string[]
+}
+
+function encodeStubSession(payload: StubSessionPayload): string {
+  return `test_session_${Buffer.from(JSON.stringify(payload)).toString("base64url")}`
+}
+
+function decodeStubSession(sealedSession: string): StubSessionPayload | null {
+  const match = sealedSession.match(/^test_session_(.+)$/)
+  if (!match) {
+    return null
+  }
+
+  try {
+    const decoded = JSON.parse(Buffer.from(match[1], "base64url").toString("utf8")) as StubSessionPayload
+    if (typeof decoded?.userId === "string" && decoded.userId.length > 0) {
+      return decoded
+    }
+  } catch {
+    // Fall through to the legacy `test_session_<userId>` format.
+  }
+
+  return { userId: match[1] }
+}
+
 /**
  * A stub AuthService for e2e testing that bypasses WorkOS entirely.
  * Users are identified by a simple token format: "test_session_<userId>"
+ * or an encoded JSON payload for org-scoped session refresh flows.
  */
 export class StubAuthService implements AuthService {
   private users: Map<string, { id: string; email: string; firstName: string | null; lastName: string | null }> =
@@ -65,12 +96,12 @@ export class StubAuthService implements AuthService {
       }
     }
 
-    const match = sealedSession.match(/^test_session_(.+)$/)
-    if (!match) {
+    const session = decodeStubSession(sealedSession)
+    if (!session) {
       return { success: false, refreshed: false, reason: "invalid_session_format" }
     }
 
-    const userId = match[1]
+    const userId = session.userId
     let user = this.users.get(userId)
 
     // Auto-register from session token for cross-process stub auth.
@@ -90,7 +121,43 @@ export class StubAuthService implements AuthService {
     return {
       success: true,
       user,
+      session: {
+        organizationId: session.organizationId ?? null,
+        role: session.role ?? null,
+        roles: [...(session.roles ?? [])],
+        permissions: [...(session.permissions ?? [])],
+      },
       refreshed: false,
+    }
+  }
+
+  async refreshSession(params: { sealedSession: string; organizationId?: string }): Promise<AuthResult> {
+    const authenticated = await this.authenticateSession(params.sealedSession)
+    if (!authenticated.success || !authenticated.user) {
+      return authenticated
+    }
+
+    const organizationId = params.organizationId ?? authenticated.session?.organizationId ?? null
+    const role = organizationId ? "member" : null
+    const roles = role ? [role] : []
+
+    return {
+      success: true,
+      user: authenticated.user,
+      session: {
+        organizationId,
+        role,
+        roles,
+        permissions: [],
+      },
+      sealedSession: encodeStubSession({
+        userId: authenticated.user.id,
+        organizationId,
+        role,
+        roles,
+        permissions: [],
+      }),
+      refreshed: true,
     }
   }
 

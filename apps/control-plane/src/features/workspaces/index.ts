@@ -1,4 +1,6 @@
 export { ControlPlaneWorkspaceService, OUTBOX_KV_SYNC, OUTBOX_REGIONAL_CREATE } from "./service"
+export { ControlPlaneAuthzSyncService, OUTBOX_REGIONAL_AUTHZ_SYNC } from "./authz-sync-service"
+export type { RegionalAuthzSyncPayload } from "./authz-sync-service"
 export type { KvSyncPayload, RegionalCreatePayload } from "./service"
 export { createWorkspaceHandlers } from "./handlers"
 export { WorkspaceRegistryRepository } from "./repository"

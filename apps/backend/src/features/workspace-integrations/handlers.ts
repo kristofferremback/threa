@@ -80,6 +80,7 @@ export function createWorkspaceIntegrationHandlers({
         state: parsed.data.state,
         installationId: parsed.data.installation_id,
         workosUserId,
+        session: req.authSession,
       })
 
       res.redirect(buildGithubCallbackRedirectUrl(req, workspaceId, allowedFrontendOrigins))

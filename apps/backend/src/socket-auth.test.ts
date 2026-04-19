@@ -52,13 +52,12 @@ describe("authorizeWorkspaceSocket", () => {
 
     const result = await authorizeWorkspaceSocket({
       pool: {} as never,
-      workosOrgService: {} as never,
       workspaceId: "ws_1",
       workosUserId: "wos_1",
       requiredPermission: "messages:read",
     })
 
-    expect(result).toEqual({ ok: false })
+    expect(result).toEqual({ ok: false, reason: "unauthorized" })
     expect(update).not.toHaveBeenCalled()
   })
 
@@ -121,7 +120,6 @@ describe("authorizeWorkspaceSocket", () => {
 
     const result = await authorizeWorkspaceSocket({
       pool: {} as never,
-      workosOrgService: {} as never,
       workspaceId: "ws_1",
       workosUserId: "wos_1",
       requiredPermission: "messages:read",

@@ -453,7 +453,6 @@ export async function startServer(): Promise<ServerInstance> {
   registerSocketHandlers(io, {
     pool,
     authService,
-    workosOrgService,
     streamService,
     pushService,
     userSocketRegistry,

@@ -1,4 +1,5 @@
 import { logger, INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
+import type { WorkspaceAuthzSnapshot } from "@threa/types"
 import type { RegionConfig } from "../config"
 
 const REGIONAL_REQUEST_TIMEOUT_MS = 15_000
@@ -79,6 +80,37 @@ export class RegionalClient {
     if (!res.ok) {
       const body = await res.text().catch(() => "")
       logger.error({ region, invitationId, status: res.status, body }, "Regional invitation acceptance failed")
+      throw new Error(`Regional backend returned ${res.status}: ${body}`)
+    }
+
+    return res.json()
+  }
+
+  async applyWorkspaceAuthzSnapshot(
+    region: string,
+    workspaceId: string,
+    snapshot: WorkspaceAuthzSnapshot
+  ): Promise<{ applied: boolean }> {
+    const url = `${this.getRegionUrl(region)}/internal/workspaces/${workspaceId}/authz-snapshot`
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
+        },
+        body: JSON.stringify(snapshot),
+        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      logger.error({ err, region, url, workspaceId }, "Regional authz snapshot request failed")
+      throw err
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      logger.error({ region, workspaceId, status: res.status, body }, "Regional authz snapshot apply failed")
       throw new Error(`Regional backend returned ${res.status}: ${body}`)
     }
 

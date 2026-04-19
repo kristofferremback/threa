@@ -3,6 +3,7 @@ import { App, Octokit } from "octokit"
 import type { WorkosOrgService } from "@threa/backend-common"
 import { logger } from "../../lib/logger"
 import { HttpError } from "../../lib/errors"
+import type { AuthSessionClaims } from "@threa/backend-common"
 import { workspaceIntegrationId } from "../../lib/id"
 import type { GitHubAppConfig } from "../../lib/env"
 import { UserRepository } from "../workspaces"
@@ -174,6 +175,7 @@ export class WorkspaceIntegrationService {
     state: string
     installationId: string
     workosUserId: string
+    session?: AuthSessionClaims
   }): Promise<{ workspaceId: string }> {
     this.requireGitHubEnabled()
 
@@ -194,11 +196,10 @@ export class WorkspaceIntegrationService {
 
     const authz = await resolveWorkspaceAuthorization({
       pool: this.deps.pool,
-      workosOrgService: this.deps.workosOrgService,
       workspaceId,
-      workosUserId: params.workosUserId,
       userId: access.user.id,
       source: "session",
+      session: params.session,
     })
     if (authz.status !== "ok" || !authz.value.permissions.has("workspace:admin")) {
       throw new HttpError("Only admins can connect GitHub", { status: 403, code: "FORBIDDEN" })

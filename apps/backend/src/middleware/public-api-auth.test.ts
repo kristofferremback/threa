@@ -9,28 +9,6 @@ function createPoolStub() {
   } as any
 }
 
-function createWorkosOrgServiceStub(permissions: string[] = ["messages:read"]) {
-  return {
-    getOrganizationMembership: async () => ({
-      id: "om_1",
-      userId: "wos_1",
-      organizationId: "org_1",
-      status: "active",
-      role: { slug: "member" },
-      roles: [{ slug: "member" }],
-    }),
-    listRolesForOrganization: async () => [
-      {
-        slug: "member",
-        name: "Member",
-        description: null,
-        permissions,
-        type: "EnvironmentRole",
-      },
-    ],
-  } as any
-}
-
 function createReq(overrides: Partial<Request> = {}): Request {
   return {
     headers: {},
@@ -69,14 +47,11 @@ function runMiddleware(middleware: any, req: Request): Promise<{ nextCalled: boo
 }
 
 describe("createPublicApiAuthMiddleware", () => {
-  function createMiddleware(
-    overrides: { userApiKeyService?: any; botApiKeyService?: any; pool?: any; workosOrgService?: any } = {}
-  ) {
+  function createMiddleware(overrides: { userApiKeyService?: any; botApiKeyService?: any; pool?: any } = {}) {
     return createPublicApiAuthMiddleware({
       userApiKeyService: { validateKey: async () => null } as any,
       botApiKeyService: { validateKey: async () => null } as any,
       pool: createPoolStub(),
-      workosOrgService: createWorkosOrgServiceStub(),
       ...overrides,
     })
   }

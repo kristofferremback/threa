@@ -1,12 +1,13 @@
 // Auth
 export { WorkosAuthService } from "./auth/auth-service"
-export type { AuthResult, AuthService } from "./auth/auth-service"
+export type { AuthResult, AuthService, AuthenticatedUser, AuthSessionClaims } from "./auth/auth-service"
 export { StubAuthService } from "./auth/auth-service.stub"
 export type { DevLoginResult } from "./auth/auth-service.stub"
 export { WorkosOrgServiceImpl, getWorkosErrorCode } from "./auth/workos-org-service"
 export type {
   WorkosOrgService,
   WorkosAppInvitation,
+  WorkosEventSummary,
   WorkosOrganizationMembership,
   WorkosRoleSummary,
   WorkosUserSummary,

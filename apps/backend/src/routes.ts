@@ -131,7 +131,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   } = deps
 
   const auth = createAuthMiddleware({ authService })
-  const workspaceUser = createWorkspaceUserMiddleware({ pool, workosOrgService })
+  const workspaceUser = createWorkspaceUserMiddleware({ pool, authService })
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceUser]
@@ -185,6 +185,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     app.post("/internal/workspaces", internalAuth, internal.createWorkspace)
     app.post("/internal/invitations/:id/accept", internalAuth, internal.acceptInvitation)
+    app.put("/internal/workspaces/:workspaceId/authz-snapshot", internalAuth, internal.applyWorkspaceAuthzSnapshot)
   }
 
   // Global baseline rate limit
@@ -587,7 +588,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   )
 
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
-  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool, workosOrgService })
+  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool })
   const publicApi = createPublicApiHandlers({
     searchService,
     memoExplorerService,

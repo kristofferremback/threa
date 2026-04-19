@@ -303,6 +303,9 @@ export type {
   UpdateAIBudgetInput,
 } from "./api"
 
+// Internal service contracts
+export type { WorkspaceAuthzSnapshot, WorkspaceAuthzSnapshotMembership } from "./internal"
+
 // Push Notifications
 export { DEVICE_KEY_LENGTH } from "./api"
 

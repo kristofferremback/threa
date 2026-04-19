@@ -1,13 +1,6 @@
 import type { Request, Response, NextFunction } from "express"
-import type { AuthService } from "./auth-service"
+import type { AuthService, AuthenticatedUser, AuthSessionClaims } from "./auth-service"
 import { SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG } from "../cookies"
-
-interface AuthenticatedUser {
-  id: string
-  email: string
-  firstName: string | null
-  lastName: string | null
-}
 
 declare global {
   namespace Express {
@@ -16,6 +9,8 @@ declare global {
       workosUserId?: string
       /** Full WorkOS identity from authenticated session */
       authUser?: AuthenticatedUser
+      /** Active sealed session plus org-scoped claims from WorkOS. */
+      authSession?: AuthSessionClaims & { sealedSession: string }
     }
   }
 }
@@ -49,6 +44,13 @@ export function createAuthMiddleware({ authService }: Dependencies) {
 
     req.workosUserId = result.user.id
     req.authUser = result.user
+    req.authSession = {
+      sealedSession: result.sealedSession ?? session,
+      organizationId: result.session?.organizationId ?? null,
+      role: result.session?.role ?? null,
+      roles: [...(result.session?.roles ?? [])],
+      permissions: [...(result.session?.permissions ?? [])],
+    }
     next()
   }
 }

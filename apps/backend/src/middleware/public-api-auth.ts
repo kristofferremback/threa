@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express"
 import type { Pool } from "pg"
-import { HttpError, type WorkosOrgService } from "@threa/backend-common"
+import { HttpError } from "@threa/backend-common"
 import type { ApiKeyScope, WorkspacePermissionScope } from "@threa/types"
 import { BOT_KEY_PREFIX } from "@threa/types"
 import { UserRepository } from "../features/workspaces"
@@ -23,15 +23,9 @@ interface PublicApiAuthDeps {
   userApiKeyService: UserApiKeyService
   botApiKeyService: BotApiKeyService
   pool: Pool
-  workosOrgService: WorkosOrgService
 }
 
-export function createPublicApiAuthMiddleware({
-  userApiKeyService,
-  botApiKeyService,
-  pool,
-  workosOrgService,
-}: PublicApiAuthDeps) {
+export function createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool }: PublicApiAuthDeps) {
   return async function publicApiAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -69,7 +63,6 @@ export function createPublicApiAuthMiddleware({
       req.userApiKey = validated
       const authz = await resolveWorkspaceAuthorization({
         pool,
-        workosOrgService,
         workspaceId,
         workosUserId: user.workosUserId,
         userId: user.id,
@@ -87,6 +80,10 @@ export function createPublicApiAuthMiddleware({
       }
       if (authz.status === "missing_membership") {
         next(new HttpError("API key does not have access to this workspace", { status: 403, code: "FORBIDDEN" }))
+        return
+      }
+      if (authz.status !== "ok") {
+        next(new HttpError("API key authorization state is invalid", { status: 500, code: "INTERNAL_SERVER_ERROR" }))
         return
       }
 

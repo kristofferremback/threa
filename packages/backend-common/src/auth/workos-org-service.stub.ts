@@ -3,6 +3,7 @@ import { WORKSPACE_PERMISSION_SCOPES, type WorkspacePermissionScope } from "@thr
 import { logger } from "../logger"
 import type {
   WorkosAppInvitation,
+  WorkosEventSummary,
   WorkosOrgService,
   WorkosOrganizationMembership,
   WorkosRoleSummary,
@@ -198,6 +199,13 @@ export class StubWorkosOrgService implements WorkosOrgService {
     }
     this.memberships.set(`${membership.organizationId}:${membership.userId}`, updated)
     return updated
+  }
+
+  async listEvents(_params: { events: string[]; after?: string; limit?: number }): Promise<{
+    data: WorkosEventSummary[]
+    after: string | null
+  }> {
+    return { data: [], after: null }
   }
 
   async getWidgetToken(_params: { organizationId: string; userId: string; scopes: string[] }): Promise<string> {

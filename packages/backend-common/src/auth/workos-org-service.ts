@@ -56,6 +56,13 @@ export interface WorkosMembershipRoleRef {
   slug: string
 }
 
+export interface WorkosEventSummary {
+  id: string
+  event: string
+  createdAt: string
+  data: Record<string, unknown>
+}
+
 export interface WorkosOrganizationMembership {
   id: string
   userId: string
@@ -103,6 +110,10 @@ export interface WorkosOrgService {
     roleSlug?: string
     roleSlugs?: string[]
   }): Promise<WorkosOrganizationMembership>
+  listEvents(params: { events: string[]; after?: string; limit?: number }): Promise<{
+    data: WorkosEventSummary[]
+    after: string | null
+  }>
   getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string>
 }
 
@@ -385,6 +396,27 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
       status: membership.status,
       role: membership.role ? { slug: membership.role.slug } : null,
       roles: membership.roles?.map((role) => ({ slug: role.slug })) ?? [],
+    }
+  }
+
+  async listEvents(params: { events: string[]; after?: string; limit?: number }): Promise<{
+    data: WorkosEventSummary[]
+    after: string | null
+  }> {
+    const response = await this.workos.events.listEvents({
+      events: params.events as never,
+      after: params.after,
+      limit: params.limit,
+    })
+
+    return {
+      data: response.data.map((event) => ({
+        id: event.id,
+        event: event.event,
+        createdAt: event.createdAt,
+        data: event.data as Record<string, unknown>,
+      })),
+      after: response.listMetadata.after ?? null,
     }
   }
 

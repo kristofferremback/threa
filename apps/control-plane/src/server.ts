@@ -12,6 +12,7 @@ import {
   DebounceWithMaxWait,
   ensureListenerFromLatest,
   logger,
+  Ticker,
   type OutboxEvent,
   type ProcessResult,
 } from "@threa/backend-common"
@@ -23,10 +24,13 @@ import { loadControlPlaneConfig } from "./config"
 import { RegionalClient } from "./lib/regional-client"
 import { CloudflareKvClient, NoopKvClient, type KvClient } from "./lib/cloudflare-kv-client"
 import {
+  ControlPlaneAuthzSyncService,
   ControlPlaneWorkspaceService,
   OUTBOX_KV_SYNC,
+  OUTBOX_REGIONAL_AUTHZ_SYNC,
   OUTBOX_REGIONAL_CREATE,
   type KvSyncPayload,
+  type RegionalAuthzSyncPayload,
   type RegionalCreatePayload,
 } from "./features/workspaces"
 import { InvitationShadowService } from "./features/invitation-shadows"
@@ -66,6 +70,11 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     availableRegions,
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
+  const authzSyncService = new ControlPlaneAuthzSyncService({
+    pool,
+    workosOrgService,
+    regionalClient,
+  })
   const shadowService = new InvitationShadowService({ pool, regionalClient, workosOrgService })
   const backofficeService = new BackofficeService({
     pool,
@@ -95,7 +104,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
       let lastError: Error | undefined
       for (const event of events) {
         try {
-          await dispatchEvent(event, { workspaceService })
+          await dispatchEvent(event, { workspaceService, authzSyncService })
           seen.push(event.id)
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err))
@@ -124,6 +133,22 @@ export async function startServer(): Promise<ControlPlaneInstance> {
   const outboxDispatcher = new OutboxDispatcher({ listenPool })
   outboxDispatcher.register(outboxHandler)
   await outboxDispatcher.start()
+
+  const authzEventTicker = new Ticker({
+    name: "workos-authz-events",
+    intervalMs: 10_000,
+    maxConcurrency: 1,
+  })
+  authzEventTicker.start(() => authzSyncService.pollEvents())
+
+  const authzReconcileTicker = new Ticker({
+    name: "workos-authz-reconcile",
+    intervalMs: 60 * 60 * 1000,
+    maxConcurrency: 1,
+  })
+  authzReconcileTicker.start(() => authzSyncService.reconcileRegionalSnapshots())
+
+  await authzSyncService.reconcileRegionalSnapshots()
 
   const isProduction = process.env.NODE_ENV === "production"
   const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins })
@@ -157,6 +182,10 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     if (config.fastShutdown) {
       logger.info("Fast shutdown - skipping graceful shutdown")
       server.close()
+      authzEventTicker.stop()
+      authzReconcileTicker.stop()
+      await authzEventTicker.drain()
+      await authzReconcileTicker.drain()
       await outboxDispatcher.stop()
       await listenPool.end()
       await pool.end()
@@ -169,6 +198,10 @@ export async function startServer(): Promise<ControlPlaneInstance> {
         server.close((err) => (err ? reject(err) : resolve()))
       })
     }
+    authzEventTicker.stop()
+    authzReconcileTicker.stop()
+    await authzEventTicker.drain()
+    await authzReconcileTicker.drain()
     await outboxDispatcher.stop()
     await listenPool.end()
     await pool.end()
@@ -181,7 +214,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
 /** Dispatch a single outbox event to the appropriate service method (INV-34) */
 async function dispatchEvent(
   event: OutboxEvent,
-  deps: { workspaceService: ControlPlaneWorkspaceService }
+  deps: { workspaceService: ControlPlaneWorkspaceService; authzSyncService: ControlPlaneAuthzSyncService }
 ): Promise<void> {
   const payload = event.payload as unknown
   switch (event.eventType) {
@@ -190,6 +223,9 @@ async function dispatchEvent(
       break
     case OUTBOX_KV_SYNC:
       await deps.workspaceService.syncToKv(payload as KvSyncPayload)
+      break
+    case OUTBOX_REGIONAL_AUTHZ_SYNC:
+      await deps.authzSyncService.dispatchRegionalSync(payload as RegionalAuthzSyncPayload)
       break
     default:
       logger.warn({ eventType: event.eventType }, "Unknown outbox event type")

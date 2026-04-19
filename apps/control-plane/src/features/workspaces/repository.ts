@@ -92,6 +92,16 @@ export const WorkspaceRegistryRepository = {
     return result.rows[0]?.workos_organization_id ?? null
   },
 
+  async findByWorkosOrganizationId(db: Querier, workosOrganizationId: string): Promise<WorkspaceRegistryRow | null> {
+    const result = await db.query<WorkspaceRegistryRow>(
+      `SELECT id, name, slug, region, created_by_workos_user_id, workos_organization_id, created_at, updated_at
+       FROM workspace_registry
+       WHERE workos_organization_id = $1`,
+      [workosOrganizationId]
+    )
+    return result.rows[0] ?? null
+  },
+
   async setWorkosOrganizationId(db: Querier, workspaceId: string, orgId: string): Promise<void> {
     await db.query(
       "UPDATE workspace_registry SET workos_organization_id = $1 WHERE id = $2 AND workos_organization_id IS NULL",
@@ -114,6 +124,17 @@ export const WorkspaceRegistryRepository = {
        ORDER BY wr.created_at DESC`
     )
     return result.rows.map((row) => ({ ...row, member_count: Number(row.member_count) }))
+  },
+
+  async listAuthzSyncTargets(
+    db: Querier
+  ): Promise<Array<{ id: string; region: string; workos_organization_id: string | null }>> {
+    const result = await db.query<{ id: string; region: string; workos_organization_id: string | null }>(
+      `SELECT id, region, workos_organization_id
+       FROM workspace_registry
+       ORDER BY created_at ASC`
+    )
+    return result.rows
   },
 
   async listByUser(db: Querier, workosUserId: string): Promise<WorkspaceRegistryRow[]> {

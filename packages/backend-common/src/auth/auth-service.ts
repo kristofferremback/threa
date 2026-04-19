@@ -2,14 +2,24 @@ import { WorkOS } from "@workos-inc/node"
 import { logger } from "../logger"
 import type { WorkosConfig } from "./types"
 
+export interface AuthenticatedUser {
+  id: string
+  email: string
+  firstName: string | null
+  lastName: string | null
+}
+
+export interface AuthSessionClaims {
+  organizationId: string | null
+  role: string | null
+  roles: string[]
+  permissions: string[]
+}
+
 export interface AuthResult {
   success: boolean
-  user?: {
-    id: string
-    email: string
-    firstName: string | null
-    lastName: string | null
-  }
+  user?: AuthenticatedUser
+  session?: AuthSessionClaims
   sealedSession?: string
   refreshed: boolean
   reason?: string
@@ -17,6 +27,7 @@ export interface AuthResult {
 
 export interface AuthService {
   authenticateSession(sealedSession: string): Promise<AuthResult>
+  refreshSession(params: { sealedSession: string; organizationId?: string }): Promise<AuthResult>
   authenticateWithCode(code: string): Promise<AuthResult>
   /**
    * Build the WorkOS authorization URL.
@@ -57,6 +68,29 @@ export class WorkosAuthService implements AuthService {
     this.workos = new WorkOS(config.apiKey, { clientId: this.clientId })
   }
 
+  private mapUser(user: AuthenticatedUser): AuthenticatedUser {
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    }
+  }
+
+  private mapSessionClaims(session: {
+    organizationId?: string
+    role?: string | null
+    roles?: string[]
+    permissions?: string[]
+  }): AuthSessionClaims {
+    return {
+      organizationId: session.organizationId ?? null,
+      role: session.role ?? null,
+      roles: [...(session.roles ?? [])],
+      permissions: [...(session.permissions ?? [])],
+    }
+  }
+
   async authenticateSession(sealedSession: string): Promise<AuthResult> {
     if (!sealedSession) {
       return {
@@ -76,12 +110,8 @@ export class WorkosAuthService implements AuthService {
     if (authRes.authenticated) {
       return {
         success: true,
-        user: {
-          id: authRes.user.id,
-          email: authRes.user.email,
-          firstName: authRes.user.firstName,
-          lastName: authRes.user.lastName,
-        },
+        user: this.mapUser(authRes.user),
+        session: this.mapSessionClaims(authRes),
         refreshed: false,
       }
     }
@@ -95,12 +125,8 @@ export class WorkosAuthService implements AuthService {
           logger.debug({ email: refreshResult.user.email }, "Session refreshed successfully")
           return {
             success: true,
-            user: {
-              id: refreshResult.user.id,
-              email: refreshResult.user.email,
-              firstName: refreshResult.user.firstName,
-              lastName: refreshResult.user.lastName,
-            },
+            user: this.mapUser(refreshResult.user),
+            session: this.mapSessionClaims(refreshResult),
             sealedSession: refreshResult.sealedSession,
             refreshed: true,
           }
@@ -117,6 +143,60 @@ export class WorkosAuthService implements AuthService {
     }
   }
 
+  async refreshSession(params: { sealedSession: string; organizationId?: string }): Promise<AuthResult> {
+    if (!params.sealedSession) {
+      return {
+        success: false,
+        refreshed: false,
+        reason: "no_session_cookie_provided",
+      }
+    }
+
+    try {
+      const session = this.workos.userManagement.loadSealedSession({
+        sessionData: params.sealedSession,
+        cookiePassword: this.cookiePassword,
+      })
+
+      const refreshResult = await session.refresh({
+        cookiePassword: this.cookiePassword,
+        organizationId: params.organizationId,
+      })
+
+      if (!refreshResult.authenticated) {
+        return {
+          success: false,
+          refreshed: false,
+          reason: refreshResult.reason,
+        }
+      }
+
+      if (refreshResult.sealedSession) {
+        return {
+          success: true,
+          user: this.mapUser(refreshResult.user),
+          session: this.mapSessionClaims(refreshResult),
+          sealedSession: refreshResult.sealedSession,
+          refreshed: true,
+        }
+      }
+
+      return {
+        success: true,
+        user: this.mapUser(refreshResult.user),
+        session: this.mapSessionClaims(refreshResult),
+        refreshed: true,
+      }
+    } catch (error) {
+      logger.error({ err: error, organizationId: params.organizationId }, "Session refresh error")
+      return {
+        success: false,
+        refreshed: false,
+        reason: "session_refresh_failed",
+      }
+    }
+  }
+
   async authenticateWithCode(code: string): Promise<AuthResult> {
     try {
       const { user, sealedSession } = await this.workos.userManagement.authenticateWithCode({
@@ -129,12 +209,7 @@ export class WorkosAuthService implements AuthService {
 
       return {
         success: true,
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-        },
+        user: this.mapUser(user),
         sealedSession: sealedSession!,
         refreshed: false,
       }

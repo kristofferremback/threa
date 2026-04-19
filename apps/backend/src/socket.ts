@@ -1,7 +1,7 @@
 import type { Server, Socket } from "socket.io"
 import crypto from "crypto"
 import { parseCookies } from "@threa/backend-common"
-import type { AuthService, WorkosOrgService } from "@threa/backend-common"
+import type { AuthService, AuthSessionClaims } from "@threa/backend-common"
 import { DEVICE_KEY_LENGTH } from "@threa/types"
 import type { StreamService } from "./features/streams"
 import type { PushService } from "./features/push"
@@ -52,7 +52,6 @@ interface SocketMetricsState {
 interface Dependencies {
   pool: import("pg").Pool
   authService: AuthService
-  workosOrgService: WorkosOrgService
   streamService: StreamService
   pushService: PushService
   userSocketRegistry: UserSocketRegistry
@@ -71,8 +70,7 @@ function deriveDeviceKey(userAgent: string | undefined): string {
 }
 
 export function registerSocketHandlers(io: Server, deps: Dependencies) {
-  const { pool, authService, workosOrgService, streamService, pushService, userSocketRegistry, sessionAbortRegistry } =
-    deps
+  const { pool, authService, streamService, pushService, userSocketRegistry, sessionAbortRegistry } = deps
 
   // ===========================================================================
   // Authentication middleware
@@ -92,6 +90,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     }
 
     socket.data.workosUserId = result.user.id
+    socket.data.authSession = result.session satisfies AuthSessionClaims | undefined
     return next()
   })
 
@@ -131,14 +130,18 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         const wsId = workspaceMatch[1]
         const authorization = await authorizeWorkspaceSocket({
           pool,
-          workosOrgService,
           workspaceId: wsId,
           workosUserId,
+          session: socket.data.authSession,
         })
         if (!authorization.ok) {
-          socket.emit("error", { message: "Not authorized to join this workspace" })
+          const message =
+            authorization.reason === "org_mismatch"
+              ? "Workspace session is stale; refresh the workspace before reconnecting"
+              : "Not authorized to join this workspace"
+          socket.emit("error", { message })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
-          callback?.({ ok: false, error: "Not authorized to join this workspace" })
+          callback?.({ ok: false, error: message })
           return
         }
         const { workspaceUser } = authorization
@@ -174,15 +177,19 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         const [, wsId, streamId] = streamMatch
         const authorization = await authorizeWorkspaceSocket({
           pool,
-          workosOrgService,
           workspaceId: wsId,
           workosUserId,
+          session: socket.data.authSession,
           requiredPermission: "messages:read",
         })
         if (!authorization.ok) {
-          socket.emit("error", { message: "Not authorized to join this stream" })
+          const message =
+            authorization.reason === "org_mismatch"
+              ? "Workspace session is stale; refresh the workspace before reconnecting"
+              : "Not authorized to join this stream"
+          socket.emit("error", { message })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
-          callback?.({ ok: false, error: "Not authorized to join this stream" })
+          callback?.({ ok: false, error: message })
           return
         }
         const { workspaceUser } = authorization
@@ -237,15 +244,19 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         }
         const authorization = await authorizeWorkspaceSocket({
           pool,
-          workosOrgService,
           workspaceId: wsId,
           workosUserId,
+          session: socket.data.authSession,
           requiredPermission: "messages:read",
         })
         if (!authorization.ok) {
-          socket.emit("error", { message: "Not authorized to join this session" })
+          const message =
+            authorization.reason === "org_mismatch"
+              ? "Workspace session is stale; refresh the workspace before reconnecting"
+              : "Not authorized to join this session"
+          socket.emit("error", { message })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
-          callback?.({ ok: false, error: "Not authorized to join this session" })
+          callback?.({ ok: false, error: message })
           return
         }
         const { workspaceUser } = authorization
@@ -341,9 +352,9 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
           }
           const authorization = await authorizeWorkspaceSocket({
             pool,
-            workosOrgService,
             workspaceId: workspaceIdFromPayload,
             workosUserId,
+            session: socket.data.authSession,
             requiredPermission: "messages:read",
           })
           if (!authorization.ok) {

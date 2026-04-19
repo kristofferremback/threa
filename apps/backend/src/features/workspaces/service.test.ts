@@ -3,6 +3,7 @@ import { WorkspaceService } from "./service"
 import * as db from "../../db"
 import { WorkspaceRepository } from "./repository"
 import { UserRepository } from "./user-repository"
+import { WorkosAuthzMirrorRepository } from "./workos-authz-mirror-repository"
 import { OutboxRepository } from "../../lib/outbox"
 
 type MockWorkosOrgService = {
@@ -213,17 +214,23 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
 
 describe("WorkspaceService.updateUserRole", () => {
   const mockFindWorkspace = spyOn(WorkspaceRepository, "findById")
-  const mockGetWorkosOrganizationId = spyOn(WorkspaceRepository, "getWorkosOrganizationId")
   const mockFindUser = spyOn(UserRepository, "findById")
-  const mockUpdateUser = spyOn(UserRepository, "update")
+  const mockListMirrorRoles = spyOn(WorkosAuthzMirrorRepository, "listRoles")
+  const mockFindMirrorMembership = spyOn(WorkosAuthzMirrorRepository, "findMembershipAssignment")
+  const mockHasOtherRoleManager = spyOn(WorkosAuthzMirrorRepository, "hasOtherRoleManager")
+  const mockUpsertMembershipRoles = spyOn(WorkosAuthzMirrorRepository, "upsertMembershipRoles")
+  const mockSyncCompatibilityRoles = spyOn(WorkosAuthzMirrorRepository, "syncCompatibilityRoles")
   const mockInsertOutbox = spyOn(OutboxRepository, "insert")
 
   beforeEach(() => {
     mockWithTransaction.mockReset()
     mockFindWorkspace.mockReset()
-    mockGetWorkosOrganizationId.mockReset()
     mockFindUser.mockReset()
-    mockUpdateUser.mockReset()
+    mockListMirrorRoles.mockReset()
+    mockFindMirrorMembership.mockReset()
+    mockHasOtherRoleManager.mockReset()
+    mockUpsertMembershipRoles.mockReset()
+    mockSyncCompatibilityRoles.mockReset()
     mockInsertOutbox.mockReset()
 
     mockFindWorkspace.mockResolvedValue({
@@ -234,7 +241,6 @@ describe("WorkspaceService.updateUserRole", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     } as never)
-    mockGetWorkosOrganizationId.mockResolvedValue("org_1")
     mockFindUser.mockResolvedValue({
       id: "user_1",
       workspaceId: "ws_1",
@@ -256,6 +262,15 @@ describe("WorkspaceService.updateUserRole", () => {
       assignedRoles: [],
       canEditRole: false,
     } as never)
+    mockListMirrorRoles.mockResolvedValue([] as never)
+    mockFindMirrorMembership.mockResolvedValue({
+      organizationMembershipId: "om_1",
+      workosUserId: "wos_1",
+      roleSlugs: ["member"],
+    } as never)
+    mockHasOtherRoleManager.mockResolvedValue(true as never)
+    mockUpsertMembershipRoles.mockResolvedValue(undefined as never)
+    mockSyncCompatibilityRoles.mockResolvedValue(undefined as never)
     mockWithTransaction.mockImplementation((async (...args: Parameters<typeof db.withTransaction>) => {
       const callback = args[1]
       return callback({} as never)
@@ -309,7 +324,43 @@ describe("WorkspaceService.updateUserRole", () => {
         })
       ),
     }
-    mockUpdateUser.mockResolvedValue({
+    mockListMirrorRoles.mockResolvedValue([
+      { slug: "member", name: "Member", permissions: ["messages:read"], description: null, type: "system" },
+      {
+        slug: "support-admin",
+        name: "Support Admin",
+        permissions: ["messages:read", "members:write"],
+        description: null,
+        type: "custom",
+      },
+    ] as never)
+    mockFindMirrorMembership.mockResolvedValue({
+      organizationMembershipId: "om_1",
+      workosUserId: "wos_1",
+      roleSlugs: ["member"],
+    } as never)
+    mockFindUser.mockResolvedValueOnce({
+      id: "user_1",
+      workspaceId: "ws_1",
+      workosUserId: "wos_1",
+      email: "user@example.com",
+      role: "user",
+      slug: "user",
+      name: "User",
+      description: null,
+      avatarUrl: null,
+      timezone: null,
+      locale: null,
+      pronouns: null,
+      phone: null,
+      githubUsername: null,
+      setupCompleted: true,
+      joinedAt: new Date(),
+      assignedRole: null,
+      assignedRoles: [],
+      canEditRole: false,
+    } as never)
+    mockFindUser.mockResolvedValueOnce({
       id: "user_1",
       workspaceId: "ws_1",
       workosUserId: "wos_1",
@@ -338,7 +389,14 @@ describe("WorkspaceService.updateUserRole", () => {
       organizationMembershipId: "om_1",
       roleSlug: "support-admin",
     })
-    expect(mockUpdateUser).toHaveBeenCalledWith(expect.anything(), "ws_1", "user_1", { role: "admin" })
+    expect(mockUpsertMembershipRoles).toHaveBeenCalledWith({
+      db: expect.anything(),
+      workspaceId: "ws_1",
+      organizationMembershipId: "om_1",
+      workosUserId: "wos_1",
+      roleSlugs: ["support-admin"],
+    })
+    expect(mockSyncCompatibilityRoles).toHaveBeenCalledWith(expect.anything(), "ws_1")
     expect(mockInsertOutbox).toHaveBeenCalledWith(expect.anything(), "workspace_user:updated", {
       workspaceId: "ws_1",
       user: expect.objectContaining({
@@ -371,20 +429,24 @@ describe("WorkspaceService.updateUserRole", () => {
           },
         ])
       ),
-      listOrganizationMemberships: mock<(organizationId: string) => Promise<any[]>>(() =>
-        Promise.resolve([
-          {
-            id: "om_1",
-            organizationId: "org_1",
-            userId: "wos_1",
-            status: "active",
-            role: { slug: "admin" },
-            roles: [{ slug: "admin" }],
-          },
-        ])
-      ),
       updateOrganizationMembership: mock<(params: any) => Promise<any>>(() => Promise.resolve({})),
     }
+    mockListMirrorRoles.mockResolvedValue([
+      { slug: "member", name: "Member", permissions: ["messages:read"], description: null, type: "system" },
+      {
+        slug: "admin",
+        name: "Admin",
+        permissions: ["messages:read", "members:write"],
+        description: null,
+        type: "system",
+      },
+    ] as never)
+    mockFindMirrorMembership.mockResolvedValue({
+      organizationMembershipId: "om_1",
+      workosUserId: "wos_1",
+      roleSlugs: ["admin"],
+    } as never)
+    mockHasOtherRoleManager.mockResolvedValue(false as never)
 
     const service = createWorkspaceService(false, workosOrgService)
 
@@ -394,7 +456,7 @@ describe("WorkspaceService.updateUserRole", () => {
       code: "LAST_ADMIN_NOT_ALLOWED",
     })
     expect(workosOrgService.updateOrganizationMembership).not.toHaveBeenCalled()
-    expect(mockUpdateUser).not.toHaveBeenCalled()
+    expect(mockUpsertMembershipRoles).not.toHaveBeenCalled()
   })
 })
 
