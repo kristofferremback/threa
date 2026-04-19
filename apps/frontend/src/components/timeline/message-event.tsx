@@ -206,7 +206,7 @@ function MessageLayout({
       <div
         className={cn(
           // Opaque background so swipe-to-quote icon shows behind the message
-          "message-item group relative flex gap-[14px] py-4 px-3 sm:px-6 bg-background",
+          "message-item group relative flex gap-3 py-3 px-3 sm:px-6 bg-background",
           // AI/Persona messages get full-width gradient with gold accent
           isPersona && "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
           // Bot messages get emerald accent
@@ -225,9 +225,14 @@ function MessageLayout({
         style={hasSwipe ? { transform: `translateX(${swipeOffset}px)` } : undefined}
       >
         {isPersona ? (
-          <PersonaAvatar slug={personaSlug} fallback={actorInitials} size="md" className="message-avatar" />
+          <PersonaAvatar
+            slug={personaSlug}
+            fallback={actorInitials}
+            size="md"
+            className="message-avatar h-8 w-8 rounded-[8px]"
+          />
         ) : (
-          <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
+          <Avatar className="message-avatar h-8 w-8 rounded-[8px] shrink-0">
             {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
             <AvatarFallback
               className={cn(
@@ -242,7 +247,7 @@ function MessageLayout({
           </Avatar>
         )}
         <div className="message-content flex-1 min-w-0">
-          <div className="flex items-baseline gap-2 mb-1">
+          <div className="flex items-baseline gap-2 mb-0.5">
             {isUser && event.actorId ? (
               <button
                 type="button"
