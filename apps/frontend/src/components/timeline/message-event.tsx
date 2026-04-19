@@ -17,6 +17,7 @@ import { RelativeTime } from "@/components/relative-time"
 import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
+import { useFormattedDate } from "@/hooks/use-formatted-date"
 import { useEditLastMessage } from "./edit-last-message-context"
 import {
   useActors,
@@ -107,13 +108,30 @@ interface MessageLayoutProps {
   statusIndicator: ReactNode
   /** Optional inline badge rendered between the author name and statusIndicator (e.g. ActivityPill). */
   headerBadge?: ReactNode
+  /**
+   * Inline action buttons rendered in the header row (pending/failed/editing
+   * states). Suppressed on continuations, where the header row is collapsed.
+   * Desktop hover actions for sent messages live in `hoverActions` instead.
+   */
   actions?: ReactNode
+  /**
+   * Absolute-positioned hover toolbar for sent messages. Floated above the
+   * message row so it works identically on heads and continuations without
+   * competing with inline layout. Renderer hides on touch devices.
+   */
+  hoverActions?: ReactNode
   footer?: ReactNode
   children?: ReactNode
   containerClassName?: string
   isHighlighted?: boolean
   isNew?: boolean
   isEditing?: boolean
+  /**
+   * Render as a same-author continuation: no header row, 32px gutter column
+   * holding a compact HH:mm stamp instead of the avatar. Ignored when the
+   * layout is already in edit mode (the edit form needs its full column).
+   */
+  isGroupContinuation?: boolean
   containerRef?: React.RefObject<HTMLDivElement | null>
   deferSecondaryHydration?: boolean
   /** Touch event handlers for mobile long-press */
@@ -183,12 +201,14 @@ function MessageLayout({
   statusIndicator,
   headerBadge,
   actions,
+  hoverActions,
   footer,
   children,
   containerClassName,
   isHighlighted,
   isNew,
   isEditing,
+  isGroupContinuation,
   containerRef,
   deferSecondaryHydration,
   touchHandlers,
@@ -200,8 +220,83 @@ function MessageLayout({
   const isBot = event.actorType === "bot"
   const isUser = event.actorType === "user"
   const { openUserProfile } = useUserProfile()
+  const { formatTime, formatFull } = useFormattedDate()
+
+  // Edit mode needs the full content column (author row + status indicator) so the
+  // edit form's buttons have somewhere coherent to sit. Force head layout even
+  // when the grouping pass marked this row as a continuation.
+  const renderAsContinuation = isGroupContinuation && !isEditing
 
   const hasSwipe = swipeOffset !== undefined && swipeOffset !== 0
+  const messageBody = children ?? (
+    <LinkPreviewProvider>
+      <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
+        <MarkdownContent
+          content={payload.contentMarkdown}
+          messageId={payload.messageId}
+          className="text-sm leading-relaxed"
+        />
+        {payload.attachments && payload.attachments.length > 0 && (
+          <AttachmentList
+            attachments={payload.attachments}
+            workspaceId={workspaceId}
+            deferHydration={deferSecondaryHydration}
+          />
+        )}
+        <MessageLinkPreviews
+          messageId={payload.messageId}
+          workspaceId={workspaceId}
+          previews={payload.linkPreviews}
+          hydrateFromApi={!deferSecondaryHydration}
+        />
+      </AttachmentProvider>
+    </LinkPreviewProvider>
+  )
+
+  const sentAt = new Date(event.createdAt)
+  const gutterLabel = formatTime(sentAt)
+  const gutterTitle = formatFull(sentAt)
+
+  let avatarSlot: ReactNode
+  if (renderAsContinuation) {
+    avatarSlot = (
+      <div
+        className={cn(
+          "message-avatar-spacer flex h-5 w-8 shrink-0 items-start justify-end pr-1",
+          "font-mono text-[10px] tabular-nums leading-5 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors"
+        )}
+        aria-label={`sent at ${gutterLabel}`}
+        title={gutterTitle}
+      >
+        {gutterLabel}
+      </div>
+    )
+  } else if (isPersona) {
+    avatarSlot = (
+      <PersonaAvatar
+        slug={personaSlug}
+        fallback={actorInitials}
+        size="md"
+        className="message-avatar h-8 w-8 rounded-[8px]"
+      />
+    )
+  } else {
+    avatarSlot = (
+      <Avatar className="message-avatar h-8 w-8 rounded-[8px] shrink-0">
+        {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
+        <AvatarFallback
+          className={cn(
+            "text-foreground",
+            isSystem && "bg-blue-500/10 text-blue-500",
+            isBot && "bg-emerald-500/10 text-emerald-600",
+            !isSystem && !isBot && "bg-muted"
+          )}
+        >
+          {actorInitials}
+        </AvatarFallback>
+      </Avatar>
+    )
+  }
 
   return (
     <div
@@ -209,7 +304,12 @@ function MessageLayout({
       data-author-name={actorName}
       data-author-id={event.actorId ?? ""}
       data-actor-type={event.actorType ?? "user"}
+      data-group-continuation={renderAsContinuation ? "true" : undefined}
       className={cn("relative overflow-hidden", containerClassName)}
+      // Continuations collapse the visible author row, so surface the author for
+      // screen readers via the row's accessible name. Heads already have a
+      // visible author label so we leave aria-label unset there.
+      aria-label={renderAsContinuation ? `Message from ${actorName}` : undefined}
       {...touchHandlers}
     >
       {/* Swipe-to-quote reveal icon (behind the message) */}
@@ -221,7 +321,9 @@ function MessageLayout({
       <div
         className={cn(
           // Opaque background so swipe-to-quote icon shows behind the message
-          "message-item group relative flex gap-3 py-3 px-3 sm:px-6 bg-background",
+          "message-item group relative flex gap-3 px-3 sm:px-6 bg-background",
+          // Continuations collapse the vertical padding so the run reads as one turn.
+          renderAsContinuation ? "py-0.5" : "py-3",
           // AI/Persona messages get full-width gradient with gold accent
           isPersona && "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
           // Bot messages get emerald accent
@@ -239,89 +341,65 @@ function MessageLayout({
         )}
         style={hasSwipe ? { transform: `translateX(${swipeOffset}px)` } : undefined}
       >
-        {isPersona ? (
-          <PersonaAvatar
-            slug={personaSlug}
-            fallback={actorInitials}
-            size="md"
-            className="message-avatar h-8 w-8 rounded-[8px]"
-          />
-        ) : (
-          <Avatar className="message-avatar h-8 w-8 rounded-[8px] shrink-0">
-            {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
-            <AvatarFallback
-              className={cn(
-                "text-foreground",
-                isSystem && "bg-blue-500/10 text-blue-500",
-                isBot && "bg-emerald-500/10 text-emerald-600",
-                !isSystem && !isBot && "bg-muted"
-              )}
-            >
-              {actorInitials}
-            </AvatarFallback>
-          </Avatar>
-        )}
+        {avatarSlot}
         <div className="message-content flex-1 min-w-0">
-          <div className="flex items-baseline gap-2 mb-0.5">
-            {isUser && event.actorId ? (
-              <button
-                type="button"
-                onClick={() => openUserProfile(event.actorId!)}
-                className={cn("font-semibold text-sm hover:underline text-left")}
-              >
-                {actorName}
-              </button>
-            ) : (
-              <span
-                className={cn(
-                  "font-semibold text-sm",
-                  isPersona && "text-primary",
-                  isBot && "text-emerald-600",
-                  isSystem && "text-blue-500"
-                )}
-              >
-                {actorName}
-              </span>
-            )}
-            {isBot && <span className="text-[10px] text-emerald-600/70 font-medium cursor-default">BOT</span>}
-            {payload.sentVia && isSentViaApi(payload.sentVia) && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
-                </TooltipTrigger>
-                <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
-              </Tooltip>
-            )}
-            {statusIndicator}
-            {headerBadge}
-            {actions}
-          </div>
-          {children ?? (
-            <LinkPreviewProvider>
-              <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-                <MarkdownContent
-                  content={payload.contentMarkdown}
-                  messageId={payload.messageId}
-                  className="text-sm leading-relaxed"
-                />
-                {payload.attachments && payload.attachments.length > 0 && (
-                  <AttachmentList
-                    attachments={payload.attachments}
-                    workspaceId={workspaceId}
-                    deferHydration={deferSecondaryHydration}
-                  />
-                )}
-                <MessageLinkPreviews
-                  messageId={payload.messageId}
-                  workspaceId={workspaceId}
-                  previews={payload.linkPreviews}
-                  hydrateFromApi={!deferSecondaryHydration}
-                />
-              </AttachmentProvider>
-            </LinkPreviewProvider>
+          {!renderAsContinuation && (
+            <div className="flex items-baseline gap-2 mb-0.5">
+              {isUser && event.actorId ? (
+                <button
+                  type="button"
+                  onClick={() => openUserProfile(event.actorId!)}
+                  className={cn("font-semibold text-sm hover:underline text-left")}
+                >
+                  {actorName}
+                </button>
+              ) : (
+                <span
+                  className={cn(
+                    "font-semibold text-sm",
+                    isPersona && "text-primary",
+                    isBot && "text-emerald-600",
+                    isSystem && "text-blue-500"
+                  )}
+                >
+                  {actorName}
+                </span>
+              )}
+              {isBot && <span className="text-[10px] text-emerald-600/70 font-medium cursor-default">BOT</span>}
+              {payload.sentVia && isSentViaApi(payload.sentVia) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
+                  </TooltipTrigger>
+                  <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
+                </Tooltip>
+              )}
+              {statusIndicator}
+              {headerBadge}
+              {actions}
+            </div>
           )}
+          {messageBody}
           {footer}
         </div>
+        {hoverActions && (
+          <div
+            className={cn(
+              // Floats above the row so hover interactions on heads and continuations
+              // share the same toolbar; bottom: calc(100% + 2px) keeps it clear of the
+              // 2px continuation padding without cropping on tight runs.
+              "pointer-events-none absolute right-4 z-10 hidden sm:block",
+              "bottom-[calc(100%-20px)] opacity-0 group-hover:pointer-events-auto group-hover:opacity-100",
+              "has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100",
+              "transition-opacity",
+              isEditing && "pointer-events-none opacity-0"
+            )}
+          >
+            <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-popover/95 px-1 py-1 shadow-md backdrop-blur-sm">
+              {hoverActions}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -341,6 +419,8 @@ interface MessageEventInnerProps {
   isNew?: boolean
   activity?: MessageAgentActivity
   deferSecondaryHydration?: boolean
+  /** See MessageEventProps.groupContinuation. Only SentMessageEvent honors this. */
+  groupContinuation?: boolean
 }
 
 function SentMessageEvent({
@@ -357,6 +437,7 @@ function SentMessageEvent({
   isNew,
   activity,
   deferSecondaryHydration,
+  groupContinuation,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const messageService = useMessageService()
@@ -626,15 +707,12 @@ function SentMessageEvent({
           </>
         }
         isEditing={isEditing && !isMobile}
+        isGroupContinuation={groupContinuation}
         headerBadge={activity ? <ActivityPill activity={activity} /> : null}
-        actions={
-          // Desktop: hover-reveal dropdown menu. Mobile: hidden (long-press opens drawer instead).
-          <div
-            className={cn(
-              "opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto hidden sm:flex items-center gap-1",
-              isEditing && "!opacity-0 pointer-events-none"
-            )}
-          >
+        hoverActions={
+          // Desktop-only hover toolbar floated above the row. Mobile users reach
+          // these actions via the long-press drawer (MessageActionDrawer).
+          <>
             <ReactionEmojiPicker
               workspaceId={workspaceId}
               onSelect={handleAddReaction}
@@ -645,9 +723,9 @@ function SentMessageEvent({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
-                    className="h-6 w-6 shadow-sm hover:border-primary/30 text-muted-foreground shrink-0"
+                    className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
                     aria-label="Quote reply"
                     onClick={actionContext.onQuoteReply}
                   >
@@ -658,7 +736,7 @@ function SentMessageEvent({
               </Tooltip>
             )}
             <MessageContextMenu context={actionContext} />
-          </div>
+          </>
         }
         footer={
           isEditing && !isMobile ? undefined : (
@@ -982,7 +1060,7 @@ export function MessageEvent({
   isNew,
   activity,
   deferSecondaryHydration = false,
-  groupContinuation: _groupContinuation = false,
+  groupContinuation = false,
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
@@ -1057,6 +1135,7 @@ export function MessageEvent({
           isNew={isNew}
           activity={activity}
           deferSecondaryHydration={deferSecondaryHydration}
+          groupContinuation={groupContinuation}
         />
       )
   }
