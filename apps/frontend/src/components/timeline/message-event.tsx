@@ -5,8 +5,8 @@ import {
   type AttachmentSummary,
   type JSONContent,
   type LinkPreviewSummary,
+  type ThreadSummary,
 } from "@threa/types"
-import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { enqueueOperation } from "@/sync/operation-queue"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -23,7 +23,6 @@ import {
   useWorkspaceUserId,
   useMessageReactions,
   stripColons,
-  getStepLabel,
   focusAtEnd,
   type MessageAgentActivity,
 } from "@/hooks"
@@ -39,7 +38,8 @@ import { SaveMessageButton } from "./save-message-button"
 import { ReminderPickerSheet } from "./reminder-picker-sheet"
 import { useSavedForMessage, useSaveMessage, useDeleteSaved } from "@/hooks/use-saved"
 import { MessageActionDrawer } from "./message-action-drawer"
-import { ThreadIndicator } from "./thread-indicator"
+import { ThreadCard } from "./thread-card"
+import { ActivityPill } from "./activity-pill"
 import { DeleteMessageDialog } from "./delete-message-dialog"
 import { MessageEditForm } from "./message-edit-form"
 import { UnsentMessageEditForm } from "./unsent-message-edit-form"
@@ -60,6 +60,11 @@ interface MessagePayload {
   linkPreviews?: LinkPreviewSummary[]
   replyCount?: number
   threadId?: string
+  /**
+   * Aggregated latest-reply preview + participants. Populated by bootstrap
+   * enrichment for messages with ≥1 non-deleted reply. Consumed by ThreadCard.
+   */
+  threadSummary?: ThreadSummary
   sessionId?: string
   editedAt?: string
   sentVia?: string
@@ -93,6 +98,8 @@ interface MessageLayoutProps {
   /** User avatar image URL */
   actorAvatarUrl?: string
   statusIndicator: ReactNode
+  /** Optional inline badge rendered between the author name and statusIndicator (e.g. ActivityPill). */
+  headerBadge?: ReactNode
   actions?: ReactNode
   footer?: ReactNode
   children?: ReactNode
@@ -167,6 +174,7 @@ function MessageLayout({
   personaSlug,
   actorAvatarUrl,
   statusIndicator,
+  headerBadge,
   actions,
   footer,
   children,
@@ -278,6 +286,7 @@ function MessageLayout({
               </Tooltip>
             )}
             {statusIndicator}
+            {headerBadge}
             {actions}
           </div>
           {children ?? (
@@ -422,59 +431,21 @@ function SentMessageEvent({
   const draftPanelId = createDraftPanelId(streamId, payload.messageId)
   const draftPanelUrl = getPanelUrl(draftPanelId)
 
-  // Activity label for inline display in the footer
-  const activityLabel = activity
-    ? `${activity.personaName} is ${getStepLabel(activity.currentStepType).toLowerCase()}`
-    : null
-
-  // Thread link or "Reply in thread" text (hidden when hideActions is true)
-  // Shows on hover when no thread exists yet, or always when thread exists
-  // When agent activity is present, the activity text is always visible on the same line
-  // When activity.threadStreamId is present, use it for the thread link (allows immediate
-  // navigation to the real thread before the slower stream:created event updates threadId)
+  // Thread card shown below the message body when a thread exists with replies.
+  // Users without a thread start one via the hover toolbar or context menu —
+  // the old always-visible "Reply in thread" footer link has been removed.
+  // `activity.threadStreamId` lets us link to the real thread immediately when
+  // an agent response is in flight, before the slower stream:created event.
   const effectiveThreadId = threadId ?? activity?.threadStreamId
-  let replyLink = (
-    <Link
-      to={draftPanelUrl}
-      className={cn(
-        "text-muted-foreground hover:text-foreground hover:underline transition-opacity",
-        !activityLabel && "opacity-0 group-hover:opacity-100"
-      )}
-    >
-      Reply in thread
-    </Link>
-  )
-
-  if (effectiveThreadId) {
-    replyLink =
-      replyCount > 0 ? (
-        <ThreadIndicator replyCount={replyCount} href={getPanelUrl(effectiveThreadId)} />
-      ) : (
-        <Link
-          to={getPanelUrl(effectiveThreadId)}
-          className="text-muted-foreground hover:text-foreground hover:underline"
-        >
-          Reply in thread
-        </Link>
-      )
-  }
-
-  const threadFooter = !isThreadParentProp ? (
-    <div className="mt-1 flex items-center gap-1.5 text-xs">
-      {replyLink}
-      {activityLabel && (
-        <>
-          <span className="text-muted-foreground/40">·</span>
-          <Link
-            to={getTraceUrl(activity!.sessionId)}
-            className="text-muted-foreground hover:text-foreground hover:underline"
-          >
-            {activityLabel}
-          </Link>
-        </>
-      )}
-    </div>
-  ) : null
+  const threadCard =
+    !isThreadParentProp && effectiveThreadId && replyCount > 0 ? (
+      <ThreadCard
+        replyCount={replyCount}
+        href={getPanelUrl(effectiveThreadId)}
+        workspaceId={workspaceId}
+        summary={payload.threadSummary}
+      />
+    ) : null
 
   const { toggleByEmoji } = useMessageReactions(workspaceId, payload.messageId)
   const handleAddReaction = useCallback(
@@ -648,6 +619,7 @@ function SentMessageEvent({
           </>
         }
         isEditing={isEditing && !isMobile}
+        headerBadge={activity ? <ActivityPill activity={activity} /> : null}
         actions={
           // Desktop: hover-reveal dropdown menu. Mobile: hidden (long-press opens drawer instead).
           <div
@@ -692,7 +664,7 @@ function SentMessageEvent({
                   currentUserId={currentUserId}
                 />
               )}
-              {threadFooter}
+              {threadCard}
             </>
           )
         }
@@ -816,7 +788,6 @@ function PendingMessageEvent({
   actorInitials,
   personaSlug,
   actorAvatarUrl,
-  isThreadParent,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { markEditing, deleteMessage } = usePendingMessages()
@@ -860,15 +831,7 @@ function PendingMessageEvent({
             </Button>
           </div>
         }
-        footer={
-          !isThreadParent ? (
-            <div className="mt-1 flex items-center gap-1.5 text-xs">
-              <span className="opacity-0" aria-hidden="true">
-                Reply in thread
-              </span>
-            </div>
-          ) : null
-        }
+        footer={null}
       />
       {isMobile && (
         <UnsentMessageActionDrawer
@@ -892,7 +855,6 @@ function FailedMessageEvent({
   actorInitials,
   personaSlug,
   actorAvatarUrl,
-  isThreadParent,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { retryMessage, markEditing, deleteMessage } = usePendingMessages()
@@ -937,15 +899,7 @@ function FailedMessageEvent({
             </Button>
           </div>
         }
-        footer={
-          !isThreadParent ? (
-            <div className="mt-1 flex items-center gap-1.5 text-xs">
-              <span className="opacity-0" aria-hidden="true">
-                Reply in thread
-              </span>
-            </div>
-          ) : null
-        }
+        footer={null}
       />
       {isMobile && (
         <UnsentMessageActionDrawer

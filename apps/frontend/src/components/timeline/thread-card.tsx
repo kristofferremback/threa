@@ -17,13 +17,13 @@ interface ThreadCardProps {
 }
 
 /**
- * Compact thread preview card with gold "Ariadne's thread" left-line,
- * participant avatar stack, and latest-reply snippet. Replaces the old
- * ThreadIndicator text link and doubles as the thread entry tap target.
+ * Compact thread preview card with a gold "Ariadne's thread" left-line,
+ * participant avatar stack, and latest-reply snippet. Acts as the thread
+ * entry tap target on both desktop and mobile.
  *
- * Preview text is routed through `truncateContent()` which applies
- * `stripMarkdownToInline()` — required for rendering `contentMarkdown`
- * safely (INV-60).
+ * Preview text routes through `truncateContent()` (→ `stripMarkdownToInline`)
+ * so raw markdown from `contentMarkdown` never ships as literal syntax to
+ * users (INV-60).
  */
 export function ThreadCard({ replyCount, href, workspaceId, summary, className }: ThreadCardProps) {
   const { getActorName, getActorAvatar } = useActors(workspaceId)
