@@ -67,7 +67,7 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
         <AllReactionsPopover reactions={reactions} workspaceId={workspaceId}>
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2.5 py-0.5 text-xs text-muted-foreground hover:bg-muted/80 hover:border-border transition-all"
+            className="inline-flex min-h-[26px] items-center gap-1 rounded-full border border-transparent bg-primary/[0.05] px-2.5 text-xs text-muted-foreground transition-colors hover:bg-primary/[0.1] hover:text-foreground"
           >
             +{overflowCount}
           </button>
@@ -81,7 +81,7 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
         trigger={
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-full border border-dashed border-border/50 h-7 w-7 text-muted-foreground/60 hover:bg-muted/80 hover:text-foreground hover:border-border transition-all"
+            className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-primary/[0.08] hover:text-primary"
             aria-label="Add reaction"
           >
             <SmilePlus className="h-3.5 w-3.5" />
@@ -110,10 +110,10 @@ const ReactionPill = forwardRef<HTMLButtonElement, ReactionPillProps & React.But
         ref={ref}
         type="button"
         className={cn(
-          "group/pill relative inline-flex items-center gap-1 rounded-full border pl-1.5 pr-2 py-0.5 text-xs transition-all",
+          "group/pill relative inline-flex min-h-[26px] items-center gap-1 rounded-full border pl-2 pr-2.5 text-xs transition-colors",
           hasReacted
-            ? "border-primary/30 bg-primary/[0.08] text-primary hover:bg-primary/[0.14] hover:border-primary/40"
-            : "border-border/60 text-muted-foreground hover:bg-muted/80 hover:border-border"
+            ? "border-primary/50 bg-primary/[0.14] text-primary hover:bg-primary/[0.2]"
+            : "border-transparent bg-primary/[0.05] text-muted-foreground hover:bg-primary/[0.1] hover:text-foreground"
         )}
         onClick={onToggle}
         {...rest}
