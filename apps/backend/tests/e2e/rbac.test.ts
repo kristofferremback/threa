@@ -29,7 +29,7 @@ describe("RBAC Enforcement", () => {
     })
 
     expect(status).toBe(403)
-    expect((data as { error?: string }).error).toBe("Insufficient role")
+    expect((data as { error?: string }).error).toBe("Missing required permission: workspace:admin")
   })
 
   test("admin can update AI budget", async () => {

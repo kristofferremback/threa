@@ -313,7 +313,7 @@ describe("Stream Settings E2E", () => {
 
       expect(status).toBe(403)
       const body = data as { error: string }
-      expect(body.error).toContain("owners and admins")
+      expect(body.error).toBe("Missing required permission: members:write")
     })
 
     test("should reject removing the only member", async () => {
