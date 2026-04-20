@@ -288,32 +288,67 @@ function MessageLayout({
   const gutterLabel = formatTime(sentAt)
   const gutterTitle = formatFull(sentAt)
 
-  let avatarSlot: ReactNode
-  if (renderAsContinuation) {
-    avatarSlot = (
-      <div
-        className={cn(
-          "message-avatar-spacer flex h-5 w-8 shrink-0 items-start justify-end pr-1",
-          "font-mono text-[10px] tabular-nums leading-5 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors"
-        )}
-        aria-label={`sent at ${gutterLabel}`}
-        title={gutterTitle}
-      >
-        {gutterLabel}
-      </div>
-    )
-  } else {
-    avatarSlot = (
-      <ActorAvatar
-        actorId={event.actorId}
-        actorType={event.actorType}
-        workspaceId={workspaceId}
-        size="md"
-        alt={actorName}
-        className="message-avatar"
-      />
-    )
-  }
+  // Everything that differs between head and continuation layouts is derived
+  // upfront in a single place: the leading column (avatar vs gutter time),
+  // the header row (full author/status/actions row vs nothing), the vertical
+  // padding, and the row-level a11y attributes. The JSX body below consumes
+  // these named locals so there's no scattered `renderAsContinuation ? : `
+  // checks to keep in sync when either shape changes.
+  const leadingSlot: ReactNode = renderAsContinuation ? (
+    <div
+      className={cn(
+        "message-avatar-spacer flex h-5 w-8 shrink-0 items-start justify-end pr-1",
+        "font-mono text-[10px] tabular-nums leading-5 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors"
+      )}
+      aria-label={`sent at ${gutterLabel}`}
+      title={gutterTitle}
+    >
+      {gutterLabel}
+    </div>
+  ) : (
+    <ActorAvatar
+      actorId={event.actorId}
+      actorType={event.actorType}
+      workspaceId={workspaceId}
+      size="md"
+      alt={actorName}
+      className="message-avatar"
+    />
+  )
+
+  const headerRow: ReactNode = renderAsContinuation ? null : (
+    <div className="flex items-baseline gap-2 mb-0.5">
+      {hasInteractiveName ? (
+        <button
+          type="button"
+          onClick={() => openUserProfile(event.actorId!)}
+          className="font-semibold text-sm hover:underline text-left"
+        >
+          {actorName}
+        </button>
+      ) : (
+        <span className={cn("font-semibold text-sm", theme.nameClassName)}>{actorName}</span>
+      )}
+      {theme.badge}
+      {payload.sentVia && isSentViaApi(payload.sentVia) && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
+          </TooltipTrigger>
+          <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
+        </Tooltip>
+      )}
+      {statusIndicator}
+      {actions}
+    </div>
+  )
+
+  // Row-level a11y + data attributes. Continuations collapse the visible
+  // author row, so surface the author for screen readers via the row's
+  // accessible name; heads already have a visible author label.
+  const rowAriaLabel = renderAsContinuation ? `Message from ${actorName}` : undefined
+  const rowDataGroupContinuation = renderAsContinuation ? "true" : undefined
+  const rowVerticalPadding = renderAsContinuation ? "py-0.5" : "py-3"
 
   return (
     <div
@@ -321,7 +356,7 @@ function MessageLayout({
       data-author-name={actorName}
       data-author-id={event.actorId ?? ""}
       data-actor-type={event.actorType ?? "user"}
-      data-group-continuation={renderAsContinuation ? "true" : undefined}
+      data-group-continuation={rowDataGroupContinuation}
       // `overflow-hidden` contains the mobile swipe-to-quote translate so the
       // message doesn't bleed out of its bounds. On desktop swipe is disabled
       // and the hover toolbar floats above the row via `bottom-[calc(100%-20px)]`
@@ -329,10 +364,7 @@ function MessageLayout({
       // sit on tight continuations). `sm:overflow-visible` releases the clip
       // at the desktop breakpoint.
       className={cn("relative overflow-hidden sm:overflow-visible", containerClassName)}
-      // Continuations collapse the visible author row, so surface the author for
-      // screen readers via the row's accessible name. Heads already have a
-      // visible author label so we leave aria-label unset there.
-      aria-label={renderAsContinuation ? `Message from ${actorName}` : undefined}
+      aria-label={rowAriaLabel}
       {...touchHandlers}
     >
       {/* Swipe-to-quote reveal icon (behind the message) */}
@@ -345,8 +377,7 @@ function MessageLayout({
         className={cn(
           // Opaque background so swipe-to-quote icon shows behind the message
           "message-item group relative flex gap-3 px-3 sm:px-6 bg-background",
-          // Continuations collapse the vertical padding so the run reads as one turn.
-          renderAsContinuation ? "py-0.5" : "py-3",
+          rowVerticalPadding,
           // Per-actor accent (gradient + inset stripe) — see ACTOR_ROW_THEME.
           theme.rowAccent,
           // Edit mode: pseudo-element background so no layout shift — applied
@@ -360,34 +391,9 @@ function MessageLayout({
         )}
         style={hasSwipe ? { transform: `translateX(${swipeOffset}px)` } : undefined}
       >
-        {avatarSlot}
+        {leadingSlot}
         <div className="message-content flex-1 min-w-0">
-          {!renderAsContinuation && (
-            <div className="flex items-baseline gap-2 mb-0.5">
-              {hasInteractiveName ? (
-                <button
-                  type="button"
-                  onClick={() => openUserProfile(event.actorId!)}
-                  className="font-semibold text-sm hover:underline text-left"
-                >
-                  {actorName}
-                </button>
-              ) : (
-                <span className={cn("font-semibold text-sm", theme.nameClassName)}>{actorName}</span>
-              )}
-              {theme.badge}
-              {payload.sentVia && isSentViaApi(payload.sentVia) && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
-                  </TooltipTrigger>
-                  <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
-                </Tooltip>
-              )}
-              {statusIndicator}
-              {actions}
-            </div>
-          )}
+          {headerRow}
           {messageBody}
           {footer}
         </div>
