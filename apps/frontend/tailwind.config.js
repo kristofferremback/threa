@@ -162,6 +162,10 @@ export default {
             opacity: "0",
           },
         },
+        "thread-weave": {
+          "0%": { transform: "translateY(-110%)" },
+          "100%": { transform: "translateY(420%)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -174,6 +178,7 @@ export default {
         "topbar-shimmer": "topbar-shimmer 2s ease-in-out infinite",
         "ariadne-breathe": "ariadne-breathe 2s ease-in-out infinite",
         "ariadne-ripple": "ariadne-ripple 2s ease-in-out infinite",
+        "thread-weave": "thread-weave 2.2s ease-in-out infinite",
       },
     },
   },

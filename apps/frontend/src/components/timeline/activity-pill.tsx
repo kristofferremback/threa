@@ -9,18 +9,14 @@ interface ActivityPillProps {
 }
 
 /**
- * Inline pill shown next to the author name while an agent session triggered
- * by this message is still running. Replaces the old footer "{persona} is
- * thinking…" text link — moving the live signal up into the header row means
- * it survives the message-grouping collapse (continuations don't render a
- * header, but the head's pill stays visible for the whole run).
- */
-/**
- * Normalize a label so it ends with exactly one ellipsis, regardless of
- * whether the upstream source (step-config or backend substep) already
- * terminates with ASCII `...`, Unicode `…`, or nothing. Without this the
- * pill double-stacks ellipses into "thinking...…" (three dots + one) when
- * the step-config labels already carry trailing `...`.
+ * "Ariadne is thinking…" indicator below a trigger message. Visually echoes
+ * ThreadCard's 2px gold left-line and sits in the same footer slot, so the
+ * transition from thinking → first-reply-posted is a single continuous gold
+ * thread extending downward rather than two different shapes swapping places.
+ *
+ * A shimmer glides down the line while the session is active; the text itself
+ * is italic and softly tinted, reading as ephemeral state rather than persisted
+ * content. Clicking opens the trace (unchanged).
  */
 function withTrailingEllipsis(text: string): string {
   return text.replace(/[.…\s]+$/u, "") + "…"
@@ -37,17 +33,30 @@ export function ActivityPill({ activity, className }: ActivityPillProps) {
     <Link
       to={getTraceUrl(activity.sessionId)}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full bg-primary/[0.08] px-2 py-0.5",
-        "text-[11px] font-medium text-primary/90 hover:bg-primary/[0.14] hover:text-primary transition-colors",
+        "group/thinking relative mt-2 flex items-center py-1 pl-3 pr-2",
+        "text-xs transition-colors",
         className
       )}
+      aria-label={`${activity.personaName} ${label}`}
     >
-      <span className="relative flex h-1.5 w-1.5">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-75" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+      {/* Base gold line — matches ThreadCard's `before:` left-line so the
+          pill→card handoff looks like one continuous thread extending down. */}
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute left-0 top-[-4px] bottom-[-2px] w-[2px] overflow-hidden rounded-full",
+          "bg-primary/30 group-hover/thinking:bg-primary/50 transition-colors"
+        )}
+      >
+        {/* Shimmer that travels down the line while the session weaves */}
+        <span
+          aria-hidden
+          className="absolute inset-x-0 top-0 h-5 animate-thread-weave bg-gradient-to-b from-transparent via-primary to-transparent opacity-80"
+        />
       </span>
-      <span className="truncate max-w-[220px]">
-        <span className="text-primary/70">{activity.personaName}</span> {label}
+      <span className="truncate max-w-[280px] italic text-primary/75 group-hover/thinking:text-primary">
+        <span className="not-italic font-medium text-primary/95">{activity.personaName}</span>{" "}
+        <span className="text-primary/65 group-hover/thinking:text-primary/90">{label}</span>
       </span>
     </Link>
   )

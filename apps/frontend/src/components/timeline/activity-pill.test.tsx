@@ -61,8 +61,12 @@ describe("ActivityPill", () => {
     expect(link!.getAttribute("href")).toBe("/trace/session_1")
   })
 
-  it("includes a pulse indicator (animate-ping class)", () => {
+  it("includes the gold thread-line + weave shimmer", () => {
     const { container } = render(<ActivityPill activity={makeActivity()} />)
-    expect(container.querySelector(".animate-ping")).not.toBeNull()
+    // The 2px gold left-line mirrors ThreadCard's `before:` line so the
+    // pill→card transition extends one continuous thread.
+    expect(container.querySelector(".w-\\[2px\\]")).not.toBeNull()
+    // The shimmer traveling down that line signals a live session.
+    expect(container.querySelector(".animate-thread-weave")).not.toBeNull()
   })
 })
