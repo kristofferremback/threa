@@ -191,8 +191,14 @@ export interface StreamMember {
  */
 export interface ThreadSummary {
   lastReplyAt: string
-  /** Distinct user authors in the thread, capped at 3 (backend enforced). */
-  participantUserIds: string[]
+  /**
+   * Distinct actors (users, personas, bots) who have posted in the thread,
+   * capped at 3 (backend enforced), ordered by first reply. Includes
+   * `actorType` so the frontend can resolve persona/bot avatars — filtering
+   * to users-only would hide Ariadne and other personas from the avatar
+   * stack even though they're legitimate thread participants.
+   */
+  participants: Array<{ id: string; type: AuthorType }>
   latestReply: {
     messageId: string
     actorId: string

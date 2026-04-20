@@ -33,6 +33,11 @@ interface StreamRow {
  * to a `ThreadSummary` without branching. A parity test in the integration
  * suite asserts the two entry points return identical `ThreadSummary`
  * objects for the same parent — drift in either query's SELECT fails it.
+ *
+ * `participant_ids` / `participant_types` are positionally aligned arrays:
+ * `participant_ids[i]` has type `participant_types[i]`. Postgres doesn't
+ * have a first-class tuple-of-records array for `ARRAY_AGG`, so we ship
+ * the two aligned arrays and zip them in `threadSummaryFromRow`.
  */
 interface ThreadSummaryRow {
   parent_message_id: string
@@ -41,13 +46,22 @@ interface ThreadSummaryRow {
   latest_author_type: string
   latest_content_markdown: string
   last_reply_at: Date
-  participant_user_ids: string[]
+  participant_ids: string[]
+  participant_types: string[]
 }
 
 function threadSummaryFromRow(row: ThreadSummaryRow): ThreadSummary {
+  // Zip the aligned participant_ids / participant_types into a single
+  // structured array. Any length mismatch would indicate a query bug — they
+  // come from the same ARRAY_AGG ORDER BY in one row per parent, so in
+  // practice they always match; guard defensively.
+  const participants = row.participant_ids.map((id, i) => ({
+    id,
+    type: (row.participant_types[i] ?? "user") as AuthorType,
+  }))
   return {
     lastReplyAt: row.last_reply_at.toISOString(),
-    participantUserIds: row.participant_user_ids,
+    participants,
     latestReply: {
       messageId: row.latest_message_id,
       actorId: row.latest_author_id,
@@ -830,15 +844,15 @@ export const StreamRepository = {
         ORDER BY parent_message_id, sequence DESC
       ),
       participants_distinct AS (
-        SELECT parent_message_id, author_id, MIN(sequence) AS first_reply_sequence
+        SELECT parent_message_id, author_id, author_type, MIN(sequence) AS first_reply_sequence
         FROM thread_messages
-        WHERE author_type = 'user'
-        GROUP BY parent_message_id, author_id
+        GROUP BY parent_message_id, author_id, author_type
       ),
       participants AS (
         SELECT
           parent_message_id,
-          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids
+          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids,
+          (ARRAY_AGG(author_type ORDER BY first_reply_sequence))[1:3] AS author_types
         FROM participants_distinct
         GROUP BY parent_message_id
       )
@@ -849,7 +863,8 @@ export const StreamRepository = {
         l.author_type AS latest_author_type,
         l.content_markdown AS latest_content_markdown,
         l.created_at AS last_reply_at,
-        COALESCE(p.author_ids, ARRAY[]::TEXT[]) AS participant_user_ids
+        COALESCE(p.author_ids, ARRAY[]::TEXT[]) AS participant_ids,
+        COALESCE(p.author_types, ARRAY[]::TEXT[]) AS participant_types
       FROM latest l
       LEFT JOIN participants p USING (parent_message_id)
     `)
@@ -891,13 +906,14 @@ export const StreamRepository = {
           AND m.deleted_at IS NULL
       ),
       participants_distinct AS (
-        SELECT author_id, MIN(sequence) AS first_reply_sequence
+        SELECT author_id, author_type, MIN(sequence) AS first_reply_sequence
         FROM thread_messages
-        WHERE author_type = 'user'
-        GROUP BY author_id
+        GROUP BY author_id, author_type
       ),
       participants AS (
-        SELECT (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids
+        SELECT
+          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids,
+          (ARRAY_AGG(author_type ORDER BY first_reply_sequence))[1:3] AS author_types
         FROM participants_distinct
       )
       SELECT
@@ -907,7 +923,8 @@ export const StreamRepository = {
         l.author_type AS latest_author_type,
         l.content_markdown AS latest_content_markdown,
         l.created_at AS last_reply_at,
-        COALESCE((SELECT author_ids FROM participants), ARRAY[]::TEXT[]) AS participant_user_ids
+        COALESCE((SELECT author_ids FROM participants), ARRAY[]::TEXT[]) AS participant_ids,
+        COALESCE((SELECT author_types FROM participants), ARRAY[]::TEXT[]) AS participant_types
       FROM thread_messages l
       ORDER BY l.sequence DESC
       LIMIT 1

@@ -129,15 +129,15 @@ describe("Thread Summary", () => {
       const f = await seedThread(1, 1)
       const summary = await StreamRepository.findThreadSummaryByParentMessage(pool, f.parentMessageId)
       expect(summary).not.toBeNull()
-      expect(summary!.participantUserIds).toHaveLength(1)
+      expect(summary!.participants).toHaveLength(1)
       expect(summary!.latestReply.messageId).toBe(f.replyIds[f.replyIds.length - 1])
     })
 
-    test("caps participantUserIds at 3 even with more distinct authors", async () => {
+    test("caps participants at 3 even with more distinct authors", async () => {
       const f = await seedThread(5, 1)
       const summary = await StreamRepository.findThreadSummaryByParentMessage(pool, f.parentMessageId)
       expect(summary).not.toBeNull()
-      expect(summary!.participantUserIds).toHaveLength(3)
+      expect(summary!.participants).toHaveLength(3)
     })
 
     test("orders participants by first-reply sequence (deterministic)", async () => {
@@ -145,7 +145,7 @@ describe("Thread Summary", () => {
       const first = await StreamRepository.findThreadSummaryByParentMessage(pool, f.parentMessageId)
       const second = await StreamRepository.findThreadSummaryByParentMessage(pool, f.parentMessageId)
       // Same call twice → identical ordering.
-      expect(first!.participantUserIds).toEqual(second!.participantUserIds)
+      expect(first!.participants).toEqual(second!.participants)
     })
 
     test("sends contentMarkdown raw (caller strips via INV-60)", async () => {
@@ -153,6 +153,28 @@ describe("Thread Summary", () => {
       const f = await seedThread(1, 1, { markdown: raw })
       const summary = await StreamRepository.findThreadSummaryByParentMessage(pool, f.parentMessageId)
       expect(summary!.latestReply.contentMarkdown).toBe(raw)
+    })
+
+    test("includes persona participants alongside users (not users-only)", async () => {
+      // Seed a user-authored parent + thread, then post a persona (Ariadne)
+      // reply. Both the user who started the thread and the persona who
+      // answered should appear in participants — historically the query
+      // filtered `author_type = 'user'` which hid personas.
+      const f = await seedThread(1, 1)
+      const personaReply = await eventService.createMessage({
+        workspaceId: f.wsId,
+        streamId: f.threadId,
+        authorId: "persona_system_ariadne",
+        authorType: "persona",
+        ...testMessageContent("Persona-authored reply"),
+      })
+      const summary = await StreamRepository.findThreadSummaryByParentMessage(pool, f.parentMessageId)
+      expect(summary!.participants.length).toBeGreaterThanOrEqual(2)
+      expect(summary!.participants.some((p) => p.type === "persona" && p.id === "persona_system_ariadne")).toBe(true)
+      expect(summary!.participants.some((p) => p.type === "user")).toBe(true)
+      // The latest reply itself should be the persona's message.
+      expect(summary!.latestReply.messageId).toBe(personaReply.id)
+      expect(summary!.latestReply.actorType).toBe("persona")
     })
   })
 
@@ -168,14 +190,14 @@ describe("Thread Summary", () => {
       const map = await StreamRepository.findThreadSummaries(pool, f.channelId)
       const summary = map.get(f.parentMessageId)
       expect(summary).toBeDefined()
-      expect(summary!.participantUserIds).toHaveLength(1)
+      expect(summary!.participants).toHaveLength(1)
     })
 
-    test("caps participantUserIds at 3 in batch mode as well", async () => {
+    test("caps participants at 3 in batch mode as well", async () => {
       const f = await seedThread(4, 2)
       const map = await StreamRepository.findThreadSummaries(pool, f.channelId)
       const summary = map.get(f.parentMessageId)
-      expect(summary!.participantUserIds).toHaveLength(3)
+      expect(summary!.participants).toHaveLength(3)
     })
   })
 
@@ -211,13 +233,13 @@ describe("Thread Summary", () => {
       const f = await seedThread(4, 3)
       const { batch, single } = await pairCompare(f)
       expect(batch).toEqual(single)
-      expect(single!.participantUserIds).toHaveLength(3)
+      expect(single!.participants).toHaveLength(3)
     })
 
     test("both return identical participant ordering under repeated queries", async () => {
       const f = await seedThread(5, 1)
       const { batch, single } = await pairCompare(f)
-      expect(batch!.participantUserIds).toEqual(single!.participantUserIds)
+      expect(batch!.participants).toEqual(single!.participants)
     })
   })
 })

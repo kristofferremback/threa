@@ -54,7 +54,7 @@ export function ThreadCard({
   if (replyCount === 0) return null
 
   const replyLabel = replyCount === 1 ? "1 reply" : `${replyCount} replies`
-  const participantIds = summary?.participantUserIds ?? []
+  const participants = summary?.participants ?? []
 
   return (
     <Link
@@ -71,12 +71,12 @@ export function ThreadCard({
       )}
     >
       <div className="flex items-center gap-2 text-xs">
-        {participantIds.length > 0 && (
+        {participants.length > 0 && (
           <div className="flex gap-0.5">
-            {participantIds.map((userId) => {
-              const { fallback, avatarUrl } = getActorAvatar(userId, "user")
+            {participants.map((participant) => {
+              const { fallback, avatarUrl } = getActorAvatar(participant.id, participant.type)
               return (
-                <Avatar key={userId} className="h-5 w-5 rounded-[5px]">
+                <Avatar key={`${participant.type}:${participant.id}`} className="h-5 w-5 rounded-[5px]">
                   {avatarUrl && <AvatarImage src={avatarUrl} alt="" />}
                   <AvatarFallback className="bg-muted text-[9px] font-medium text-foreground">
                     {fallback}

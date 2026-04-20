@@ -46,7 +46,7 @@ function makeActivity(overrides: Partial<MessageAgentActivity> = {}): MessageAge
 
 const summary: ThreadSummary = {
   lastReplyAt: "2026-04-19T12:00:00.000Z",
-  participantUserIds: ["user_alice"],
+  participants: [{ id: "user_alice", type: "user" }],
   latestReply: {
     messageId: "msg_1",
     actorId: "user_alice",

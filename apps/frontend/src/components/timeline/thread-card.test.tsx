@@ -30,7 +30,10 @@ vi.mock("@/components/relative-time", () => ({
 
 const baseSummary: ThreadSummary = {
   lastReplyAt: "2026-04-19T12:00:00.000Z",
-  participantUserIds: ["user_alice", "user_bob"],
+  participants: [
+    { id: "user_alice", type: "user" },
+    { id: "user_bob", type: "user" },
+  ],
   latestReply: {
     messageId: "msg_1",
     actorId: "user_alice",
