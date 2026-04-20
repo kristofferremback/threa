@@ -366,6 +366,8 @@ function EmojiGridContent({
 
         {renderRecentSection(true)}
 
+        {recent.length > 0 && all.length > 0 && <div className="border-t mx-4" />}
+
         {/* Emoji grid — stable container keeps ResizeObserver alive across empty/non-empty transitions */}
         <div ref={mobileContainerRef} style={{ height: "min(55dvh, 360px)" }}>
           {total === 0 && (
@@ -461,6 +463,8 @@ function EmojiGridContent({
       )}
 
       {renderRecentSection(false)}
+
+      {recent.length > 0 && all.length > 0 && <div className="border-t" />}
 
       {/* Emoji grid */}
       {total === 0 && (

@@ -232,6 +232,7 @@ function EmojiGridInner(
           </div>
         </div>
       )}
+      {recent.length > 0 && all.length > 0 && <div className="border-t" />}
       {all.length > 0 && (
         <Virtuoso
           ref={virtuosoRef}
