@@ -1,6 +1,6 @@
 import type { Server, Socket } from "socket.io"
 import crypto from "crypto"
-import { parseCookies } from "@threa/backend-common"
+import { parseCookies, SESSION_COOKIE_NAME } from "@threa/backend-common"
 import type { AuthService, AuthSessionClaims } from "@threa/backend-common"
 import { DEVICE_KEY_LENGTH } from "@threa/types"
 import type { StreamService } from "./features/streams"
