@@ -21,6 +21,12 @@ interface ThreadCardProps {
    * created mid-session).
    */
   isActive?: boolean
+  /**
+   * When rendered inside `ThreadSlot`, the slot owns the gold left-line so
+   * that it can persist across pill→card transitions and animate growth.
+   * The card suppresses its own `before:` line in that case.
+   */
+  ownsLeftLine?: boolean
   className?: string
 }
 
@@ -33,7 +39,15 @@ interface ThreadCardProps {
  * so raw markdown from `contentMarkdown` never ships as literal syntax to
  * users (INV-60).
  */
-export function ThreadCard({ replyCount, href, workspaceId, summary, isActive, className }: ThreadCardProps) {
+export function ThreadCard({
+  replyCount,
+  href,
+  workspaceId,
+  summary,
+  isActive,
+  ownsLeftLine = true,
+  className,
+}: ThreadCardProps) {
   const { getActorName, getActorAvatar } = useActors(workspaceId)
   const { toEmoji } = useWorkspaceEmoji(workspaceId)
 
@@ -46,10 +60,12 @@ export function ThreadCard({ replyCount, href, workspaceId, summary, isActive, c
     <Link
       to={href}
       className={cn(
-        "group/thread relative mt-2 flex flex-col gap-1 rounded-md py-1.5 pl-3 pr-2",
-        // 2px gold thread line that extends up into the message gap — Ariadne's literal thread
-        "before:content-[''] before:absolute before:left-0 before:top-[-4px] before:bottom-1 before:w-[2px]",
-        "before:rounded-full before:bg-primary/70 hover:before:bg-primary",
+        "group/thread relative flex flex-col gap-1 rounded-md py-1.5 pl-3 pr-2",
+        ownsLeftLine && "mt-2",
+        // 2px gold thread line that extends up into the message gap — Ariadne's literal thread.
+        // Suppressed when ThreadSlot owns the line so there's no double-draw.
+        ownsLeftLine &&
+          "before:content-[''] before:absolute before:left-0 before:top-[-4px] before:bottom-1 before:w-[2px] before:rounded-full before:bg-primary/70 hover:before:bg-primary",
         "hover:bg-primary/[0.04] transition-colors",
         className
       )}

@@ -39,8 +39,7 @@ import { SaveMessageButton } from "./save-message-button"
 import { ReminderPickerSheet } from "./reminder-picker-sheet"
 import { useSavedForMessage, useSaveMessage, useDeleteSaved } from "@/hooks/use-saved"
 import { MessageActionDrawer } from "./message-action-drawer"
-import { ThreadCard } from "./thread-card"
-import { ActivityPill } from "./activity-pill"
+import { ThreadSlot } from "./thread-slot"
 import { DeleteMessageDialog } from "./delete-message-dialog"
 import { MessageEditForm } from "./message-edit-form"
 import { UnsentMessageEditForm } from "./unsent-message-edit-form"
@@ -529,26 +528,20 @@ function SentMessageEvent({
   // `activity.threadStreamId` lets us link to the real thread immediately when
   // an agent response is in flight, before the slower stream:created event.
   const effectiveThreadId = threadId ?? activity?.threadStreamId
-  // Thread slot below the body. Prefers the card as soon as the thread has
-  // any replies so a mid-session "thread created" moment doesn't shuffle
-  // between pill and card. The activity indicator lives inside the card via
-  // `isActive`, so `pill → card → pill-off` reduces to `card-active →
-  // card-idle` (no layout change). When there are no replies yet, the pill
-  // is still the lightweight stand-in for the not-yet-created thread.
-  let threadSlot: ReactNode = null
-  if (!isThreadParentProp && effectiveThreadId && replyCount > 0) {
-    threadSlot = (
-      <ThreadCard
-        replyCount={replyCount}
-        href={getPanelUrl(effectiveThreadId)}
-        workspaceId={workspaceId}
-        summary={payload.threadSummary}
-        isActive={!!activity}
-      />
-    )
-  } else if (!isThreadParentProp && activity) {
-    threadSlot = <ActivityPill activity={activity} className="mt-2" />
-  }
+  // Unified thread-slot: owns the gold left-line across pill → card so the
+  // transition reads as a single thread extending downward, with a CSS
+  // grow-in on first appearance and a grid-rows extension when the card
+  // takes over. Suppressed when this message IS the thread parent (avoids
+  // recursion on the thread panel's top-pinned parent).
+  const threadSlot = !isThreadParentProp ? (
+    <ThreadSlot
+      activity={activity}
+      replyCount={replyCount}
+      threadHref={effectiveThreadId ? getPanelUrl(effectiveThreadId) : null}
+      summary={payload.threadSummary}
+      workspaceId={workspaceId}
+    />
+  ) : null
 
   const { toggleByEmoji } = useMessageReactions(workspaceId, payload.messageId)
   const handleAddReaction = useCallback(
