@@ -87,7 +87,6 @@ async function cleanupStaleData(): Promise<void> {
         outbox,
         outbox_listeners,
         stream_events,
-        stream_event_projections,
         stream_members,
         streams,
         workspaces,
@@ -157,6 +156,7 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_test"
   process.env.PORT = String(port)
   process.env.USE_STUB_AUTH = "true"
+  process.env.SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || "wos_session_test"
   process.env.USE_STUB_COMPANION = "true"
   process.env.USE_STUB_BOUNDARY_EXTRACTION = "true"
   process.env.USE_STUB_AI = "true"

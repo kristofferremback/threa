@@ -1,6 +1,6 @@
 import type { Server, Socket } from "socket.io"
 import crypto from "crypto"
-import { parseCookies } from "@threa/backend-common"
+import { parseCookies, SESSION_COOKIE_NAME } from "@threa/backend-common"
 import type { AuthService } from "@threa/backend-common"
 import { DEVICE_KEY_LENGTH } from "@threa/types"
 import type { StreamService } from "./features/streams"
@@ -12,8 +12,6 @@ import { UserRepository } from "./features/workspaces"
 import { HttpError } from "./lib/errors"
 import { logger } from "./lib/logger"
 import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/observability"
-
-const SESSION_COOKIE_NAME = "wos_session"
 
 /**
  * Normalize room to pattern for metrics.
