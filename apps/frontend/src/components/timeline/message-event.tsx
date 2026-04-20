@@ -379,6 +379,10 @@ function MessageLayout({
               {actions}
             </div>
           )}
+          {/* On continuations the header row is suppressed, but an active ActivityPill
+              ("Ariadne is thinking…") still needs somewhere to live so it doesn't
+              disappear the moment the trigger message joins a same-author run. */}
+          {renderAsContinuation && headerBadge && <div className="mb-0.5 flex">{headerBadge}</div>}
           {messageBody}
           {footer}
         </div>
