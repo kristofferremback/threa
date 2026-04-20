@@ -180,6 +180,33 @@ export interface StreamMember {
   joinedAt: string
 }
 
+/**
+ * Aggregate of the thread rooted at a parent message, attached to message
+ * read payloads so the timeline's thread card can render latest-reply preview
+ * + participant avatars without another round-trip. Null when the message has
+ * no thread or zero non-deleted replies.
+ *
+ * `latestReply.contentMarkdown` is raw markdown — frontend must strip via
+ * `stripMarkdownToInline()` before rendering (INV-60).
+ */
+export interface ThreadSummary {
+  lastReplyAt: string
+  /**
+   * Distinct actors (users, personas, bots) who have posted in the thread,
+   * capped at 3 (backend enforced), ordered by first reply. Includes
+   * `actorType` so the frontend can resolve persona/bot avatars — filtering
+   * to users-only would hide Ariadne and other personas from the avatar
+   * stack even though they're legitimate thread participants.
+   */
+  participants: Array<{ id: string; type: AuthorType }>
+  latestReply: {
+    messageId: string
+    actorId: string
+    actorType: AuthorType
+    contentMarkdown: string
+  }
+}
+
 export interface Message {
   id: string
   streamId: string
@@ -189,6 +216,12 @@ export interface Message {
   contentJson: ThreaDocument
   contentMarkdown: string
   replyCount: number
+  /**
+   * Aggregated thread preview. Absent when the message has no replies; omitted
+   * on write-path responses (create/edit/react) where computing it would cost a
+   * second query for no benefit. Populated on bootstrap reads.
+   */
+  threadSummary?: ThreadSummary
   sentVia: string | null
   reactions: Record<string, string[]>
   /**

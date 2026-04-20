@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import type { AuthorType, StreamType, Visibility, CompanionMode } from "@threa/types"
+import type { AuthorType, StreamType, Visibility, CompanionMode, ThreadSummary } from "@threa/types"
 import { parseArchiveStatusFilter, type ArchiveStatus } from "../../lib/sql-filters"
 
 export type { StreamType, Visibility, CompanionMode, ArchiveStatus }
@@ -24,6 +24,51 @@ interface StreamRow {
   updated_at: Date
   archived_at: Date | null
   display_name_generated_at: Date | null
+}
+
+/**
+ * Shared row shape returned by both `findThreadSummaries` (batch) and
+ * `findThreadSummaryByParentMessage` (single-parent). Both SELECT the same
+ * column set with the same aliases so `threadSummaryFromRow` can map either
+ * to a `ThreadSummary` without branching. A parity test in the integration
+ * suite asserts the two entry points return identical `ThreadSummary`
+ * objects for the same parent — drift in either query's SELECT fails it.
+ *
+ * `participant_ids` / `participant_types` are positionally aligned arrays:
+ * `participant_ids[i]` has type `participant_types[i]`. Postgres doesn't
+ * have a first-class tuple-of-records array for `ARRAY_AGG`, so we ship
+ * the two aligned arrays and zip them in `threadSummaryFromRow`.
+ */
+interface ThreadSummaryRow {
+  parent_message_id: string
+  latest_message_id: string
+  latest_author_id: string
+  latest_author_type: string
+  latest_content_markdown: string
+  last_reply_at: Date
+  participant_ids: string[]
+  participant_types: string[]
+}
+
+function threadSummaryFromRow(row: ThreadSummaryRow): ThreadSummary {
+  // Zip the aligned participant_ids / participant_types into a single
+  // structured array. Any length mismatch would indicate a query bug — they
+  // come from the same ARRAY_AGG ORDER BY in one row per parent, so in
+  // practice they always match; guard defensively.
+  const participants = row.participant_ids.map((id, i) => ({
+    id,
+    type: (row.participant_types[i] ?? "user") as AuthorType,
+  }))
+  return {
+    lastReplyAt: row.last_reply_at.toISOString(),
+    participants,
+    latestReply: {
+      messageId: row.latest_message_id,
+      actorId: row.latest_author_id,
+      actorType: row.latest_author_type as AuthorType,
+      contentMarkdown: row.latest_content_markdown,
+    },
+  }
 }
 
 export interface Stream {
@@ -731,7 +776,8 @@ export const StreamRepository = {
   /**
    * Find all threads for messages in a given parent stream, including reply counts.
    * Returns a map of parentMessageId -> { threadId, replyCount }
-   * This combines findThreadsForMessages + countMessagesByStreams in a single query.
+   * Counts only non-deleted replies so bootstrap matches the live thread-summary
+   * semantics and doesn't resurrect deleted-only threads after refresh.
    */
   async findThreadsWithReplyCounts(
     db: Querier,
@@ -741,9 +787,9 @@ export const StreamRepository = {
       SELECT
         s.parent_message_id,
         s.id,
-        COUNT(e.id)::text AS reply_count
+        COUNT(m.id)::text AS reply_count
       FROM streams s
-      LEFT JOIN stream_events e ON e.stream_id = s.id AND e.event_type = 'message_created'
+      LEFT JOIN messages m ON m.stream_id = s.id AND m.deleted_at IS NULL
       WHERE s.parent_stream_id = ${parentStreamId}
         AND s.parent_message_id IS NOT NULL
       GROUP BY s.id, s.parent_message_id
@@ -756,6 +802,137 @@ export const StreamRepository = {
       })
     }
     return map
+  },
+
+  /**
+   * For each message in `parentStreamId` that has a thread with at least one
+   * non-deleted reply, compute a ThreadSummary: last-reply timestamp, up to
+   * three distinct user participant IDs, and the latest reply's
+   * messageId/actorId/contentMarkdown.
+   *
+   * Returns a map keyed by parent message ID. Messages without replies (or
+   * with only deleted replies) are absent from the map — callers must treat
+   * absence as "no summary."
+   *
+   * Single CTE-based query (INV-56). `contentMarkdown` is emitted raw; callers
+   * rendering it in preview UI strip via `stripMarkdownToInline()` (INV-60).
+   *
+   * Shares its row shape (`ThreadSummaryRow`) and row-to-domain mapping
+   * (`threadSummaryFromRow`) with `findThreadSummaryByParentMessage` so the
+   * two entry points cannot drift on their output shape.
+   */
+  async findThreadSummaries(db: Querier, parentStreamId: string): Promise<Map<string, ThreadSummary>> {
+    const result = await db.query<ThreadSummaryRow>(sql`
+      WITH thread_messages AS (
+        SELECT
+          s.parent_message_id,
+          m.id,
+          m.sequence,
+          m.author_id,
+          m.author_type,
+          m.content_markdown,
+          m.created_at
+        FROM streams s
+        JOIN messages m ON m.stream_id = s.id
+        WHERE s.parent_stream_id = ${parentStreamId}
+          AND s.parent_message_id IS NOT NULL
+          AND m.deleted_at IS NULL
+      ),
+      latest AS (
+        SELECT DISTINCT ON (parent_message_id)
+          parent_message_id, id, author_id, author_type, content_markdown, created_at
+        FROM thread_messages
+        ORDER BY parent_message_id, sequence DESC
+      ),
+      participants_distinct AS (
+        SELECT parent_message_id, author_id, author_type, MIN(sequence) AS first_reply_sequence
+        FROM thread_messages
+        GROUP BY parent_message_id, author_id, author_type
+      ),
+      participants AS (
+        SELECT
+          parent_message_id,
+          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids,
+          (ARRAY_AGG(author_type ORDER BY first_reply_sequence))[1:3] AS author_types
+        FROM participants_distinct
+        GROUP BY parent_message_id
+      )
+      SELECT
+        l.parent_message_id,
+        l.id AS latest_message_id,
+        l.author_id AS latest_author_id,
+        l.author_type AS latest_author_type,
+        l.content_markdown AS latest_content_markdown,
+        l.created_at AS last_reply_at,
+        COALESCE(p.author_ids, ARRAY[]::TEXT[]) AS participant_ids,
+        COALESCE(p.author_types, ARRAY[]::TEXT[]) AS participant_types
+      FROM latest l
+      LEFT JOIN participants p USING (parent_message_id)
+    `)
+
+    const map = new Map<string, ThreadSummary>()
+    for (const row of result.rows) {
+      map.set(row.parent_message_id, threadSummaryFromRow(row))
+    }
+    return map
+  },
+
+  /**
+   * Compute the thread summary for a single parent message. Returns null when
+   * the parent has no non-deleted replies. Used by the real-time reply-count
+   * path so the frontend can refresh ThreadCard content without waiting for
+   * the next bootstrap.
+   *
+   * Optimized for the single-parent case (direct `parent_message_id` filter,
+   * `LIMIT 1` on the latest reply, no per-parent grouping) but produces rows
+   * shaped identically to `findThreadSummaries` so the shared
+   * `threadSummaryFromRow` mapper can construct the domain object. The parity
+   * is covered by a test that asserts both entry points return the same
+   * `ThreadSummary` for a given parent.
+   */
+  async findThreadSummaryByParentMessage(db: Querier, parentMessageId: string): Promise<ThreadSummary | null> {
+    const result = await db.query<ThreadSummaryRow>(sql`
+      WITH thread_messages AS (
+        SELECT
+          s.parent_message_id,
+          m.id,
+          m.sequence,
+          m.author_id,
+          m.author_type,
+          m.content_markdown,
+          m.created_at
+        FROM streams s
+        JOIN messages m ON m.stream_id = s.id
+        WHERE s.parent_message_id = ${parentMessageId}
+          AND m.deleted_at IS NULL
+      ),
+      participants_distinct AS (
+        SELECT author_id, author_type, MIN(sequence) AS first_reply_sequence
+        FROM thread_messages
+        GROUP BY author_id, author_type
+      ),
+      participants AS (
+        SELECT
+          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids,
+          (ARRAY_AGG(author_type ORDER BY first_reply_sequence))[1:3] AS author_types
+        FROM participants_distinct
+      )
+      SELECT
+        l.parent_message_id,
+        l.id AS latest_message_id,
+        l.author_id AS latest_author_id,
+        l.author_type AS latest_author_type,
+        l.content_markdown AS latest_content_markdown,
+        l.created_at AS last_reply_at,
+        COALESCE((SELECT author_ids FROM participants), ARRAY[]::TEXT[]) AS participant_ids,
+        COALESCE((SELECT author_types FROM participants), ARRAY[]::TEXT[]) AS participant_types
+      FROM thread_messages l
+      ORDER BY l.sequence DESC
+      LIMIT 1
+    `)
+
+    if (result.rows.length === 0) return null
+    return threadSummaryFromRow(result.rows[0])
   },
 
   /**

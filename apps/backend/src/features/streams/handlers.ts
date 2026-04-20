@@ -565,10 +565,11 @@ export function createStreamHandlers({
 
       const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      const [members, membership, threadDataMap, latestSequence, activityCounts] = await Promise.all([
+      const [members, membership, threadDataMap, threadSummaryMap, latestSequence, activityCounts] = await Promise.all([
         streamService.getMembers(streamId),
         streamService.getMembership(streamId, userId),
         streamService.getThreadsWithReplyCounts(streamId),
+        streamService.getThreadSummaries(streamId),
         eventService.getLatestSequence(streamId),
         activityService?.getUnreadCountsForStream(userId, workspaceId, streamId),
       ])
@@ -591,7 +592,7 @@ export function createStreamHandlers({
         hasOlderEvents = events.length === EVENTS_DEFAULT_LIMIT
       }
 
-      const enrichedEvents = await eventService.enrichBootstrapEvents(events, threadDataMap)
+      const enrichedEvents = await eventService.enrichBootstrapEvents(events, threadDataMap, threadSummaryMap)
       const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(
         linkPreviewService,
         workspaceId,

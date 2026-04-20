@@ -5,29 +5,29 @@ import {
   type AttachmentSummary,
   type JSONContent,
   type LinkPreviewSummary,
+  type ThreadSummary,
 } from "@threa/types"
-import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { enqueueOperation } from "@/sync/operation-queue"
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { PersonaAvatar } from "@/components/persona-avatar"
+import { ActorAvatar } from "@/components/actor-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
+import { useFormattedDate } from "@/hooks/use-formatted-date"
 import { useEditLastMessage } from "./edit-last-message-context"
 import {
   useActors,
   useWorkspaceUserId,
   useMessageReactions,
   stripColons,
-  getStepLabel,
   focusAtEnd,
   type MessageAgentActivity,
 } from "@/hooks"
-import { Quote } from "lucide-react"
+import { Quote, MessageSquareReply } from "lucide-react"
+import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -39,7 +39,7 @@ import { SaveMessageButton } from "./save-message-button"
 import { ReminderPickerSheet } from "./reminder-picker-sheet"
 import { useSavedForMessage, useSaveMessage, useDeleteSaved } from "@/hooks/use-saved"
 import { MessageActionDrawer } from "./message-action-drawer"
-import { ThreadIndicator } from "./thread-indicator"
+import { ThreadSlot } from "./thread-slot"
 import { DeleteMessageDialog } from "./delete-message-dialog"
 import { MessageEditForm } from "./message-edit-form"
 import { UnsentMessageEditForm } from "./unsent-message-edit-form"
@@ -60,6 +60,11 @@ interface MessagePayload {
   linkPreviews?: LinkPreviewSummary[]
   replyCount?: number
   threadId?: string
+  /**
+   * Aggregated latest-reply preview + participants. Populated by bootstrap
+   * enrichment for messages with ≥1 non-deleted reply. Consumed by ThreadCard.
+   */
+  threadSummary?: ThreadSummary
   sessionId?: string
   editedAt?: string
   sentVia?: string
@@ -80,6 +85,13 @@ interface MessageEventProps {
   activity?: MessageAgentActivity
   /** Defer non-critical per-message hydration until coordinated reveal completes */
   deferSecondaryHydration?: boolean
+  /**
+   * When true, render as a same-author continuation: drop the header row,
+   * show only the gutter micro-time and body. `MessageLayout` ignores this
+   * in pending/failed/editing states so those always render with a full
+   * header.
+   */
+  groupContinuation?: boolean
 }
 
 interface MessageLayoutProps {
@@ -87,19 +99,33 @@ interface MessageLayoutProps {
   payload: MessagePayload
   workspaceId: string
   actorName: string
-  actorInitials: string
   /** Persona slug for SVG icon support (e.g., "ariadne") */
-  personaSlug?: string
   /** User avatar image URL */
-  actorAvatarUrl?: string
   statusIndicator: ReactNode
+  /**
+   * Inline action buttons rendered in the header row (pending/failed/editing
+   * states). Suppressed on continuations, where the header row is collapsed.
+   * Desktop hover actions for sent messages live in `hoverActions` instead.
+   */
   actions?: ReactNode
+  /**
+   * Absolute-positioned hover toolbar for sent messages. Floated above the
+   * message row so it works identically on heads and continuations without
+   * competing with inline layout. Renderer hides on touch devices.
+   */
+  hoverActions?: ReactNode
   footer?: ReactNode
   children?: ReactNode
   containerClassName?: string
   isHighlighted?: boolean
   isNew?: boolean
   isEditing?: boolean
+  /**
+   * Render as a same-author continuation: no header row, 32px gutter column
+   * holding a compact HH:mm stamp instead of the avatar. Ignored when the
+   * layout is already in edit mode (the edit form needs its full column).
+   */
+  isGroupContinuation?: boolean
   containerRef?: React.RefObject<HTMLDivElement | null>
   deferSecondaryHydration?: boolean
   /** Touch event handlers for mobile long-press */
@@ -158,35 +184,171 @@ function MessageLinkPreviews({
   )
 }
 
+/**
+ * Per-actor-type row styling. Each entry is the single source of truth for
+ * how a message from that actor type looks: the row accent gradient + inset
+ * stripe, the author-name color, and an optional inline header badge.
+ * Adding a new actor type means adding one entry here — no scattered
+ * `isPersona && ... || isBot && ...` chains to keep in sync.
+ */
+interface ActorRowTheme {
+  /** Row-level accent gradient + inset-stripe shadow; empty string = no accent. */
+  rowAccent: string
+  /** Color class applied to the author-name element. Empty = inherit. */
+  nameClassName: string
+  /** Optional inline pill rendered in the header row after the author name. */
+  badge: ReactNode | null
+}
+
+const ACTOR_ROW_THEME: Record<NonNullable<StreamEvent["actorType"]>, ActorRowTheme> = {
+  user: {
+    rowAccent: "",
+    nameClassName: "",
+    badge: null,
+  },
+  persona: {
+    rowAccent: "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
+    nameClassName: "text-primary",
+    badge: null,
+  },
+  bot: {
+    rowAccent: "bg-gradient-to-r from-emerald-500/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
+    nameClassName: "text-emerald-600",
+    badge: <span className="text-[10px] text-emerald-600/70 font-medium cursor-default">BOT</span>,
+  },
+  system: {
+    rowAccent: "bg-gradient-to-r from-blue-500/[0.04] to-transparent shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
+    nameClassName: "text-blue-500",
+    badge: null,
+  },
+}
+
 function MessageLayout({
   event,
   payload,
   workspaceId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
   statusIndicator,
   actions,
+  hoverActions,
   footer,
   children,
   containerClassName,
   isHighlighted,
   isNew,
   isEditing,
+  isGroupContinuation,
   containerRef,
   deferSecondaryHydration,
   touchHandlers,
   swipeOffset,
   swipeLocked,
 }: MessageLayoutProps) {
-  const isPersona = event.actorType === "persona"
-  const isSystem = event.actorType === "system"
-  const isBot = event.actorType === "bot"
-  const isUser = event.actorType === "user"
+  const theme = ACTOR_ROW_THEME[event.actorType ?? "user"]
+  // Users with a resolved actorId get a clickable name that opens their
+  // profile; everything else (personas, bots, system, unknown) renders a
+  // non-interactive span with the theme's color. This is the only remaining
+  // behavioral branch — all of the styling branches live in the theme map.
+  const hasInteractiveName = event.actorType === "user" && event.actorId != null
   const { openUserProfile } = useUserProfile()
+  const { formatTime, formatFull } = useFormattedDate()
+
+  // Edit mode needs the full content column (author row + status indicator) so the
+  // edit form's buttons have somewhere coherent to sit. Force head layout even
+  // when the grouping pass marked this row as a continuation.
+  const renderAsContinuation = isGroupContinuation && !isEditing
 
   const hasSwipe = swipeOffset !== undefined && swipeOffset !== 0
+  const messageBody = children ?? (
+    <LinkPreviewProvider>
+      <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
+        <MarkdownContent
+          content={payload.contentMarkdown}
+          messageId={payload.messageId}
+          className="text-sm leading-relaxed"
+        />
+        {payload.attachments && payload.attachments.length > 0 && (
+          <AttachmentList
+            attachments={payload.attachments}
+            workspaceId={workspaceId}
+            deferHydration={deferSecondaryHydration}
+          />
+        )}
+        <MessageLinkPreviews
+          messageId={payload.messageId}
+          workspaceId={workspaceId}
+          previews={payload.linkPreviews}
+          hydrateFromApi={!deferSecondaryHydration}
+        />
+      </AttachmentProvider>
+    </LinkPreviewProvider>
+  )
+
+  const sentAt = new Date(event.createdAt)
+  const gutterLabel = formatTime(sentAt)
+  const gutterTitle = formatFull(sentAt)
+
+  // Everything that differs between head and continuation layouts is derived
+  // upfront in a single place: the leading column (avatar vs gutter time),
+  // the header row (full author/status/actions row vs nothing), the vertical
+  // padding, and the row-level a11y attributes. The JSX body below consumes
+  // these named locals so there's no scattered `renderAsContinuation ? : `
+  // checks to keep in sync when either shape changes.
+  const leadingSlot: ReactNode = renderAsContinuation ? (
+    <div
+      className={cn(
+        "message-avatar-spacer flex h-5 w-8 shrink-0 items-start justify-end pr-1",
+        "font-mono text-[10px] tabular-nums leading-5 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors"
+      )}
+      aria-label={`sent at ${gutterLabel}`}
+      title={gutterTitle}
+    >
+      {gutterLabel}
+    </div>
+  ) : (
+    <ActorAvatar
+      actorId={event.actorId}
+      actorType={event.actorType}
+      workspaceId={workspaceId}
+      size="md"
+      alt={actorName}
+      className="message-avatar"
+    />
+  )
+
+  const headerRow: ReactNode = renderAsContinuation ? null : (
+    <div className="flex items-baseline gap-2 mb-0.5">
+      {hasInteractiveName ? (
+        <button
+          type="button"
+          onClick={() => openUserProfile(event.actorId!)}
+          className="font-semibold text-sm hover:underline text-left"
+        >
+          {actorName}
+        </button>
+      ) : (
+        <span className={cn("font-semibold text-sm", theme.nameClassName)}>{actorName}</span>
+      )}
+      {theme.badge}
+      {payload.sentVia && isSentViaApi(payload.sentVia) && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
+          </TooltipTrigger>
+          <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
+        </Tooltip>
+      )}
+      {statusIndicator}
+      {actions}
+    </div>
+  )
+
+  // Row-level a11y + data attributes. Continuations collapse the visible
+  // author row, so surface the author for screen readers via the row's
+  // accessible name; heads already have a visible author label.
+  const rowAriaLabel = renderAsContinuation ? `Message from ${actorName}` : undefined
+  const rowDataGroupContinuation = renderAsContinuation ? "true" : undefined
+  const rowVerticalPadding = renderAsContinuation ? "py-0.5" : "py-3"
 
   return (
     <div
@@ -194,7 +356,15 @@ function MessageLayout({
       data-author-name={actorName}
       data-author-id={event.actorId ?? ""}
       data-actor-type={event.actorType ?? "user"}
-      className={cn("relative overflow-hidden", containerClassName)}
+      data-group-continuation={rowDataGroupContinuation}
+      // `overflow-hidden` contains the mobile swipe-to-quote translate so the
+      // message doesn't bleed out of its bounds. On desktop swipe is disabled
+      // and the hover toolbar floats above the row via `bottom-[calc(100%-20px)]`
+      // — clipping there would cut the toolbar in half (it has nowhere else to
+      // sit on tight continuations). `sm:overflow-visible` releases the clip
+      // at the desktop breakpoint.
+      className={cn("relative overflow-hidden sm:overflow-visible", containerClassName)}
+      aria-label={rowAriaLabel}
       {...touchHandlers}
     >
       {/* Swipe-to-quote reveal icon (behind the message) */}
@@ -206,101 +376,46 @@ function MessageLayout({
       <div
         className={cn(
           // Opaque background so swipe-to-quote icon shows behind the message
-          "message-item group relative flex gap-[14px] py-4 px-3 sm:px-6 bg-background",
-          // AI/Persona messages get full-width gradient with gold accent
-          isPersona && "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
-          // Bot messages get emerald accent
-          isBot && "bg-gradient-to-r from-emerald-500/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
-          // System messages get a subtle info-toned accent
-          isSystem && "bg-gradient-to-r from-blue-500/[0.04] to-transparent shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
-          // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
+          "message-item group relative flex gap-3 px-3 sm:px-6 bg-background",
+          rowVerticalPadding,
+          // Per-actor accent (gradient + inset stripe) — see ACTOR_ROW_THEME.
+          theme.rowAccent,
+          // Edit mode: pseudo-element background so no layout shift — applied
+          // only when the row doesn't already have an actor-accent gradient to
+          // avoid stacking two backgrounds.
           isEditing &&
-            !isPersona &&
-            !isBot &&
-            !isSystem &&
+            !theme.rowAccent &&
             "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:left-0 before:right-0 before:bg-primary/[0.04] before:-z-10",
           isHighlighted && "animate-highlight-flash",
           isNew && !isHighlighted && "animate-new-message-fade"
         )}
         style={hasSwipe ? { transform: `translateX(${swipeOffset}px)` } : undefined}
       >
-        {isPersona ? (
-          <PersonaAvatar slug={personaSlug} fallback={actorInitials} size="md" className="message-avatar" />
-        ) : (
-          <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
-            {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
-            <AvatarFallback
-              className={cn(
-                "text-foreground",
-                isSystem && "bg-blue-500/10 text-blue-500",
-                isBot && "bg-emerald-500/10 text-emerald-600",
-                !isSystem && !isBot && "bg-muted"
-              )}
-            >
-              {actorInitials}
-            </AvatarFallback>
-          </Avatar>
-        )}
+        {leadingSlot}
         <div className="message-content flex-1 min-w-0">
-          <div className="flex items-baseline gap-2 mb-1">
-            {isUser && event.actorId ? (
-              <button
-                type="button"
-                onClick={() => openUserProfile(event.actorId!)}
-                className={cn("font-semibold text-sm hover:underline text-left")}
-              >
-                {actorName}
-              </button>
-            ) : (
-              <span
-                className={cn(
-                  "font-semibold text-sm",
-                  isPersona && "text-primary",
-                  isBot && "text-emerald-600",
-                  isSystem && "text-blue-500"
-                )}
-              >
-                {actorName}
-              </span>
-            )}
-            {isBot && <span className="text-[10px] text-emerald-600/70 font-medium cursor-default">BOT</span>}
-            {payload.sentVia && isSentViaApi(payload.sentVia) && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="text-[10px] text-muted-foreground/70 font-medium cursor-default">via API</span>
-                </TooltipTrigger>
-                <TooltipContent>Sent on behalf of this user by an API key</TooltipContent>
-              </Tooltip>
-            )}
-            {statusIndicator}
-            {actions}
-          </div>
-          {children ?? (
-            <LinkPreviewProvider>
-              <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-                <MarkdownContent
-                  content={payload.contentMarkdown}
-                  messageId={payload.messageId}
-                  className="text-sm leading-relaxed"
-                />
-                {payload.attachments && payload.attachments.length > 0 && (
-                  <AttachmentList
-                    attachments={payload.attachments}
-                    workspaceId={workspaceId}
-                    deferHydration={deferSecondaryHydration}
-                  />
-                )}
-                <MessageLinkPreviews
-                  messageId={payload.messageId}
-                  workspaceId={workspaceId}
-                  previews={payload.linkPreviews}
-                  hydrateFromApi={!deferSecondaryHydration}
-                />
-              </AttachmentProvider>
-            </LinkPreviewProvider>
-          )}
+          {headerRow}
+          {messageBody}
           {footer}
         </div>
+        {hoverActions && (
+          <div
+            className={cn(
+              // Floats at the top of the row so hover interactions on heads and
+              // continuations share the same toolbar. The 20px upward overlap keeps
+              // the toolbar readable on py-0.5 continuations without pushing past
+              // the viewport — on heads (py-3) it sits just above the header row.
+              "pointer-events-none absolute right-4 z-10 hidden sm:block",
+              "bottom-[calc(100%-20px)] opacity-0 group-hover:pointer-events-auto group-hover:opacity-100",
+              "has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100",
+              "transition-opacity",
+              isEditing && "pointer-events-none opacity-0"
+            )}
+          >
+            <div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-popover/95 px-1 py-1 shadow-md backdrop-blur-sm">
+              {hoverActions}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -312,14 +427,20 @@ interface MessageEventInnerProps {
   workspaceId: string
   streamId: string
   actorName: string
-  actorInitials: string
-  personaSlug?: string
-  actorAvatarUrl?: string
   isThreadParent?: boolean
   isHighlighted?: boolean
   isNew?: boolean
   activity?: MessageAgentActivity
   deferSecondaryHydration?: boolean
+  /**
+   * See MessageEventProps.groupContinuation. Honored by SentMessageEvent and
+   * PendingMessageEvent so the optimistic → confirmed transition on send
+   * doesn't flip a mid-run message from head to continuation. Ignored by
+   * FailedMessageEvent (keeps the "Failed to send" status + Retry/Edit/Delete
+   * inline actions visible) and EditingMessageEvent (the edit form needs the
+   * full content column).
+   */
+  groupContinuation?: boolean
 }
 
 function SentMessageEvent({
@@ -328,14 +449,12 @@ function SentMessageEvent({
   workspaceId,
   streamId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
   isThreadParent: isThreadParentProp,
   isHighlighted,
   isNew,
   activity,
   deferSecondaryHydration,
+  groupContinuation,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const messageService = useMessageService()
@@ -417,58 +536,25 @@ function SentMessageEvent({
   const draftPanelId = createDraftPanelId(streamId, payload.messageId)
   const draftPanelUrl = getPanelUrl(draftPanelId)
 
-  // Activity label for inline display in the footer
-  const activityLabel = activity
-    ? `${activity.personaName} is ${getStepLabel(activity.currentStepType).toLowerCase()}`
-    : null
-
-  // Thread link or "Reply in thread" text (hidden when hideActions is true)
-  // Shows on hover when no thread exists yet, or always when thread exists
-  // When agent activity is present, the activity text is always visible on the same line
-  // When activity.threadStreamId is present, use it for the thread link (allows immediate
-  // navigation to the real thread before the slower stream:created event updates threadId)
+  // Thread card shown below the message body when a thread exists with replies.
+  // Users without a thread start one via the hover toolbar or context menu —
+  // the old always-visible "Reply in thread" footer link has been removed.
+  // `activity.threadStreamId` lets us link to the real thread immediately when
+  // an agent response is in flight, before the slower stream:created event.
   const effectiveThreadId = threadId ?? activity?.threadStreamId
-  let replyLink = (
-    <Link
-      to={draftPanelUrl}
-      className={cn(
-        "text-muted-foreground hover:text-foreground hover:underline transition-opacity",
-        !activityLabel && "opacity-0 group-hover:opacity-100"
-      )}
-    >
-      Reply in thread
-    </Link>
-  )
-
-  if (effectiveThreadId) {
-    replyLink =
-      replyCount > 0 ? (
-        <ThreadIndicator replyCount={replyCount} href={getPanelUrl(effectiveThreadId)} />
-      ) : (
-        <Link
-          to={getPanelUrl(effectiveThreadId)}
-          className="text-muted-foreground hover:text-foreground hover:underline"
-        >
-          Reply in thread
-        </Link>
-      )
-  }
-
-  const threadFooter = !isThreadParentProp ? (
-    <div className="mt-1 flex items-center gap-1.5 text-xs">
-      {replyLink}
-      {activityLabel && (
-        <>
-          <span className="text-muted-foreground/40">·</span>
-          <Link
-            to={getTraceUrl(activity!.sessionId)}
-            className="text-muted-foreground hover:text-foreground hover:underline"
-          >
-            {activityLabel}
-          </Link>
-        </>
-      )}
-    </div>
+  // Unified thread-slot: owns the gold left-line across pill → card so the
+  // transition reads as a single thread extending downward, with a CSS
+  // grow-in on first appearance and a grid-rows extension when the card
+  // takes over. Suppressed when this message IS the thread parent (avoids
+  // recursion on the thread panel's top-pinned parent).
+  const threadSlot = !isThreadParentProp ? (
+    <ThreadSlot
+      activity={activity}
+      replyCount={replyCount}
+      threadHref={effectiveThreadId ? getPanelUrl(effectiveThreadId) : null}
+      summary={payload.threadSummary}
+      workspaceId={workspaceId}
+    />
   ) : null
 
   const { toggleByEmoji } = useMessageReactions(workspaceId, payload.messageId)
@@ -630,9 +716,6 @@ function SentMessageEvent({
         payload={payload}
         workspaceId={workspaceId}
         actorName={actorName}
-        actorInitials={actorInitials}
-        personaSlug={personaSlug}
-        actorAvatarUrl={actorAvatarUrl}
         statusIndicator={
           <>
             <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
@@ -643,14 +726,11 @@ function SentMessageEvent({
           </>
         }
         isEditing={isEditing && !isMobile}
-        actions={
-          // Desktop: hover-reveal dropdown menu. Mobile: hidden (long-press opens drawer instead).
-          <div
-            className={cn(
-              "opacity-0 group-hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity ml-auto hidden sm:flex items-center gap-1",
-              isEditing && "!opacity-0 pointer-events-none"
-            )}
-          >
+        isGroupContinuation={groupContinuation}
+        hoverActions={
+          // Desktop-only hover toolbar floated above the row. Mobile users reach
+          // these actions via the long-press drawer (MessageActionDrawer).
+          <>
             <ReactionEmojiPicker
               workspaceId={workspaceId}
               onSelect={handleAddReaction}
@@ -661,9 +741,9 @@ function SentMessageEvent({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
-                    className="h-6 w-6 shadow-sm hover:border-primary/30 text-muted-foreground shrink-0"
+                    className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
                     aria-label="Quote reply"
                     onClick={actionContext.onQuoteReply}
                   >
@@ -673,8 +753,29 @@ function SentMessageEvent({
                 <TooltipContent>Quote reply</TooltipContent>
               </Tooltip>
             )}
+            {/* Reply-in-thread sits adjacent to the overflow menu so it mirrors
+                the top entry of the expanded context menu — the two thread
+                actions read as one visual neighborhood. Kept visible even when
+                the thread panel is already open (clicking is a harmless re-nav
+                to the same panel) so the toolbar never shuffles buttons in and
+                out as the user opens/closes the thread. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
+                >
+                  <Link to={actionContext.replyUrl} aria-label="Reply in thread">
+                    <MessageSquareReply className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Reply in thread</TooltipContent>
+            </Tooltip>
             <MessageContextMenu context={actionContext} />
-          </div>
+          </>
         }
         footer={
           isEditing && !isMobile ? undefined : (
@@ -687,7 +788,7 @@ function SentMessageEvent({
                   currentUserId={currentUserId}
                 />
               )}
-              {threadFooter}
+              {threadSlot}
             </>
           )
         }
@@ -808,11 +909,8 @@ function PendingMessageEvent({
   payload,
   workspaceId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
-  isThreadParent,
   deferSecondaryHydration,
+  groupContinuation,
 }: MessageEventInnerProps) {
   const { markEditing, deleteMessage } = usePendingMessages()
   const isMobile = useIsMobile()
@@ -827,10 +925,8 @@ function PendingMessageEvent({
         payload={payload}
         workspaceId={workspaceId}
         actorName={actorName}
-        actorInitials={actorInitials}
-        personaSlug={personaSlug}
-        actorAvatarUrl={actorAvatarUrl}
         deferSecondaryHydration={deferSecondaryHydration}
+        isGroupContinuation={groupContinuation}
         containerClassName={cn(
           "opacity-60",
           isMobile && "select-none",
@@ -855,15 +951,7 @@ function PendingMessageEvent({
             </Button>
           </div>
         }
-        footer={
-          !isThreadParent ? (
-            <div className="mt-1 flex items-center gap-1.5 text-xs">
-              <span className="opacity-0" aria-hidden="true">
-                Reply in thread
-              </span>
-            </div>
-          ) : null
-        }
+        footer={null}
       />
       {isMobile && (
         <UnsentMessageActionDrawer
@@ -884,10 +972,6 @@ function FailedMessageEvent({
   payload,
   workspaceId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
-  isThreadParent,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { retryMessage, markEditing, deleteMessage } = usePendingMessages()
@@ -903,9 +987,6 @@ function FailedMessageEvent({
         payload={payload}
         workspaceId={workspaceId}
         actorName={actorName}
-        actorInitials={actorInitials}
-        personaSlug={personaSlug}
-        actorAvatarUrl={actorAvatarUrl}
         deferSecondaryHydration={deferSecondaryHydration}
         containerClassName={cn(
           "border-l-2 border-destructive pl-2",
@@ -932,15 +1013,7 @@ function FailedMessageEvent({
             </Button>
           </div>
         }
-        footer={
-          !isThreadParent ? (
-            <div className="mt-1 flex items-center gap-1.5 text-xs">
-              <span className="opacity-0" aria-hidden="true">
-                Reply in thread
-              </span>
-            </div>
-          ) : null
-        }
+        footer={null}
       />
       {isMobile && (
         <UnsentMessageActionDrawer
@@ -962,9 +1035,6 @@ function EditingMessageEvent({
   payload,
   workspaceId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const isMobile = useIsMobile()
@@ -983,9 +1053,6 @@ function EditingMessageEvent({
         payload={payload}
         workspaceId={workspaceId}
         actorName={actorName}
-        actorInitials={actorInitials}
-        personaSlug={personaSlug}
-        actorAvatarUrl={actorAvatarUrl}
         deferSecondaryHydration={deferSecondaryHydration}
         isEditing={!isMobile}
         containerRef={containerRef}
@@ -1016,18 +1083,14 @@ export function MessageEvent({
   isNew,
   activity,
   deferSecondaryHydration = false,
+  groupContinuation = false,
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
-  const { getActorName, getActorAvatar } = useActors(workspaceId)
+  const { getActorName } = useActors(workspaceId)
   const status = getStatus(event.id)
 
   const actorName = getActorName(event.actorId, event.actorType)
-  const {
-    fallback: actorInitials,
-    slug: personaSlug,
-    avatarUrl: actorAvatarUrl,
-  } = getActorAvatar(event.actorId, event.actorType)
 
   switch (status) {
     case "pending":
@@ -1038,11 +1101,9 @@ export function MessageEvent({
           workspaceId={workspaceId}
           streamId={streamId}
           actorName={actorName}
-          actorInitials={actorInitials}
-          personaSlug={personaSlug}
-          actorAvatarUrl={actorAvatarUrl}
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
+          groupContinuation={groupContinuation}
         />
       )
     case "failed":
@@ -1053,9 +1114,6 @@ export function MessageEvent({
           workspaceId={workspaceId}
           streamId={streamId}
           actorName={actorName}
-          actorInitials={actorInitials}
-          personaSlug={personaSlug}
-          actorAvatarUrl={actorAvatarUrl}
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
         />
@@ -1068,9 +1126,6 @@ export function MessageEvent({
           workspaceId={workspaceId}
           streamId={streamId}
           actorName={actorName}
-          actorInitials={actorInitials}
-          personaSlug={personaSlug}
-          actorAvatarUrl={actorAvatarUrl}
           deferSecondaryHydration={deferSecondaryHydration}
         />
       )
@@ -1082,14 +1137,12 @@ export function MessageEvent({
           workspaceId={workspaceId}
           streamId={streamId}
           actorName={actorName}
-          actorInitials={actorInitials}
-          personaSlug={personaSlug}
-          actorAvatarUrl={actorAvatarUrl}
           isThreadParent={isThreadParent}
           isHighlighted={isHighlighted}
           isNew={isNew}
           activity={activity}
           deferSecondaryHydration={deferSecondaryHydration}
+          groupContinuation={groupContinuation}
         />
       )
   }

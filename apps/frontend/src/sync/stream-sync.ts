@@ -6,6 +6,7 @@ import {
   type StreamBootstrap,
   type LastMessagePreview,
   type LinkPreviewSummary,
+  type ThreadSummary,
   type WorkspaceBootstrap,
 } from "@threa/types"
 import type { Socket } from "socket.io-client"
@@ -249,6 +250,12 @@ interface MessageUpdatedPayload {
   updateType: "reply_count" | "content"
   replyCount?: number
   contentMarkdown?: string
+  /**
+   * For reply_count updates, the backend recomputes the thread summary and
+   * sends it alongside so ThreadCard can refresh its preview/participants
+   * without waiting for the next bootstrap. `null` = last reply was deleted.
+   */
+  threadSummary?: ThreadSummary | null
 }
 
 interface CommandEventPayload {
@@ -485,7 +492,15 @@ export function registerStreamSocketHandlers(
     if (payload.streamId !== streamId) return
     await updateMessageEvent(streamId, payload.messageId, (p) => {
       if (payload.updateType === "reply_count" && payload.replyCount !== undefined) {
-        return { ...p, replyCount: payload.replyCount }
+        // threadSummary is only present when the backend recomputed one; leave
+        // the previous value untouched if the field is absent (older servers).
+        // `null` is a meaningful value (last reply was deleted) so we only
+        // skip the patch when the field is `undefined`.
+        const next: Record<string, unknown> = { ...p, replyCount: payload.replyCount }
+        if (payload.threadSummary !== undefined) {
+          next.threadSummary = payload.threadSummary
+        }
+        return next
       }
       if (payload.updateType === "content" && payload.contentMarkdown !== undefined) {
         return { ...p, contentMarkdown: payload.contentMarkdown }

@@ -165,6 +165,7 @@ export type {
   StreamWithPreview,
   StreamMember,
   Message,
+  ThreadSummary,
   MessageVersion,
   StreamEvent,
   Persona,

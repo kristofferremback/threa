@@ -18,6 +18,7 @@ import {
   type EventType,
   type SourceItem,
   type JSONContent,
+  type ThreadSummary,
 } from "@threa/types"
 
 // Event payloads
@@ -42,6 +43,12 @@ export interface MessageCreatedPayload {
   sentVia?: string
   /** External references attached by the sender (string->string). Omitted when empty. */
   metadata?: Record<string, string>
+  /**
+   * Populated at bootstrap enrichment time when this message has at least one
+   * non-deleted reply. Not present on initial `message_created` emission (the
+   * outbox path carries no replies yet).
+   */
+  threadSummary?: ThreadSummary
 }
 
 export interface MessageEditedPayload {
@@ -128,6 +135,30 @@ class DuplicateMessageError extends Error {
 
 export class EventService {
   constructor(private pool: Pool) {}
+
+  private async publishParentThreadUpdate(
+    client: PoolClient,
+    params: {
+      workspaceId: string
+      parentStreamId: string | null
+      parentMessageId: string | null
+    }
+  ): Promise<void> {
+    if (!params.parentStreamId || !params.parentMessageId) return
+
+    const parentMessage = await MessageRepository.findById(client, params.parentMessageId)
+    if (!parentMessage) return
+
+    const threadSummary = await StreamRepository.findThreadSummaryByParentMessage(client, params.parentMessageId)
+    await OutboxRepository.insert(client, "message:updated", {
+      workspaceId: params.workspaceId,
+      streamId: params.parentStreamId,
+      messageId: params.parentMessageId,
+      updateType: "reply_count",
+      replyCount: parentMessage.replyCount,
+      threadSummary,
+    })
+  }
 
   private async resolveActorType(
     client: PoolClient,
@@ -311,19 +342,11 @@ export class EventService {
       // 9. If this is a thread, update parent message's reply count
       if (stream?.parentMessageId && stream?.parentStreamId) {
         await MessageRepository.incrementReplyCount(client, stream.parentMessageId)
-
-        // Get updated count for the event
-        const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
-        if (parentMessage) {
-          // Emit to PARENT stream's room (not this thread's room)
-          await OutboxRepository.insert(client, "message:updated", {
-            workspaceId: params.workspaceId,
-            streamId: stream.parentStreamId,
-            messageId: stream.parentMessageId,
-            updateType: "reply_count",
-            replyCount: parentMessage.replyCount,
-          })
-        }
+        await this.publishParentThreadUpdate(client, {
+          workspaceId: params.workspaceId,
+          parentStreamId: stream.parentStreamId,
+          parentMessageId: stream.parentMessageId,
+        })
       }
 
       return message
@@ -379,6 +402,15 @@ export class EventService {
           streamId: params.streamId,
           event: serializeBigInt(event),
         })
+
+        const stream = await StreamRepository.findById(client, params.streamId)
+        if (stream?.parentMessageId && stream.parentStreamId) {
+          await this.publishParentThreadUpdate(client, {
+            workspaceId: params.workspaceId,
+            parentStreamId: stream.parentStreamId,
+            parentMessageId: stream.parentMessageId,
+          })
+        }
       }
 
       return message
@@ -420,19 +452,11 @@ export class EventService {
         const stream = await StreamRepository.findById(client, params.streamId)
         if (stream?.parentMessageId && stream?.parentStreamId) {
           await MessageRepository.decrementReplyCount(client, stream.parentMessageId)
-
-          // Get updated count for the event
-          const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
-          if (parentMessage) {
-            // Emit to PARENT stream's room (not this thread's room)
-            await OutboxRepository.insert(client, "message:updated", {
-              workspaceId: params.workspaceId,
-              streamId: stream.parentStreamId,
-              messageId: stream.parentMessageId,
-              updateType: "reply_count",
-              replyCount: parentMessage.replyCount,
-            })
-          }
+          await this.publishParentThreadUpdate(client, {
+            workspaceId: params.workspaceId,
+            parentStreamId: stream.parentStreamId,
+            parentMessageId: stream.parentMessageId,
+          })
         }
       }
 
@@ -604,12 +628,14 @@ export class EventService {
    *
    * Filters out operational events (message_edited, message_deleted) that are
    * redundant after enrichment, then injects editedAt/deletedAt/contentJson/contentMarkdown
-   * from the messages projection and threadId/replyCount from the thread data map into
-   * each message_created event's payload.
+   * from the messages projection, threadId/replyCount from the thread data map,
+   * and threadSummary (latest-reply preview + participants) into each
+   * message_created event's payload.
    */
   async enrichBootstrapEvents(
     events: StreamEvent[],
-    threadDataMap: Map<string, { threadId: string; replyCount: number }>
+    threadDataMap: Map<string, { threadId: string; replyCount: number }>,
+    threadSummaryMap: Map<string, ThreadSummary> = new Map()
   ): Promise<StreamEvent[]> {
     const messageCreatedEvents = events.filter((e) => e.eventType === "message_created")
     const messageIds = messageCreatedEvents.map((e) => (e.payload as MessageCreatedPayload).messageId)
@@ -649,6 +675,10 @@ export class EventService {
         if (threadData) {
           enrichments.threadId = threadData.threadId
           enrichments.replyCount = threadData.replyCount
+        }
+        const threadSummary = threadSummaryMap.get(payload.messageId)
+        if (threadSummary) {
+          enrichments.threadSummary = threadSummary
         }
         if (message?.deletedAt) {
           enrichments.deletedAt = message.deletedAt.toISOString()

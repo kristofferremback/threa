@@ -73,6 +73,16 @@ describe("EventService.editMessage version capture", () => {
       callback({})) as any)
     findByIdForUpdateSpy = spyOn(MessageRepository, "findByIdForUpdate").mockResolvedValue(existingMessage as any)
     spyOn(MessageRepository, "findById").mockResolvedValue(existingMessage as any)
+    // editMessage now looks up the stream post-edit to decide whether to
+    // publish a thread-summary update to the parent (for reply edits). Default
+    // to a non-thread stream so the publishParentThreadUpdate branch short-
+    // circuits — tests that care about the thread path can override per case.
+    spyOn(StreamRepository, "findById").mockResolvedValue({
+      id: "stream_1",
+      type: "scratchpad",
+      parentStreamId: null,
+      parentMessageId: null,
+    } as any)
     isMemberSpy = spyOn(StreamMemberRepository, "isMember").mockResolvedValue(true)
     hasParticipatedSpy = spyOn(StreamPersonaParticipantRepository, "hasParticipated").mockResolvedValue(false)
     spyOn(MessageVersionRepository, "insert").mockResolvedValue({

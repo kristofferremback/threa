@@ -104,10 +104,14 @@ export function createDatabasePools(connectionString: string): DatabasePools {
   // Main pool for transactional work
   const main = createDatabasePool(connectionString, { max: Number(process.env.DATABASE_POOL_MAX) || 30 })
 
-  // Listen pool for long-held NOTIFY/LISTEN connections
-  // Size: 9 listeners + headroom for reconnection overlap
+  // Listen pool for long-held NOTIFY/LISTEN connections.
+  // Default 12 = 9 outbox listeners + 3 headroom for reconnection overlap.
+  // Env-configurable via DATABASE_LISTEN_POOL_MAX so shared-DB environments
+  // (PR-preview deploys hitting the same Postgres as main staging) can shrink
+  // per-instance footprint. Values below 9 will starve outbox listeners — pick
+  // a value that matches the listener count in use.
   const listen = createDatabasePool(connectionString, {
-    max: 12,
+    max: Number(process.env.DATABASE_LISTEN_POOL_MAX) || 12,
     // LISTEN connections are held indefinitely - longer idle timeout
     idleTimeoutMillis: 60000,
   })

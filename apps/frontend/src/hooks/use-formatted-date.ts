@@ -25,9 +25,11 @@ export function useFormattedDate() {
 
       /**
        * Format a date relative to now using user time preferences.
-       * @returns Relative time string (e.g., "yesterday 14:30", "Monday 2:30 PM")
+       * Verbose (default): "yesterday 14:30", "Monday 2:30 PM" — includes time.
+       * Terse: "now", "2m ago", "5h ago", "yesterday" — compact, no time.
        */
-      formatRelative: (date: Date, now?: Date) => formatRelativeTime(date, now, preferences ?? undefined),
+      formatRelative: (date: Date, now?: Date, options?: { terse?: boolean }) =>
+        formatRelativeTime(date, now, preferences ?? undefined, options),
 
       /**
        * Format a full date-time for tooltips using user preferences.

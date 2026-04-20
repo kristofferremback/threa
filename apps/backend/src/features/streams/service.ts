@@ -25,6 +25,7 @@ import {
   type Visibility,
   type CompanionMode,
   type NotificationLevel,
+  type ThreadSummary,
 } from "@threa/types"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../../lib/schemas"
 import { isAllowedLevel } from "./notification-config"
@@ -977,5 +978,20 @@ export class StreamService {
    */
   async getThreadsWithReplyCounts(streamId: string): Promise<Map<string, { threadId: string; replyCount: number }>> {
     return StreamRepository.findThreadsWithReplyCounts(this.pool, streamId)
+  }
+
+  /**
+   * Get a map of parent messageId -> ThreadSummary for all messages in a stream
+   * whose thread has at least one non-deleted reply. See
+   * {@link StreamRepository.findThreadSummaries}.
+   *
+   * The single-parent counterpart (`findThreadSummaryByParentMessage`) is
+   * called directly from `event-service.ts` inside the reply-count-update
+   * transaction; wrapping it in a service method would force that caller to
+   * either break out of its existing `client` transaction or duplicate the
+   * pool accessor, so it stays as a repository call.
+   */
+  async getThreadSummaries(streamId: string): Promise<Map<string, ThreadSummary>> {
+    return StreamRepository.findThreadSummaries(this.pool, streamId)
   }
 }

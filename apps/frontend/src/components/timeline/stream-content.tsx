@@ -43,6 +43,7 @@ import {
   EventList,
   TimelineItemContent,
   groupTimelineItems,
+  annotateAuthorGroups,
   getTimelineItemKey,
   filterVisibleItems,
   type TimelineItem,
@@ -235,12 +236,16 @@ export function StreamContent({
     clearSearch()
   }, [clearSearch])
 
-  // Compute timeline items in StreamContent so the virtualizer can use count + keys
-  const timelineItems = useMemo(() => groupTimelineItems(events, user?.id), [events, user?.id])
+  // Compute timeline items in StreamContent so the virtualizer can use count + keys.
+  // After grouping commands/sessions, annotate consecutive same-author message runs
+  // with `groupContinuation` so MessageEvent can collapse the repeated header row.
+  const timelineItems = useMemo(() => annotateAuthorGroups(groupTimelineItems(events, user?.id)), [events, user?.id])
 
-  // For drafts with pending events, compute timeline items from those events
+  // For drafts with pending events, compute timeline items from those events. Drafts
+  // are a single-author transcript already, but running the same pipeline keeps the
+  // rendering branch identical whether an event is committed or pending.
   const draftTimelineItems = useMemo(
-    () => (hasDraftPendingEvents ? groupTimelineItems(draftPendingEvents!, user?.id) : []),
+    () => (hasDraftPendingEvents ? annotateAuthorGroups(groupTimelineItems(draftPendingEvents!, user?.id)) : []),
     [hasDraftPendingEvents, draftPendingEvents, user?.id]
   )
 

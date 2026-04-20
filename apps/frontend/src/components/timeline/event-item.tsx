@@ -18,6 +18,13 @@ interface EventItemProps {
   isNew?: boolean
   /** Defer non-critical per-message hydration until coordinated reveal completes */
   deferSecondaryHydration?: boolean
+  /**
+   * True when this event is a continuation of a same-author run (messages 2..N
+   * within 5 min). Message renderer collapses the header row and shows only a
+   * gutter time stamp. Runtime state (pending/failed/editing) may still force
+   * a full header in MessageEvent regardless.
+   */
+  groupContinuation?: boolean
 }
 
 export function EventItem({
@@ -29,6 +36,7 @@ export function EventItem({
   agentActivity,
   isNew,
   deferSecondaryHydration = false,
+  groupContinuation = false,
 }: EventItemProps) {
   // Check if this event's message should be highlighted
   const messageId = (event.payload as { messageId?: string })?.messageId
@@ -56,6 +64,7 @@ export function EventItem({
             isNew={isNew}
             activity={messageId ? agentActivity?.get(messageId) : undefined}
             deferSecondaryHydration={deferSecondaryHydration}
+            groupContinuation={groupContinuation}
           />
         </div>
       )
