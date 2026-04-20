@@ -32,18 +32,26 @@ function makeActivity(overrides: Partial<MessageAgentActivity> = {}): MessageAge
 }
 
 describe("ActivityPill", () => {
-  it("renders the persona name and the step-derived label", () => {
+  it("renders the persona name and the step-derived label with exactly one ellipsis", () => {
     render(<ActivityPill activity={makeActivity()} />)
     expect(screen.getByText("Ariadne")).toBeInTheDocument()
-    // `getStepLabel` mock returns "Step-<type>", lowercased by the pill.
+    // `getStepLabel` mock returns "Step-<type>", lowercased by the pill and
+    // normalized to end with a single Unicode ellipsis (`…`, not `...…`).
     expect(screen.getByText(/is step-workspace_search…$/)).toBeInTheDocument()
+    expect(screen.queryByText(/\.\.\.…/)).toBeNull()
   })
 
   it("prefers substep text over the step label when present", () => {
     render(<ActivityPill activity={makeActivity({ substep: "reading knowledge base" })} />)
-    expect(screen.getByText("reading knowledge base")).toBeInTheDocument()
+    expect(screen.getByText("reading knowledge base…")).toBeInTheDocument()
     // Step-derived label should not also appear.
     expect(screen.queryByText(/is step-/)).toBeNull()
+  })
+
+  it("collapses duplicate trailing ellipses on substep input", () => {
+    render(<ActivityPill activity={makeActivity({ substep: "evaluating results..." })} />)
+    expect(screen.getByText("evaluating results…")).toBeInTheDocument()
+    expect(screen.queryByText(/\.\.\.…/)).toBeNull()
   })
 
   it("links to the trace URL for the session", () => {

@@ -15,10 +15,23 @@ interface ActivityPillProps {
  * it survives the message-grouping collapse (continuations don't render a
  * header, but the head's pill stays visible for the whole run).
  */
+/**
+ * Normalize a label so it ends with exactly one ellipsis, regardless of
+ * whether the upstream source (step-config or backend substep) already
+ * terminates with ASCII `...`, Unicode `…`, or nothing. Without this the
+ * pill double-stacks ellipses into "thinking...…" (three dots + one) when
+ * the step-config labels already carry trailing `...`.
+ */
+function withTrailingEllipsis(text: string): string {
+  return text.replace(/[.…\s]+$/u, "") + "…"
+}
+
 export function ActivityPill({ activity, className }: ActivityPillProps) {
   const { getTraceUrl } = useTrace()
 
-  const label = activity.substep ?? `is ${getStepLabel(activity.currentStepType).toLowerCase()}…`
+  const label = activity.substep
+    ? withTrailingEllipsis(activity.substep)
+    : `is ${withTrailingEllipsis(getStepLabel(activity.currentStepType).toLowerCase())}`
 
   return (
     <Link
