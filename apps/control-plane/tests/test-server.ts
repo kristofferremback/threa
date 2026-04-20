@@ -90,6 +90,7 @@ export async function startTestServer(): Promise<TestServer> {
     process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_control_plane_test"
   process.env.PORT = String(port)
   process.env.USE_STUB_AUTH = "true"
+  process.env.SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || "wos_session_test"
   process.env.INTERNAL_API_KEY = internalApiKey
   process.env.REGIONS = JSON.stringify({ local: { internalUrl: mockRegionalBackend.url } })
   process.env.CORS_ALLOWED_ORIGINS = `http://localhost:${port}`

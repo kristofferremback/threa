@@ -136,7 +136,7 @@ WebSocket connections bypass the router entirely. The frontend fetches `/api/wor
 3. On cache miss: call control plane at `GET /internal/workspaces/:id/region`, cache result in KV
 4. Proxy the request to the resolved region's backend URL
 
-**Auth forwarding:** Passes through the browser's `Cookie` header (session cookie `wos_session`) and all standard headers. The downstream service validates the session.
+**Auth forwarding:** Passes through the browser's `Cookie` header (WorkOS session cookie, name per env: `wos_session` in prod, `wos_session_staging` in staging) and all standard headers. The downstream service validates the session.
 
 **Inter-service auth:** Uses `INTERNAL_API_KEY` in a custom header (`X-Internal-API-Key`) when calling the control plane's internal endpoints.
 
@@ -263,17 +263,17 @@ WebSocket connections bypass the router entirely. The frontend fetches `/api/wor
 
 ## Inter-Service Authentication
 
-Services authenticate to each other using a shared `INTERNAL_API_KEY` sent in the `X-Internal-API-Key` header. User-facing auth uses WorkOS session cookies (`wos_session`) set on `.threa.io` so they're valid across subdomains.
+Services authenticate to each other using a shared `INTERNAL_API_KEY` sent in the `X-Internal-API-Key` header. User-facing auth uses WorkOS session cookies set on `.threa.io` so they're valid across subdomains. The cookie name is env-driven via `SESSION_COOKIE_NAME` (`wos_session` in prod, `wos_session_staging` in staging) so prod and staging sessions don't collide on the shared parent domain.
 
 ```
-Browser -> Workspace Router:    Cookie (wos_session)
-Browser -> Backoffice Router:   Cookie (wos_session)
+Browser -> Workspace Router:    Cookie (session cookie, name per env)
+Browser -> Backoffice Router:   Cookie (session cookie, name per env)
 Workspace Router -> Control Plane:   Cookie passthrough + INTERNAL_API_KEY (for /internal/*)
 Workspace Router -> Backend:         Cookie passthrough
 Backoffice Router -> Control Plane:  Cookie passthrough + X-Forwarded-Host (for per-host WorkOS redirect)
 Control Plane -> Backend:            INTERNAL_API_KEY
 Backend -> Control Plane:            INTERNAL_API_KEY
-Browser -> Backend (WebSocket):      Cookie (wos_session)
+Browser -> Backend (WebSocket):      Cookie (session cookie, name per env)
 ```
 
 ---
