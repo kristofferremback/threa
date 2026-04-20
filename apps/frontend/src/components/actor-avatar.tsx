@@ -1,0 +1,68 @@
+import type { AuthorType } from "@threa/types"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { PersonaAvatar } from "@/components/persona-avatar"
+import { useActors } from "@/hooks"
+import { cn } from "@/lib/utils"
+
+type ActorAvatarSize = "xs" | "sm" | "md" | "lg"
+
+/**
+ * Size tokens — pixel-perfect so all actor renderings stay visually
+ * consistent across the app. `persona` delegates to PersonaAvatar's own
+ * size config; we just pass the matching token through.
+ */
+const SIZE_CLASSES: Record<ActorAvatarSize, string> = {
+  xs: "h-5 w-5 rounded-[5px]",
+  sm: "h-7 w-7 rounded-[6px]",
+  md: "h-8 w-8 rounded-[8px]",
+  lg: "h-9 w-9 rounded-[10px]",
+}
+
+const FALLBACK_TEXT_CLASSES: Record<ActorAvatarSize, string> = {
+  xs: "text-[9px] font-medium",
+  sm: "text-xs font-medium",
+  md: "text-sm font-medium",
+  lg: "text-base font-medium",
+}
+
+interface ActorAvatarProps {
+  actorId: string | null
+  actorType: AuthorType | null
+  workspaceId: string
+  size?: ActorAvatarSize
+  className?: string
+  /** alt text for AvatarImage — defaults to "" (decorative). */
+  alt?: string
+}
+
+/**
+ * Single entry point for rendering any actor's avatar — users, personas,
+ * bots, and system events — so every surface stays visually consistent
+ * without reimplementing the `if persona ? PersonaAvatar : Avatar`
+ * branching in each callsite.
+ *
+ * - **Persona**: delegates to `<PersonaAvatar>` which handles Ariadne's
+ *   SVG icon + gold inset border.
+ * - **Bot**: image when available, emerald-tinted fallback otherwise.
+ * - **System**: always fallback with blue tint (no image).
+ * - **User**: image when available, muted fallback with initials.
+ */
+export function ActorAvatar({ actorId, actorType, workspaceId, size = "md", className, alt = "" }: ActorAvatarProps) {
+  const { getActorAvatar } = useActors(workspaceId)
+  const info = getActorAvatar(actorId, actorType)
+
+  if (actorType === "persona") {
+    return <PersonaAvatar slug={info.slug} fallback={info.fallback} size={size} className={className} />
+  }
+
+  let fallbackTint = "bg-muted text-foreground"
+  if (actorType === "bot") fallbackTint = "bg-emerald-500/10 text-emerald-600"
+  else if (actorType === "system") fallbackTint = "bg-blue-500/10 text-blue-500"
+
+  return (
+    <Avatar className={cn(SIZE_CLASSES[size], "shrink-0", className)}>
+      {info.avatarUrl && <AvatarImage src={info.avatarUrl} alt={alt} />}
+      <AvatarFallback className={cn(fallbackTint, FALLBACK_TEXT_CLASSES[size])}>{info.fallback}</AvatarFallback>
+    </Avatar>
+  )
+}

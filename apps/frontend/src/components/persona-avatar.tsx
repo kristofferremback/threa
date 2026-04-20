@@ -16,13 +16,16 @@ const SIZE_CONFIG: Record<AvatarSize, { avatar: string; icon: "xs" | "sm" | "md"
   },
   sm: { avatar: "h-7 w-7", icon: "xs", text: "text-xs", border: "shadow-[inset_0_0_0_1px_hsl(var(--primary))]" },
   md: {
-    avatar: "h-9 w-9 rounded-[10px]",
+    // Matches ActorAvatar `md` (stream view's base avatar — 32px rounded-[8px]).
+    // Previously h-9 w-9 rounded-[10px]; callers overrode via className to get
+    // 32px. Aligning the token eliminates the duplicate sizing path.
+    avatar: "h-8 w-8 rounded-[8px]",
     icon: "sm",
     text: "text-sm",
     border: "shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]",
   },
   lg: {
-    avatar: "h-11 w-11 rounded-[12px]",
+    avatar: "h-9 w-9 rounded-[10px]",
     icon: "md",
     text: "text-base",
     border: "shadow-[inset_0_0_0_2px_hsl(var(--primary))]",

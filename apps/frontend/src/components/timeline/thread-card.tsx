@@ -1,8 +1,7 @@
 import { Link } from "react-router-dom"
 import { ChevronRight } from "lucide-react"
 import type { ThreadSummary } from "@threa/types"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { PersonaAvatar } from "@/components/persona-avatar"
+import { ActorAvatar } from "@/components/actor-avatar"
 import { RelativeTime } from "@/components/relative-time"
 import { useActors } from "@/hooks"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
@@ -49,7 +48,7 @@ export function ThreadCard({
   ownsLeftLine = true,
   className,
 }: ThreadCardProps) {
-  const { getActorName, getActorAvatar } = useActors(workspaceId)
+  const { getActorName } = useActors(workspaceId)
   const { toEmoji } = useWorkspaceEmoji(workspaceId)
 
   if (replyCount === 0) return null
@@ -74,26 +73,15 @@ export function ThreadCard({
       <div className="flex items-center gap-2 text-xs">
         {participants.length > 0 && (
           <div className="flex gap-0.5">
-            {participants.map((participant) => {
-              const info = getActorAvatar(participant.id, participant.type)
-              const key = `${participant.type}:${participant.id}`
-              // Personas carry a `slug` rather than an avatarUrl — `PersonaAvatar`
-              // handles the Ariadne-SVG special case and the gold-border styling
-              // that distinguishes personas from users. The generic `Avatar` path
-              // would fall through to the emoji fallback, hiding the persona's
-              // real iconography.
-              if (participant.type === "persona") {
-                return <PersonaAvatar key={key} slug={info.slug} fallback={info.fallback} size="xs" />
-              }
-              return (
-                <Avatar key={key} className="h-5 w-5 rounded-[5px]">
-                  {info.avatarUrl && <AvatarImage src={info.avatarUrl} alt="" />}
-                  <AvatarFallback className="bg-muted text-[9px] font-medium text-foreground">
-                    {info.fallback}
-                  </AvatarFallback>
-                </Avatar>
-              )
-            })}
+            {participants.map((participant) => (
+              <ActorAvatar
+                key={`${participant.type}:${participant.id}`}
+                actorId={participant.id}
+                actorType={participant.type}
+                workspaceId={workspaceId}
+                size="xs"
+              />
+            ))}
           </div>
         )}
         <span className="font-medium text-primary group-hover/thread:underline">{replyLabel}</span>

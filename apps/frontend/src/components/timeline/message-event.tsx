@@ -9,12 +9,11 @@ import {
 } from "@threa/types"
 import { toast } from "sonner"
 import { enqueueOperation } from "@/sync/operation-queue"
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { PersonaAvatar } from "@/components/persona-avatar"
+import { ActorAvatar } from "@/components/actor-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
@@ -100,11 +99,8 @@ interface MessageLayoutProps {
   payload: MessagePayload
   workspaceId: string
   actorName: string
-  actorInitials: string
   /** Persona slug for SVG icon support (e.g., "ariadne") */
-  personaSlug?: string
   /** User avatar image URL */
-  actorAvatarUrl?: string
   statusIndicator: ReactNode
   /**
    * Inline action buttons rendered in the header row (pending/failed/editing
@@ -193,9 +189,6 @@ function MessageLayout({
   payload,
   workspaceId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
   statusIndicator,
   actions,
   hoverActions,
@@ -268,30 +261,16 @@ function MessageLayout({
         {gutterLabel}
       </div>
     )
-  } else if (isPersona) {
-    avatarSlot = (
-      <PersonaAvatar
-        slug={personaSlug}
-        fallback={actorInitials}
-        size="md"
-        className="message-avatar h-8 w-8 rounded-[8px]"
-      />
-    )
   } else {
     avatarSlot = (
-      <Avatar className="message-avatar h-8 w-8 rounded-[8px] shrink-0">
-        {actorAvatarUrl && <AvatarImage src={actorAvatarUrl} alt={actorName} />}
-        <AvatarFallback
-          className={cn(
-            "text-foreground",
-            isSystem && "bg-blue-500/10 text-blue-500",
-            isBot && "bg-emerald-500/10 text-emerald-600",
-            !isSystem && !isBot && "bg-muted"
-          )}
-        >
-          {actorInitials}
-        </AvatarFallback>
-      </Avatar>
+      <ActorAvatar
+        actorId={event.actorId}
+        actorType={event.actorType}
+        workspaceId={workspaceId}
+        size="md"
+        alt={actorName}
+        className="message-avatar"
+      />
     )
   }
 
@@ -414,9 +393,6 @@ interface MessageEventInnerProps {
   workspaceId: string
   streamId: string
   actorName: string
-  actorInitials: string
-  personaSlug?: string
-  actorAvatarUrl?: string
   isThreadParent?: boolean
   isHighlighted?: boolean
   isNew?: boolean
@@ -439,9 +415,6 @@ function SentMessageEvent({
   workspaceId,
   streamId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
   isThreadParent: isThreadParentProp,
   isHighlighted,
   isNew,
@@ -709,9 +682,6 @@ function SentMessageEvent({
         payload={payload}
         workspaceId={workspaceId}
         actorName={actorName}
-        actorInitials={actorInitials}
-        personaSlug={personaSlug}
-        actorAvatarUrl={actorAvatarUrl}
         statusIndicator={
           <>
             <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
@@ -905,9 +875,6 @@ function PendingMessageEvent({
   payload,
   workspaceId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
   deferSecondaryHydration,
   groupContinuation,
 }: MessageEventInnerProps) {
@@ -924,9 +891,6 @@ function PendingMessageEvent({
         payload={payload}
         workspaceId={workspaceId}
         actorName={actorName}
-        actorInitials={actorInitials}
-        personaSlug={personaSlug}
-        actorAvatarUrl={actorAvatarUrl}
         deferSecondaryHydration={deferSecondaryHydration}
         isGroupContinuation={groupContinuation}
         containerClassName={cn(
@@ -974,9 +938,6 @@ function FailedMessageEvent({
   payload,
   workspaceId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const { retryMessage, markEditing, deleteMessage } = usePendingMessages()
@@ -992,9 +953,6 @@ function FailedMessageEvent({
         payload={payload}
         workspaceId={workspaceId}
         actorName={actorName}
-        actorInitials={actorInitials}
-        personaSlug={personaSlug}
-        actorAvatarUrl={actorAvatarUrl}
         deferSecondaryHydration={deferSecondaryHydration}
         containerClassName={cn(
           "border-l-2 border-destructive pl-2",
@@ -1043,9 +1001,6 @@ function EditingMessageEvent({
   payload,
   workspaceId,
   actorName,
-  actorInitials,
-  personaSlug,
-  actorAvatarUrl,
   deferSecondaryHydration,
 }: MessageEventInnerProps) {
   const isMobile = useIsMobile()
@@ -1064,9 +1019,6 @@ function EditingMessageEvent({
         payload={payload}
         workspaceId={workspaceId}
         actorName={actorName}
-        actorInitials={actorInitials}
-        personaSlug={personaSlug}
-        actorAvatarUrl={actorAvatarUrl}
         deferSecondaryHydration={deferSecondaryHydration}
         isEditing={!isMobile}
         containerRef={containerRef}
@@ -1101,15 +1053,10 @@ export function MessageEvent({
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
-  const { getActorName, getActorAvatar } = useActors(workspaceId)
+  const { getActorName } = useActors(workspaceId)
   const status = getStatus(event.id)
 
   const actorName = getActorName(event.actorId, event.actorType)
-  const {
-    fallback: actorInitials,
-    slug: personaSlug,
-    avatarUrl: actorAvatarUrl,
-  } = getActorAvatar(event.actorId, event.actorType)
 
   switch (status) {
     case "pending":
@@ -1120,9 +1067,6 @@ export function MessageEvent({
           workspaceId={workspaceId}
           streamId={streamId}
           actorName={actorName}
-          actorInitials={actorInitials}
-          personaSlug={personaSlug}
-          actorAvatarUrl={actorAvatarUrl}
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
           groupContinuation={groupContinuation}
@@ -1136,9 +1080,6 @@ export function MessageEvent({
           workspaceId={workspaceId}
           streamId={streamId}
           actorName={actorName}
-          actorInitials={actorInitials}
-          personaSlug={personaSlug}
-          actorAvatarUrl={actorAvatarUrl}
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
         />
@@ -1151,9 +1092,6 @@ export function MessageEvent({
           workspaceId={workspaceId}
           streamId={streamId}
           actorName={actorName}
-          actorInitials={actorInitials}
-          personaSlug={personaSlug}
-          actorAvatarUrl={actorAvatarUrl}
           deferSecondaryHydration={deferSecondaryHydration}
         />
       )
@@ -1165,9 +1103,6 @@ export function MessageEvent({
           workspaceId={workspaceId}
           streamId={streamId}
           actorName={actorName}
-          actorInitials={actorInitials}
-          personaSlug={personaSlug}
-          actorAvatarUrl={actorAvatarUrl}
           isThreadParent={isThreadParent}
           isHighlighted={isHighlighted}
           isNew={isNew}
