@@ -394,7 +394,7 @@ async function main() {
   })
 
   const backofficeRouterDir = path.join(process.cwd(), "apps/backoffice-router")
-  const backofficeRouter = Bun.spawn(["bunx", "wrangler", "dev", "--port", "3005"], {
+  const backofficeRouter = Bun.spawn(["bunx", "wrangler", "dev", "--port", "3005", "--inspector-port", "9230"], {
     cwd: backofficeRouterDir,
     stdout: "inherit",
     stderr: "inherit",
