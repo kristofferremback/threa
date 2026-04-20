@@ -2,6 +2,7 @@ import { Link } from "react-router-dom"
 import { ChevronRight } from "lucide-react"
 import type { ThreadSummary } from "@threa/types"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { PersonaAvatar } from "@/components/persona-avatar"
 import { RelativeTime } from "@/components/relative-time"
 import { useActors } from "@/hooks"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
@@ -74,12 +75,21 @@ export function ThreadCard({
         {participants.length > 0 && (
           <div className="flex gap-0.5">
             {participants.map((participant) => {
-              const { fallback, avatarUrl } = getActorAvatar(participant.id, participant.type)
+              const info = getActorAvatar(participant.id, participant.type)
+              const key = `${participant.type}:${participant.id}`
+              // Personas carry a `slug` rather than an avatarUrl — `PersonaAvatar`
+              // handles the Ariadne-SVG special case and the gold-border styling
+              // that distinguishes personas from users. The generic `Avatar` path
+              // would fall through to the emoji fallback, hiding the persona's
+              // real iconography.
+              if (participant.type === "persona") {
+                return <PersonaAvatar key={key} slug={info.slug} fallback={info.fallback} size="xs" />
+              }
               return (
-                <Avatar key={`${participant.type}:${participant.id}`} className="h-5 w-5 rounded-[5px]">
-                  {avatarUrl && <AvatarImage src={avatarUrl} alt="" />}
+                <Avatar key={key} className="h-5 w-5 rounded-[5px]">
+                  {info.avatarUrl && <AvatarImage src={info.avatarUrl} alt="" />}
                   <AvatarFallback className="bg-muted text-[9px] font-medium text-foreground">
-                    {fallback}
+                    {info.fallback}
                   </AvatarFallback>
                 </Avatar>
               )

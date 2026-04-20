@@ -5,9 +5,15 @@ import { cn } from "@/lib/utils"
 /** System persona slug for Ariadne - uses SVG icon instead of emoji */
 const ARIADNE_SLUG = "ariadne"
 
-type AvatarSize = "sm" | "md" | "lg"
+type AvatarSize = "xs" | "sm" | "md" | "lg"
 
 const SIZE_CONFIG: Record<AvatarSize, { avatar: string; icon: "xs" | "sm" | "md"; text: string; border: string }> = {
+  xs: {
+    avatar: "h-5 w-5 rounded-[5px]",
+    icon: "xs",
+    text: "text-[9px]",
+    border: "shadow-[inset_0_0_0_1px_hsl(var(--primary))]",
+  },
   sm: { avatar: "h-7 w-7", icon: "xs", text: "text-xs", border: "shadow-[inset_0_0_0_1px_hsl(var(--primary))]" },
   md: {
     avatar: "h-9 w-9 rounded-[10px]",
