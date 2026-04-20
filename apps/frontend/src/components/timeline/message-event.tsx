@@ -420,7 +420,14 @@ interface MessageEventInnerProps {
   isNew?: boolean
   activity?: MessageAgentActivity
   deferSecondaryHydration?: boolean
-  /** See MessageEventProps.groupContinuation. Only SentMessageEvent honors this. */
+  /**
+   * See MessageEventProps.groupContinuation. Honored by SentMessageEvent and
+   * PendingMessageEvent so the optimistic → confirmed transition on send
+   * doesn't flip a mid-run message from head to continuation. Ignored by
+   * FailedMessageEvent (keeps the "Failed to send" status + Retry/Edit/Delete
+   * inline actions visible) and EditingMessageEvent (the edit form needs the
+   * full content column).
+   */
   groupContinuation?: boolean
 }
 
@@ -875,6 +882,7 @@ function PendingMessageEvent({
   personaSlug,
   actorAvatarUrl,
   deferSecondaryHydration,
+  groupContinuation,
 }: MessageEventInnerProps) {
   const { markEditing, deleteMessage } = usePendingMessages()
   const isMobile = useIsMobile()
@@ -893,6 +901,7 @@ function PendingMessageEvent({
         personaSlug={personaSlug}
         actorAvatarUrl={actorAvatarUrl}
         deferSecondaryHydration={deferSecondaryHydration}
+        isGroupContinuation={groupContinuation}
         containerClassName={cn(
           "opacity-60",
           isMobile && "select-none",
@@ -1089,6 +1098,7 @@ export function MessageEvent({
           actorAvatarUrl={actorAvatarUrl}
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
+          groupContinuation={groupContinuation}
         />
       )
     case "failed":
