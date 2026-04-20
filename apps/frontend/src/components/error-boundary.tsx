@@ -60,7 +60,7 @@ export function ErrorBoundary() {
   } else if (chunkLoadFailed && recoveryDeclined) {
     title = "Update needed"
     description =
-      "A newer version of Threa was deployed, and we couldn't auto-update this tab. Clear the site data for app.threa.io in your browser settings, then reopen."
+      "A newer version of Threa was deployed, and we couldn't auto-update this tab. Visit /recover to force a full reset."
   }
 
   const handleReload = () => {
