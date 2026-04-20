@@ -2,7 +2,7 @@ import { randomUUID } from "crypto"
 import {
   withTransaction,
   OutboxRepository,
-  logger,
+  type Querier,
   type WorkosEventSummary,
   type WorkosOrgService,
 } from "@threa/backend-common"
@@ -81,6 +81,17 @@ interface Dependencies {
 export interface RegionalAuthzSyncPayload {
   workspaceId: string
   region: string
+}
+
+type CanonicalMembership = {
+  organizationMembershipId: string
+  workosUserId: string
+  roleSlugs: string[]
+}
+
+type CanonicalSnapshotPayload = {
+  memberships: CanonicalMembership[]
+  roles: Awaited<ReturnType<WorkosOrgService["listRolesForOrganization"]>>
 }
 
 export class ControlPlaneAuthzSyncService {
@@ -169,24 +180,34 @@ export class ControlPlaneAuthzSyncService {
 
     if (!organizationId && GLOBAL_ROLE_EVENT_TYPES.has(event.event)) {
       const targets = await WorkspaceRegistryRepository.listAuthzSyncTargets(this.deps.pool)
-      for (const target of targets) {
-        if (!target.workos_organization_id) {
-          continue
-        }
-        const workspace = await WorkspaceRegistryRepository.findById(this.deps.pool, target.id)
-        if (workspace?.workos_organization_id) {
-          await this.refreshWorkspaceFromWorkos(workspace)
-        }
-      }
+      const workspaceIds = targets.filter((target) => target.workos_organization_id).map((target) => target.id)
+      const workspaces = (await WorkspaceRegistryRepository.findByIds(this.deps.pool, workspaceIds)).filter(
+        (workspace) => workspace.workos_organization_id
+      )
+      const snapshots = await Promise.all(
+        workspaces.map(async (workspace) => ({
+          workspace,
+          snapshot: await this.loadWorkspaceSnapshotFromWorkos(workspace),
+        }))
+      )
 
-      await ControlPlaneAuthzMirrorRepository.recordEvent(this.deps.pool, {
-        eventId: event.id,
-        eventType: event.event,
-        organizationId: null,
-        workspaceId: null,
-        status: "processed",
-        occurredAt: event.createdAt,
-        payload: event.data,
+      await withTransaction(this.deps.pool, async (client) => {
+        const recorded = await ControlPlaneAuthzMirrorRepository.recordEvent(client, {
+          eventId: event.id,
+          eventType: event.event,
+          organizationId: null,
+          workspaceId: null,
+          status: "processed",
+          occurredAt: event.createdAt,
+          payload: event.data,
+        })
+        if (!recorded) {
+          return
+        }
+
+        for (const { workspace, snapshot } of snapshots) {
+          await this.replaceCanonicalSnapshot(client, workspace, snapshot)
+        }
       })
       return
     }
@@ -219,19 +240,41 @@ export class ControlPlaneAuthzSyncService {
     }
 
     if (event.event === "organization.deleted") {
-      await this.replaceCanonicalSnapshot(workspace, [])
-    } else {
-      await this.refreshWorkspaceFromWorkos(workspace)
+      await withTransaction(this.deps.pool, async (client) => {
+        const recorded = await ControlPlaneAuthzMirrorRepository.recordEvent(client, {
+          eventId: event.id,
+          eventType: event.event,
+          organizationId,
+          workspaceId: workspace.id,
+          status: "processed",
+          occurredAt: event.createdAt,
+          payload: event.data,
+        })
+        if (!recorded) {
+          return
+        }
+
+        await this.replaceCanonicalSnapshot(client, workspace, { memberships: [], roles: [] })
+      })
+      return
     }
 
-    await ControlPlaneAuthzMirrorRepository.recordEvent(this.deps.pool, {
-      eventId: event.id,
-      eventType: event.event,
-      organizationId,
-      workspaceId: workspace.id,
-      status: "processed",
-      occurredAt: event.createdAt,
-      payload: event.data,
+    const snapshot = await this.loadWorkspaceSnapshotFromWorkos(workspace)
+    await withTransaction(this.deps.pool, async (client) => {
+      const recorded = await ControlPlaneAuthzMirrorRepository.recordEvent(client, {
+        eventId: event.id,
+        eventType: event.event,
+        organizationId,
+        workspaceId: workspace.id,
+        status: "processed",
+        occurredAt: event.createdAt,
+        payload: event.data,
+      })
+      if (!recorded) {
+        return
+      }
+
+      await this.replaceCanonicalSnapshot(client, workspace, snapshot)
     })
   }
 
@@ -240,48 +283,52 @@ export class ControlPlaneAuthzSyncService {
       return
     }
 
+    const snapshot = await this.loadWorkspaceSnapshotFromWorkos(workspace)
+    await withTransaction(this.deps.pool, async (client) => {
+      await this.replaceCanonicalSnapshot(client, workspace, snapshot)
+    })
+  }
+
+  private async loadWorkspaceSnapshotFromWorkos(workspace: WorkspaceRegistryRow): Promise<CanonicalSnapshotPayload> {
+    if (!workspace.workos_organization_id) {
+      return { memberships: [], roles: [] }
+    }
+
     const [roles, memberships] = await Promise.all([
       this.deps.workosOrgService.listRolesForOrganization(workspace.workos_organization_id),
       this.deps.workosOrgService.listOrganizationMemberships(workspace.workos_organization_id),
     ])
 
-    await this.replaceCanonicalSnapshot(
-      workspace,
-      memberships
+    return {
+      memberships: memberships
         .filter((membership) => membership.status === "active")
         .map((membership) => ({
           organizationMembershipId: membership.id,
           workosUserId: membership.userId,
           roleSlugs: getRoleSlugs(membership),
         })),
-      roles
-    )
+      roles,
+    }
   }
 
   private async replaceCanonicalSnapshot(
+    db: Querier,
     workspace: WorkspaceRegistryRow,
-    memberships: Array<{
-      organizationMembershipId: string
-      workosUserId: string
-      roleSlugs: string[]
-    }>,
-    roles: Awaited<ReturnType<WorkosOrgService["listRolesForOrganization"]>> = []
+    snapshot: CanonicalSnapshotPayload
   ): Promise<void> {
     if (!workspace.workos_organization_id) {
       return
     }
 
-    await withTransaction(this.deps.pool, async (client) => {
-      await ControlPlaneAuthzMirrorRepository.replaceSnapshot(client, {
-        workspaceId: workspace.id,
-        workosOrganizationId: workspace.workos_organization_id!,
-        roles,
-        memberships,
-      })
-      await OutboxRepository.insert(client, OUTBOX_REGIONAL_AUTHZ_SYNC, {
-        workspaceId: workspace.id,
-        region: workspace.region,
-      })
+    await ControlPlaneAuthzMirrorRepository.replaceSnapshot(db, {
+      workspaceId: workspace.id,
+      workosOrganizationId: workspace.workos_organization_id,
+      roles: snapshot.roles,
+      memberships: snapshot.memberships,
+    })
+    await OutboxRepository.insert(db, OUTBOX_REGIONAL_AUTHZ_SYNC, {
+      workspaceId: workspace.id,
+      region: workspace.region,
     })
   }
 

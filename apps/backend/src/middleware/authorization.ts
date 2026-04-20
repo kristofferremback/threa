@@ -41,6 +41,14 @@ export function compatibilityRoleFromPermissions(permissions: Iterable<Workspace
   return "user"
 }
 
+export function storedCompatibilityRole(
+  currentRole: "owner" | "admin" | "user",
+  nextRole: "admin" | "user",
+  isOwner: boolean
+): "owner" | "admin" | "user" {
+  return currentRole === "owner" && isOwner ? "owner" : nextRole
+}
+
 export function requireWorkspacePermission(...permissions: WorkspacePermissionScope[]): RequestHandler {
   return function requireWorkspacePermissionMiddleware(req: Request, res: Response, next: NextFunction): void {
     if (!req.authz) {

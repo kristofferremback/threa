@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express"
 import type { Pool } from "pg"
 import { SESSION_COOKIE_CONFIG, SESSION_COOKIE_NAME, type AuthService } from "@threa/backend-common"
 import { UserRepository, type User } from "../features/workspaces"
+import { storedCompatibilityRole } from "./authorization"
 import { resolveWorkspaceAuthorization } from "./workspace-authz-resolver"
 
 declare global {
@@ -86,7 +87,7 @@ export function createWorkspaceUserMiddleware({ pool, authService }: Dependencie
       return res.status(401).json({ error: "Session expired" })
     }
 
-    const storedRole = user.role === "owner" && authz.value.isOwner ? "owner" : authz.value.compatibilityRole
+    const storedRole = storedCompatibilityRole(user.role, authz.value.compatibilityRole, authz.value.isOwner)
     if (user.role !== storedRole) {
       await UserRepository.update(pool, workspaceId, user.id, { role: storedRole })
     }

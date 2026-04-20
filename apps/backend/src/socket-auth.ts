@@ -3,6 +3,7 @@ import type { WorkspacePermissionScope } from "@threa/types"
 import type { Pool } from "pg"
 import { UserRepository, type User } from "./features/workspaces"
 import { logger } from "./lib/logger"
+import { storedCompatibilityRole } from "./middleware/authorization"
 import { resolveWorkspaceAuthorization } from "./middleware/workspace-authz-resolver"
 
 export async function authorizeWorkspaceSocket(params: {
@@ -44,14 +45,29 @@ export async function authorizeWorkspaceSocket(params: {
     return { ok: false, reason: "unauthorized" }
   }
 
-  if (workspaceUser.role !== authz.value.compatibilityRole) {
+  const storedRole = storedCompatibilityRole(workspaceUser.role, authz.value.compatibilityRole, authz.value.isOwner)
+  if (workspaceUser.role !== storedRole) {
     const updated = await UserRepository.update(params.pool, params.workspaceId, workspaceUser.id, {
-      role: authz.value.compatibilityRole,
+      role: storedRole,
     })
     if (updated) {
-      return { ok: true, workspaceUser: updated }
+      return {
+        ok: true,
+        workspaceUser: {
+          ...updated,
+          role: storedRole,
+          isOwner: authz.value.isOwner,
+        },
+      }
     }
   }
 
-  return { ok: true, workspaceUser }
+  return {
+    ok: true,
+    workspaceUser: {
+      ...workspaceUser,
+      role: storedRole,
+      isOwner: authz.value.isOwner,
+    },
+  }
 }

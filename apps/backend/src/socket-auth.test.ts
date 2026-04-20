@@ -134,4 +134,58 @@ describe("authorizeWorkspaceSocket", () => {
       },
     })
   })
+
+  test("preserves legacy owner rows when socket auth resolves to admin permissions", async () => {
+    findByWorkosUserIdInWorkspace.mockResolvedValue({
+      id: "user_1",
+      workspaceId: "ws_1",
+      workosUserId: "wos_1",
+      email: "owner@example.com",
+      role: "owner",
+      slug: "owner",
+      name: "Owner",
+      description: null,
+      avatarUrl: null,
+      timezone: null,
+      locale: null,
+      pronouns: null,
+      phone: null,
+      githubUsername: null,
+      setupCompleted: true,
+      joinedAt: new Date(),
+      assignedRole: null,
+      assignedRoles: [],
+      canEditRole: false,
+    })
+    resolveWorkspaceAuthorization.mockResolvedValue({
+      status: "ok",
+      value: {
+        source: "session",
+        organizationId: "org_1",
+        organizationMembershipId: "om_1",
+        permissions: new Set(["messages:read", "members:write"]),
+        assignedRoles: [{ slug: "admin", name: "Admin" }],
+        canEditRole: true,
+        compatibilityRole: "admin",
+        isOwner: true,
+      },
+    })
+
+    const result = await authorizeWorkspaceSocket({
+      pool: {} as never,
+      workspaceId: "ws_1",
+      workosUserId: "wos_1",
+      requiredPermission: "messages:read",
+    })
+
+    expect(update).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      ok: true,
+      workspaceUser: {
+        id: "user_1",
+        role: "owner",
+        isOwner: true,
+      },
+    })
+  })
 })

@@ -18,7 +18,8 @@ import type { WorkspaceAuthzSnapshot, WorkspaceRole } from "@threa/types"
 import { UserApiKeyRepository } from "../user-api-keys"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
-import { ADMIN_COMPATIBILITY_PERMISSIONS, compatibilityRoleFromPermissions } from "../../middleware/authorization"
+import { ADMIN_COMPATIBILITY_PERMISSIONS } from "../../middleware/authorization"
+import { decorateUserWithAuthzMirror, decorateUsersWithAuthzMirror } from "./user-authz-decorator"
 
 function deriveSlugFromEmail(email: string): string {
   const prefix = email.split("@")[0]
@@ -269,52 +270,9 @@ export class WorkspaceService {
     return UserRepository.listByWorkspace(this.pool, workspaceId)
   }
 
-  private async decorateUsersWithMirrorData(
-    db: Querier,
-    workspaceId: string,
-    users: User[],
-    workspace?: Workspace | null
-  ): Promise<User[]> {
-    if (users.length === 0) {
-      return users
-    }
-
-    const resolvedWorkspace = workspace ?? (await WorkspaceRepository.findById(db, workspaceId))
-    if (!resolvedWorkspace) {
-      return users
-    }
-
-    const [roles, assignments] = await Promise.all([
-      WorkosAuthzMirrorRepository.listRoles(db, workspaceId),
-      WorkosAuthzMirrorRepository.listMembershipAssignments(db, workspaceId),
-    ])
-    const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
-    const assignmentsByWorkosUserId = new Map(assignments.map((assignment) => [assignment.workosUserId, assignment]))
-
-    return users.map((user) => {
-      const assignment = assignmentsByWorkosUserId.get(user.workosUserId)
-      const assignedRoles = (assignment?.roleSlugs ?? []).map((slug) => ({
-        slug,
-        name: rolesBySlug.get(slug)?.name ?? slug,
-      }))
-      const permissions = new Set(assignedRoles.flatMap((role) => rolesBySlug.get(role.slug)?.permissions ?? []))
-      const isOwner = resolvedWorkspace.createdBy === user.id
-      const compatibilityRole = assignedRoles.length > 0 ? compatibilityRoleFromPermissions(permissions) : user.role
-
-      return {
-        ...user,
-        role: isOwner && user.role === "owner" ? "owner" : compatibilityRole,
-        isOwner,
-        assignedRole: assignedRoles[0] ?? null,
-        assignedRoles,
-        canEditRole: assignedRoles.length <= 1,
-      }
-    })
-  }
-
   async getUsersWithRoles(workspaceId: string): Promise<User[]> {
     const users = await this.getUsers(workspaceId)
-    return this.decorateUsersWithMirrorData(this.pool, workspaceId, users)
+    return decorateUsersWithAuthzMirror(this.pool, workspaceId, users)
   }
 
   async listAssignableRoles(workspaceId: string): Promise<WorkspaceRole[]> {
@@ -440,7 +398,7 @@ export class WorkspaceService {
 
       await WorkosAuthzMirrorRepository.syncCompatibilityRoles(client, snapshot.workspaceId)
 
-      const decoratedUsers = await this.decorateUsersWithMirrorData(
+      const decoratedUsers = await decorateUsersWithAuthzMirror(
         client,
         snapshot.workspaceId,
         await UserRepository.listByWorkspace(client, snapshot.workspaceId),
@@ -545,12 +503,14 @@ export class WorkspaceService {
             throw new HttpError("User setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
           }
 
+          const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updated)
+
           await OutboxRepository.insert(client, "workspace_user:updated", {
             workspaceId,
-            user: serializeBigInt(updated),
+            user: serializeBigInt(decoratedUser),
           })
 
-          return updated
+          return decoratedUser
         })
       } catch (error) {
         if (attempt >= MAX_SLUG_ATTEMPTS || !isUniqueViolation(error, "users_workspace_slug_key")) {
@@ -577,12 +537,14 @@ export class WorkspaceService {
         throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
+      const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updated)
+
       await OutboxRepository.insert(client, "workspace_user:updated", {
         workspaceId,
-        user: serializeBigInt(updated),
+        user: serializeBigInt(decoratedUser),
       })
 
-      return updated
+      return decoratedUser
     })
   }
 
@@ -616,7 +578,7 @@ export class WorkspaceService {
       avatarUploadId: uploadId,
     })
 
-    return user
+    return decorateUserWithAuthzMirror(this.pool, workspaceId, user)
   }
 
   async removeUserAvatar(userId: string, workspaceId: string): Promise<User> {
@@ -636,12 +598,14 @@ export class WorkspaceService {
         throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
+      const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, result)
+
       await OutboxRepository.insert(client, "workspace_user:updated", {
         workspaceId,
-        user: serializeBigInt(result),
+        user: serializeBigInt(decoratedUser),
       })
 
-      return result
+      return decoratedUser
     })
 
     if (oldAvatarUrl) {

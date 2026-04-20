@@ -481,6 +481,99 @@ describe("WorkspaceService.updateUserRole", () => {
   })
 })
 
+describe("WorkspaceService user updates", () => {
+  const mockFindWorkspace = spyOn(WorkspaceRepository, "findById")
+  const mockUpdateUser = spyOn(UserRepository, "update")
+  const mockListMirrorRoles = spyOn(WorkosAuthzMirrorRepository, "listRoles")
+  const mockListMembershipAssignments = spyOn(WorkosAuthzMirrorRepository, "listMembershipAssignments")
+  const mockInsertOutbox = spyOn(OutboxRepository, "insert")
+
+  beforeEach(() => {
+    mockWithTransaction.mockReset()
+    mockFindWorkspace.mockReset()
+    mockUpdateUser.mockReset()
+    mockListMirrorRoles.mockReset()
+    mockListMembershipAssignments.mockReset()
+    mockInsertOutbox.mockReset()
+
+    mockWithTransaction.mockImplementation((async (...args: Parameters<typeof db.withTransaction>) => {
+      const callback = args[1]
+      return callback({} as never)
+    }) as typeof db.withTransaction)
+    mockInsertOutbox.mockResolvedValue(undefined as never)
+  })
+
+  test("decorates profile update responses and outbox payloads with mirror role data", async () => {
+    mockUpdateUser.mockResolvedValue({
+      id: "user_1",
+      workspaceId: "ws_1",
+      workosUserId: "wos_1",
+      email: "owner@example.com",
+      role: "admin",
+      slug: "owner",
+      name: "Owner Updated",
+      description: null,
+      avatarUrl: null,
+      timezone: null,
+      locale: null,
+      pronouns: null,
+      phone: null,
+      githubUsername: null,
+      setupCompleted: true,
+      joinedAt: new Date(),
+      assignedRole: null,
+      assignedRoles: [],
+      canEditRole: false,
+    } as never)
+    mockFindWorkspace.mockResolvedValue({
+      id: "ws_1",
+      name: "Workspace",
+      slug: "workspace",
+      createdBy: "user_1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never)
+    mockListMirrorRoles.mockResolvedValue([
+      {
+        slug: "admin",
+        name: "Admin",
+        permissions: ["messages:read", "members:write"],
+        description: null,
+        type: "system",
+      },
+    ] as never)
+    mockListMembershipAssignments.mockResolvedValue([
+      {
+        organizationMembershipId: "om_1",
+        workosUserId: "wos_1",
+        roleSlugs: ["admin"],
+      },
+    ] as never)
+
+    const service = createWorkspaceService(false, createMockWorkosOrgService())
+    const user = await service.updateUserProfile("user_1", "ws_1", { name: "Owner Updated" })
+
+    expect(user).toMatchObject({
+      id: "user_1",
+      role: "admin",
+      isOwner: true,
+      assignedRole: { slug: "admin", name: "Admin" },
+      assignedRoles: [{ slug: "admin", name: "Admin" }],
+      canEditRole: true,
+    })
+    expect(mockInsertOutbox).toHaveBeenCalledWith(expect.anything(), "workspace_user:updated", {
+      workspaceId: "ws_1",
+      user: expect.objectContaining({
+        id: "user_1",
+        isOwner: true,
+        assignedRole: { slug: "admin", name: "Admin" },
+        assignedRoles: [{ slug: "admin", name: "Admin" }],
+        canEditRole: true,
+      }),
+    })
+  })
+})
+
 describe("WorkspaceService.addUser", () => {
   test("provisions WorkOS membership for newly added users", async () => {
     const workosOrgService = createMockWorkosOrgService()

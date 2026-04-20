@@ -4,6 +4,7 @@ import { HttpError } from "@threa/backend-common"
 import type { ApiKeyScope, WorkspacePermissionScope } from "@threa/types"
 import { BOT_KEY_PREFIX } from "@threa/types"
 import { UserRepository } from "../features/workspaces"
+import { storedCompatibilityRole } from "./authorization"
 import { resolveWorkspaceAuthorization } from "./workspace-authz-resolver"
 import type { UserApiKeyService, ValidatedUserApiKey } from "../features/user-api-keys"
 import type { BotApiKeyService, ValidatedBotApiKey } from "../features/public-api"
@@ -87,14 +88,15 @@ export function createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyServ
         return
       }
 
-      if (user.role !== authz.value.compatibilityRole) {
-        await UserRepository.update(pool, workspaceId, user.id, { role: authz.value.compatibilityRole })
+      const storedRole = storedCompatibilityRole(user.role, authz.value.compatibilityRole, authz.value.isOwner)
+      if (user.role !== storedRole) {
+        await UserRepository.update(pool, workspaceId, user.id, { role: storedRole })
       }
 
       req.authz = authz.value
       req.user = {
         ...user,
-        role: authz.value.compatibilityRole,
+        role: storedRole,
         isOwner: authz.value.isOwner,
         assignedRole: authz.value.assignedRoles[0] ?? null,
         assignedRoles: authz.value.assignedRoles,
