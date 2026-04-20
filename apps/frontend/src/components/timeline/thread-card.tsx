@@ -13,6 +13,14 @@ interface ThreadCardProps {
   href: string
   workspaceId: string
   summary?: ThreadSummary
+  /**
+   * Render a pulsing gold dot next to the reply count when a session is
+   * actively producing content in this thread. Lets the card stay mounted
+   * across the session lifecycle instead of being swapped in and out with a
+   * separate activity pill (which caused layout shift when a thread was
+   * created mid-session).
+   */
+  isActive?: boolean
   className?: string
 }
 
@@ -25,7 +33,7 @@ interface ThreadCardProps {
  * so raw markdown from `contentMarkdown` never ships as literal syntax to
  * users (INV-60).
  */
-export function ThreadCard({ replyCount, href, workspaceId, summary, className }: ThreadCardProps) {
+export function ThreadCard({ replyCount, href, workspaceId, summary, isActive, className }: ThreadCardProps) {
   const { getActorName, getActorAvatar } = useActors(workspaceId)
   const { toEmoji } = useWorkspaceEmoji(workspaceId)
 
@@ -63,6 +71,12 @@ export function ThreadCard({ replyCount, href, workspaceId, summary, className }
           </div>
         )}
         <span className="font-medium text-primary group-hover/thread:underline">{replyLabel}</span>
+        {isActive && (
+          <span className="relative flex h-1.5 w-1.5" aria-label="Session active">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+          </span>
+        )}
         {summary && (
           <>
             <span className="text-muted-foreground/40">·</span>

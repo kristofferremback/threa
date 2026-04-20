@@ -529,22 +529,25 @@ function SentMessageEvent({
   // `activity.threadStreamId` lets us link to the real thread immediately when
   // an agent response is in flight, before the slower stream:created event.
   const effectiveThreadId = threadId ?? activity?.threadStreamId
-  // Activity pill and thread card share the same "thread slot" below the
-  // message body: while a session is running on this message, the pill sits
-  // where the ThreadCard will eventually land. When the session completes and
-  // replies arrive, the card takes over — zero layout shift.
+  // Thread slot below the body. Prefers the card as soon as the thread has
+  // any replies so a mid-session "thread created" moment doesn't shuffle
+  // between pill and card. The activity indicator lives inside the card via
+  // `isActive`, so `pill → card → pill-off` reduces to `card-active →
+  // card-idle` (no layout change). When there are no replies yet, the pill
+  // is still the lightweight stand-in for the not-yet-created thread.
   let threadSlot: ReactNode = null
-  if (!isThreadParentProp && activity) {
-    threadSlot = <ActivityPill activity={activity} className="mt-2" />
-  } else if (!isThreadParentProp && effectiveThreadId && replyCount > 0) {
+  if (!isThreadParentProp && effectiveThreadId && replyCount > 0) {
     threadSlot = (
       <ThreadCard
         replyCount={replyCount}
         href={getPanelUrl(effectiveThreadId)}
         workspaceId={workspaceId}
         summary={payload.threadSummary}
+        isActive={!!activity}
       />
     )
+  } else if (!isThreadParentProp && activity) {
+    threadSlot = <ActivityPill activity={activity} className="mt-2" />
   }
 
   const { toggleByEmoji } = useMessageReactions(workspaceId, payload.messageId)
