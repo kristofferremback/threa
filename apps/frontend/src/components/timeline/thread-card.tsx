@@ -66,7 +66,7 @@ export function ThreadCard({ replyCount, href, workspaceId, summary, className }
         {summary && (
           <>
             <span className="text-muted-foreground/40">·</span>
-            <RelativeTime date={summary.lastReplyAt} className="text-muted-foreground" />
+            <RelativeTime date={summary.lastReplyAt} terse className="text-muted-foreground" />
           </>
         )}
         <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground/50 transition-transform group-hover/thread:translate-x-0.5 group-hover/thread:text-muted-foreground" />
