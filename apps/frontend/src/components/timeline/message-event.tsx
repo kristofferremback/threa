@@ -385,9 +385,10 @@ function MessageLayout({
         {hoverActions && (
           <div
             className={cn(
-              // Floats above the row so hover interactions on heads and continuations
-              // share the same toolbar; bottom: calc(100% + 2px) keeps it clear of the
-              // 2px continuation padding without cropping on tight runs.
+              // Floats at the top of the row so hover interactions on heads and
+              // continuations share the same toolbar. The 20px upward overlap keeps
+              // the toolbar readable on py-0.5 continuations without pushing past
+              // the viewport — on heads (py-3) it sits just above the header row.
               "pointer-events-none absolute right-4 z-10 hidden sm:block",
               "bottom-[calc(100%-20px)] opacity-0 group-hover:pointer-events-auto group-hover:opacity-100",
               "has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100",
