@@ -106,7 +106,7 @@ export function ThreadCard({
           <span className="font-medium text-foreground/80">
             {getActorName(summary.latestReply.actorId, summary.latestReply.actorType)}
           </span>
-          <span className="text-muted-foreground/60"> — </span>
+          <span className="text-muted-foreground/60">: </span>
           {truncateContent(summary.latestReply.contentMarkdown, 120, toEmoji)}
         </p>
       )}

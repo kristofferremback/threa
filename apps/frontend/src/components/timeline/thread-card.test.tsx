@@ -62,8 +62,10 @@ describe("ThreadCard", () => {
   it("renders reply count only (no preview row) when summary is absent", () => {
     render(<ThreadCard replyCount={2} href="/threads/1" workspaceId="ws_1" summary={undefined} />)
     expect(screen.getByText("2 replies")).toBeInTheDocument()
-    // Preview row renders the latest author's name + separator; confirm it's absent.
-    expect(screen.queryByText(/—/)).toBeNull()
+    // Preview row renders the latest author's name + ": " separator; confirm
+    // it's absent. Matches the "author: content" shape used by
+    // StreamItemPreview and ActivityPreview.
+    expect(screen.queryByText(/: $/)).toBeNull()
   })
 
   it("strips markdown from the preview (INV-60)", () => {
