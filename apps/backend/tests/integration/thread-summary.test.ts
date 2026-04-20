@@ -178,4 +178,46 @@ describe("Thread Summary", () => {
       expect(summary!.participantUserIds).toHaveLength(3)
     })
   })
+
+  describe("drift parity between batch and single-parent queries", () => {
+    // The two entry points share a row shape (`ThreadSummaryRow`) and a mapper
+    // (`threadSummaryFromRow`), but their SQL bodies are independent. These
+    // tests run both against the same data and assert identical output — if a
+    // future change (new column, different predicate, different ORDER BY)
+    // silently diverges, the parity check fails.
+    async function pairCompare(fixture: ThreadFixture) {
+      const batchMap = await StreamRepository.findThreadSummaries(pool, fixture.channelId)
+      const single = await StreamRepository.findThreadSummaryByParentMessage(pool, fixture.parentMessageId)
+      // Normalize "no summary" on both sides so `.toEqual()` can compare them
+      // uniformly: batch returns `undefined` from `Map.get`, single returns
+      // `null`. Both represent the same semantic "no thread summary".
+      return { batch: batchMap.get(fixture.parentMessageId) ?? null, single }
+    }
+
+    test("both return null/absent when no replies", async () => {
+      const f = await seedThread(0, 0)
+      const { batch, single } = await pairCompare(f)
+      expect(batch).toBeNull()
+      expect(single).toBeNull()
+    })
+
+    test("both return identical ThreadSummary for a single reply", async () => {
+      const f = await seedThread(1, 1)
+      const { batch, single } = await pairCompare(f)
+      expect(batch).toEqual(single)
+    })
+
+    test("both return identical ThreadSummary for N replies with cap", async () => {
+      const f = await seedThread(4, 3)
+      const { batch, single } = await pairCompare(f)
+      expect(batch).toEqual(single)
+      expect(single!.participantUserIds).toHaveLength(3)
+    })
+
+    test("both return identical participant ordering under repeated queries", async () => {
+      const f = await seedThread(5, 1)
+      const { batch, single } = await pairCompare(f)
+      expect(batch!.participantUserIds).toEqual(single!.participantUserIds)
+    })
+  })
 })

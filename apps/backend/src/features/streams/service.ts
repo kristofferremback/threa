@@ -984,17 +984,14 @@ export class StreamService {
    * Get a map of parent messageId -> ThreadSummary for all messages in a stream
    * whose thread has at least one non-deleted reply. See
    * {@link StreamRepository.findThreadSummaries}.
+   *
+   * The single-parent counterpart (`findThreadSummaryByParentMessage`) is
+   * called directly from `event-service.ts` inside the reply-count-update
+   * transaction; wrapping it in a service method would force that caller to
+   * either break out of its existing `client` transaction or duplicate the
+   * pool accessor, so it stays as a repository call.
    */
   async getThreadSummaries(streamId: string): Promise<Map<string, ThreadSummary>> {
     return StreamRepository.findThreadSummaries(this.pool, streamId)
-  }
-
-  /**
-   * Compute the thread summary for a single parent message, or null when there
-   * are no non-deleted replies. See
-   * {@link StreamRepository.findThreadSummaryByParentMessage}.
-   */
-  async getThreadSummaryForMessage(parentMessageId: string): Promise<ThreadSummary | null> {
-    return StreamRepository.findThreadSummaryByParentMessage(this.pool, parentMessageId)
   }
 }

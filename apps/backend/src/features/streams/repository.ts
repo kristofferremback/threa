@@ -26,6 +26,37 @@ interface StreamRow {
   display_name_generated_at: Date | null
 }
 
+/**
+ * Shared row shape returned by both `findThreadSummaries` (batch) and
+ * `findThreadSummaryByParentMessage` (single-parent). Both SELECT the same
+ * column set with the same aliases so `threadSummaryFromRow` can map either
+ * to a `ThreadSummary` without branching. A parity test in the integration
+ * suite asserts the two entry points return identical `ThreadSummary`
+ * objects for the same parent — drift in either query's SELECT fails it.
+ */
+interface ThreadSummaryRow {
+  parent_message_id: string
+  latest_message_id: string
+  latest_author_id: string
+  latest_author_type: string
+  latest_content_markdown: string
+  last_reply_at: Date
+  participant_user_ids: string[]
+}
+
+function threadSummaryFromRow(row: ThreadSummaryRow): ThreadSummary {
+  return {
+    lastReplyAt: row.last_reply_at.toISOString(),
+    participantUserIds: row.participant_user_ids,
+    latestReply: {
+      messageId: row.latest_message_id,
+      actorId: row.latest_author_id,
+      actorType: row.latest_author_type as AuthorType,
+      contentMarkdown: row.latest_content_markdown,
+    },
+  }
+}
+
 export interface Stream {
   id: string
   workspaceId: string
@@ -770,17 +801,13 @@ export const StreamRepository = {
    *
    * Single CTE-based query (INV-56). `contentMarkdown` is emitted raw; callers
    * rendering it in preview UI strip via `stripMarkdownToInline()` (INV-60).
+   *
+   * Shares its row shape (`ThreadSummaryRow`) and row-to-domain mapping
+   * (`threadSummaryFromRow`) with `findThreadSummaryByParentMessage` so the
+   * two entry points cannot drift on their output shape.
    */
   async findThreadSummaries(db: Querier, parentStreamId: string): Promise<Map<string, ThreadSummary>> {
-    const result = await db.query<{
-      parent_message_id: string
-      latest_message_id: string
-      latest_author_id: string
-      latest_author_type: string
-      latest_content_markdown: string
-      last_reply_at: Date
-      participant_user_ids: string[]
-    }>(sql`
+    const result = await db.query<ThreadSummaryRow>(sql`
       WITH thread_messages AS (
         SELECT
           s.parent_message_id,
@@ -829,16 +856,7 @@ export const StreamRepository = {
 
     const map = new Map<string, ThreadSummary>()
     for (const row of result.rows) {
-      map.set(row.parent_message_id, {
-        lastReplyAt: row.last_reply_at.toISOString(),
-        participantUserIds: row.participant_user_ids,
-        latestReply: {
-          messageId: row.latest_message_id,
-          actorId: row.latest_author_id,
-          actorType: row.latest_author_type as AuthorType,
-          contentMarkdown: row.latest_content_markdown,
-        },
-      })
+      map.set(row.parent_message_id, threadSummaryFromRow(row))
     }
     return map
   },
@@ -848,18 +866,19 @@ export const StreamRepository = {
    * the parent has no non-deleted replies. Used by the real-time reply-count
    * path so the frontend can refresh ThreadCard content without waiting for
    * the next bootstrap.
+   *
+   * Optimized for the single-parent case (direct `parent_message_id` filter,
+   * `LIMIT 1` on the latest reply, no per-parent grouping) but produces rows
+   * shaped identically to `findThreadSummaries` so the shared
+   * `threadSummaryFromRow` mapper can construct the domain object. The parity
+   * is covered by a test that asserts both entry points return the same
+   * `ThreadSummary` for a given parent.
    */
   async findThreadSummaryByParentMessage(db: Querier, parentMessageId: string): Promise<ThreadSummary | null> {
-    const result = await db.query<{
-      latest_message_id: string
-      latest_author_id: string
-      latest_author_type: string
-      latest_content_markdown: string
-      last_reply_at: Date
-      participant_user_ids: string[]
-    }>(sql`
+    const result = await db.query<ThreadSummaryRow>(sql`
       WITH thread_messages AS (
         SELECT
+          s.parent_message_id,
           m.id,
           m.sequence,
           m.author_id,
@@ -882,6 +901,7 @@ export const StreamRepository = {
         FROM participants_distinct
       )
       SELECT
+        l.parent_message_id,
         l.id AS latest_message_id,
         l.author_id AS latest_author_id,
         l.author_type AS latest_author_type,
@@ -894,17 +914,7 @@ export const StreamRepository = {
     `)
 
     if (result.rows.length === 0) return null
-    const row = result.rows[0]
-    return {
-      lastReplyAt: row.last_reply_at.toISOString(),
-      participantUserIds: row.participant_user_ids,
-      latestReply: {
-        messageId: row.latest_message_id,
-        actorId: row.latest_author_id,
-        actorType: row.latest_author_type as AuthorType,
-        contentMarkdown: row.latest_content_markdown,
-      },
-    }
+    return threadSummaryFromRow(result.rows[0])
   },
 
   /**
