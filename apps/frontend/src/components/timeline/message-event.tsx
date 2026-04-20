@@ -106,8 +106,6 @@ interface MessageLayoutProps {
   /** User avatar image URL */
   actorAvatarUrl?: string
   statusIndicator: ReactNode
-  /** Optional inline badge rendered between the author name and statusIndicator (e.g. ActivityPill). */
-  headerBadge?: ReactNode
   /**
    * Inline action buttons rendered in the header row (pending/failed/editing
    * states). Suppressed on continuations, where the header row is collapsed.
@@ -199,7 +197,6 @@ function MessageLayout({
   personaSlug,
   actorAvatarUrl,
   statusIndicator,
-  headerBadge,
   actions,
   hoverActions,
   footer,
@@ -375,14 +372,9 @@ function MessageLayout({
                 </Tooltip>
               )}
               {statusIndicator}
-              {headerBadge}
               {actions}
             </div>
           )}
-          {/* On continuations the header row is suppressed, but an active ActivityPill
-              ("Ariadne is thinking…") still needs somewhere to live so it doesn't
-              disappear the moment the trigger message joins a same-author run. */}
-          {renderAsContinuation && headerBadge && <div className="mb-0.5 flex">{headerBadge}</div>}
           {messageBody}
           {footer}
         </div>
@@ -537,15 +529,23 @@ function SentMessageEvent({
   // `activity.threadStreamId` lets us link to the real thread immediately when
   // an agent response is in flight, before the slower stream:created event.
   const effectiveThreadId = threadId ?? activity?.threadStreamId
-  const threadCard =
-    !isThreadParentProp && effectiveThreadId && replyCount > 0 ? (
+  // Activity pill and thread card share the same "thread slot" below the
+  // message body: while a session is running on this message, the pill sits
+  // where the ThreadCard will eventually land. When the session completes and
+  // replies arrive, the card takes over — zero layout shift.
+  let threadSlot: ReactNode = null
+  if (!isThreadParentProp && activity) {
+    threadSlot = <ActivityPill activity={activity} className="mt-2" />
+  } else if (!isThreadParentProp && effectiveThreadId && replyCount > 0) {
+    threadSlot = (
       <ThreadCard
         replyCount={replyCount}
         href={getPanelUrl(effectiveThreadId)}
         workspaceId={workspaceId}
         summary={payload.threadSummary}
       />
-    ) : null
+    )
+  }
 
   const { toggleByEmoji } = useMessageReactions(workspaceId, payload.messageId)
   const handleAddReaction = useCallback(
@@ -720,7 +720,6 @@ function SentMessageEvent({
         }
         isEditing={isEditing && !isMobile}
         isGroupContinuation={groupContinuation}
-        headerBadge={activity ? <ActivityPill activity={activity} /> : null}
         hoverActions={
           // Desktop-only hover toolbar floated above the row. Mobile users reach
           // these actions via the long-press drawer (MessageActionDrawer).
@@ -761,7 +760,7 @@ function SentMessageEvent({
                   currentUserId={currentUserId}
                 />
               )}
-              {threadCard}
+              {threadSlot}
             </>
           )
         }
