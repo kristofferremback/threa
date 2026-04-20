@@ -1,0 +1,60 @@
+import { describe, it, expect, vi } from "vitest"
+import { render, screen } from "@testing-library/react"
+import type { MessageAgentActivity } from "@/hooks"
+import { ActivityPill } from "./activity-pill"
+
+vi.mock("react-router-dom", () => ({
+  Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
+    <a href={to} className={className}>
+      {children}
+    </a>
+  ),
+}))
+
+vi.mock("@/contexts", () => ({
+  useTrace: () => ({ getTraceUrl: (id: string) => `/trace/${id}` }),
+}))
+
+vi.mock("@/hooks", () => ({
+  getStepLabel: (step: string | null) => (step ? `Step-${step}` : "Thinking"),
+}))
+
+function makeActivity(overrides: Partial<MessageAgentActivity> = {}): MessageAgentActivity {
+  return {
+    sessionId: "session_1",
+    personaName: "Ariadne",
+    currentStepType: "workspace_search",
+    stepCount: 1,
+    messageCount: 0,
+    substep: null,
+    ...overrides,
+  }
+}
+
+describe("ActivityPill", () => {
+  it("renders the persona name and the step-derived label", () => {
+    render(<ActivityPill activity={makeActivity()} />)
+    expect(screen.getByText("Ariadne")).toBeInTheDocument()
+    // `getStepLabel` mock returns "Step-<type>", lowercased by the pill.
+    expect(screen.getByText(/is step-workspace_search…$/)).toBeInTheDocument()
+  })
+
+  it("prefers substep text over the step label when present", () => {
+    render(<ActivityPill activity={makeActivity({ substep: "reading knowledge base" })} />)
+    expect(screen.getByText("reading knowledge base")).toBeInTheDocument()
+    // Step-derived label should not also appear.
+    expect(screen.queryByText(/is step-/)).toBeNull()
+  })
+
+  it("links to the trace URL for the session", () => {
+    const { container } = render(<ActivityPill activity={makeActivity()} />)
+    const link = container.querySelector("a")
+    expect(link).not.toBeNull()
+    expect(link!.getAttribute("href")).toBe("/trace/session_1")
+  })
+
+  it("includes a pulse indicator (animate-ping class)", () => {
+    const { container } = render(<ActivityPill activity={makeActivity()} />)
+    expect(container.querySelector(".animate-ping")).not.toBeNull()
+  })
+})
