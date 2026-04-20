@@ -37,17 +37,31 @@ export function ThreadSlot({ activity, replyCount, threadHref, summary, workspac
   const hasThread = replyCount > 0 && !!threadHref
   const visible = hasActivity || hasThread
 
-  // Only play the grow-in animation the first time `visible` flips from false
-  // to true while this component is mounted. Virtuoso remounts of an already-
-  // visible slot should not replay the animation (ref initializer captures the
-  // current value, so wasVisible === visible on first render and animate stays
-  // false).
+  // Only play the grow-in animation for genuine post-mount transitions —
+  // e.g. Ariadne starts thinking mid-session, or a reply lands while the
+  // stream is already in view. Two guards:
+  //
+  //   1. `wasVisibleRef` captures `visible` at mount so Virtuoso remounts
+  //      of an already-visible slot don't replay it.
+  //   2. `hasSettledRef` adds a 300ms grace after mount during which any
+  //      visible-flip is treated as initial hydration, not a real state
+  //      change. Without this, stream switches show every threaded message
+  //      animating in — IDB events hydrate a frame after mount, flipping
+  //      `visible` from false → true, and the grow-in reads as "messages
+  //      with threads load later".
   const wasVisibleRef = useRef(visible)
+  const hasSettledRef = useRef(false)
   const [animate, setAnimate] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      hasSettledRef.current = true
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [])
   useEffect(() => {
     const wasVisible = wasVisibleRef.current
     wasVisibleRef.current = visible
-    if (visible && !wasVisible) {
+    if (visible && !wasVisible && hasSettledRef.current) {
       setAnimate(true)
       const timer = window.setTimeout(() => setAnimate(false), 550)
       return () => window.clearTimeout(timer)
