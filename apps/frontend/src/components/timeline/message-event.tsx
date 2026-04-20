@@ -27,7 +27,8 @@ import {
   focusAtEnd,
   type MessageAgentActivity,
 } from "@/hooks"
-import { Quote } from "lucide-react"
+import { Quote, MessageSquareReply } from "lucide-react"
+import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -301,7 +302,13 @@ function MessageLayout({
       data-author-id={event.actorId ?? ""}
       data-actor-type={event.actorType ?? "user"}
       data-group-continuation={renderAsContinuation ? "true" : undefined}
-      className={cn("relative overflow-hidden", containerClassName)}
+      // `overflow-hidden` contains the mobile swipe-to-quote translate so the
+      // message doesn't bleed out of its bounds. On desktop swipe is disabled
+      // and the hover toolbar floats above the row via `bottom-[calc(100%-20px)]`
+      // — clipping there would cut the toolbar in half (it has nowhere else to
+      // sit on tight continuations). `sm:overflow-visible` releases the clip
+      // at the desktop breakpoint.
+      className={cn("relative overflow-hidden sm:overflow-visible", containerClassName)}
       // Continuations collapse the visible author row, so surface the author for
       // screen readers via the row's accessible name. Heads already have a
       // visible author label so we leave aria-label unset there.
@@ -726,6 +733,23 @@ function SentMessageEvent({
               activeShortcodes={activeReactionShortcodes}
             />
             <SaveMessageButton workspaceId={workspaceId} messageId={payload.messageId} />
+            {!actionContext.isThreadParent && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
+                  >
+                    <Link to={actionContext.replyUrl} aria-label="Reply in thread">
+                      <MessageSquareReply className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Reply in thread</TooltipContent>
+              </Tooltip>
+            )}
             {actionContext.onQuoteReply && (
               <Tooltip>
                 <TooltipTrigger asChild>
