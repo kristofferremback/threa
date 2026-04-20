@@ -93,6 +93,18 @@ export const ControlPlaneAuthzMirrorRepository = {
     return (result.rowCount ?? 0) > 0
   },
 
+  async hasRecordedEvent(db: Querier, eventId: string): Promise<boolean> {
+    const result = await db.query<{ exists: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1
+         FROM workos_authz_event_log
+         WHERE event_id = $1
+       ) AS exists`,
+      [eventId]
+    )
+    return result.rows[0]?.exists ?? false
+  },
+
   async replaceSnapshot(
     db: Querier,
     params: Omit<WorkspaceAuthzSnapshot, "revision" | "generatedAt">

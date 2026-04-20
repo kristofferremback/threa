@@ -14,25 +14,15 @@ import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import type { WorkosOrgService } from "@threa/backend-common"
-import type { WorkspaceAuthzSnapshot, WorkspacePermissionScope, WorkspaceRole } from "@threa/types"
+import type { WorkspaceAuthzSnapshot, WorkspaceRole } from "@threa/types"
 import { UserApiKeyRepository } from "../user-api-keys"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
+import { ADMIN_COMPATIBILITY_PERMISSIONS, compatibilityRoleFromPermissions } from "../../middleware/authorization"
 
 function deriveSlugFromEmail(email: string): string {
   const prefix = email.split("@")[0]
   return generateSlug(prefix)
-}
-
-const ADMIN_COMPATIBILITY_PERMISSIONS = new Set<WorkspacePermissionScope>(["members:write", "workspace:admin"])
-
-function compatibilityRoleFromPermissions(permissions: Iterable<WorkspacePermissionScope>): "admin" | "user" {
-  for (const permission of permissions) {
-    if (ADMIN_COMPATIBILITY_PERMISSIONS.has(permission)) {
-      return "admin"
-    }
-  }
-  return "user"
 }
 
 function workosRoleSlugFromCompatibilityRole(role: User["role"]): "admin" | "member" {
@@ -308,11 +298,13 @@ export class WorkspaceService {
         name: rolesBySlug.get(slug)?.name ?? slug,
       }))
       const permissions = new Set(assignedRoles.flatMap((role) => rolesBySlug.get(role.slug)?.permissions ?? []))
+      const isOwner = resolvedWorkspace.createdBy === user.id
+      const compatibilityRole = assignedRoles.length > 0 ? compatibilityRoleFromPermissions(permissions) : user.role
 
       return {
         ...user,
-        role: assignedRoles.length > 0 ? compatibilityRoleFromPermissions(permissions) : user.role,
-        isOwner: resolvedWorkspace.createdBy === user.id,
+        role: isOwner && user.role === "owner" ? "owner" : compatibilityRole,
+        isOwner,
         assignedRole: assignedRoles[0] ?? null,
         assignedRoles,
         canEditRole: assignedRoles.length <= 1,
@@ -702,7 +694,10 @@ export class WorkspaceService {
     const orgId = await this.ensureWorkosOrganization(workspaceId)
     if (!orgId) {
       logger.error({ workspaceId, workosUserId }, "Failed to provision WorkOS organization for workspace user")
-      return
+      throw new HttpError("Failed to provision WorkOS organization for workspace user", {
+        status: 503,
+        code: "WORKOS_MEMBERSHIP_PROVISIONING_FAILED",
+      })
     }
 
     try {
@@ -716,6 +711,10 @@ export class WorkspaceService {
         { err: error, workspaceId, workosUserId, roleSlug: workosRoleSlugFromCompatibilityRole(role) },
         "Failed to provision WorkOS organization membership for workspace user"
       )
+      throw new HttpError("Failed to provision WorkOS organization membership for workspace user", {
+        status: 503,
+        code: "WORKOS_MEMBERSHIP_PROVISIONING_FAILED",
+      })
     }
   }
 

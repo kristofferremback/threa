@@ -108,9 +108,9 @@ export class ControlPlaneAuthzSyncService {
 
       for (const event of page.data) {
         await this.processEvent(event)
+        // WorkOS expects the `after` cursor to be the latest processed event ID.
+        cursor = event.id
       }
-
-      cursor = page.after ?? cursor
     } finally {
       await ControlPlaneAuthzMirrorRepository.releaseLease(this.deps.pool, EVENTS_SCOPE, leaseOwner, cursor)
     }
@@ -161,6 +161,10 @@ export class ControlPlaneAuthzSyncService {
   }
 
   private async processEvent(event: WorkosEventSummary): Promise<void> {
+    if (await ControlPlaneAuthzMirrorRepository.hasRecordedEvent(this.deps.pool, event.id)) {
+      return
+    }
+
     const organizationId = extractOrganizationId(event)
 
     if (!organizationId && GLOBAL_ROLE_EVENT_TYPES.has(event.event)) {

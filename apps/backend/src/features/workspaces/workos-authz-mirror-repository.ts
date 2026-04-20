@@ -190,6 +190,7 @@ export const WorkosAuthzMirrorRepository = {
         SELECT
           u.id,
           CASE
+            WHEN w.created_by = u.id AND u.role = 'owner' THEN 'owner'
             WHEN EXISTS (
               SELECT 1
               FROM workos_workspace_memberships m
@@ -206,6 +207,8 @@ export const WorkosAuthzMirrorRepository = {
             ELSE 'user'
           END AS role
         FROM users u
+        JOIN workspaces w
+          ON w.id = u.workspace_id
         WHERE u.workspace_id = ${workspaceId}
       )
       UPDATE users AS u

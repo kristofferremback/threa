@@ -18,7 +18,10 @@ declare global {
   }
 }
 
-const ADMIN_COMPATIBILITY_PERMISSIONS: WorkspacePermissionScope[] = ["members:write", "workspace:admin"]
+export const ADMIN_COMPATIBILITY_PERMISSIONS: ReadonlySet<WorkspacePermissionScope> = new Set([
+  "members:write",
+  "workspace:admin",
+])
 
 export function getWorkspacePermissions(req: Request): WorkspacePermissionScope[] {
   return [...(req.authz?.permissions ?? new Set<WorkspacePermissionScope>())]
@@ -30,7 +33,12 @@ export function hasWorkspacePermission(req: Request, permission: WorkspacePermis
 
 export function compatibilityRoleFromPermissions(permissions: Iterable<WorkspacePermissionScope>): "admin" | "user" {
   const granted = permissions instanceof Set ? permissions : new Set(permissions)
-  return ADMIN_COMPATIBILITY_PERMISSIONS.some((permission) => granted.has(permission)) ? "admin" : "user"
+  for (const permission of ADMIN_COMPATIBILITY_PERMISSIONS) {
+    if (granted.has(permission)) {
+      return "admin"
+    }
+  }
+  return "user"
 }
 
 export function requireWorkspacePermission(...permissions: WorkspacePermissionScope[]): RequestHandler {

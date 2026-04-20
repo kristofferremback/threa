@@ -210,6 +210,27 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
       roleSlug: "admin",
     })
   })
+
+  test("fails loudly when owner membership provisioning fails", async () => {
+    const workosOrgService = createMockWorkosOrgService({
+      ensureOrganizationMembership: mock(() => Promise.reject(new Error("WorkOS unavailable"))),
+    })
+    const service = createWorkspaceService(false, workosOrgService)
+    spyOn(service, "ensureWorkosOrganization").mockResolvedValue("org_1")
+
+    await expect(
+      service.createWorkspace({
+        name: "Provision Failure Workspace",
+        workosUserId,
+        email,
+        userName,
+      })
+    ).rejects.toMatchObject({
+      name: "HttpError",
+      status: 503,
+      code: "WORKOS_MEMBERSHIP_PROVISIONING_FAILED",
+    })
+  })
 })
 
 describe("WorkspaceService.updateUserRole", () => {
@@ -501,6 +522,50 @@ describe("WorkspaceService.addUser", () => {
       organizationId: "org_1",
       userId: "wos_2",
       roleSlug: "member",
+    })
+  })
+
+  test("fails loudly when member provisioning fails", async () => {
+    const workosOrgService = createMockWorkosOrgService({
+      ensureOrganizationMembership: mock(() => Promise.reject(new Error("WorkOS unavailable"))),
+    })
+    const service = createWorkspaceService(false, workosOrgService)
+    const addedUser = {
+      id: "user_2",
+      workspaceId: "ws_1",
+      workosUserId: "wos_2",
+      email: "member@example.com",
+      role: "user" as const,
+      slug: "member",
+      name: "Member",
+      description: null,
+      avatarUrl: null,
+      timezone: null,
+      locale: null,
+      pronouns: null,
+      phone: null,
+      githubUsername: null,
+      setupCompleted: false,
+      joinedAt: new Date(),
+      assignedRole: null,
+      assignedRoles: [],
+      canEditRole: false,
+    }
+
+    mockWithTransaction.mockReset().mockResolvedValueOnce(addedUser as never)
+    spyOn(service, "ensureWorkosOrganization").mockResolvedValue("org_1")
+
+    await expect(
+      service.addUser("ws_1", {
+        workosUserId: "wos_2",
+        email: "member@example.com",
+        name: "Member",
+        role: "user",
+      })
+    ).rejects.toMatchObject({
+      name: "HttpError",
+      status: 503,
+      code: "WORKOS_MEMBERSHIP_PROVISIONING_FAILED",
     })
   })
 })

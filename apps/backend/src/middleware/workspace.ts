@@ -86,15 +86,16 @@ export function createWorkspaceUserMiddleware({ pool, authService }: Dependencie
       return res.status(401).json({ error: "Session expired" })
     }
 
-    if (user.role !== authz.value.compatibilityRole) {
-      await UserRepository.update(pool, workspaceId, user.id, { role: authz.value.compatibilityRole })
+    const storedRole = user.role === "owner" && authz.value.isOwner ? "owner" : authz.value.compatibilityRole
+    if (user.role !== storedRole) {
+      await UserRepository.update(pool, workspaceId, user.id, { role: storedRole })
     }
 
     req.workspaceId = workspaceId
     req.authz = authz.value
     req.user = {
       ...user,
-      role: authz.value.compatibilityRole,
+      role: storedRole,
       isOwner: authz.value.isOwner,
       assignedRole: authz.value.assignedRoles[0] ?? null,
       assignedRoles: authz.value.assignedRoles,

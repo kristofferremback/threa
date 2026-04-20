@@ -1,6 +1,11 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
 import { WorkspaceIntegrationService } from "./service"
+import { HttpError } from "../../lib/errors"
+import { resolveWorkspaceAuthorization } from "../../middleware/workspace-authz-resolver"
+import { UserRepository } from "../workspaces"
+import { SESSION_COOKIE_CONFIG, SESSION_COOKIE_NAME, type AuthService } from "@threa/backend-common"
+import type { Pool } from "pg"
 
 const githubCallbackSchema = z.object({
   installation_id: z.string().min(1, "installation_id is required"),
@@ -9,6 +14,8 @@ const githubCallbackSchema = z.object({
 
 interface Dependencies {
   workspaceIntegrationService: WorkspaceIntegrationService
+  authService: AuthService
+  pool: Pool
   /**
    * Allowlist of frontend origins (e.g. CORS allowed origins) the GitHub install
    * callback is permitted to redirect to. Forwarded host headers that resolve to
@@ -42,6 +49,8 @@ export function buildGithubCallbackRedirectUrl(
 
 export function createWorkspaceIntegrationHandlers({
   workspaceIntegrationService,
+  authService,
+  pool,
   allowedFrontendOrigins,
 }: Dependencies) {
   return {
@@ -76,12 +85,65 @@ export function createWorkspaceIntegrationHandlers({
       }
 
       const workosUserId = req.workosUserId!
-      const { workspaceId } = await workspaceIntegrationService.handleGithubCallback({
-        state: parsed.data.state,
-        installationId: parsed.data.installation_id,
-        workosUserId,
+      const workspaceId = workspaceIntegrationService.resolveGithubCallbackWorkspaceId(parsed.data.state)
+      const access = await UserRepository.findWorkspaceUserAccess(pool, workspaceId, workosUserId)
+      if (!access.workspaceExists) {
+        throw new HttpError("Workspace not found", { status: 404, code: "WORKSPACE_NOT_FOUND" })
+      }
+      if (!access.user) {
+        throw new HttpError("Not a member of this workspace", { status: 403, code: "FORBIDDEN" })
+      }
+
+      let authz = await resolveWorkspaceAuthorization({
+        pool,
+        workspaceId,
+        userId: access.user.id,
+        source: "session",
         session: req.authSession,
       })
+      if (authz.status === "missing_org") {
+        throw new HttpError("Workspace is not configured for WorkOS authorization", {
+          status: 500,
+          code: "WORKSPACE_AUTHORIZATION_NOT_CONFIGURED",
+        })
+      }
+      if (authz.status === "org_mismatch") {
+        const refreshed = await authService.refreshSession({
+          sealedSession: req.authSession?.sealedSession ?? req.cookies[SESSION_COOKIE_NAME] ?? "",
+          organizationId: authz.organizationId,
+        })
+        if (!refreshed.success || !refreshed.user || !refreshed.session || !refreshed.sealedSession) {
+          res.clearCookie(SESSION_COOKIE_NAME)
+          throw new HttpError("Session expired", { status: 401, code: "SESSION_EXPIRED" })
+        }
+
+        res.cookie(SESSION_COOKIE_NAME, refreshed.sealedSession, SESSION_COOKIE_CONFIG)
+        req.authUser = refreshed.user
+        req.authSession = {
+          sealedSession: refreshed.sealedSession,
+          organizationId: refreshed.session.organizationId,
+          role: refreshed.session.role,
+          roles: [...refreshed.session.roles],
+          permissions: [...refreshed.session.permissions],
+        }
+
+        authz = await resolveWorkspaceAuthorization({
+          pool,
+          workspaceId,
+          userId: access.user.id,
+          source: "session",
+          session: req.authSession,
+        })
+      }
+      if (authz.status !== "ok" || !authz.value.permissions.has("workspace:admin")) {
+        throw new HttpError("Only admins can connect GitHub", { status: 403, code: "FORBIDDEN" })
+      }
+
+      await workspaceIntegrationService.completeGithubInstallation(
+        workspaceId,
+        access.user.id,
+        parsed.data.installation_id
+      )
 
       res.redirect(buildGithubCallbackRedirectUrl(req, workspaceId, allowedFrontendOrigins))
     },

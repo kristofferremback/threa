@@ -170,6 +170,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
   const workspaceIntegration = createWorkspaceIntegrationHandlers({
     workspaceIntegrationService,
+    authService,
+    pool,
     allowedFrontendOrigins: corsAllowedOrigins,
   })
 

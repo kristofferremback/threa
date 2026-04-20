@@ -133,4 +133,71 @@ describe("createWorkspaceUserMiddleware", () => {
     expect(nextCalled).toBe(true)
     expect(req.workspaceId).toBe("ws_1")
   })
+
+  test("preserves legacy owner rows while authorizing from permissions", async () => {
+    findWorkspaceUserAccess.mockResolvedValue({
+      workspaceExists: true,
+      user: {
+        id: "owner_1",
+        workspaceId: "ws_1",
+        workosUserId: "wos_1",
+        email: "owner@example.com",
+        role: "owner",
+        slug: "owner",
+        name: "Owner",
+        description: null,
+        avatarUrl: null,
+        timezone: null,
+        locale: null,
+        pronouns: null,
+        phone: null,
+        githubUsername: null,
+        setupCompleted: true,
+        joinedAt: new Date(),
+        assignedRole: null,
+        assignedRoles: [],
+        canEditRole: false,
+      },
+    } as never)
+    resolveWorkspaceAuthorization.mockResolvedValue({
+      status: "ok",
+      value: {
+        source: "session",
+        organizationId: "org_ws",
+        organizationMembershipId: null,
+        permissions: new Set(["messages:read", "members:write"]),
+        assignedRoles: [{ slug: "admin", name: "Admin" }],
+        canEditRole: true,
+        compatibilityRole: "admin",
+        isOwner: true,
+      },
+    } as never)
+
+    const middleware = createWorkspaceUserMiddleware({
+      pool: {} as never,
+      authService: { refreshSession: mock(async () => ({ success: false })) } as never,
+    })
+    const req = {
+      params: { workspaceId: "ws_1" },
+      workosUserId: "wos_1",
+      authSession: {
+        sealedSession: "session_owner",
+        organizationId: "org_ws",
+        role: "admin",
+        roles: ["admin"],
+        permissions: ["messages:read", "members:write"],
+      },
+    } as unknown as Request
+    const res = createResponse()
+    let nextCalled = false
+
+    await middleware(req, res, (() => {
+      nextCalled = true
+    }) as NextFunction)
+
+    expect(updateUser).not.toHaveBeenCalled()
+    expect(req.user?.role).toBe("owner")
+    expect(req.user?.isOwner).toBe(true)
+    expect(nextCalled).toBe(true)
+  })
 })
