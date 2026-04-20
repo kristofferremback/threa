@@ -48,11 +48,11 @@ export function ThreadCard({ replyCount, href, workspaceId, summary, className }
     >
       <div className="flex items-center gap-2 text-xs">
         {participantIds.length > 0 && (
-          <div className="flex -space-x-1.5">
+          <div className="flex gap-0.5">
             {participantIds.map((userId) => {
               const { fallback, avatarUrl } = getActorAvatar(userId, "user")
               return (
-                <Avatar key={userId} className="h-5 w-5 rounded-[5px] ring-2 ring-background">
+                <Avatar key={userId} className="h-5 w-5 rounded-[5px]">
                   {avatarUrl && <AvatarImage src={avatarUrl} alt="" />}
                   <AvatarFallback className="bg-muted text-[9px] font-medium text-foreground">
                     {fallback}
