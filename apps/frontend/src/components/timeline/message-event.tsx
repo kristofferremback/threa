@@ -733,23 +733,6 @@ function SentMessageEvent({
               activeShortcodes={activeReactionShortcodes}
             />
             <SaveMessageButton workspaceId={workspaceId} messageId={payload.messageId} />
-            {!actionContext.isThreadParent && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    asChild
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
-                  >
-                    <Link to={actionContext.replyUrl} aria-label="Reply in thread">
-                      <MessageSquareReply className="h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Reply in thread</TooltipContent>
-              </Tooltip>
-            )}
             {actionContext.onQuoteReply && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -766,6 +749,27 @@ function SentMessageEvent({
                 <TooltipContent>Quote reply</TooltipContent>
               </Tooltip>
             )}
+            {/* Reply-in-thread sits adjacent to the overflow menu so it mirrors
+                the top entry of the expanded context menu — the two thread
+                actions read as one visual neighborhood. Kept visible even when
+                the thread panel is already open (clicking is a harmless re-nav
+                to the same panel) so the toolbar never shuffles buttons in and
+                out as the user opens/closes the thread. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
+                >
+                  <Link to={actionContext.replyUrl} aria-label="Reply in thread">
+                    <MessageSquareReply className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Reply in thread</TooltipContent>
+            </Tooltip>
             <MessageContextMenu context={actionContext} />
           </>
         }
