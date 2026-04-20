@@ -1,0 +1,192 @@
+import { describe, it, expect } from "vitest"
+import type { EmojiEntry } from "@threa/types"
+import {
+  filterBySearch,
+  indexToCoord,
+  moveSelection,
+  pickRecentlyUsed,
+  sortByDefaultOrder,
+  totalCount,
+} from "./emoji-picker"
+
+function make(shortcode: string, group: string, order: number, aliases?: string[]): EmojiEntry {
+  return {
+    shortcode,
+    emoji: shortcode,
+    type: "native",
+    group,
+    order,
+    aliases: aliases ?? [shortcode],
+  }
+}
+
+const smile = make("smile", "smileys", 1)
+const grin = make("grin", "smileys", 2)
+const dog = make("dog", "animals", 1)
+const cat = make("cat", "animals", 2)
+const pizza = make("pizza", "food", 1)
+const rocket = make("rocket", "travel", 1)
+const flag = make("flag_us", "flags", 1)
+
+const all = [rocket, flag, pizza, dog, cat, smile, grin]
+
+describe("sortByDefaultOrder", () => {
+  it("orders by group first, then in-group order", () => {
+    const sorted = sortByDefaultOrder(all)
+    expect(sorted.map((e) => e.shortcode)).toEqual(["smile", "grin", "dog", "cat", "pizza", "rocket", "flag_us"])
+  })
+
+  it("is weight-independent (ignores weights)", () => {
+    const sorted = sortByDefaultOrder(all)
+    const first = sorted[0]!
+    expect(first.shortcode).toBe("smile")
+  })
+})
+
+describe("pickRecentlyUsed", () => {
+  it("returns only emojis with weight > 0, sorted weight desc", () => {
+    const weights = { dog: 5, smile: 10, pizza: 2 }
+    const recent = pickRecentlyUsed(all, weights, 10)
+    expect(recent.map((e) => e.shortcode)).toEqual(["smile", "dog", "pizza"])
+  })
+
+  it("caps at the given limit", () => {
+    const weights = { dog: 5, smile: 10, pizza: 2, cat: 1 }
+    expect(pickRecentlyUsed(all, weights, 2).map((e) => e.shortcode)).toEqual(["smile", "dog"])
+  })
+
+  it("tiebreaks equal weights by default order", () => {
+    const weights = { cat: 1, dog: 1 }
+    expect(pickRecentlyUsed(all, weights, 10).map((e) => e.shortcode)).toEqual(["dog", "cat"])
+  })
+
+  it("returns empty when limit <= 0", () => {
+    expect(pickRecentlyUsed(all, { dog: 1 }, 0)).toEqual([])
+  })
+})
+
+describe("filterBySearch", () => {
+  it("returns all when query is empty", () => {
+    expect(filterBySearch(all, "")).toEqual(all)
+  })
+
+  it("matches any alias substring, case-insensitive", () => {
+    const poop = make("poop", "people", 10, ["poop", "hankey", "shit"])
+    const matches = filterBySearch([smile, poop], "HANKEY")
+    expect(matches.map((e) => e.shortcode)).toEqual(["poop"])
+  })
+})
+
+describe("indexToCoord", () => {
+  it("maps indices in the recent section", () => {
+    const g = { recentCount: 12, allCount: 100, columns: 8 }
+    expect(indexToCoord(0, g)).toEqual({ section: "recent", row: 0, col: 0 })
+    expect(indexToCoord(7, g)).toEqual({ section: "recent", row: 0, col: 7 })
+    expect(indexToCoord(8, g)).toEqual({ section: "recent", row: 1, col: 0 })
+    expect(indexToCoord(11, g)).toEqual({ section: "recent", row: 1, col: 3 })
+  })
+
+  it("maps indices in the all section", () => {
+    const g = { recentCount: 12, allCount: 100, columns: 8 }
+    expect(indexToCoord(12, g)).toEqual({ section: "all", row: 0, col: 0 })
+    expect(indexToCoord(19, g)).toEqual({ section: "all", row: 0, col: 7 })
+    expect(indexToCoord(20, g)).toEqual({ section: "all", row: 1, col: 0 })
+  })
+})
+
+describe("totalCount", () => {
+  it("sums recent and all", () => {
+    expect(totalCount({ recentCount: 3, allCount: 100, columns: 8 })).toBe(103)
+  })
+})
+
+describe("moveSelection", () => {
+  const g = { recentCount: 12, allCount: 100, columns: 8 }
+
+  it("ArrowRight moves forward across the whole flat space", () => {
+    expect(moveSelection(0, "ArrowRight", g)).toBe(1)
+    expect(moveSelection(11, "ArrowRight", g)).toBe(12) // recent → all
+    expect(moveSelection(111, "ArrowRight", g)).toBe(111) // last item clamps
+  })
+
+  it("ArrowLeft moves backward across sections", () => {
+    expect(moveSelection(12, "ArrowLeft", g)).toBe(11)
+    expect(moveSelection(0, "ArrowLeft", g)).toBe(0)
+  })
+
+  describe("ArrowDown", () => {
+    it("moves within recent when next row exists and has the col", () => {
+      // row 0 col 3 (index 3) → row 1 col 3 (index 11), which exists (recent has 12 items)
+      expect(moveSelection(3, "ArrowDown", g)).toBe(11)
+    })
+
+    it("from last full recent row jumps to all row 0 same col", () => {
+      const full = { recentCount: 8, allCount: 100, columns: 8 }
+      // index 3 is row 0 col 3 (last recent row) → all row 0 col 3 = 8 + 3 = 11
+      expect(moveSelection(3, "ArrowDown", full)).toBe(11)
+    })
+
+    it("from partial last recent row, col past the end, jumps to all row 0 same col", () => {
+      // recent = 12, cols = 8: row 1 has cols 0..3. Starting at row 0 col 5 (index 5),
+      // next row 1 has no col 5. Jump to all row 0 col 5 = 12 + 5 = 17.
+      expect(moveSelection(5, "ArrowDown", g)).toBe(17)
+    })
+
+    it("from within recent bottom-partial row, jumps to all at same col", () => {
+      // index 10 = recent row 1 col 2, last row in recent. → all row 0 col 2 = 14
+      expect(moveSelection(10, "ArrowDown", g)).toBe(14)
+    })
+
+    it("moves within all by one row", () => {
+      expect(moveSelection(12, "ArrowDown", g)).toBe(20)
+    })
+
+    it("at last all row, does not move", () => {
+      // last row contains the final item at index 111 (total 112). row = 12.
+      const lastInAll = 111
+      expect(moveSelection(lastInAll, "ArrowDown", g)).toBe(lastInAll)
+    })
+
+    it("from partial last recent row clamps to last all item when col exceeds all", () => {
+      const small = { recentCount: 3, allCount: 2, columns: 8 }
+      // recent row 0 col 2 (index 2), last recent row. all has 2 items.
+      // target col 2 in all → clamp to index recentCount + allCount - 1 = 4
+      expect(moveSelection(2, "ArrowDown", small)).toBe(4)
+    })
+
+    it("with no all section, stays at current", () => {
+      const onlyRecent = { recentCount: 3, allCount: 0, columns: 8 }
+      expect(moveSelection(2, "ArrowDown", onlyRecent)).toBe(2)
+    })
+  })
+
+  describe("ArrowUp", () => {
+    it("from all row 0 jumps back into recent last row same col", () => {
+      // all row 0 col 5 (index 17) → recent has 12 items, last row is row 1 (cols 0..3).
+      // target col 5 → clamp to last recent index = 11.
+      expect(moveSelection(17, "ArrowUp", g)).toBe(11)
+    })
+
+    it("from all row 0 col within recent last row, preserves col", () => {
+      // all row 0 col 2 (index 14) → recent last row (row 1) col 2 = index 10.
+      expect(moveSelection(14, "ArrowUp", g)).toBe(10)
+    })
+
+    it("from all row 0 with no recent, stays", () => {
+      const noRecent = { recentCount: 0, allCount: 100, columns: 8 }
+      expect(moveSelection(3, "ArrowUp", noRecent)).toBe(3)
+    })
+
+    it("within all, moves up by one row", () => {
+      expect(moveSelection(20, "ArrowUp", g)).toBe(12)
+    })
+
+    it("within recent, moves up by one row", () => {
+      expect(moveSelection(10, "ArrowUp", g)).toBe(2)
+    })
+
+    it("at recent row 0, does not move", () => {
+      expect(moveSelection(3, "ArrowUp", g)).toBe(3)
+    })
+  })
+})

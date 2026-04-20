@@ -1,17 +1,27 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, memo } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, memo } from "react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso"
 import { cn } from "@/lib/utils"
+import {
+  DESKTOP_GRID_COLUMNS as GRID_COLUMNS,
+  chunkByColumns,
+  indexToCoord,
+  moveSelection,
+  totalCount,
+  type GridGeometry,
+} from "@/lib/emoji-picker"
 import type { EmojiEntry } from "@threa/types"
 import type { SuggestionListRef } from "./suggestion-list"
 
-const GRID_COLUMNS = 8
 const ROW_HEIGHT = 34 // w-8 (32px) + 2px vertical gap
 const CONTAINER_HEIGHT = 256 // max-h-64 = 256px
 const VirtuosoPadding = () => <div className="h-2" />
 
 export interface EmojiGridProps {
-  items: EmojiEntry[]
+  /** Recently used emojis (weight > 0), already filtered by the current query. Capped upstream. */
+  recent: EmojiEntry[]
+  /** All emojis in default order, already filtered by the current query. */
+  all: EmojiEntry[]
   clientRect: (() => DOMRect | null) | null
   command: (item: EmojiEntry) => void
 }
@@ -45,43 +55,54 @@ const EmojiButton = memo(function EmojiButton({ item, isSelected, onClick, onMou
 })
 
 /**
- * Virtualized grid-style emoji picker for the : trigger.
- * Shows emojis in an 8-column grid with native title tooltips.
- * Arrow keys navigate the grid (up/down by row, left/right by cell).
+ * Virtualized two-section emoji picker for the : trigger.
+ * - Recently used (max 2 rows, non-virtualized)
+ * - Emojis (virtualized, default order)
+ *
+ * Arrow keys navigate a combined flat index; crossing the section boundary
+ * preserves the column.
  */
-function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: React.ForwardedRef<SuggestionListRef>) {
+function EmojiGridInner(
+  { recent, all, clientRect, command }: EmojiGridProps,
+  ref: React.ForwardedRef<SuggestionListRef>
+) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const rangeRef = useRef<{ startIndex: number; endIndex: number } | null>(null)
 
-  // Group items into rows for virtualization
-  const rows: EmojiEntry[][] = []
-  for (let i = 0; i < items.length; i += GRID_COLUMNS) {
-    rows.push(items.slice(i, i + GRID_COLUMNS))
-  }
+  const geometry: GridGeometry = useMemo(
+    () => ({ recentCount: recent.length, allCount: all.length, columns: GRID_COLUMNS }),
+    [recent.length, all.length]
+  )
 
-  // Reset selection when items change
+  const total = totalCount(geometry)
+
+  const allRows = useMemo(() => chunkByColumns(all, GRID_COLUMNS), [all])
+  const recentRows = useMemo(() => chunkByColumns(recent, GRID_COLUMNS), [recent])
+
   useEffect(() => {
     setSelectedIndex(0)
     virtuosoRef.current?.scrollToIndex({ index: 0 })
-  }, [items])
+  }, [total])
 
-  // Scroll to row only if it's outside the visible range
-  const scrollToRowIfNeeded = (index: number) => {
-    const row = Math.floor(index / GRID_COLUMNS)
+  const scrollAllRowIfNeeded = (allRow: number) => {
     const range = rangeRef.current
-    if (range && (row < range.startIndex || row > range.endIndex)) {
-      virtuosoRef.current?.scrollToIndex({ index: row, align: row < range.startIndex ? "start" : "end" })
+    if (range && (allRow < range.startIndex || allRow > range.endIndex)) {
+      virtuosoRef.current?.scrollToIndex({ index: allRow, align: allRow < range.startIndex ? "start" : "end" })
     }
   }
 
-  // Force scroll to row (for Home/End/PageUp/PageDown)
-  const scrollToRow = (index: number) => {
-    const row = Math.floor(index / GRID_COLUMNS)
-    virtuosoRef.current?.scrollToIndex({ index: row, align: "start" })
+  const scrollAllRow = (allRow: number) => {
+    virtuosoRef.current?.scrollToIndex({ index: allRow, align: "start" })
   }
 
-  // Calculate visible rows for page navigation
+  const ensureVisible = (index: number, force: boolean) => {
+    const coord = indexToCoord(index, geometry)
+    if (coord.section !== "all") return
+    if (force) scrollAllRow(coord.row)
+    else scrollAllRowIfNeeded(coord.row)
+  }
+
   const visibleRowCount = Math.floor(CONTAINER_HEIGHT / ROW_HEIGHT)
 
   const { refs, floatingStyles } = useFloating({
@@ -102,86 +123,69 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
   // Handle grid keyboard navigation
   useImperativeHandle(ref, () => ({
     onKeyDown: (event: KeyboardEvent) => {
-      if (items.length === 0) return false
-
-      const totalRows = Math.ceil(items.length / GRID_COLUMNS)
-      const currentRow = Math.floor(selectedIndex / GRID_COLUMNS)
-      const currentCol = selectedIndex % GRID_COLUMNS
+      if (total === 0) return false
 
       switch (event.key) {
-        case "ArrowUp": {
-          event.preventDefault()
-          if (currentRow > 0) {
-            const newIndex = selectedIndex - GRID_COLUMNS
-            setSelectedIndex(newIndex)
-            scrollToRowIfNeeded(newIndex)
-          }
-          return true
-        }
-        case "ArrowDown": {
-          event.preventDefault()
-          const nextRowIndex = selectedIndex + GRID_COLUMNS
-          if (nextRowIndex < items.length) {
-            setSelectedIndex(nextRowIndex)
-            scrollToRowIfNeeded(nextRowIndex)
-          }
-          return true
-        }
-        case "ArrowLeft": {
-          event.preventDefault()
-          if (selectedIndex > 0) {
-            const newIndex = selectedIndex - 1
-            setSelectedIndex(newIndex)
-            scrollToRowIfNeeded(newIndex)
-          }
-          return true
-        }
+        case "ArrowUp":
+        case "ArrowDown":
+        case "ArrowLeft":
         case "ArrowRight": {
           event.preventDefault()
-          if (selectedIndex < items.length - 1) {
-            const newIndex = selectedIndex + 1
-            setSelectedIndex(newIndex)
-            scrollToRowIfNeeded(newIndex)
+          const next = moveSelection(selectedIndex, event.key, geometry)
+          if (next !== selectedIndex) {
+            setSelectedIndex(next)
+            ensureVisible(next, false)
           }
           return true
         }
         case "Home": {
           event.preventDefault()
           setSelectedIndex(0)
-          scrollToRow(0)
+          ensureVisible(0, true)
           return true
         }
         case "End": {
           event.preventDefault()
-          const newIndex = items.length - 1
-          setSelectedIndex(newIndex)
-          scrollToRow(newIndex)
+          const last = total - 1
+          setSelectedIndex(last)
+          ensureVisible(last, true)
           return true
         }
         case "PageUp": {
           event.preventDefault()
-          const jumpRows = visibleRowCount
-          const newRow = Math.max(0, currentRow - jumpRows)
-          const newIndex = Math.min(newRow * GRID_COLUMNS + currentCol, items.length - 1)
-          setSelectedIndex(newIndex)
-          scrollToRow(newIndex)
+          const coord = indexToCoord(selectedIndex, geometry)
+          if (coord.section === "all") {
+            const newRow = Math.max(0, coord.row - visibleRowCount)
+            const newIndex = geometry.recentCount + Math.min(newRow * GRID_COLUMNS + coord.col, all.length - 1)
+            setSelectedIndex(newIndex)
+            ensureVisible(newIndex, true)
+          }
           return true
         }
         case "PageDown": {
           event.preventDefault()
-          const jumpRows = visibleRowCount
-          const newRow = Math.min(totalRows - 1, currentRow + jumpRows)
-          const targetIndex = newRow * GRID_COLUMNS + currentCol
-          const newIndex = Math.min(targetIndex, items.length - 1)
-          setSelectedIndex(newIndex)
-          scrollToRow(newIndex)
+          const coord = indexToCoord(selectedIndex, geometry)
+          if (coord.section === "all") {
+            const allRowCount = Math.ceil(all.length / GRID_COLUMNS)
+            const newRow = Math.min(allRowCount - 1, coord.row + visibleRowCount)
+            const newIndex = geometry.recentCount + Math.min(newRow * GRID_COLUMNS + coord.col, all.length - 1)
+            setSelectedIndex(newIndex)
+            ensureVisible(newIndex, true)
+          } else if (all.length > 0) {
+            const newIndex = geometry.recentCount + Math.min(coord.col, all.length - 1)
+            setSelectedIndex(newIndex)
+            ensureVisible(newIndex, true)
+          }
           return true
         }
         case "Tab":
-        case "Enter":
+        case "Enter": {
           event.preventDefault()
-          command(items[selectedIndex])
+          const coord = indexToCoord(selectedIndex, geometry)
+          const item = coord.section === "recent" ? recent[selectedIndex] : all[selectedIndex - geometry.recentCount]
+          if (item) command(item)
           return true
+        }
         case "Escape":
           return true
         default:
@@ -190,10 +194,11 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
     },
   }))
 
-  if (!clientRect || items.length === 0) return null
+  if (!clientRect || total === 0) return null
 
-  // Get currently selected emoji for the footer
-  const selectedEmoji = items[selectedIndex]
+  const selectedCoord = indexToCoord(selectedIndex, geometry)
+  const selectedEmoji =
+    selectedCoord.section === "recent" ? recent[selectedIndex] : all[selectedIndex - geometry.recentCount]
 
   return (
     <div
@@ -204,37 +209,63 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
       aria-label="Emoji picker"
       data-emoji-grid
     >
-      <Virtuoso
-        ref={virtuosoRef}
-        totalCount={rows.length}
-        fixedItemHeight={ROW_HEIGHT}
-        increaseViewportBy={ROW_HEIGHT * 3}
-        rangeChanged={(range) => {
-          rangeRef.current = range
-        }}
-        style={{ height: CONTAINER_HEIGHT }}
-        components={{ Header: VirtuosoPadding, Footer: VirtuosoPadding }}
-        itemContent={(index) => {
-          const rowItems = rows[index]
-          const rowStartIndex = index * GRID_COLUMNS
-          return (
-            <div className="flex gap-0.5 px-2 pb-0.5">
-              {rowItems.map((item, colIndex) => {
-                const itemIndex = rowStartIndex + colIndex
+      {recent.length > 0 && (
+        <div className="px-2 pt-2 pb-1">
+          <p className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider px-0.5 mb-1">
+            Recently used
+          </p>
+          <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${GRID_COLUMNS}, minmax(0, 1fr))` }}>
+            {recentRows.map((rowItems, rowIdx) =>
+              rowItems.map((item, colIdx) => {
+                const itemIndex = rowIdx * GRID_COLUMNS + colIdx
                 return (
                   <EmojiButton
-                    key={item.shortcode}
+                    key={`recent-${item.shortcode}`}
                     item={item}
                     isSelected={itemIndex === selectedIndex}
                     onClick={() => command(item)}
                     onMouseEnter={() => setSelectedIndex(itemIndex)}
                   />
                 )
-              })}
-            </div>
-          )
-        }}
-      />
+              })
+            )}
+          </div>
+        </div>
+      )}
+      {recent.length > 0 && all.length > 0 && <div className="border-t" />}
+      {all.length > 0 && (
+        <Virtuoso
+          ref={virtuosoRef}
+          totalCount={allRows.length}
+          fixedItemHeight={ROW_HEIGHT}
+          increaseViewportBy={ROW_HEIGHT * 3}
+          rangeChanged={(range) => {
+            rangeRef.current = range
+          }}
+          style={{ height: CONTAINER_HEIGHT }}
+          components={{ Header: VirtuosoPadding, Footer: VirtuosoPadding }}
+          itemContent={(index) => {
+            const rowItems = allRows[index]
+            const rowStartIndex = geometry.recentCount + index * GRID_COLUMNS
+            return (
+              <div className="flex gap-0.5 px-2 pb-0.5">
+                {rowItems.map((item, colIndex) => {
+                  const itemIndex = rowStartIndex + colIndex
+                  return (
+                    <EmojiButton
+                      key={item.shortcode}
+                      item={item}
+                      isSelected={itemIndex === selectedIndex}
+                      onClick={() => command(item)}
+                      onMouseEnter={() => setSelectedIndex(itemIndex)}
+                    />
+                  )
+                })}
+              </div>
+            )
+          }}
+        />
+      )}
       {/* Footer showing selected emoji shortcode */}
       {selectedEmoji && (
         <div className="border-t px-2 py-1.5 text-xs text-muted-foreground truncate">

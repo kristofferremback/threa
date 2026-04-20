@@ -3,11 +3,19 @@ import { createPortal } from "react-dom"
 import type { Editor } from "@tiptap/react"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 import type { EmojiEntry } from "@threa/types"
+import {
+  DESKTOP_GRID_COLUMNS,
+  MAX_RECENTLY_USED_ROWS,
+  filterBySearch,
+  pickRecentlyUsed,
+  sortByDefaultOrder,
+} from "@/lib/emoji-picker"
 import type { SuggestionListRef } from "./suggestion-list"
 import { EmojiGrid } from "./emoji-grid"
 
 interface EmojiSuggestionState {
-  items: EmojiEntry[]
+  recent: EmojiEntry[]
+  all: EmojiEntry[]
   clientRect: (() => DOMRect | null) | null
   command: ((item: EmojiEntry) => void) | null
 }
@@ -38,15 +46,15 @@ export interface UseEmojiSuggestionResult {
   close: () => void
 }
 
-const GROUP_ORDER = ["smileys", "people", "animals", "food", "travel", "activities", "objects", "symbols", "flags"]
-
 /**
- * Hook for managing emoji suggestion state with personalized sorting.
+ * Hook for managing emoji suggestion state with a two-section layout.
  *
- * Sorting order:
- * 1. Weighted emojis first (by weight descending)
- * 2. Then by group (smileys → people → animals → ...)
- * 3. Then by in-group order
+ * The grid is split into:
+ * 1. Recently used — weighted emojis (weight > 0), capped at 2 rows.
+ * 2. Emojis — all emojis in default order (group → in-group order).
+ *
+ * Both sections are filtered by the search query; the same emoji can appear
+ * in both when it matches.
  */
 export function useEmojiSuggestion(config: UseEmojiSuggestionConfig): UseEmojiSuggestionResult {
   const { emojis, emojiWeights } = config
@@ -59,70 +67,60 @@ export function useEmojiSuggestion(config: UseEmojiSuggestionConfig): UseEmojiSu
     if (storage) storage.popupVisible = visible
   }, [])
 
-  // Pre-sort emojis for consistent ordering
-  const sortedEmojis = useMemo(() => {
-    return [...emojis].sort((a, b) => {
-      const weightA = emojiWeights[a.shortcode] ?? 0
-      const weightB = emojiWeights[b.shortcode] ?? 0
+  const allSorted = useMemo(() => sortByDefaultOrder(emojis), [emojis])
+  const recentBase = useMemo(
+    () => pickRecentlyUsed(emojis, emojiWeights, DESKTOP_GRID_COLUMNS * MAX_RECENTLY_USED_ROWS),
+    [emojis, emojiWeights]
+  )
 
-      // Weighted emojis first
-      if (weightA > 0 && weightB === 0) return -1
-      if (weightA === 0 && weightB > 0) return 1
-      if (weightA !== weightB) return weightB - weightA
+  // Stable refs so TipTap callbacks (captured at extension creation time) see current data.
+  const allSortedRef = useRef(allSorted)
+  allSortedRef.current = allSorted
+  const recentBaseRef = useRef(recentBase)
+  recentBaseRef.current = recentBase
 
-      // Then by group
-      const groupIndexA = GROUP_ORDER.indexOf(a.group)
-      const groupIndexB = GROUP_ORDER.indexOf(b.group)
-      // Unknown groups go to the end
-      const effectiveGroupA = groupIndexA === -1 ? GROUP_ORDER.length : groupIndexA
-      const effectiveGroupB = groupIndexB === -1 ? GROUP_ORDER.length : groupIndexB
-      if (effectiveGroupA !== effectiveGroupB) return effectiveGroupA - effectiveGroupB
-
-      // Then by in-group order
-      return a.order - b.order
-    })
-  }, [emojis, emojiWeights])
-
-  // Use ref to avoid stale closure - TipTap captures callbacks at extension creation time
-  const sortedEmojisRef = useRef(sortedEmojis)
-  sortedEmojisRef.current = sortedEmojis
-
-  // Filter emojis by query (any alias contains query)
-  const filterItems = useCallback((items: EmojiEntry[], query: string): EmojiEntry[] => {
-    if (!query) return items // Show all emojis when no query
-    const lowerQuery = query.toLowerCase()
-    return items.filter((item) => item.aliases.some((alias) => alias.includes(lowerQuery)))
-  }, [])
-
-  // Stable callback that reads from ref
+  // TipTap's items(query) drives popupVisible. Return the "all" section filtered
+  // by the query so the popup hides only when nothing matches anywhere.
   const getSuggestionItems = useCallback(
-    ({ query }: { query: string }) => filterItems(sortedEmojisRef.current, query),
-    [filterItems]
+    ({ query }: { query: string }) => filterBySearch(allSortedRef.current, query),
+    []
+  )
+
+  const computeSections = useCallback(
+    (query: string, allFiltered: EmojiEntry[]) => ({
+      recent: filterBySearch(recentBaseRef.current, query),
+      all: allFiltered,
+    }),
+    []
   )
 
   const onStart = useCallback(
     (props: SuggestionProps<EmojiEntry>) => {
       editorRef.current = props.editor
       setPopupVisible(props.editor, props.items.length > 0)
+      const { recent, all } = computeSections(props.query, props.items)
       setState({
-        items: props.items,
+        recent,
+        all,
         clientRect: props.clientRect ?? null,
         command: props.command,
       })
     },
-    [setPopupVisible]
+    [setPopupVisible, computeSections]
   )
 
   const onUpdate = useCallback(
     (props: SuggestionProps<EmojiEntry>) => {
       setPopupVisible(props.editor, props.items.length > 0)
+      const { recent, all } = computeSections(props.query, props.items)
       setState({
-        items: props.items,
+        recent,
+        all,
         clientRect: props.clientRect ?? null,
         command: props.command,
       })
     },
-    [setPopupVisible]
+    [setPopupVisible, computeSections]
   )
 
   const onExit = useCallback(
@@ -170,7 +168,8 @@ export function useEmojiSuggestion(config: UseEmojiSuggestionConfig): UseEmojiSu
     return createPortal(
       <EmojiGrid
         ref={listRef as RefObject<SuggestionListRef>}
-        items={state.items}
+        recent={state.recent}
+        all={state.all}
         clientRect={state.clientRect}
         command={state.command}
       />,
