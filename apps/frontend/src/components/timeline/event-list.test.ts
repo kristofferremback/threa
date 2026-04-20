@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { StreamEvent } from "@threa/types"
-import { groupTimelineItems } from "./event-list"
+import { annotateAuthorGroups, groupTimelineItems, type TimelineItem } from "./event-list"
 
 interface CreateEventParams {
   id: string
@@ -105,5 +105,154 @@ describe("groupTimelineItems", () => {
     expect(sessionGroups).toHaveLength(2)
     expect(sessionGroups.map((group) => group.sessionId)).toEqual(["session_1", "session_2"])
     expect(sessionGroups.map((group) => group.sessionVersion)).toEqual([1, 1])
+  })
+})
+
+interface CreateMessageEventParams {
+  id: string
+  actorId: string
+  actorType?: StreamEvent["actorType"]
+  createdAt: string
+  eventType?: StreamEvent["eventType"]
+  payload?: Record<string, unknown>
+}
+
+function createMessageEvent(params: CreateMessageEventParams): StreamEvent {
+  return {
+    id: params.id,
+    streamId: "stream_123",
+    sequence: params.id,
+    eventType: params.eventType ?? "message_created",
+    payload: { messageId: `msg_${params.id}`, contentMarkdown: "hi", ...params.payload },
+    actorId: params.actorId,
+    actorType: params.actorType ?? "user",
+    createdAt: params.createdAt,
+  }
+}
+
+function toEventItem(event: StreamEvent): TimelineItem {
+  return { type: "event", event }
+}
+
+function continuationFlags(items: TimelineItem[]): boolean[] {
+  return items.map((item) => (item.type === "event" ? !!item.groupContinuation : false))
+}
+
+describe("annotateAuthorGroups", () => {
+  it("marks consecutive same-author messages within 5 minutes as continuations", () => {
+    const items = [
+      toEventItem(createMessageEvent({ id: "1", actorId: "user_a", createdAt: "2026-04-19T10:00:00Z" })),
+      toEventItem(createMessageEvent({ id: "2", actorId: "user_a", createdAt: "2026-04-19T10:01:00Z" })),
+      toEventItem(createMessageEvent({ id: "3", actorId: "user_a", createdAt: "2026-04-19T10:04:59Z" })),
+      toEventItem(createMessageEvent({ id: "4", actorId: "user_a", createdAt: "2026-04-19T10:05:00Z" })),
+    ]
+
+    // First is always a head; rest are continuations (each within 5min of the one before it).
+    expect(continuationFlags(annotateAuthorGroups(items))).toEqual([false, true, true, true])
+  })
+
+  it("breaks the run when the author changes", () => {
+    const items = [
+      toEventItem(createMessageEvent({ id: "1", actorId: "user_a", createdAt: "2026-04-19T10:00:00Z" })),
+      toEventItem(createMessageEvent({ id: "2", actorId: "user_b", createdAt: "2026-04-19T10:00:30Z" })),
+      toEventItem(createMessageEvent({ id: "3", actorId: "user_a", createdAt: "2026-04-19T10:01:00Z" })),
+    ]
+
+    expect(continuationFlags(annotateAuthorGroups(items))).toEqual([false, false, false])
+  })
+
+  it("breaks the run when the actorType changes (user → persona)", () => {
+    const items = [
+      toEventItem(createMessageEvent({ id: "1", actorId: "actor_1", createdAt: "2026-04-19T10:00:00Z" })),
+      toEventItem(
+        createMessageEvent({
+          id: "2",
+          actorId: "actor_1",
+          actorType: "persona",
+          createdAt: "2026-04-19T10:00:30Z",
+        })
+      ),
+    ]
+
+    expect(continuationFlags(annotateAuthorGroups(items))).toEqual([false, false])
+  })
+
+  it("breaks the run once messages are more than 5 minutes apart", () => {
+    const items = [
+      toEventItem(createMessageEvent({ id: "1", actorId: "user_a", createdAt: "2026-04-19T10:00:00Z" })),
+      toEventItem(createMessageEvent({ id: "2", actorId: "user_a", createdAt: "2026-04-19T10:05:01Z" })),
+    ]
+
+    expect(continuationFlags(annotateAuthorGroups(items))).toEqual([false, false])
+  })
+
+  it("treats deleted messages as heads and resets the run for the next message", () => {
+    const items = [
+      toEventItem(createMessageEvent({ id: "1", actorId: "user_a", createdAt: "2026-04-19T10:00:00Z" })),
+      toEventItem(
+        createMessageEvent({
+          id: "2",
+          actorId: "user_a",
+          createdAt: "2026-04-19T10:00:30Z",
+          payload: { deletedAt: "2026-04-19T10:02:00Z" },
+        })
+      ),
+      toEventItem(createMessageEvent({ id: "3", actorId: "user_a", createdAt: "2026-04-19T10:01:00Z" })),
+    ]
+
+    expect(continuationFlags(annotateAuthorGroups(items))).toEqual([false, false, false])
+  })
+
+  it("breaks the run when a non-message event (command/session group) appears mid-run", () => {
+    const messageEvent = toEventItem(
+      createMessageEvent({ id: "1", actorId: "user_a", createdAt: "2026-04-19T10:00:00Z" })
+    )
+    const commandGroup: TimelineItem = {
+      type: "command_group",
+      commandId: "cmd_1",
+      events: [],
+    }
+    const nextMessage = toEventItem(
+      createMessageEvent({ id: "2", actorId: "user_a", createdAt: "2026-04-19T10:00:30Z" })
+    )
+
+    expect(continuationFlags(annotateAuthorGroups([messageEvent, commandGroup, nextMessage]))).toEqual([
+      false,
+      false,
+      false,
+    ])
+  })
+
+  it("treats companion_response as a groupable message type", () => {
+    const items = [
+      toEventItem(
+        createMessageEvent({
+          id: "1",
+          actorId: "persona_ariadne",
+          actorType: "persona",
+          eventType: "companion_response",
+          createdAt: "2026-04-19T10:00:00Z",
+        })
+      ),
+      toEventItem(
+        createMessageEvent({
+          id: "2",
+          actorId: "persona_ariadne",
+          actorType: "persona",
+          eventType: "companion_response",
+          createdAt: "2026-04-19T10:00:30Z",
+        })
+      ),
+    ]
+
+    expect(continuationFlags(annotateAuthorGroups(items))).toEqual([false, true])
+  })
+
+  it("leaves non-message events untouched so command/session groups render normally", () => {
+    const input: TimelineItem[] = [
+      { type: "command_group", commandId: "cmd_1", events: [] },
+      { type: "session_group", sessionId: "sess_1", sessionVersion: 1, events: [] },
+    ]
+    expect(annotateAuthorGroups(input)).toEqual(input)
   })
 })
