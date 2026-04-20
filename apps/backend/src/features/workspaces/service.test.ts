@@ -238,6 +238,7 @@ describe("WorkspaceService.updateUserRole", () => {
   const mockFindUser = spyOn(UserRepository, "findById")
   const mockListMirrorRoles = spyOn(WorkosAuthzMirrorRepository, "listRoles")
   const mockFindMirrorMembership = spyOn(WorkosAuthzMirrorRepository, "findMembershipAssignment")
+  const mockListMirrorMembershipAssignments = spyOn(WorkosAuthzMirrorRepository, "listMembershipAssignments")
   const mockHasOtherRoleManager = spyOn(WorkosAuthzMirrorRepository, "hasOtherRoleManager")
   const mockUpsertMembershipRoles = spyOn(WorkosAuthzMirrorRepository, "upsertMembershipRoles")
   const mockSyncCompatibilityRoles = spyOn(WorkosAuthzMirrorRepository, "syncCompatibilityRoles")
@@ -249,6 +250,7 @@ describe("WorkspaceService.updateUserRole", () => {
     mockFindUser.mockReset()
     mockListMirrorRoles.mockReset()
     mockFindMirrorMembership.mockReset()
+    mockListMirrorMembershipAssignments.mockReset()
     mockHasOtherRoleManager.mockReset()
     mockUpsertMembershipRoles.mockReset()
     mockSyncCompatibilityRoles.mockReset()
@@ -289,12 +291,14 @@ describe("WorkspaceService.updateUserRole", () => {
       workosUserId: "wos_1",
       roleSlugs: ["member"],
     } as never)
+    mockListMirrorMembershipAssignments.mockResolvedValue([] as never)
     mockHasOtherRoleManager.mockResolvedValue(true as never)
     mockUpsertMembershipRoles.mockResolvedValue(undefined as never)
     mockSyncCompatibilityRoles.mockResolvedValue(undefined as never)
     mockWithTransaction.mockImplementation((async (...args: Parameters<typeof db.withTransaction>) => {
       const callback = args[1]
-      return callback({} as never)
+      const client = { query: mock(() => Promise.resolve({ rows: [] })) }
+      return callback(client as never)
     }) as typeof db.withTransaction)
     mockInsertOutbox.mockResolvedValue(undefined as never)
   })
@@ -360,6 +364,13 @@ describe("WorkspaceService.updateUserRole", () => {
       workosUserId: "wos_1",
       roleSlugs: ["member"],
     } as never)
+    mockListMirrorMembershipAssignments.mockResolvedValue([
+      {
+        organizationMembershipId: "om_1",
+        workosUserId: "wos_1",
+        roleSlugs: ["support-admin"],
+      },
+    ] as never)
     mockFindUser.mockResolvedValueOnce({
       id: "user_1",
       workspaceId: "ws_1",
@@ -478,6 +489,49 @@ describe("WorkspaceService.updateUserRole", () => {
     })
     expect(workosOrgService.updateOrganizationMembership).not.toHaveBeenCalled()
     expect(mockUpsertMembershipRoles).not.toHaveBeenCalled()
+  })
+
+  test("serializes role mutations per workspace with an advisory lock and re-checks inside the lock", async () => {
+    const workosOrgService: MockWorkosOrgService = {
+      hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(true)),
+      updateOrganizationMembership: mock<(params: any) => Promise<any>>(() => Promise.resolve({})),
+    }
+    mockListMirrorRoles.mockResolvedValue([
+      {
+        slug: "admin",
+        name: "Admin",
+        permissions: ["messages:read", "members:write"],
+        description: null,
+        type: "system",
+      },
+      { slug: "member", name: "Member", permissions: ["messages:read"], description: null, type: "system" },
+    ] as never)
+    mockFindMirrorMembership.mockResolvedValue({
+      organizationMembershipId: "om_1",
+      workosUserId: "wos_1",
+      roleSlugs: ["admin"],
+    } as never)
+    // hasOtherRoleManager returns true when called outside the lock context (not used any more)
+    // but returns false inside the lock — simulating a concurrent demotion that already committed.
+    mockHasOtherRoleManager.mockResolvedValue(false as never)
+    const clientQuery = mock(() => Promise.resolve({ rows: [] }))
+    mockWithTransaction.mockImplementation((async (...args: Parameters<typeof db.withTransaction>) => {
+      const callback = args[1]
+      return callback({ query: clientQuery } as never)
+    }) as typeof db.withTransaction)
+
+    const service = createWorkspaceService(false, workosOrgService)
+
+    await expect(service.updateUserRole("ws_1", "user_1", "member")).rejects.toMatchObject({
+      name: "HttpError",
+      code: "LAST_ADMIN_NOT_ALLOWED",
+    })
+    expect(clientQuery).toHaveBeenCalledWith("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [
+      "workspace_role_mutation",
+      "ws_1",
+    ])
+    expect(mockHasOtherRoleManager).toHaveBeenCalledWith(expect.anything(), "ws_1", "om_1")
+    expect(workosOrgService.updateOrganizationMembership).not.toHaveBeenCalled()
   })
 })
 

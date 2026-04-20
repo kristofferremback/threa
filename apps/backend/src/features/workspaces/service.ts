@@ -18,16 +18,12 @@ import type { WorkspaceAuthzSnapshot, WorkspaceRole } from "@threa/types"
 import { UserApiKeyRepository } from "../user-api-keys"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
-import { ADMIN_COMPATIBILITY_PERMISSIONS } from "../../middleware/authorization"
+import { ADMIN_COMPATIBILITY_PERMISSIONS, workosRoleSlugFromCompatibilityRole } from "../../middleware/authorization"
 import { decorateUserWithAuthzMirror, decorateUsersWithAuthzMirror } from "./user-authz-decorator"
 
 function deriveSlugFromEmail(email: string): string {
   const prefix = email.split("@")[0]
   return generateSlug(prefix)
-}
-
-function workosRoleSlugFromCompatibilityRole(role: User["role"]): "admin" | "member" {
-  return role === "admin" || role === "owner" ? "admin" : "member"
 }
 
 export interface CreateWorkspaceParams {
@@ -331,26 +327,38 @@ export class WorkspaceService {
     )
     const targetWillBeAdmin = nextRole.permissions.some((permission) => ADMIN_COMPATIBILITY_PERMISSIONS.has(permission))
 
-    if (targetCurrentlyAdmin && !targetWillBeAdmin) {
-      const otherAdminExists = await WorkosAuthzMirrorRepository.hasOtherRoleManager(
-        this.pool,
-        workspaceId,
-        assignment.organizationMembershipId
-      )
-      if (!otherAdminExists) {
-        throw new HttpError("Workspace must retain at least one member who can manage roles", {
-          status: 409,
-          code: "LAST_ADMIN_NOT_ALLOWED",
-        })
-      }
-    }
-
-    await this.workosOrgService.updateOrganizationMembership({
-      organizationMembershipId: assignment.organizationMembershipId,
-      roleSlug,
-    })
-
+    const workosOrgService = this.workosOrgService
     const decoratedUpdatedUser = await withTransaction(this.pool, async (client) => {
+      // Serialize role mutations per-workspace so the last-admin guard cannot be
+      // bypassed by two concurrent demotions both reading the pre-mutation state.
+      // This deliberately keeps the transaction open across the WorkOS call below:
+      // rare admin-role changes are worth the invariant exception because the lock
+      // must cover the guard, the external mutation, and the local mirror update.
+      // The advisory lock is released when the transaction ends.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [
+        "workspace_role_mutation",
+        workspaceId,
+      ])
+
+      if (targetCurrentlyAdmin && !targetWillBeAdmin) {
+        const otherAdminExists = await WorkosAuthzMirrorRepository.hasOtherRoleManager(
+          client,
+          workspaceId,
+          assignment.organizationMembershipId
+        )
+        if (!otherAdminExists) {
+          throw new HttpError("Workspace must retain at least one member who can manage roles", {
+            status: 409,
+            code: "LAST_ADMIN_NOT_ALLOWED",
+          })
+        }
+      }
+
+      await workosOrgService.updateOrganizationMembership({
+        organizationMembershipId: assignment.organizationMembershipId,
+        roleSlug,
+      })
+
       await WorkosAuthzMirrorRepository.upsertMembershipRoles({
         db: client,
         workspaceId,
@@ -365,13 +373,7 @@ export class WorkspaceService {
         throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
-      const decoratedUser: User = {
-        ...updatedUser,
-        isOwner: workspace.createdBy === updatedUser.id,
-        assignedRole: { slug: nextRole.slug, name: nextRole.name },
-        assignedRoles: [{ slug: nextRole.slug, name: nextRole.name }],
-        canEditRole: true,
-      }
+      const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updatedUser, workspace)
 
       await OutboxRepository.insert(client, "workspace_user:updated", {
         workspaceId,
@@ -404,11 +406,17 @@ export class WorkspaceService {
         await UserRepository.listByWorkspace(client, snapshot.workspaceId),
         workspace
       )
-      for (const user of decoratedUsers) {
-        await OutboxRepository.insert(client, "workspace_user:updated", {
-          workspaceId: snapshot.workspaceId,
-          user: serializeBigInt(user),
-        })
+      if (decoratedUsers.length > 0) {
+        await OutboxRepository.insertMany(
+          client,
+          decoratedUsers.map((user) => ({
+            eventType: "workspace_user:updated" as const,
+            payload: {
+              workspaceId: snapshot.workspaceId,
+              user: serializeBigInt(user),
+            },
+          }))
+        )
       }
 
       return true

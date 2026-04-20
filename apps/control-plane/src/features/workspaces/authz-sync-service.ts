@@ -8,8 +8,14 @@ import {
 } from "@threa/backend-common"
 import type { Pool } from "pg"
 import { ControlPlaneAuthzMirrorRepository } from "./authz-mirror-repository"
-import { WorkspaceRegistryRepository, type WorkspaceRegistryRow } from "./repository"
+import { WorkspaceRegistryRepository } from "./repository"
 import type { RegionalClient } from "../../lib/regional-client"
+
+type AuthzSyncWorkspace = {
+  id: string
+  region: string
+  workos_organization_id: string | null
+}
 
 export const OUTBOX_REGIONAL_AUTHZ_SYNC = "regional_authz_sync"
 
@@ -148,10 +154,7 @@ export class ControlPlaneAuthzSyncService {
 
         const snapshot = await ControlPlaneAuthzMirrorRepository.getSnapshot(this.deps.pool, target.id)
         if (!snapshot) {
-          const workspace = await WorkspaceRegistryRepository.findById(this.deps.pool, target.id)
-          if (workspace?.workos_organization_id) {
-            await this.refreshWorkspaceFromWorkos(workspace)
-          }
+          await this.refreshWorkspaceFromWorkos(target)
           continue
         }
 
@@ -180,9 +183,9 @@ export class ControlPlaneAuthzSyncService {
 
     if (!organizationId && GLOBAL_ROLE_EVENT_TYPES.has(event.event)) {
       const targets = await WorkspaceRegistryRepository.listAuthzSyncTargets(this.deps.pool)
-      const workspaceIds = targets.filter((target) => target.workos_organization_id).map((target) => target.id)
-      const workspaces = (await WorkspaceRegistryRepository.findByIds(this.deps.pool, workspaceIds)).filter(
-        (workspace) => workspace.workos_organization_id
+      const workspaces = targets.filter(
+        (target): target is AuthzSyncWorkspace & { workos_organization_id: string } =>
+          target.workos_organization_id !== null
       )
       const snapshots = await Promise.all(
         workspaces.map(async (workspace) => ({
@@ -278,7 +281,7 @@ export class ControlPlaneAuthzSyncService {
     })
   }
 
-  private async refreshWorkspaceFromWorkos(workspace: WorkspaceRegistryRow): Promise<void> {
+  private async refreshWorkspaceFromWorkos(workspace: AuthzSyncWorkspace): Promise<void> {
     if (!workspace.workos_organization_id) {
       return
     }
@@ -289,7 +292,7 @@ export class ControlPlaneAuthzSyncService {
     })
   }
 
-  private async loadWorkspaceSnapshotFromWorkos(workspace: WorkspaceRegistryRow): Promise<CanonicalSnapshotPayload> {
+  private async loadWorkspaceSnapshotFromWorkos(workspace: AuthzSyncWorkspace): Promise<CanonicalSnapshotPayload> {
     if (!workspace.workos_organization_id) {
       return { memberships: [], roles: [] }
     }
@@ -313,7 +316,7 @@ export class ControlPlaneAuthzSyncService {
 
   private async replaceCanonicalSnapshot(
     db: Querier,
-    workspace: WorkspaceRegistryRow,
+    workspace: AuthzSyncWorkspace,
     snapshot: CanonicalSnapshotPayload
   ): Promise<void> {
     if (!workspace.workos_organization_id) {

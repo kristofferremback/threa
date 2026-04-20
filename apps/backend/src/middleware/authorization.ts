@@ -49,6 +49,10 @@ export function storedCompatibilityRole(
   return currentRole === "owner" && isOwner ? "owner" : nextRole
 }
 
+export function workosRoleSlugFromCompatibilityRole(role: "owner" | "admin" | "user"): "admin" | "member" {
+  return role === "admin" || role === "owner" ? "admin" : "member"
+}
+
 export function requireWorkspacePermission(...permissions: WorkspacePermissionScope[]): RequestHandler {
   return function requireWorkspacePermissionMiddleware(req: Request, res: Response, next: NextFunction): void {
     if (!req.authz) {
