@@ -18,6 +18,7 @@ import { withTestTransaction, addTestMember, setupTestDatabase, testMessageConte
 import { WorkspaceRepository } from "../../src/features/workspaces"
 import { StreamService, StreamRepository } from "../../src/features/streams"
 import { EventService } from "../../src/features/messaging"
+import { OutboxRepository, type MessageUpdatedOutboxPayload } from "../../src/lib/outbox"
 import { userId, workspaceId } from "../../src/lib/id"
 import { Visibilities } from "@threa/types"
 
@@ -43,6 +44,7 @@ describe("Thread Summary", () => {
     parentMessageId: string
     threadId: string
     replyIds: string[]
+    replies: Array<{ id: string; authorId: string }>
   }
 
   async function seedThread(
@@ -94,7 +96,7 @@ describe("Thread Summary", () => {
       userIds.push(userId())
     }
 
-    const replyIds: string[] = []
+    const replies: Array<{ id: string; authorId: string }> = []
     for (let round = 0; round < replyCountPerUser; round++) {
       for (const uid of userIds) {
         const msg = await eventService.createMessage({
@@ -104,7 +106,7 @@ describe("Thread Summary", () => {
           authorType: "user",
           ...testMessageContent(opts.markdown ?? `Reply from ${uid.slice(-4)} round ${round}`),
         })
-        replyIds.push(msg.id)
+        replies.push({ id: msg.id, authorId: uid })
       }
     }
 
@@ -114,7 +116,8 @@ describe("Thread Summary", () => {
       channelId: channel.id,
       parentMessageId: parent.id,
       threadId: thread.id,
-      replyIds,
+      replyIds: replies.map((reply) => reply.id),
+      replies,
     }
   }
 
@@ -198,6 +201,63 @@ describe("Thread Summary", () => {
       const map = await StreamRepository.findThreadSummaries(pool, f.channelId)
       const summary = map.get(f.parentMessageId)
       expect(summary!.participants).toHaveLength(3)
+    })
+
+    test("counts only non-deleted replies when deriving replyCount for bootstrap", async () => {
+      const f = await seedThread(1, 1)
+      const onlyReply = f.replies[0]!
+
+      await eventService.deleteMessage({
+        workspaceId: f.wsId,
+        streamId: f.threadId,
+        messageId: onlyReply.id,
+        actorId: onlyReply.authorId,
+      })
+
+      const threadDataMap = await StreamRepository.findThreadsWithReplyCounts(pool, f.channelId)
+      expect(threadDataMap.get(f.parentMessageId)).toEqual({
+        threadId: f.threadId,
+        replyCount: 0,
+      })
+
+      const summaryMap = await StreamRepository.findThreadSummaries(pool, f.channelId)
+      expect(summaryMap.has(f.parentMessageId)).toBe(false)
+    })
+  })
+
+  describe("thread-summary reactivity", () => {
+    test("editing the latest thread reply emits a parent-stream refresh with updated threadSummary", async () => {
+      const f = await seedThread(1, 1, { markdown: "Original latest reply" })
+      const latestReply = f.replies[f.replies.length - 1]!
+
+      const baselineResult = await pool.query("SELECT COALESCE(MAX(id), 0) AS max_id FROM outbox")
+      const baselineId = BigInt(baselineResult.rows[0].max_id)
+
+      await eventService.editMessage({
+        workspaceId: f.wsId,
+        streamId: f.threadId,
+        messageId: latestReply.id,
+        actorId: latestReply.authorId,
+        ...testMessageContent("Edited latest reply"),
+      })
+
+      const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
+      const refreshEvent = outboxEvents.find((event) => event.eventType === "message:updated")
+
+      expect(refreshEvent).toBeDefined()
+      const payload = refreshEvent!.payload as MessageUpdatedOutboxPayload
+      expect(payload).toMatchObject({
+        workspaceId: f.wsId,
+        streamId: f.channelId,
+        messageId: f.parentMessageId,
+        updateType: "reply_count",
+        replyCount: 1,
+      })
+      expect(payload.threadSummary).not.toBeNull()
+      expect(payload.threadSummary!.latestReply).toMatchObject({
+        messageId: latestReply.id,
+        contentMarkdown: "Edited latest reply",
+      })
     })
   })
 

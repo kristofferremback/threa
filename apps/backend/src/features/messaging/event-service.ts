@@ -136,6 +136,30 @@ class DuplicateMessageError extends Error {
 export class EventService {
   constructor(private pool: Pool) {}
 
+  private async publishParentThreadUpdate(
+    client: PoolClient,
+    params: {
+      workspaceId: string
+      parentStreamId: string | null
+      parentMessageId: string | null
+    }
+  ): Promise<void> {
+    if (!params.parentStreamId || !params.parentMessageId) return
+
+    const parentMessage = await MessageRepository.findById(client, params.parentMessageId)
+    if (!parentMessage) return
+
+    const threadSummary = await StreamRepository.findThreadSummaryByParentMessage(client, params.parentMessageId)
+    await OutboxRepository.insert(client, "message:updated", {
+      workspaceId: params.workspaceId,
+      streamId: params.parentStreamId,
+      messageId: params.parentMessageId,
+      updateType: "reply_count",
+      replyCount: parentMessage.replyCount,
+      threadSummary,
+    })
+  }
+
   private async resolveActorType(
     client: PoolClient,
     streamId: string,
@@ -318,21 +342,11 @@ export class EventService {
       // 9. If this is a thread, update parent message's reply count
       if (stream?.parentMessageId && stream?.parentStreamId) {
         await MessageRepository.incrementReplyCount(client, stream.parentMessageId)
-
-        // Get updated count for the event
-        const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
-        if (parentMessage) {
-          const threadSummary = await StreamRepository.findThreadSummaryByParentMessage(client, stream.parentMessageId)
-          // Emit to PARENT stream's room (not this thread's room)
-          await OutboxRepository.insert(client, "message:updated", {
-            workspaceId: params.workspaceId,
-            streamId: stream.parentStreamId,
-            messageId: stream.parentMessageId,
-            updateType: "reply_count",
-            replyCount: parentMessage.replyCount,
-            threadSummary,
-          })
-        }
+        await this.publishParentThreadUpdate(client, {
+          workspaceId: params.workspaceId,
+          parentStreamId: stream.parentStreamId,
+          parentMessageId: stream.parentMessageId,
+        })
       }
 
       return message
@@ -388,6 +402,15 @@ export class EventService {
           streamId: params.streamId,
           event: serializeBigInt(event),
         })
+
+        const stream = await StreamRepository.findById(client, params.streamId)
+        if (stream?.parentMessageId && stream.parentStreamId) {
+          await this.publishParentThreadUpdate(client, {
+            workspaceId: params.workspaceId,
+            parentStreamId: stream.parentStreamId,
+            parentMessageId: stream.parentMessageId,
+          })
+        }
       }
 
       return message
@@ -429,24 +452,11 @@ export class EventService {
         const stream = await StreamRepository.findById(client, params.streamId)
         if (stream?.parentMessageId && stream?.parentStreamId) {
           await MessageRepository.decrementReplyCount(client, stream.parentMessageId)
-
-          // Get updated count for the event
-          const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
-          if (parentMessage) {
-            const threadSummary = await StreamRepository.findThreadSummaryByParentMessage(
-              client,
-              stream.parentMessageId
-            )
-            // Emit to PARENT stream's room (not this thread's room)
-            await OutboxRepository.insert(client, "message:updated", {
-              workspaceId: params.workspaceId,
-              streamId: stream.parentStreamId,
-              messageId: stream.parentMessageId,
-              updateType: "reply_count",
-              replyCount: parentMessage.replyCount,
-              threadSummary,
-            })
-          }
+          await this.publishParentThreadUpdate(client, {
+            workspaceId: params.workspaceId,
+            parentStreamId: stream.parentStreamId,
+            parentMessageId: stream.parentMessageId,
+          })
         }
       }
 

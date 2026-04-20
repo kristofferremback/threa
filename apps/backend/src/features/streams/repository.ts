@@ -776,7 +776,8 @@ export const StreamRepository = {
   /**
    * Find all threads for messages in a given parent stream, including reply counts.
    * Returns a map of parentMessageId -> { threadId, replyCount }
-   * This combines findThreadsForMessages + countMessagesByStreams in a single query.
+   * Counts only non-deleted replies so bootstrap matches the live thread-summary
+   * semantics and doesn't resurrect deleted-only threads after refresh.
    */
   async findThreadsWithReplyCounts(
     db: Querier,
@@ -786,9 +787,9 @@ export const StreamRepository = {
       SELECT
         s.parent_message_id,
         s.id,
-        COUNT(e.id)::text AS reply_count
+        COUNT(m.id)::text AS reply_count
       FROM streams s
-      LEFT JOIN stream_events e ON e.stream_id = s.id AND e.event_type = 'message_created'
+      LEFT JOIN messages m ON m.stream_id = s.id AND m.deleted_at IS NULL
       WHERE s.parent_stream_id = ${parentStreamId}
         AND s.parent_message_id IS NOT NULL
       GROUP BY s.id, s.parent_message_id
