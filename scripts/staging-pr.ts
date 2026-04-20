@@ -90,6 +90,14 @@ const prHostname = `pr-${prNumber}-staging.threa.io`
 // Database helpers (uses psql via STAGING_DATABASE_URL)
 // ---------------------------------------------------------------------------
 
+// STAGING_DATABASE_URL is the public proxy URL (required so GH Actions runners
+// can reach Postgres for psql/pg_dump). Railway services in the same project
+// must talk to Postgres over the internal network to avoid egress charges.
+function toInternalDbUrl(publicUrl: string, dbName: string): string {
+  const u = new URL(publicUrl)
+  return `postgresql://${u.username}:${u.password}@postgres.railway.internal:5432/${dbName}`
+}
+
 async function runPsql(db: string, sql: string): Promise<string> {
   // Replace the database name in the URL
   const url = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${db}$2`)
@@ -333,7 +341,7 @@ async function createRailwayService(): Promise<string> {
     baseEnvVars = (baseEnvVars as unknown as { variables: Record<string, string> }).variables ?? {}
   }
 
-  const prDbUrl = STAGING_DATABASE_URL.replace(/\/([^/?]+)(\?.*)?$/, `/${prDbName}$2`)
+  const prDbUrl = toInternalDbUrl(STAGING_DATABASE_URL, prDbName)
   const envVars: Record<string, string> = {
     ...baseEnvVars,
     // PR-specific overrides
