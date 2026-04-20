@@ -322,6 +322,7 @@ export class EventService {
         // Get updated count for the event
         const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
         if (parentMessage) {
+          const threadSummary = await StreamRepository.findThreadSummaryByParentMessage(client, stream.parentMessageId)
           // Emit to PARENT stream's room (not this thread's room)
           await OutboxRepository.insert(client, "message:updated", {
             workspaceId: params.workspaceId,
@@ -329,6 +330,7 @@ export class EventService {
             messageId: stream.parentMessageId,
             updateType: "reply_count",
             replyCount: parentMessage.replyCount,
+            threadSummary,
           })
         }
       }
@@ -431,6 +433,10 @@ export class EventService {
           // Get updated count for the event
           const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
           if (parentMessage) {
+            const threadSummary = await StreamRepository.findThreadSummaryByParentMessage(
+              client,
+              stream.parentMessageId
+            )
             // Emit to PARENT stream's room (not this thread's room)
             await OutboxRepository.insert(client, "message:updated", {
               workspaceId: params.workspaceId,
@@ -438,6 +444,7 @@ export class EventService {
               messageId: stream.parentMessageId,
               updateType: "reply_count",
               replyCount: parentMessage.replyCount,
+              threadSummary,
             })
           }
         }

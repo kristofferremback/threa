@@ -87,10 +87,10 @@ interface MessageEventProps {
   /** Defer non-critical per-message hydration until coordinated reveal completes */
   deferSecondaryHydration?: boolean
   /**
-   * When true, render as a same-author continuation: no header row, compact
-   * gutter time instead of the full author/time block. Rendering detail lands
-   * in a follow-up commit — currently unused so the timeline keeps its
-   * existing layout while the grouping pipeline is validated.
+   * When true, render as a same-author continuation: drop the header row,
+   * show only the gutter micro-time and body. `MessageLayout` ignores this
+   * in pending/failed/editing states so those always render with a full
+   * header.
    */
   groupContinuation?: boolean
 }

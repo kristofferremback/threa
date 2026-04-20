@@ -803,14 +803,15 @@ export const StreamRepository = {
         ORDER BY parent_message_id, sequence DESC
       ),
       participants_distinct AS (
-        SELECT DISTINCT parent_message_id, author_id
+        SELECT parent_message_id, author_id, MIN(sequence) AS first_reply_sequence
         FROM thread_messages
         WHERE author_type = 'user'
+        GROUP BY parent_message_id, author_id
       ),
       participants AS (
         SELECT
           parent_message_id,
-          (ARRAY_AGG(author_id))[1:3] AS author_ids
+          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids
         FROM participants_distinct
         GROUP BY parent_message_id
       )
@@ -840,6 +841,70 @@ export const StreamRepository = {
       })
     }
     return map
+  },
+
+  /**
+   * Compute the thread summary for a single parent message. Returns null when
+   * the parent has no non-deleted replies. Used by the real-time reply-count
+   * path so the frontend can refresh ThreadCard content without waiting for
+   * the next bootstrap.
+   */
+  async findThreadSummaryByParentMessage(db: Querier, parentMessageId: string): Promise<ThreadSummary | null> {
+    const result = await db.query<{
+      latest_message_id: string
+      latest_author_id: string
+      latest_author_type: string
+      latest_content_markdown: string
+      last_reply_at: Date
+      participant_user_ids: string[]
+    }>(sql`
+      WITH thread_messages AS (
+        SELECT
+          m.id,
+          m.sequence,
+          m.author_id,
+          m.author_type,
+          m.content_markdown,
+          m.created_at
+        FROM streams s
+        JOIN messages m ON m.stream_id = s.id
+        WHERE s.parent_message_id = ${parentMessageId}
+          AND m.deleted_at IS NULL
+      ),
+      participants_distinct AS (
+        SELECT author_id, MIN(sequence) AS first_reply_sequence
+        FROM thread_messages
+        WHERE author_type = 'user'
+        GROUP BY author_id
+      ),
+      participants AS (
+        SELECT (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids
+        FROM participants_distinct
+      )
+      SELECT
+        l.id AS latest_message_id,
+        l.author_id AS latest_author_id,
+        l.author_type AS latest_author_type,
+        l.content_markdown AS latest_content_markdown,
+        l.created_at AS last_reply_at,
+        COALESCE((SELECT author_ids FROM participants), ARRAY[]::TEXT[]) AS participant_user_ids
+      FROM thread_messages l
+      ORDER BY l.sequence DESC
+      LIMIT 1
+    `)
+
+    if (result.rows.length === 0) return null
+    const row = result.rows[0]
+    return {
+      lastReplyAt: row.last_reply_at.toISOString(),
+      participantUserIds: row.participant_user_ids,
+      latestReply: {
+        messageId: row.latest_message_id,
+        actorId: row.latest_author_id,
+        actorType: row.latest_author_type as AuthorType,
+        contentMarkdown: row.latest_content_markdown,
+      },
+    }
   },
 
   /**

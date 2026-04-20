@@ -988,4 +988,13 @@ export class StreamService {
   async getThreadSummaries(streamId: string): Promise<Map<string, ThreadSummary>> {
     return StreamRepository.findThreadSummaries(this.pool, streamId)
   }
+
+  /**
+   * Compute the thread summary for a single parent message, or null when there
+   * are no non-deleted replies. See
+   * {@link StreamRepository.findThreadSummaryByParentMessage}.
+   */
+  async getThreadSummaryForMessage(parentMessageId: string): Promise<ThreadSummary | null> {
+    return StreamRepository.findThreadSummaryByParentMessage(this.pool, parentMessageId)
+  }
 }

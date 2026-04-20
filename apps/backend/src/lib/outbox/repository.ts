@@ -132,6 +132,13 @@ export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
   updateType: "reply_count" | "content"
   replyCount?: number
   content?: string
+  /**
+   * When `updateType === "reply_count"`, carries the recomputed thread summary
+   * (or `null` when the last remaining reply was deleted). Lets the frontend
+   * refresh ThreadCard content alongside `replyCount` instead of waiting for
+   * the next bootstrap.
+   */
+  threadSummary?: import("@threa/types").ThreadSummary | null
 }
 
 export interface ReactionOutboxPayload extends StreamScopedPayload {
