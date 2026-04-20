@@ -22,6 +22,7 @@ import {
   deleteMessage,
   getUserId,
   getBootstrap,
+  getWorkspaceBootstrap,
   joinWorkspace,
   joinRoom,
 } from "../client"
@@ -411,6 +412,7 @@ describe("Real-time Events", () => {
       const outsiderClient = new TestClient()
       await loginAs(outsiderClient, "workspace-outsider@example.com", "Workspace Outsider")
       await joinWorkspace(outsiderClient, workspaceId)
+      await getWorkspaceBootstrap(outsiderClient, workspaceId)
 
       const outsiderSocket = createSocket(outsiderClient)
       await connectSocket(outsiderSocket)

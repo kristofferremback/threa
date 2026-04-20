@@ -21,6 +21,7 @@ import {
   sendMessage,
   listEvents,
   joinRoom,
+  getWorkspaceBootstrap,
   type StreamEvent,
 } from "../client"
 
@@ -121,6 +122,7 @@ describe("Companion Agent", () => {
     userId = user.id
     const workspace = await createWorkspace(client, "Companion Test Workspace")
     workspaceId = workspace.id
+    await getWorkspaceBootstrap(client, workspaceId)
   })
 
   beforeEach(async () => {
