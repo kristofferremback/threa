@@ -184,6 +184,45 @@ function MessageLinkPreviews({
   )
 }
 
+/**
+ * Per-actor-type row styling. Each entry is the single source of truth for
+ * how a message from that actor type looks: the row accent gradient + inset
+ * stripe, the author-name color, and an optional inline header badge.
+ * Adding a new actor type means adding one entry here — no scattered
+ * `isPersona && ... || isBot && ...` chains to keep in sync.
+ */
+interface ActorRowTheme {
+  /** Row-level accent gradient + inset-stripe shadow; empty string = no accent. */
+  rowAccent: string
+  /** Color class applied to the author-name element. Empty = inherit. */
+  nameClassName: string
+  /** Optional inline pill rendered in the header row after the author name. */
+  badge: ReactNode | null
+}
+
+const ACTOR_ROW_THEME: Record<NonNullable<StreamEvent["actorType"]>, ActorRowTheme> = {
+  user: {
+    rowAccent: "",
+    nameClassName: "",
+    badge: null,
+  },
+  persona: {
+    rowAccent: "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
+    nameClassName: "text-primary",
+    badge: null,
+  },
+  bot: {
+    rowAccent: "bg-gradient-to-r from-emerald-500/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
+    nameClassName: "text-emerald-600",
+    badge: <span className="text-[10px] text-emerald-600/70 font-medium cursor-default">BOT</span>,
+  },
+  system: {
+    rowAccent: "bg-gradient-to-r from-blue-500/[0.04] to-transparent shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
+    nameClassName: "text-blue-500",
+    badge: null,
+  },
+}
+
 function MessageLayout({
   event,
   payload,
@@ -205,10 +244,12 @@ function MessageLayout({
   swipeOffset,
   swipeLocked,
 }: MessageLayoutProps) {
-  const isPersona = event.actorType === "persona"
-  const isSystem = event.actorType === "system"
-  const isBot = event.actorType === "bot"
-  const isUser = event.actorType === "user"
+  const theme = ACTOR_ROW_THEME[event.actorType ?? "user"]
+  // Users with a resolved actorId get a clickable name that opens their
+  // profile; everything else (personas, bots, system, unknown) renders a
+  // non-interactive span with the theme's color. This is the only remaining
+  // behavioral branch — all of the styling branches live in the theme map.
+  const hasInteractiveName = event.actorType === "user" && event.actorId != null
   const { openUserProfile } = useUserProfile()
   const { formatTime, formatFull } = useFormattedDate()
 
@@ -306,17 +347,13 @@ function MessageLayout({
           "message-item group relative flex gap-3 px-3 sm:px-6 bg-background",
           // Continuations collapse the vertical padding so the run reads as one turn.
           renderAsContinuation ? "py-0.5" : "py-3",
-          // AI/Persona messages get full-width gradient with gold accent
-          isPersona && "bg-gradient-to-r from-primary/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(var(--primary))]",
-          // Bot messages get emerald accent
-          isBot && "bg-gradient-to-r from-emerald-500/[0.06] to-transparent shadow-[inset_3px_0_0_hsl(152_69%_41%)]",
-          // System messages get a subtle info-toned accent
-          isSystem && "bg-gradient-to-r from-blue-500/[0.04] to-transparent shadow-[inset_3px_0_0_hsl(210_100%_55%)]",
-          // Edit mode: pseudo-element background so no layout shift — zero padding/margin changes
+          // Per-actor accent (gradient + inset stripe) — see ACTOR_ROW_THEME.
+          theme.rowAccent,
+          // Edit mode: pseudo-element background so no layout shift — applied
+          // only when the row doesn't already have an actor-accent gradient to
+          // avoid stacking two backgrounds.
           isEditing &&
-            !isPersona &&
-            !isBot &&
-            !isSystem &&
+            !theme.rowAccent &&
             "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:left-0 before:right-0 before:bg-primary/[0.04] before:-z-10",
           isHighlighted && "animate-highlight-flash",
           isNew && !isHighlighted && "animate-new-message-fade"
@@ -327,27 +364,18 @@ function MessageLayout({
         <div className="message-content flex-1 min-w-0">
           {!renderAsContinuation && (
             <div className="flex items-baseline gap-2 mb-0.5">
-              {isUser && event.actorId ? (
+              {hasInteractiveName ? (
                 <button
                   type="button"
                   onClick={() => openUserProfile(event.actorId!)}
-                  className={cn("font-semibold text-sm hover:underline text-left")}
+                  className="font-semibold text-sm hover:underline text-left"
                 >
                   {actorName}
                 </button>
               ) : (
-                <span
-                  className={cn(
-                    "font-semibold text-sm",
-                    isPersona && "text-primary",
-                    isBot && "text-emerald-600",
-                    isSystem && "text-blue-500"
-                  )}
-                >
-                  {actorName}
-                </span>
+                <span className={cn("font-semibold text-sm", theme.nameClassName)}>{actorName}</span>
               )}
-              {isBot && <span className="text-[10px] text-emerald-600/70 font-medium cursor-default">BOT</span>}
+              {theme.badge}
               {payload.sentVia && isSentViaApi(payload.sentVia) && (
                 <Tooltip>
                   <TooltipTrigger asChild>
