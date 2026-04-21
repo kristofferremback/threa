@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { ReactNode } from "react"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { Router } from "react-router-dom"
+import { useState } from "react"
+import * as contextsModule from "@/contexts"
+import * as hooksModule from "@/hooks"
+import * as workspaceStoreModule from "@/stores/workspace-store"
+import * as quoteReplyModule from "./quote-reply-context"
+import * as composerModule from "@/components/composer"
 import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
 import type { JSONContent } from "@threa/types"
 
@@ -34,23 +41,14 @@ const makeAttachmentDoc = (): JSONContent => ({
   ],
 })
 
-// Mock react-router-dom
+// Navigation capture: the component calls `useNavigate()` from
+// `react-router-dom`, whose ESM namespace is frozen and therefore not
+// spyable. Instead we render a bare `<Router>` with a custom `navigator`
+// implementation that records all push/replace calls into `mockNavigate`
+// using the same shape production code passes (`path, { replace }`).
 const mockNavigate = vi.fn()
-vi.mock("react-router-dom", () => ({
-  useNavigate: () => mockNavigate,
-}))
 
-// Mock preferences context
-// Note: messageSendMode affects keyboard behavior (Enter vs Cmd+Enter to send),
-// which is tested in E2E tests (message-send-mode.spec.ts). These unit tests
-// use button clicks, so the mode doesn't affect the behavior tested here.
 let mockMessageSendMode: "enter" | "cmdEnter" = "enter"
-vi.mock("@/contexts", () => ({
-  usePreferences: () => ({
-    preferences: { messageSendMode: mockMessageSendMode },
-  }),
-  useSocketStatus: () => "connected",
-}))
 
 // Mock hooks
 const mockSendMessage = vi.fn()
@@ -94,12 +92,41 @@ let mockComposerState = {
   isLoaded: true,
 }
 
-vi.mock("@/stores/workspace-store", () => ({
-  useWorkspaceStreams: () => [],
-}))
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.clearAllMocks()
+  mockSendMessage.mockReset()
+  mockSendMessage.mockResolvedValue({})
+  mockNavigate.mockReset()
+  mockMessageSendMode = "enter"
+  mockComposerState = {
+    content: EMPTY_DOC,
+    pendingAttachments: [],
+    uploadedIds: [],
+    isUploading: false,
+    hasFailed: false,
+    canSend: false,
+    isSending: false,
+    isLoaded: true,
+  }
+  mockSubmitContentOverride = undefined
+  registeredQuoteReplyHandler = null
+  mockComposerFocus.mockReset()
+  mockComposerFocusAfterQuoteReply.mockReset()
 
-vi.mock("./quote-reply-context", () => ({
-  useQuoteReply: () => ({
+  vi.spyOn(contextsModule, "usePreferences").mockImplementation(
+    () =>
+      ({ preferences: { messageSendMode: mockMessageSendMode } }) as ReturnType<typeof contextsModule.usePreferences>
+  )
+  vi.spyOn(contextsModule, "useSocketStatus").mockReturnValue(
+    "connected" as ReturnType<typeof contextsModule.useSocketStatus>
+  )
+
+  vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockReturnValue(
+    [] as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceStreams>
+  )
+
+  vi.spyOn(quoteReplyModule, "useQuoteReply").mockReturnValue({
     triggerQuoteReply: vi.fn(),
     registerHandler: (
       handler: (data: {
@@ -118,39 +145,46 @@ vi.mock("./quote-reply-context", () => ({
         }
       }
     },
-  }),
-}))
+  } as unknown as ReturnType<typeof quoteReplyModule.useQuoteReply>)
 
-vi.mock("@/hooks", () => ({
-  useStreamOrDraft: () => ({ sendMessage: mockSendMessage }),
-  getDraftMessageKey: () => "test-draft-key",
-  useDraftComposer: () => ({
-    content: mockComposerState.content,
-    setContent: mockSetContent,
-    handleContentChange: mockHandleContentChange,
-    pendingAttachments: mockComposerState.pendingAttachments,
-    getPendingAttachmentsSnapshot: () => mockComposerState.pendingAttachments,
-    uploadedIds: mockComposerState.uploadedIds,
-    isUploading: mockComposerState.isUploading,
-    hasFailed: mockComposerState.hasFailed,
-    fileInputRef: { current: null },
-    handleFileSelect: mockHandleFileSelect,
-    handleRemoveAttachment: mockHandleRemoveAttachment,
-    canSend: mockComposerState.canSend,
-    isSending: mockComposerState.isSending,
-    setIsSending: mockSetIsSending,
-    clearDraft: mockClearDraft,
-    clearAttachments: mockClearAttachments,
-    isLoaded: mockComposerState.isLoaded,
-  }),
-  useComposerHeightPublish: () => {},
-}))
+  vi.spyOn(hooksModule, "useStreamOrDraft").mockReturnValue({
+    sendMessage: mockSendMessage,
+  } as unknown as ReturnType<typeof hooksModule.useStreamOrDraft>)
+  vi.spyOn(hooksModule, "getDraftMessageKey").mockImplementation(() => "test-draft-key")
+  vi.spyOn(hooksModule, "useDraftComposer").mockImplementation(
+    () =>
+      ({
+        content: mockComposerState.content,
+        setContent: mockSetContent,
+        handleContentChange: mockHandleContentChange,
+        pendingAttachments: mockComposerState.pendingAttachments,
+        getPendingAttachmentsSnapshot: () => mockComposerState.pendingAttachments,
+        uploadedIds: mockComposerState.uploadedIds,
+        isUploading: mockComposerState.isUploading,
+        hasFailed: mockComposerState.hasFailed,
+        fileInputRef: { current: null },
+        handleFileSelect: mockHandleFileSelect,
+        handleRemoveAttachment: mockHandleRemoveAttachment,
+        canSend: mockComposerState.canSend,
+        isSending: mockComposerState.isSending,
+        setIsSending: mockSetIsSending,
+        clearDraft: mockClearDraft,
+        clearAttachments: mockClearAttachments,
+        isLoaded: mockComposerState.isLoaded,
+      }) as unknown as ReturnType<typeof hooksModule.useDraftComposer>
+  )
+  vi.spyOn(hooksModule, "useComposerHeightPublish").mockImplementation(
+    () => undefined as unknown as ReturnType<typeof hooksModule.useComposerHeightPublish>
+  )
 
-// Mock MessageComposer
-vi.mock("@/components/composer", () => ({
-  FloatingComposerShell: ({ children, hidden }: { children: ReactNode; hidden?: boolean }) =>
-    hidden ? null : <div>{children}</div>,
-  MessageComposer: ({
+  vi.spyOn(composerModule, "FloatingComposerShell").mockImplementation((({
+    children,
+    hidden,
+  }: {
+    children: ReactNode
+    hidden?: boolean
+  }) => (hidden ? null : <div>{children}</div>)) as unknown as typeof composerModule.FloatingComposerShell)
+  vi.spyOn(composerModule, "MessageComposer").mockImplementation((({
     onSubmit,
     canSubmit,
     isSubmitting,
@@ -166,60 +200,90 @@ vi.mock("@/components/composer", () => ({
     hasFailed: boolean
     pendingAttachments: Array<{ id: string; filename: string; sizeBytes: number; status: string }>
     composerRef?: { current: { focus: () => void; focusAfterQuoteReply: () => void } | null }
-  }) =>
-    (() => {
-      if (composerRef) {
-        composerRef.current = {
-          focus: mockComposerFocus,
-          focusAfterQuoteReply: mockComposerFocusAfterQuoteReply,
-        }
+  }) => {
+    if (composerRef) {
+      composerRef.current = {
+        focus: mockComposerFocus,
+        focusAfterQuoteReply: mockComposerFocusAfterQuoteReply,
       }
+    }
 
-      return (
-        <div data-testid="message-composer">
-          <textarea data-testid="rich-editor" />
-          {pendingAttachments.map((a) => (
-            <div key={a.id}>
-              <span>{a.filename}</span>
-              <span>{a.sizeBytes >= 1024 ? `${(a.sizeBytes / 1024).toFixed(1)} KB` : `${a.sizeBytes} B`}</span>
-              {a.status === "error" && <span>Failed</span>}
-            </div>
-          ))}
-          <button onClick={() => onSubmit(mockSubmitContentOverride)} disabled={!canSubmit || hasFailed}>
-            {isSubmitting ? "Sending..." : "Send"}
-          </button>
-        </div>
-      )
-    })(),
-}))
+    return (
+      <div data-testid="message-composer">
+        <textarea data-testid="rich-editor" />
+        {pendingAttachments.map((a) => (
+          <div key={a.id}>
+            <span>{a.filename}</span>
+            <span>{a.sizeBytes >= 1024 ? `${(a.sizeBytes / 1024).toFixed(1)} KB` : `${a.sizeBytes} B`}</span>
+            {a.status === "error" && <span>Failed</span>}
+          </div>
+        ))}
+        <button onClick={() => onSubmit(mockSubmitContentOverride)} disabled={!canSubmit || hasFailed}>
+          {isSubmitting ? "Sending..." : "Send"}
+        </button>
+      </div>
+    )
+  }) as unknown as typeof composerModule.MessageComposer)
+})
+
+function toPathString(to: { pathname: string; search?: string; hash?: string }): string {
+  return `${to.pathname}${to.search ?? ""}${to.hash ?? ""}`
+}
+
+function Wrapper({ children }: { children: React.ReactNode }) {
+  // Bare <Router> lets us inject a custom `navigator` that records every
+  // push/replace as `mockNavigate(path, { replace })`. This reproduces the
+  // shape production code passes to `useNavigate()` without needing to spy
+  // on the frozen `react-router-dom` ESM namespace.
+  const [location] = useState(() => ({
+    pathname: "/",
+    search: "",
+    hash: "",
+    state: null,
+    key: "default",
+  }))
+  const navigator = {
+    createHref: (to: unknown) => (typeof to === "string" ? to : JSON.stringify(to)),
+    encodeLocation: (to: unknown) => {
+      if (typeof to === "string") return { pathname: to, search: "", hash: "" }
+      return to as { pathname: string; search: string; hash: string }
+    },
+    push: (to: unknown) => {
+      const path =
+        typeof to === "string" ? to : toPathString(to as { pathname: string; search?: string; hash?: string })
+      mockNavigate(path, undefined)
+    },
+    replace: (to: unknown) => {
+      const path =
+        typeof to === "string" ? to : toPathString(to as { pathname: string; search?: string; hash?: string })
+      mockNavigate(path, { replace: true })
+    },
+    go: () => {},
+    listen: () => () => {},
+    block: () => () => {},
+  }
+  return (
+    <Router
+      location={location}
+      navigator={navigator as unknown as Parameters<typeof Router>[0]["navigator"]}
+      navigationType={"POP" as Parameters<typeof Router>[0]["navigationType"]}
+    >
+      {children}
+    </Router>
+  )
+}
+
+function render$(ui: React.ReactElement) {
+  return render(<Wrapper>{ui}</Wrapper>)
+}
 
 describe("MessageInput", () => {
   const workspaceId = "ws_123"
   const streamId = "stream_456"
 
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockSendMessage.mockResolvedValue({})
-    mockMessageSendMode = "enter"
-    mockComposerState = {
-      content: EMPTY_DOC,
-      pendingAttachments: [],
-      uploadedIds: [],
-      isUploading: false,
-      hasFailed: false,
-      canSend: false,
-      isSending: false,
-      isLoaded: true,
-    }
-    mockSubmitContentOverride = undefined
-    registeredQuoteReplyHandler = null
-    mockComposerFocus.mockReset()
-    mockComposerFocusAfterQuoteReply.mockReset()
-  })
-
   describe("rendering", () => {
     it("should render the message composer", () => {
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       expect(screen.getByTestId("message-composer")).toBeInTheDocument()
       expect(screen.getByTestId("rich-editor")).toBeInTheDocument()
@@ -229,7 +293,7 @@ describe("MessageInput", () => {
     it("should disable send button when canSend is false", () => {
       mockComposerState.canSend = false
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       expect(sendButton).toBeDisabled()
@@ -238,7 +302,7 @@ describe("MessageInput", () => {
     it("should enable send button when canSend is true", () => {
       mockComposerState.canSend = true
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       expect(sendButton).not.toBeDisabled()
@@ -246,12 +310,18 @@ describe("MessageInput", () => {
 
     it("should not throw when toggling between disabled and enabled states", () => {
       const { rerender } = render(
-        <MessageInput workspaceId={workspaceId} streamId={streamId} disabled disabledReason="Read-only stream" />
+        <Wrapper>
+          <MessageInput workspaceId={workspaceId} streamId={streamId} disabled disabledReason="Read-only stream" />
+        </Wrapper>
       )
 
       expect(screen.getByText("Read-only stream")).toBeInTheDocument()
 
-      rerender(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      rerender(
+        <Wrapper>
+          <MessageInput workspaceId={workspaceId} streamId={streamId} />
+        </Wrapper>
+      )
 
       expect(screen.getByTestId("message-composer")).toBeInTheDocument()
     })
@@ -263,7 +333,7 @@ describe("MessageInput", () => {
       mockComposerState.canSend = true
       mockComposerState.content = helloContent
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       await userEvent.click(sendButton)
@@ -279,7 +349,7 @@ describe("MessageInput", () => {
       mockComposerState.canSend = true
       mockComposerState.content = makeDoc("Hello world")
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       await userEvent.click(sendButton)
@@ -293,7 +363,7 @@ describe("MessageInput", () => {
       mockComposerState.content = makeDoc("stale")
       mockSubmitContentOverride = makeAttachmentDoc()
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       await userEvent.click(screen.getByRole("button", { name: /send/i }))
 
@@ -322,7 +392,7 @@ describe("MessageInput", () => {
           })
       )
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       await userEvent.click(sendButton)
@@ -337,7 +407,7 @@ describe("MessageInput", () => {
       mockComposerState.canSend = true
       mockComposerState.content = makeDoc("Hello world")
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       await userEvent.click(sendButton)
@@ -353,7 +423,7 @@ describe("MessageInput", () => {
       mockComposerState.content = makeDoc("Hello world")
       mockSendMessage.mockResolvedValue({ navigateTo: "/w/ws_123/s/new_stream", replace: true })
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       await userEvent.click(sendButton)
@@ -369,7 +439,7 @@ describe("MessageInput", () => {
         content: [{ type: "paragraph", content: [{ type: "text", text: "Before" }] }, { type: "paragraph" }],
       }
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       expect(registeredQuoteReplyHandler).not.toBeNull()
 
@@ -416,7 +486,7 @@ describe("MessageInput", () => {
         },
       ]
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       expect(screen.getByText("test.txt")).toBeInTheDocument()
       expect(screen.getByText("1.0 KB")).toBeInTheDocument()
@@ -435,7 +505,7 @@ describe("MessageInput", () => {
       ]
       mockComposerState.hasFailed = true
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       expect(screen.getByText("failed.txt")).toBeInTheDocument()
       expect(screen.getByText("Failed")).toBeInTheDocument()
@@ -444,7 +514,7 @@ describe("MessageInput", () => {
     it("should disable send button when uploads have failed", () => {
       mockComposerState.hasFailed = true
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       expect(sendButton).toBeDisabled()
@@ -464,7 +534,7 @@ describe("MessageInput", () => {
         },
       ]
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       await userEvent.click(sendButton)
@@ -534,7 +604,7 @@ describe("MessageInput", () => {
         },
       ]
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       await userEvent.click(screen.getByRole("button", { name: /send/i }))
 
@@ -649,7 +719,7 @@ describe("MessageInput", () => {
       mockComposerState.content = makeDoc("Hello world")
       mockSendMessage.mockRejectedValue(new Error("Network error"))
 
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       const sendButton = screen.getByRole("button", { name: /send/i })
       await userEvent.click(sendButton)

@@ -8,6 +8,12 @@ import {
 } from "./coordinated-loading-context"
 import { QUERY_LOAD_STATE, isQueryLoadStateLoading, type QueryLoadState } from "@/lib/query-load-state"
 import { ApiError } from "@/api/client"
+import * as syncStatusModule from "@/sync/sync-status"
+import * as useCoordinatedStreamQueriesModule from "@/hooks/use-coordinated-stream-queries"
+import * as usePreloadImagesModule from "@/hooks/use-preload-images"
+import * as workspaceStoreModule from "@/stores/workspace-store"
+import * as draftStoreModule from "@/stores/draft-store"
+import * as loadingComponentsModule from "@/components/loading"
 
 type MockQueryResult = {
   status: "pending" | "success" | "error"
@@ -36,57 +42,63 @@ let mockHasSeededDraftCache = false
 let mockSyncStatuses = new Map<string, string>()
 let mockSyncErrors = new Map<string, { status: number | null; error: Error }>()
 
-vi.mock("@/sync/sync-status", () => ({
-  useSyncStatus: () => {
+function installSpies() {
+  vi.spyOn(syncStatusModule, "useSyncStatus").mockImplementation(() => {
     if (mockWorkspaceLoadState === QUERY_LOAD_STATE.PENDING || mockWorkspaceLoadState === QUERY_LOAD_STATE.FETCHING)
       return "syncing"
     if (mockWorkspaceLoadState === QUERY_LOAD_STATE.ERROR) return "error"
     return "synced"
-  },
-  useSyncSnapshot: () => ({
-    statuses: mockSyncStatuses,
-    errors: mockSyncErrors,
-  }),
-}))
-
-vi.mock("@/hooks/use-coordinated-stream-queries", () => ({
-  useCoordinatedStreamQueries: () => ({
-    loadState: mockStreamsLoadState,
-    isLoading: isQueryLoadStateLoading(mockStreamsLoadState),
-    isError: false,
-    errors: [],
-    results: mockStreamResults,
-  }),
-}))
-
-vi.mock("@/hooks/use-preload-images", () => ({
-  usePreloadImages: () => true,
-}))
-
-vi.mock("@/stores/workspace-store", () => ({
-  seedCacheFromIdb: vi.fn(async () => mockSeedCacheFromIdbResult),
-  hasSeededWorkspaceCache: vi.fn(() => mockHasSeededWorkspaceCache),
-  useWorkspaceFromStore: vi.fn(() => mockWorkspace),
-  useWorkspaceUsers: vi.fn(() => mockUsers),
-  useWorkspaceStreams: vi.fn(() => mockStreams),
-  useWorkspaceStreamMemberships: vi.fn(() => mockMemberships),
-  useWorkspaceDmPeers: vi.fn(() => mockDmPeers),
-  useWorkspacePersonas: vi.fn(() => mockPersonas),
-  useWorkspaceBots: vi.fn(() => mockBots),
-  useWorkspaceUnreadState: vi.fn(() => mockUnreadState),
-  useWorkspaceMetadata: vi.fn(() => mockMetadata),
-}))
-
-vi.mock("@/stores/stream-store", () => ({}))
-
-vi.mock("@/stores/draft-store", () => ({
-  seedDraftCacheFromIdb: vi.fn(async () => undefined),
-  hasSeededDraftCache: vi.fn(() => mockHasSeededDraftCache),
-}))
-
-vi.mock("@/components/loading", () => ({
-  StreamContentSkeleton: () => <div data-testid="stream-content-skeleton">Stream Content Skeleton</div>,
-}))
+  })
+  vi.spyOn(syncStatusModule, "useSyncSnapshot").mockImplementation(() => ({
+    statuses: mockSyncStatuses as ReadonlyMap<string, syncStatusModule.SyncStatus>,
+    errors: mockSyncErrors as ReadonlyMap<string, syncStatusModule.SyncErrorRecord>,
+  }))
+  vi.spyOn(useCoordinatedStreamQueriesModule, "useCoordinatedStreamQueries").mockImplementation(
+    () =>
+      ({
+        loadState: mockStreamsLoadState,
+        isLoading: isQueryLoadStateLoading(mockStreamsLoadState),
+        isError: false,
+        errors: [],
+        results: mockStreamResults,
+      }) as unknown as ReturnType<typeof useCoordinatedStreamQueriesModule.useCoordinatedStreamQueries>
+  )
+  vi.spyOn(usePreloadImagesModule, "usePreloadImages").mockReturnValue(true)
+  vi.spyOn(workspaceStoreModule, "seedCacheFromIdb").mockImplementation(async () => mockSeedCacheFromIdbResult)
+  vi.spyOn(workspaceStoreModule, "hasSeededWorkspaceCache").mockImplementation(() => mockHasSeededWorkspaceCache)
+  vi.spyOn(workspaceStoreModule, "useWorkspaceFromStore").mockImplementation(
+    () => mockWorkspace as ReturnType<typeof workspaceStoreModule.useWorkspaceFromStore>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceUsers").mockImplementation(
+    () => mockUsers as ReturnType<typeof workspaceStoreModule.useWorkspaceUsers>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockImplementation(
+    () => mockStreams as ReturnType<typeof workspaceStoreModule.useWorkspaceStreams>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceStreamMemberships").mockImplementation(
+    () => mockMemberships as ReturnType<typeof workspaceStoreModule.useWorkspaceStreamMemberships>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceDmPeers").mockImplementation(
+    () => mockDmPeers as ReturnType<typeof workspaceStoreModule.useWorkspaceDmPeers>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspacePersonas").mockImplementation(
+    () => mockPersonas as ReturnType<typeof workspaceStoreModule.useWorkspacePersonas>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceBots").mockImplementation(
+    () => mockBots as ReturnType<typeof workspaceStoreModule.useWorkspaceBots>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceUnreadState").mockImplementation(
+    () => mockUnreadState as ReturnType<typeof workspaceStoreModule.useWorkspaceUnreadState>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceMetadata").mockImplementation(
+    () => mockMetadata as ReturnType<typeof workspaceStoreModule.useWorkspaceMetadata>
+  )
+  vi.spyOn(draftStoreModule, "seedDraftCacheFromIdb").mockImplementation(async () => undefined)
+  vi.spyOn(draftStoreModule, "hasSeededDraftCache").mockImplementation(() => mockHasSeededDraftCache)
+  vi.spyOn(loadingComponentsModule, "StreamContentSkeleton").mockImplementation(() => (
+    <div data-testid="stream-content-skeleton">Stream Content Skeleton</div>
+  ))
+}
 
 function TestConsumer() {
   const { phase, getStreamState, hasErrors, showLoadingIndicator } = useCoordinatedLoading()
@@ -121,6 +133,7 @@ function makeReadyWorkspaceState() {
 
 describe("CoordinatedLoadingProvider", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     vi.useFakeTimers()
     mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamsLoadState = QUERY_LOAD_STATE.PENDING
@@ -139,6 +152,7 @@ describe("CoordinatedLoadingProvider", () => {
     mockHasSeededDraftCache = false
     mockSyncStatuses = new Map()
     mockSyncErrors = new Map()
+    installSpies()
   })
 
   afterEach(() => {
@@ -413,6 +427,7 @@ describe("CoordinatedLoadingProvider", () => {
 
 describe("CoordinatedLoadingGate", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     vi.useFakeTimers()
     mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamsLoadState = QUERY_LOAD_STATE.PENDING
@@ -424,6 +439,7 @@ describe("CoordinatedLoadingGate", () => {
     mockStreams = []
     mockUnreadState = undefined
     mockMetadata = undefined
+    installSpies()
   })
 
   afterEach(() => {
@@ -481,6 +497,7 @@ describe("CoordinatedLoadingGate", () => {
 
 describe("MainContentGate", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     vi.useFakeTimers()
     mockWorkspaceLoadState = QUERY_LOAD_STATE.PENDING
     mockStreamsLoadState = QUERY_LOAD_STATE.PENDING
@@ -492,6 +509,7 @@ describe("MainContentGate", () => {
     mockStreams = []
     mockUnreadState = undefined
     mockMetadata = undefined
+    installSpies()
   })
 
   afterEach(() => {

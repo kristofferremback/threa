@@ -1,34 +1,15 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
+import { MemoryRouter, Route, Routes } from "react-router-dom"
 import type { AgentSession } from "@threa/types"
 import { TraceDialog } from "./trace-dialog"
+import * as contextsModule from "@/contexts"
+import * as useAgentTraceModule from "@/hooks/use-agent-trace"
+import * as relativeTimeModule from "@/components/relative-time"
 
-const mockNavigate = vi.fn()
 let mockSessionId = "session_1"
 let mockSessionIndex = 0
 let mockSteps: Array<{ id: string; stepType: string }> = []
-
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>()
-  return {
-    ...actual,
-    useNavigate: () => mockNavigate,
-    useParams: () => ({ workspaceId: "ws_1" }),
-  }
-})
-
-vi.mock("@/contexts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/contexts")>()
-  return {
-    ...actual,
-    useTrace: () => ({
-      sessionId: mockSessionId,
-      highlightMessageId: null,
-      getTraceUrl: (id: string) => `/trace/${id}`,
-      closeTraceModal: vi.fn(),
-    }),
-  }
-})
 
 const relatedSessions: AgentSession[] = [
   {
@@ -63,28 +44,47 @@ const relatedSessions: AgentSession[] = [
   },
 ]
 
-vi.mock("@/hooks/use-agent-trace", () => ({
-  useAgentTrace: () => ({
-    steps: mockSteps,
-    session: relatedSessions[mockSessionIndex],
-    relatedSessions,
-    persona: { id: "persona_1", name: "Ariadne", avatarUrl: null, avatarEmoji: "🜃" },
-    status: relatedSessions[mockSessionIndex].status,
-    isLoading: false,
-    error: null,
-  }),
-}))
-
-vi.mock("@/components/relative-time", () => ({
-  RelativeTime: () => <span>just now</span>,
-}))
+function renderTrace() {
+  return render(
+    <MemoryRouter initialEntries={["/w/ws_1"]}>
+      <Routes>
+        <Route path="/w/:workspaceId" element={<TraceDialog />} />
+      </Routes>
+    </MemoryRouter>
+  )
+}
 
 describe("TraceDialog", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+
+    vi.spyOn(contextsModule, "useTrace").mockImplementation((() => ({
+      sessionId: mockSessionId,
+      highlightMessageId: null,
+      getTraceUrl: (id: string) => `/trace/${id}`,
+      closeTraceModal: vi.fn(),
+    })) as unknown as typeof contextsModule.useTrace)
+
+    vi.spyOn(useAgentTraceModule, "useAgentTrace").mockImplementation((() => ({
+      steps: mockSteps,
+      session: relatedSessions[mockSessionIndex],
+      relatedSessions,
+      persona: { id: "persona_1", name: "Ariadne", avatarUrl: null, avatarEmoji: "🜃" },
+      status: relatedSessions[mockSessionIndex].status,
+      isLoading: false,
+      error: null,
+    })) as unknown as typeof useAgentTraceModule.useAgentTrace)
+
+    vi.spyOn(relativeTimeModule, "RelativeTime").mockImplementation((() => (
+      <span>just now</span>
+    )) as unknown as typeof relativeTimeModule.RelativeTime)
+  })
+
   it("shows superseded-by version hint for superseded sessions", () => {
     mockSessionId = "session_1"
     mockSessionIndex = 0
     mockSteps = []
-    render(<TraceDialog />)
+    renderTrace()
 
     expect(screen.getByText("Superseded by Version 2")).toBeInTheDocument()
   })
@@ -93,7 +93,7 @@ describe("TraceDialog", () => {
     mockSessionId = "session_2"
     mockSessionIndex = 1
     mockSteps = []
-    render(<TraceDialog />)
+    renderTrace()
 
     expect(screen.getByText("Rerun triggered by follow-up message edit")).toBeInTheDocument()
     expect(
@@ -110,7 +110,7 @@ describe("TraceDialog", () => {
       { id: "step_3", stepType: "reconsidering" },
     ]
 
-    render(<TraceDialog />)
+    renderTrace()
 
     expect(screen.getByText("3 steps • 1 message sent")).toBeInTheDocument()
   })

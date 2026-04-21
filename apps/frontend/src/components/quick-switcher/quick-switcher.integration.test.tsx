@@ -1,14 +1,46 @@
 import type React from "react"
+import { useState } from "react"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Router } from "react-router-dom"
 import { QuickSwitcher } from "./quick-switcher"
 import { mockStreamsList } from "@/test/fixtures"
 import { mockUsersList } from "@/test/fixtures/users"
 import { mockSearchResultsList } from "@/test/fixtures/messages"
+import * as hooksModule from "@/hooks"
+import * as mentionablesModule from "@/hooks/use-mentionables"
+import * as authModule from "@/auth"
+import * as workspaceStoreModule from "@/stores/workspace-store"
+import * as streamsApiModule from "@/api/streams"
+import * as contextsModule from "@/contexts"
 
-// Create a fresh QueryClient for each test to avoid shared state
+// Note: DOM polyfills (ResizeObserver, Range, Element.getClientRects, etc.)
+// are in src/test/setup.ts which runs before tests via vitest config
+
+// react-router-dom's ESM namespace is frozen, so we can't spy on useNavigate.
+// Instead we render with a bare <Router> that carries a custom `navigator` which
+// records every push/replace into `mockNavigate`.
+const mockNavigate = vi.fn()
+
+const mockSearchState = {
+  results: [] as typeof mockSearchResultsList,
+  isLoading: false,
+  search: vi.fn(),
+  clear: vi.fn(),
+}
+
+const mockWorkspaceBootstrap = {
+  data: {} as {
+    streams: unknown[]
+    streamMemberships: unknown[]
+    users: unknown[]
+    personas: unknown[]
+    dmPeers?: Array<{ userId: string; streamId: string }>
+  },
+}
+
 function createTestQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -18,155 +50,160 @@ function createTestQueryClient() {
   })
 }
 
-function renderWithProviders(ui: React.ReactElement) {
-  const queryClient = createTestQueryClient()
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+function toPathString(to: { pathname: string; search?: string; hash?: string }): string {
+  return `${to.pathname}${to.search ?? ""}${to.hash ?? ""}`
 }
 
-// Note: DOM polyfills (ResizeObserver, Range, Element.getClientRects, etc.)
-// are in src/test/setup.ts which runs before tests via vitest config
-
-// Hoisted values for configurable mocks (vi.mock is hoisted above imports)
-const { mockNavigate, mockSearchState, mockWorkspaceBootstrap } = vi.hoisted(() => ({
-  mockNavigate: vi.fn(),
-  mockSearchState: {
-    results: [] as typeof import("@/test/fixtures/messages").mockSearchResultsList,
-    isLoading: false,
-    search: vi.fn(),
-    clear: vi.fn(),
-  },
-  mockWorkspaceBootstrap: {
-    data: {} as {
-      streams: unknown[]
-      streamMemberships: unknown[]
-      users: unknown[]
-      personas: unknown[]
-      dmPeers?: Array<{ userId: string; streamId: string }>
+function RouterWrapper({ children }: { children: React.ReactNode }) {
+  const [location] = useState(() => ({
+    pathname: "/",
+    search: "",
+    hash: "",
+    state: null,
+    key: "default",
+  }))
+  const navigator = {
+    createHref: (to: unknown) => {
+      if (typeof to === "string") return to
+      return toPathString(to as { pathname: string; search?: string; hash?: string })
     },
-  },
-}))
-
-// Mock react-router-dom
-vi.mock("react-router-dom", () => ({
-  useNavigate: () => mockNavigate,
-  useParams: () => ({ workspaceId: "workspace_1" }),
-  useSearchParams: () => [new URLSearchParams(), vi.fn()],
-  Link: ({
-    to,
-    children,
-    className,
-    onClick,
-    ...props
-  }: {
-    to: string
-    children: React.ReactNode
-    className?: string
-    onClick?: (e: React.MouseEvent) => void
-  }) => (
-    <a href={to} className={className} onClick={onClick} {...props}>
+    encodeLocation: (to: unknown) => {
+      if (typeof to === "string") return { pathname: to, search: "", hash: "" }
+      return to as { pathname: string; search: string; hash: string }
+    },
+    push: (to: unknown, _state?: unknown, opts?: { replace?: boolean }) => {
+      const path =
+        typeof to === "string" ? to : toPathString(to as { pathname: string; search?: string; hash?: string })
+      if (opts?.replace) {
+        mockNavigate(path, { replace: true })
+      } else {
+        mockNavigate(path)
+      }
+    },
+    replace: (to: unknown) => {
+      const path =
+        typeof to === "string" ? to : toPathString(to as { pathname: string; search?: string; hash?: string })
+      mockNavigate(path, { replace: true })
+    },
+    go: () => {},
+    listen: () => () => {},
+    block: () => () => {},
+  }
+  return (
+    <Router
+      location={location}
+      navigator={navigator as unknown as Parameters<typeof Router>[0]["navigator"]}
+      navigationType={"POP" as Parameters<typeof Router>[0]["navigationType"]}
+    >
       {children}
-    </a>
-  ),
-}))
+    </Router>
+  )
+}
 
-// Mock @/hooks with fixture data
-vi.mock("@/hooks", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/hooks")>()
-  return {
-    ...actual,
-    useWorkspaceBootstrap: () => ({
-      data: mockWorkspaceBootstrap.data,
-      isLoading: false,
-    }),
-    useWorkspaceUsers: () => mockWorkspaceBootstrap.data.users ?? [],
-    useWorkspaceStreams: () => mockWorkspaceBootstrap.data.streams ?? [],
-    useWorkspaceStreamMemberships: () => mockWorkspaceBootstrap.data.streamMemberships ?? [],
-    useWorkspaceDmPeers: () => mockWorkspaceBootstrap.data.dmPeers ?? [],
-    useWorkspacePersonas: () => mockWorkspaceBootstrap.data.personas ?? [],
-    useDraftScratchpads: () => ({ createDraft: vi.fn() }),
-    useCreateStream: () => ({ mutateAsync: vi.fn() }),
-    useSearch: () => ({
-      results: mockSearchState.results,
-      isLoading: mockSearchState.isLoading,
-      error: null,
-      search: mockSearchState.search,
-      clear: mockSearchState.clear,
-    }),
-    useFormattedDate: () => ({
-      formatDate: (date: Date) => date.toLocaleDateString(),
-      formatTime: (date: Date) => date.toLocaleTimeString(),
-      formatDateTime: (date: Date) => date.toLocaleString(),
-      formatRelative: (_date: Date) => "just now",
-    }),
-  }
-})
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = createTestQueryClient()
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterWrapper>{ui}</RouterWrapper>
+    </QueryClientProvider>
+  )
+}
 
-// Mock use-mentionables - called by RichInput's useMentionSuggestion
-vi.mock("@/hooks/use-mentionables", () => {
-  const filterFn = (items: unknown[], query: string) => {
-    if (!query) return items
-    const q = query.toLowerCase()
-    return (items as { name: string; slug: string }[]).filter(
-      (i) => i.slug.toLowerCase().includes(q) || i.name.toLowerCase().includes(q)
-    )
-  }
+const mentionablesFilterFn = (items: unknown[], query: string) => {
+  if (!query) return items
+  const q = query.toLowerCase()
+  return (items as { name: string; slug: string }[]).filter(
+    (i) => i.slug.toLowerCase().includes(q) || i.name.toLowerCase().includes(q)
+  )
+}
 
-  return {
-    useMentionables: () => ({
-      mentionables: [
-        { id: "user_1", slug: "martin", name: "Martin", type: "user" },
-        { id: "user_2", slug: "kate", name: "Kate", type: "user" },
-      ],
-      isLoading: false,
-    }),
-    filterMentionables: filterFn,
-    // filterSearchMentionables excludes broadcast mentions, then filters
-    filterSearchMentionables: (items: unknown[], query: string) => {
-      const filtered = (items as { type?: string }[]).filter((i) => i.type !== "broadcast")
-      return filterFn(filtered, query)
-    },
-    // filterUsersOnly excludes personas and broadcasts, only users
-    filterUsersOnly: (items: unknown[], query: string) => {
-      const usersOnly = (items as { type?: string }[]).filter((i) => i.type === "user")
-      return filterFn(usersOnly, query)
-    },
-  }
-})
+function installSpies() {
+  vi.spyOn(hooksModule, "useWorkspaceBootstrap").mockReturnValue({
+    data: mockWorkspaceBootstrap.data,
+    isLoading: false,
+  } as unknown as ReturnType<typeof hooksModule.useWorkspaceBootstrap>)
+  vi.spyOn(hooksModule, "useDraftScratchpads").mockReturnValue({
+    createDraft: vi.fn(),
+  } as unknown as ReturnType<typeof hooksModule.useDraftScratchpads>)
+  vi.spyOn(hooksModule, "useCreateStream").mockReturnValue({
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof hooksModule.useCreateStream>)
+  vi.spyOn(hooksModule, "useSearch").mockImplementation(
+    () =>
+      ({
+        results: mockSearchState.results,
+        isLoading: mockSearchState.isLoading,
+        error: null,
+        search: mockSearchState.search,
+        clear: mockSearchState.clear,
+      }) as unknown as ReturnType<typeof hooksModule.useSearch>
+  )
+  vi.spyOn(hooksModule, "useFormattedDate").mockReturnValue({
+    formatDate: (date: Date) => date.toLocaleDateString(),
+    formatTime: (date: Date) => date.toLocaleTimeString(),
+    formatDateTime: (date: Date) => date.toLocaleString(),
+    formatRelative: (_date: Date) => "just now",
+  } as unknown as ReturnType<typeof hooksModule.useFormattedDate>)
 
-// Mock auth - called by RichInput's useMentionSuggestion
-vi.mock("@/auth", () => ({
-  useUser: () => ({ id: "workos_user_1", name: "Martin", slug: "martin" }),
-}))
+  vi.spyOn(mentionablesModule, "useMentionables").mockReturnValue({
+    mentionables: [
+      { id: "user_1", slug: "martin", name: "Martin", type: "user" },
+      { id: "user_2", slug: "kate", name: "Kate", type: "user" },
+    ],
+    isLoading: false,
+  } as unknown as ReturnType<typeof mentionablesModule.useMentionables>)
+  vi.spyOn(mentionablesModule, "filterMentionables").mockImplementation(
+    mentionablesFilterFn as unknown as typeof mentionablesModule.filterMentionables
+  )
+  vi.spyOn(mentionablesModule, "filterSearchMentionables").mockImplementation(((items: unknown[], query: string) => {
+    const filtered = (items as { type?: string }[]).filter((i) => i.type !== "broadcast")
+    return mentionablesFilterFn(filtered, query)
+  }) as unknown as typeof mentionablesModule.filterSearchMentionables)
+  vi.spyOn(mentionablesModule, "filterUsersOnly").mockImplementation(((items: unknown[], query: string) => {
+    const usersOnly = (items as { type?: string }[]).filter((i) => i.type === "user")
+    return mentionablesFilterFn(usersOnly, query)
+  }) as unknown as typeof mentionablesModule.filterUsersOnly)
 
-// Mock use-workspace-store - called by useChannelSuggestion, useInChannelFilterSuggestion
-vi.mock("@/stores/workspace-store", () => ({
-  useWorkspaceStreams: () => mockWorkspaceBootstrap.data.streams ?? [],
-  useWorkspaceUsers: () => mockWorkspaceBootstrap.data.users ?? [],
-  useWorkspacePersonas: () => mockWorkspaceBootstrap.data.personas ?? [],
-  useWorkspaceDmPeers: () => mockWorkspaceBootstrap.data.dmPeers ?? [],
-  useWorkspaceStreamMemberships: () => mockWorkspaceBootstrap.data.streamMemberships ?? [],
-  useWorkspaceUnreadState: () => null,
-}))
+  vi.spyOn(authModule, "useUser").mockReturnValue({
+    id: "workos_user_1",
+    name: "Martin",
+    slug: "martin",
+  } as unknown as ReturnType<typeof authModule.useUser>)
 
-// Mock streams API - called by useQuery in useStreamItems for archived streams
-vi.mock("@/api/streams", () => ({
-  streamsApi: {
-    list: vi.fn().mockResolvedValue([]),
-  },
-}))
+  vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockImplementation(
+    () => (mockWorkspaceBootstrap.data.streams ?? []) as ReturnType<typeof workspaceStoreModule.useWorkspaceStreams>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceUsers").mockImplementation(
+    () => (mockWorkspaceBootstrap.data.users ?? []) as ReturnType<typeof workspaceStoreModule.useWorkspaceUsers>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspacePersonas").mockImplementation(
+    () => (mockWorkspaceBootstrap.data.personas ?? []) as ReturnType<typeof workspaceStoreModule.useWorkspacePersonas>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceDmPeers").mockImplementation(
+    () => (mockWorkspaceBootstrap.data.dmPeers ?? []) as ReturnType<typeof workspaceStoreModule.useWorkspaceDmPeers>
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceStreamMemberships").mockImplementation(
+    () =>
+      (mockWorkspaceBootstrap.data.streamMemberships ?? []) as ReturnType<
+        typeof workspaceStoreModule.useWorkspaceStreamMemberships
+      >
+  )
+  vi.spyOn(workspaceStoreModule, "useWorkspaceUnreadState").mockReturnValue(
+    null as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceUnreadState>
+  )
 
-// Mock contexts - useSettings is called by QuickSwitcher, useStreamService/useWorkspaceService by useUnreadCounts
-vi.mock("@/contexts", () => ({
-  useSettings: () => ({
+  vi.spyOn(streamsApiModule.streamsApi, "list").mockResolvedValue([])
+
+  vi.spyOn(contextsModule, "useSettings").mockReturnValue({
     openSettings: vi.fn(),
-  }),
-  useStreamService: () => ({
+  } as unknown as ReturnType<typeof contextsModule.useSettings>)
+  vi.spyOn(contextsModule, "useStreamService").mockReturnValue({
     markAsRead: vi.fn(),
-  }),
-  useWorkspaceService: () => ({
+  } as unknown as ReturnType<typeof contextsModule.useStreamService>)
+  vi.spyOn(contextsModule, "useWorkspaceService").mockReturnValue({
     markAllAsRead: vi.fn(),
-  }),
-}))
+  } as unknown as ReturnType<typeof contextsModule.useWorkspaceService>)
+}
 
 describe("QuickSwitcher Integration Tests", () => {
   const defaultProps = {
@@ -176,8 +213,9 @@ describe("QuickSwitcher Integration Tests", () => {
   }
 
   beforeEach(() => {
-    vi.clearAllMocks()
-    // Reset configurable mocks
+    vi.restoreAllMocks()
+    mockNavigate.mockReset()
+    // Reset configurable state that spies read from
     mockSearchState.results = []
     mockSearchState.isLoading = false
     mockSearchState.search = vi.fn()
@@ -189,6 +227,7 @@ describe("QuickSwitcher Integration Tests", () => {
       personas: [],
       dmPeers: undefined,
     }
+    installSpies()
   })
 
   describe("dialog lifecycle", () => {
@@ -218,7 +257,9 @@ describe("QuickSwitcher Integration Tests", () => {
       const queryClient = createTestQueryClient()
       const { rerender } = render(
         <QueryClientProvider client={queryClient}>
-          <QuickSwitcher {...defaultProps} open={true} />
+          <RouterWrapper>
+            <QuickSwitcher {...defaultProps} open={true} />
+          </RouterWrapper>
         </QueryClientProvider>
       )
 
@@ -229,14 +270,18 @@ describe("QuickSwitcher Integration Tests", () => {
       // Close dialog
       rerender(
         <QueryClientProvider client={queryClient}>
-          <QuickSwitcher {...defaultProps} open={false} />
+          <RouterWrapper>
+            <QuickSwitcher {...defaultProps} open={false} />
+          </RouterWrapper>
         </QueryClientProvider>
       )
 
       // Reopen dialog
       rerender(
         <QueryClientProvider client={queryClient}>
-          <QuickSwitcher {...defaultProps} open={true} />
+          <RouterWrapper>
+            <QuickSwitcher {...defaultProps} open={true} />
+          </RouterWrapper>
         </QueryClientProvider>
       )
 

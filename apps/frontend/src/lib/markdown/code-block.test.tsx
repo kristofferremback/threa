@@ -5,41 +5,26 @@ import { DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD } from "@threa/types"
 import { db } from "@/db"
 import CodeBlock from "./code-block"
 import { MarkdownBlockProvider, hashMarkdownBlock, composeBlockCollapseKey } from "./markdown-block-context"
-
-// Shiki is heavy (loads WASM) and not relevant to collapse behavior.
-// Return a predictable HTML string synchronously.
-vi.mock("shiki", () => ({
-  codeToHtml: vi.fn(async (code: string) => `<pre class="shiki"><code>${code}</code></pre>`),
-}))
+import * as preferencesModule from "@/contexts/preferences-context"
 
 // Stubbable preferences mock: each test can override via `currentPrefs`.
 let currentPrefs: { codeBlockCollapseThreshold?: number } | null = {
   codeBlockCollapseThreshold: DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD,
 }
 
-vi.mock("@/contexts/preferences-context", () => {
-  const mockContext = () => {
-    if (!currentPrefs) return null
-    return {
-      preferences: currentPrefs,
-      resolvedTheme: "light",
-      isLoading: false,
-      updatePreference: vi.fn(),
-      updateAccessibility: vi.fn(),
-      updateKeyboardShortcut: vi.fn(),
-      resetKeyboardShortcut: vi.fn(),
-      resetAllKeyboardShortcuts: vi.fn(),
-    }
-  }
+function buildPreferencesContext() {
+  if (!currentPrefs) return null
   return {
-    usePreferences: () => {
-      const value = mockContext()
-      if (!value) throw new Error("no preferences")
-      return value
-    },
-    usePreferencesOptional: () => mockContext(),
-  }
-})
+    preferences: currentPrefs,
+    resolvedTheme: "light",
+    isLoading: false,
+    updatePreference: vi.fn(),
+    updateAccessibility: vi.fn(),
+    updateKeyboardShortcut: vi.fn(),
+    resetKeyboardShortcut: vi.fn(),
+    resetAllKeyboardShortcuts: vi.fn(),
+  } as unknown as ReturnType<typeof preferencesModule.usePreferences>
+}
 
 function renderCodeBlock(code: string, messageId = "msg_test", language = "typescript") {
   return render(
@@ -51,6 +36,14 @@ function renderCodeBlock(code: string, messageId = "msg_test", language = "types
 
 describe("CodeBlock collapse behavior", () => {
   beforeEach(async () => {
+    vi.restoreAllMocks()
+    vi.spyOn(preferencesModule, "usePreferences").mockImplementation(() => {
+      const value = buildPreferencesContext()
+      if (!value) throw new Error("no preferences")
+      return value
+    })
+    vi.spyOn(preferencesModule, "usePreferencesOptional").mockImplementation(() => buildPreferencesContext())
+
     currentPrefs = { codeBlockCollapseThreshold: DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD }
     await db.markdownBlockCollapse.clear()
   })

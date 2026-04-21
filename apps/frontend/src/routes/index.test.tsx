@@ -2,20 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
 import { LegacyMemoRedirect, WorkspaceHome } from "./index"
+import * as useLastStreamModule from "@/hooks/use-last-stream"
+import * as sidebarContextModule from "@/contexts/sidebar-context"
 
 const mockUseLastStream = vi.fn()
 const mockTogglePinned = vi.fn()
-
-vi.mock("@/hooks/use-last-stream", () => ({
-  useLastStream: (...args: unknown[]) => mockUseLastStream(...args),
-}))
-
-vi.mock("@/contexts/sidebar-context", () => ({
-  useSidebar: () => ({
-    state: "expanded",
-    togglePinned: mockTogglePinned,
-  }),
-}))
 
 function SearchEcho() {
   const location = useLocation()
@@ -24,7 +15,17 @@ function SearchEcho() {
 
 describe("WorkspaceHome", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    mockUseLastStream.mockReset()
+    mockTogglePinned.mockReset()
+    vi.spyOn(useLastStreamModule, "useLastStream").mockImplementation(
+      (...args) => mockUseLastStream(...args) as ReturnType<typeof useLastStreamModule.useLastStream>
+    )
+    vi.spyOn(sidebarContextModule, "useSidebar").mockReturnValue({
+      state: "expanded",
+      togglePinned: mockTogglePinned,
+    } as unknown as ReturnType<typeof sidebarContextModule.useSidebar>)
+
     mockUseLastStream.mockReturnValue({
       redirectStreamId: "stream_123",
       shouldOpenSidebar: false,

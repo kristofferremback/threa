@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useDraftComposer } from "./use-draft-composer"
 import type { JSONContent } from "@threa/types"
+import * as useDraftMessageModule from "./use-draft-message"
+import * as useAttachmentsModule from "./use-attachments"
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 const makeDoc = (text: string): JSONContent => ({
@@ -26,26 +28,6 @@ let mockDraftContentJson: JSONContent = EMPTY_DOC
 let mockDraftAttachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }> = []
 let mockDraftStateByKey: Record<string, MockDraftState> = {}
 
-vi.mock("./use-draft-message", () => ({
-  useDraftMessage: (_workspaceId: string, currentDraftKey: string) => {
-    const state = mockDraftStateByKey[currentDraftKey] ?? {
-      isLoaded: mockDraftIsLoaded,
-      contentJson: mockDraftContentJson,
-      attachments: mockDraftAttachments,
-    }
-
-    return {
-      isLoaded: state.isLoaded,
-      contentJson: state.contentJson,
-      attachments: state.attachments,
-      saveDraftDebounced: mockSaveDraftDebounced,
-      addAttachment: mockAddDraftAttachment,
-      removeAttachment: mockRemoveDraftAttachment,
-      clearDraft: mockClearDraft,
-    }
-  },
-}))
-
 // Mock useAttachments
 let mockPendingAttachments: Array<{
   id: string
@@ -62,35 +44,65 @@ const mockRemoveAttachment = vi.fn()
 const mockClearAttachments = vi.fn()
 const mockRestoreAttachments = vi.fn()
 
-vi.mock("./use-attachments", () => ({
-  useAttachments: () => ({
-    pendingAttachments: mockPendingAttachments,
-    getPendingAttachmentsSnapshot: () => mockPendingAttachments,
-    fileInputRef: mockFileInputRef,
-    handleFileSelect: mockHandleFileSelect,
-    removeAttachment: mockRemoveAttachment,
-    uploadedIds: mockPendingAttachments
-      .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
-      .map((a) => a.id),
-    isUploading: mockPendingAttachments.some((a) => a.status === "uploading"),
-    hasFailed: mockPendingAttachments.some((a) => a.status === "error"),
-    clear: mockClearAttachments,
-    restore: mockRestoreAttachments,
-  }),
-}))
-
 describe("useDraftComposer", () => {
   const workspaceId = "ws_123"
   const draftKey = "stream:stream_456"
   const scopeId = "stream_456"
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    mockSaveDraftDebounced.mockReset()
+    mockAddDraftAttachment.mockReset()
+    mockRemoveDraftAttachment.mockReset()
+    mockClearDraft.mockReset()
+    mockHandleFileSelect.mockReset()
+    mockRemoveAttachment.mockReset()
+    mockClearAttachments.mockReset()
+    mockRestoreAttachments.mockReset()
+
     mockDraftIsLoaded = true
     mockDraftContentJson = EMPTY_DOC
     mockDraftAttachments = []
     mockDraftStateByKey = {}
     mockPendingAttachments = []
+
+    vi.spyOn(useDraftMessageModule, "useDraftMessage").mockImplementation(
+      (_workspaceId: string, currentDraftKey: string) => {
+        const state = mockDraftStateByKey[currentDraftKey] ?? {
+          isLoaded: mockDraftIsLoaded,
+          contentJson: mockDraftContentJson,
+          attachments: mockDraftAttachments,
+        }
+
+        return {
+          isLoaded: state.isLoaded,
+          contentJson: state.contentJson,
+          attachments: state.attachments,
+          saveDraftDebounced: mockSaveDraftDebounced,
+          addAttachment: mockAddDraftAttachment,
+          removeAttachment: mockRemoveDraftAttachment,
+          clearDraft: mockClearDraft,
+        } as unknown as ReturnType<typeof useDraftMessageModule.useDraftMessage>
+      }
+    )
+
+    vi.spyOn(useAttachmentsModule, "useAttachments").mockImplementation(
+      () =>
+        ({
+          pendingAttachments: mockPendingAttachments,
+          getPendingAttachmentsSnapshot: () => mockPendingAttachments,
+          fileInputRef: mockFileInputRef,
+          handleFileSelect: mockHandleFileSelect,
+          removeAttachment: mockRemoveAttachment,
+          uploadedIds: mockPendingAttachments
+            .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+            .map((a) => a.id),
+          isUploading: mockPendingAttachments.some((a) => a.status === "uploading"),
+          hasFailed: mockPendingAttachments.some((a) => a.status === "error"),
+          clear: mockClearAttachments,
+          restore: mockRestoreAttachments,
+        }) as unknown as ReturnType<typeof useAttachmentsModule.useAttachments>
+    )
   })
 
   afterEach(() => {

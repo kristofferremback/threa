@@ -1,31 +1,19 @@
 import { describe, expect, it, beforeEach, vi } from "vitest"
 import { render, screen } from "@/test"
 import { ConnectionStatus } from "./connection-status"
+import * as contextsModule from "@/contexts"
+import * as pageActivityModule from "@/hooks/use-page-activity"
 
-const mockState = vi.hoisted(() => ({
+const mockState = {
   phase: "ready" as "loading" | "skeleton" | "ready",
   socketStatus: "connected" as "connected" | "connecting" | "reconnecting" | "disconnected",
   online: true,
   visible: true,
-}))
-
-vi.mock("@/contexts", () => ({
-  useCoordinatedLoading: () => ({
-    phase: mockState.phase,
-  }),
-  useSocketStatus: () => mockState.socketStatus,
-}))
-
-vi.mock("@/hooks/use-page-activity", () => ({
-  usePageActivity: () => ({
-    isVisible: mockState.visible,
-    isFocused: true,
-    isActive: mockState.visible,
-  }),
-}))
+}
 
 describe("ConnectionStatus", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     mockState.phase = "ready"
     mockState.socketStatus = "connected"
     mockState.online = true
@@ -34,6 +22,20 @@ describe("ConnectionStatus", () => {
       configurable: true,
       value: true,
     })
+    vi.spyOn(contextsModule, "useCoordinatedLoading").mockImplementation(
+      () => ({ phase: mockState.phase }) as unknown as ReturnType<typeof contextsModule.useCoordinatedLoading>
+    )
+    vi.spyOn(contextsModule, "useSocketStatus").mockImplementation(
+      () => mockState.socketStatus as unknown as ReturnType<typeof contextsModule.useSocketStatus>
+    )
+    vi.spyOn(pageActivityModule, "usePageActivity").mockImplementation(
+      () =>
+        ({
+          isVisible: mockState.visible,
+          isFocused: true,
+          isActive: mockState.visible,
+        }) as unknown as ReturnType<typeof pageActivityModule.usePageActivity>
+    )
   })
 
   it("does not render during the initial coordinated load", () => {

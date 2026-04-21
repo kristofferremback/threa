@@ -5,27 +5,13 @@ import { createElement, type ReactNode } from "react"
 import { useActors } from "./use-actors"
 import type { User, Persona, Bot } from "@threa/types"
 import type { CachedWorkspaceUser, CachedPersona, CachedBot } from "@/db"
+import * as workspaceStoreModule from "@/stores/workspace-store"
+import * as useWorkspaceEmojiModule from "./use-workspace-emoji"
 
 // Mutable test data — set in beforeEach, read by the mocked store hooks
 let mockUsers: CachedWorkspaceUser[] = []
 let mockPersonas: CachedPersona[] = []
 let mockBots: CachedBot[] = []
-
-vi.mock("@/stores/workspace-store", () => ({
-  useWorkspaceUsers: () => mockUsers,
-  useWorkspacePersonas: () => mockPersonas,
-  useWorkspaceBots: () => mockBots,
-}))
-
-vi.mock("./use-workspace-emoji", () => ({
-  useWorkspaceEmoji: () => ({
-    toEmoji: (shortcode: string) => {
-      // Simple test implementation: resolve :thread: -> 🧵
-      if (shortcode === ":thread:") return "🧵"
-      return undefined
-    },
-  }),
-}))
 
 function createTestWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -100,10 +86,22 @@ describe("useActors", () => {
   let queryClient: QueryClient
 
   beforeEach(() => {
+    vi.restoreAllMocks()
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     mockUsers = []
     mockPersonas = []
     mockBots = []
+
+    vi.spyOn(workspaceStoreModule, "useWorkspaceUsers").mockImplementation(() => mockUsers)
+    vi.spyOn(workspaceStoreModule, "useWorkspacePersonas").mockImplementation(() => mockPersonas)
+    vi.spyOn(workspaceStoreModule, "useWorkspaceBots").mockImplementation(() => mockBots)
+    vi.spyOn(useWorkspaceEmojiModule, "useWorkspaceEmoji").mockReturnValue({
+      toEmoji: (shortcode: string) => {
+        // Simple test implementation: resolve :thread: -> 🧵
+        if (shortcode === ":thread:") return "🧵"
+        return undefined
+      },
+    } as unknown as ReturnType<typeof useWorkspaceEmojiModule.useWorkspaceEmoji>)
   })
 
   describe("getActorName", () => {

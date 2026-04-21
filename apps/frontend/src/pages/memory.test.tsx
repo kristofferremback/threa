@@ -3,28 +3,15 @@ import { describe, expect, it, vi, beforeEach } from "vitest"
 import { render, screen, userEvent } from "@/test"
 import { MemoryPage } from "./memory"
 import { SidebarProvider } from "@/contexts"
+import * as hooksModule from "@/hooks"
+import * as workspaceStoreModule from "@/stores/workspace-store"
+import * as useMobileModule from "@/hooks/use-mobile"
+import * as relativeTimeModule from "@/components/relative-time"
 
 const mockUseMemoSearch = vi.fn()
 const mockUseMemoDetail = vi.fn()
 const mockUseWorkspaceStreams = vi.fn()
 const mockUseIsMobile = vi.fn()
-
-vi.mock("@/hooks", () => ({
-  useMemoSearch: (...args: unknown[]) => mockUseMemoSearch(...args),
-  useMemoDetail: (...args: unknown[]) => mockUseMemoDetail(...args),
-}))
-
-vi.mock("@/stores/workspace-store", () => ({
-  useWorkspaceStreams: (...args: unknown[]) => mockUseWorkspaceStreams(...args),
-}))
-
-vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => mockUseIsMobile(),
-}))
-
-vi.mock("@/components/relative-time", () => ({
-  RelativeTime: () => <span>just now</span>,
-}))
 
 function renderPage(initialEntry = "/w/ws_1/memory?memo=memo_1") {
   return render(
@@ -74,6 +61,19 @@ function buildMemo(overrides: Partial<Record<string, unknown>> = {}) {
 
 describe("MemoryPage", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.spyOn(hooksModule, "useMemoSearch").mockImplementation(
+      (...args) => mockUseMemoSearch(...args) as ReturnType<typeof hooksModule.useMemoSearch>
+    )
+    vi.spyOn(hooksModule, "useMemoDetail").mockImplementation(
+      (...args) => mockUseMemoDetail(...args) as ReturnType<typeof hooksModule.useMemoDetail>
+    )
+    vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockImplementation(
+      (...args) => mockUseWorkspaceStreams(...args) as ReturnType<typeof workspaceStoreModule.useWorkspaceStreams>
+    )
+    vi.spyOn(useMobileModule, "useIsMobile").mockImplementation(() => mockUseIsMobile())
+    vi.spyOn(relativeTimeModule, "RelativeTime").mockImplementation(() => <span>just now</span>)
+
     mockUseWorkspaceStreams.mockReset()
     mockUseMemoSearch.mockReset()
     mockUseMemoDetail.mockReset()

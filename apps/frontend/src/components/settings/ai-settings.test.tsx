@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { spyOnExport } from "@/test/spy"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { forwardRef, useImperativeHandle } from "react"
 import { AISettings } from "./ai-settings"
 import type { JSONContent } from "@threa/types"
+import * as contextsModule from "@/contexts"
+import * as editorModule from "@/components/editor"
 
 const updatePreferenceMock = vi.fn().mockResolvedValue(undefined)
 
@@ -24,69 +27,68 @@ function createDoc(text: string): JSONContent {
   }
 }
 
-vi.mock("@/contexts", () => ({
-  usePreferences: () => ({
-    preferences: mockPreferences,
-    updatePreference: updatePreferenceMock,
-    isLoading: false,
-  }),
-}))
-
-vi.mock("@/components/editor", () => {
-  const RichEditor = forwardRef<
-    {
-      focus: () => void
-      insertMention: () => void
-      insertSlash: () => void
-      insertEmoji: () => void
-      getEditor: () => null
-    },
-    {
-      value: JSONContent
-      onChange: (value: JSONContent) => void
-      onSubmit: () => void
-      ariaLabel: string
-    }
-  >(function MockRichEditor({ value, onChange, onSubmit, ariaLabel }, ref) {
-    useImperativeHandle(ref, () => ({
-      focus: () => undefined,
-      insertMention: () => undefined,
-      insertSlash: () => undefined,
-      insertEmoji: () => undefined,
-      getEditor: () => null,
-    }))
-
-    return (
-      <textarea
-        aria-label={ariaLabel}
-        value={extractText(value)}
-        onChange={(event) => onChange(createDoc(event.target.value))}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && event.metaKey) {
-            event.preventDefault()
-            onSubmit()
-          }
-        }}
-      />
-    )
-  })
-
-  const EditorActionBar = ({ onFormatOpenChange, formatOpen, trailingContent }: Record<string, any>) => (
-    <div>
-      <button type="button" onClick={() => onFormatOpenChange(!formatOpen)}>
-        Formatting
-      </button>
-      {trailingContent}
-    </div>
-  )
-
-  return { RichEditor, EditorActionBar }
-})
-
 describe("AISettings", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     mockPreferences = { scratchpadCustomPrompt: "Current instructions" }
     updatePreferenceMock.mockClear()
+
+    vi.spyOn(contextsModule, "usePreferences").mockReturnValue({
+      preferences: mockPreferences,
+      updatePreference: updatePreferenceMock,
+      isLoading: false,
+    } as unknown as ReturnType<typeof contextsModule.usePreferences>)
+
+    const MockRichEditor = forwardRef<
+      {
+        focus: () => void
+        insertMention: () => void
+        insertSlash: () => void
+        insertEmoji: () => void
+        getEditor: () => null
+      },
+      {
+        value: JSONContent
+        onChange: (value: JSONContent) => void
+        onSubmit: () => void
+        ariaLabel: string
+      }
+    >(function MockRichEditor({ value, onChange, onSubmit, ariaLabel }, ref) {
+      useImperativeHandle(ref, () => ({
+        focus: () => undefined,
+        insertMention: () => undefined,
+        insertSlash: () => undefined,
+        insertEmoji: () => undefined,
+        getEditor: () => null,
+      }))
+
+      return (
+        <textarea
+          aria-label={ariaLabel}
+          value={extractText(value)}
+          onChange={(event) => onChange(createDoc(event.target.value))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && event.metaKey) {
+              event.preventDefault()
+              onSubmit()
+            }
+          }}
+        />
+      )
+    })
+
+    spyOnExport(editorModule, "RichEditor").mockReturnValue(MockRichEditor as unknown as typeof editorModule.RichEditor)
+
+    const MockEditorActionBar = (({ onFormatOpenChange, formatOpen, trailingContent }: Record<string, unknown>) => (
+      <div>
+        <button type="button" onClick={() => (onFormatOpenChange as (v: boolean) => void)(!formatOpen)}>
+          Formatting
+        </button>
+        {trailingContent as React.ReactNode}
+      </div>
+    )) as unknown as typeof editorModule.EditorActionBar
+
+    spyOnExport(editorModule, "EditorActionBar").mockReturnValue(MockEditorActionBar)
   })
 
   it("saves updated scratchpad instructions", async () => {

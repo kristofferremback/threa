@@ -12,6 +12,9 @@
 // Re-export render utilities
 export * from "./render"
 
+// Spy helper for replacing const-like module exports in tests
+export { spyOnExport } from "./spy"
+
 // Fixtures and mocks are imported from their own paths for clarity:
 // - "@/test/fixtures" for data factories
-// - "@/test/mocks" for vi.mock() factories
+// - "@/test/mocks" for spy-based helpers (mockNavigate, bootstrap/search builders)

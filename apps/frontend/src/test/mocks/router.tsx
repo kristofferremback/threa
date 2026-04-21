@@ -13,19 +13,9 @@ export const mockNavigate = vi.fn()
 export const mockUseParams = vi.fn(() => ({ workspaceId: "workspace_1" }))
 
 /**
- * Creates a mock for react-router-dom.
- * Use with: vi.mock("react-router-dom", () => createRouterMock())
- *
- * @example
- * ```ts
- * import { createRouterMock, mockNavigate } from "@/test/mocks"
- *
- * vi.mock("react-router-dom", () => createRouterMock())
- *
- * beforeEach(() => {
- *   mockNavigate.mockClear()
- * })
- * ```
+ * Builds an object implementing the shape of react-router-dom for tests that
+ * want to substitute navigation behavior. Install selected members via
+ * `vi.spyOn(routerModule, "useNavigate").mockReturnValue(mockNavigate)` etc.
  */
 export function createRouterMock() {
   return {

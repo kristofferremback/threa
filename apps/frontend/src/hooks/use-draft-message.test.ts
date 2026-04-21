@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
 import type { JSONContent } from "@threa/types"
+import * as dbModule from "@/db"
+import * as draftStoreModule from "@/stores/draft-store"
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 const makeDoc = (text: string): JSONContent => ({
@@ -24,23 +26,6 @@ let draftMessages: Array<{
   updatedAt: number
 }> = []
 
-vi.mock("@/db", () => ({
-  db: {
-    draftMessages: {
-      get: (...args: unknown[]) => mockGet(...args),
-      put: (...args: unknown[]) => mockPut(...args),
-      delete: (...args: unknown[]) => mockDelete(...args),
-    },
-  },
-}))
-
-vi.mock("@/stores/draft-store", () => ({
-  hasSeededDraftCache: () => seededDraftCache,
-  useDraftMessagesFromStore: () => draftMessages,
-  upsertDraftMessageInCache: (...args: unknown[]) => mockUpsertDraftMessageInCache(...args),
-  deleteDraftMessageFromCache: (...args: unknown[]) => mockDeleteDraftMessageFromCache(...args),
-}))
-
 describe("getDraftMessageKey", () => {
   it("should return stream key format for stream type", () => {
     const key = getDraftMessageKey({ type: "stream", streamId: "stream_123" })
@@ -58,13 +43,34 @@ describe("useDraftMessage", () => {
   const draftKey = "stream:stream_456"
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    mockGet.mockReset()
+    mockPut.mockReset()
+    mockDelete.mockReset()
+    mockUpsertDraftMessageInCache.mockReset()
+    mockDeleteDraftMessageFromCache.mockReset()
     vi.useFakeTimers()
     seededDraftCache = false
     draftMessages = []
     mockGet.mockResolvedValue(undefined)
     mockPut.mockResolvedValue(undefined)
     mockDelete.mockResolvedValue(undefined)
+
+    vi.spyOn(dbModule.db.draftMessages, "get").mockImplementation(((...args: unknown[]) =>
+      mockGet(...args)) as unknown as typeof dbModule.db.draftMessages.get)
+    vi.spyOn(dbModule.db.draftMessages, "put").mockImplementation(((...args: unknown[]) =>
+      mockPut(...args)) as unknown as typeof dbModule.db.draftMessages.put)
+    vi.spyOn(dbModule.db.draftMessages, "delete").mockImplementation(((...args: unknown[]) =>
+      mockDelete(...args)) as unknown as typeof dbModule.db.draftMessages.delete)
+
+    vi.spyOn(draftStoreModule, "hasSeededDraftCache").mockImplementation(() => seededDraftCache)
+    vi.spyOn(draftStoreModule, "useDraftMessagesFromStore").mockImplementation(
+      () => draftMessages as ReturnType<typeof draftStoreModule.useDraftMessagesFromStore>
+    )
+    vi.spyOn(draftStoreModule, "upsertDraftMessageInCache").mockImplementation(((...args: unknown[]) =>
+      mockUpsertDraftMessageInCache(...args)) as unknown as typeof draftStoreModule.upsertDraftMessageInCache)
+    vi.spyOn(draftStoreModule, "deleteDraftMessageFromCache").mockImplementation(((...args: unknown[]) =>
+      mockDeleteDraftMessageFromCache(...args)) as unknown as typeof draftStoreModule.deleteDraftMessageFromCache)
   })
 
   afterEach(() => {

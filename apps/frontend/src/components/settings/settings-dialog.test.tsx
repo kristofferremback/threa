@@ -3,62 +3,57 @@ import { describe, expect, it, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { SettingsDialog } from "./settings-dialog"
+import * as contextsModule from "@/contexts"
+import * as profileSettingsModule from "./profile-settings"
+import * as aiSettingsModule from "./ai-settings"
+import * as appearanceSettingsModule from "./appearance-settings"
+import * as datetimeSettingsModule from "./datetime-settings"
+import * as notificationsSettingsModule from "./notifications-settings"
+import * as keyboardSettingsModule from "./keyboard-settings"
+import * as accessibilitySettingsModule from "./accessibility-settings"
 
-const mocks = vi.hoisted(() => ({
-  useSettings: vi.fn(),
-  keyboardCaptureActive: false,
-}))
-
-vi.mock("@/contexts", () => ({
-  useSettings: () => mocks.useSettings(),
-}))
-
-vi.mock("./profile-settings", () => ({
-  ProfileSettings: () => <div>Profile panel</div>,
-}))
-
-vi.mock("./ai-settings", () => ({
-  AISettings: () => <div>AI panel</div>,
-}))
-
-vi.mock("./appearance-settings", () => ({
-  AppearanceSettings: () => <div>Appearance panel</div>,
-}))
-
-vi.mock("./datetime-settings", () => ({
-  DateTimeSettings: () => <div>Date & Time panel</div>,
-}))
-
-vi.mock("./notifications-settings", () => ({
-  NotificationsSettings: () => <div>Notifications panel</div>,
-}))
-
-vi.mock("./keyboard-settings", () => ({
-  KeyboardSettings: ({ onCaptureStateChange }: { onCaptureStateChange?: (isCapturing: boolean) => void }) => {
-    useEffect(() => {
-      if (!mocks.keyboardCaptureActive) {
-        return
-      }
-
-      onCaptureStateChange?.(true)
-      return () => onCaptureStateChange?.(false)
-    }, [onCaptureStateChange])
-
-    return <div>Keyboard panel</div>
-  },
-}))
-
-vi.mock("./accessibility-settings", () => ({
-  AccessibilitySettings: () => <div>Accessibility panel</div>,
-}))
+const useSettingsSpy = vi.fn()
+let keyboardCaptureActive = false
 
 describe("SettingsDialog", () => {
   beforeEach(() => {
-    mocks.keyboardCaptureActive = false
+    vi.restoreAllMocks()
+    useSettingsSpy.mockReset()
+    keyboardCaptureActive = false
+
+    vi.spyOn(contextsModule, "useSettings").mockImplementation((() =>
+      useSettingsSpy()) as unknown as typeof contextsModule.useSettings)
+
+    vi.spyOn(profileSettingsModule, "ProfileSettings").mockImplementation(() => <div>Profile panel</div>)
+    vi.spyOn(aiSettingsModule, "AISettings").mockImplementation(() => <div>AI panel</div>)
+    vi.spyOn(appearanceSettingsModule, "AppearanceSettings").mockImplementation(() => <div>Appearance panel</div>)
+    vi.spyOn(datetimeSettingsModule, "DateTimeSettings").mockImplementation(() => <div>Date & Time panel</div>)
+    vi.spyOn(notificationsSettingsModule, "NotificationsSettings").mockImplementation(() => (
+      <div>Notifications panel</div>
+    ))
+    vi.spyOn(accessibilitySettingsModule, "AccessibilitySettings").mockImplementation(() => (
+      <div>Accessibility panel</div>
+    ))
+
+    vi.spyOn(keyboardSettingsModule, "KeyboardSettings").mockImplementation(((props: {
+      onCaptureStateChange?: (isCapturing: boolean) => void
+    }) => {
+      const { onCaptureStateChange } = props
+      useEffect(() => {
+        if (!keyboardCaptureActive) {
+          return
+        }
+
+        onCaptureStateChange?.(true)
+        return () => onCaptureStateChange?.(false)
+      }, [onCaptureStateChange])
+
+      return <div>Keyboard panel</div>
+    }) as unknown as typeof keyboardSettingsModule.KeyboardSettings)
   })
 
   it("keeps the navigation and active panel in scrollable regions", async () => {
-    mocks.useSettings.mockReturnValue({
+    useSettingsSpy.mockReturnValue({
       isOpen: true,
       activeTab: "profile",
       closeSettings: vi.fn(),
@@ -84,8 +79,8 @@ describe("SettingsDialog", () => {
   it("does not close on Escape while shortcut capture is active", async () => {
     const user = userEvent.setup()
     const closeSettings = vi.fn()
-    mocks.keyboardCaptureActive = true
-    mocks.useSettings.mockReturnValue({
+    keyboardCaptureActive = true
+    useSettingsSpy.mockReturnValue({
       isOpen: true,
       activeTab: "keyboard",
       closeSettings,

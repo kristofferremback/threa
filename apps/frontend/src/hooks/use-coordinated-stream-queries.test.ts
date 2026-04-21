@@ -5,35 +5,14 @@ import { createElement, type ReactNode } from "react"
 import { useCoordinatedStreamQueries } from "./use-coordinated-stream-queries"
 import { QUERY_LOAD_STATE } from "@/lib/query-load-state"
 import { ApiError } from "@/api/client"
+import * as contextsModule from "@/contexts"
+import * as dbModule from "@/db"
+import * as socketRoomModule from "@/lib/socket-room"
+import * as streamSyncModule from "@/sync/stream-sync"
 
-const { mockBootstrap, mockJoinRoomBestEffort, mockToCachedStreamBootstrap } = vi.hoisted(() => ({
-  mockBootstrap: vi.fn(),
-  mockJoinRoomBestEffort: vi.fn(),
-  mockToCachedStreamBootstrap: vi.fn((bootstrap: unknown) => bootstrap),
-}))
-
-vi.mock("@/contexts", () => ({
-  useStreamService: () => ({
-    bootstrap: mockBootstrap,
-  }),
-  useSocket: () => ({ connected: true }),
-}))
-
-vi.mock("@/db", () => ({
-  db: {
-    streams: { put: vi.fn() },
-    events: { bulkPut: vi.fn() },
-  },
-}))
-
-vi.mock("@/lib/socket-room", () => ({
-  joinRoomBestEffort: mockJoinRoomBestEffort,
-}))
-
-vi.mock("@/sync/stream-sync", () => ({
-  applyStreamBootstrap: vi.fn(),
-  toCachedStreamBootstrap: mockToCachedStreamBootstrap,
-}))
+const mockBootstrap = vi.fn()
+const mockJoinRoomBestEffort = vi.fn()
+const mockToCachedStreamBootstrap = vi.fn((bootstrap: unknown) => bootstrap)
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -51,8 +30,30 @@ function createWrapper(queryClient: QueryClient) {
 
 describe("useCoordinatedStreamQueries", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    mockBootstrap.mockReset()
+    mockJoinRoomBestEffort.mockReset()
+    mockToCachedStreamBootstrap.mockReset()
+    mockToCachedStreamBootstrap.mockImplementation((bootstrap: unknown) => bootstrap)
     mockJoinRoomBestEffort.mockResolvedValue(undefined)
+
+    vi.spyOn(contextsModule, "useStreamService").mockReturnValue({
+      bootstrap: mockBootstrap,
+    } as unknown as ReturnType<typeof contextsModule.useStreamService>)
+    vi.spyOn(contextsModule, "useSocket").mockReturnValue({ connected: true } as unknown as ReturnType<
+      typeof contextsModule.useSocket
+    >)
+
+    // Stub db.streams and db.events table methods used by the hook
+    vi.spyOn(dbModule.db.streams, "put").mockResolvedValue(undefined as never)
+    vi.spyOn(dbModule.db.events, "bulkPut").mockResolvedValue(undefined as never)
+
+    vi.spyOn(socketRoomModule, "joinRoomBestEffort").mockImplementation(mockJoinRoomBestEffort)
+
+    vi.spyOn(streamSyncModule, "applyStreamBootstrap").mockResolvedValue(undefined as never)
+    vi.spyOn(streamSyncModule, "toCachedStreamBootstrap").mockImplementation(
+      mockToCachedStreamBootstrap as unknown as typeof streamSyncModule.toCachedStreamBootstrap
+    )
   })
 
   it("should filter out draft IDs and not fetch them", async () => {

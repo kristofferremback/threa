@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, beforeEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import {
   resetWorkspaceStoreCache,
@@ -6,10 +6,6 @@ import {
   useWorkspaceMetadata,
   useWorkspaceUsers,
 } from "./workspace-store"
-
-vi.mock("dexie-react-hooks", () => ({
-  useLiveQuery: (_queryFn: () => Promise<unknown>, _deps: unknown[], initialValue: unknown) => initialValue,
-}))
 
 describe("workspace store cache subscriptions", () => {
   beforeEach(() => {

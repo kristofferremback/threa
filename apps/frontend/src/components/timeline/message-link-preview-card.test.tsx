@@ -1,23 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
+import { MemoryRouter } from "react-router-dom"
+import { linkPreviewsApi } from "@/api"
 import { MessageLinkPreviewCard } from "./message-link-preview-card"
 import type { LinkPreviewSummary } from "@threa/types"
 
 const mockResolveMessageLink = vi.fn()
-
-vi.mock("@/api", () => ({
-  linkPreviewsApi: {
-    resolveMessageLink: (...args: unknown[]) => mockResolveMessageLink(...args),
-  },
-}))
-
-vi.mock("react-router-dom", () => ({
-  Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
-    <a href={to} className={className}>
-      {children}
-    </a>
-  ),
-}))
 
 describe("MessageLinkPreviewCard", () => {
   const workspaceId = "ws_123"
@@ -34,6 +22,7 @@ describe("MessageLinkPreviewCard", () => {
   }
 
   beforeEach(() => {
+    vi.restoreAllMocks()
     mockResolveMessageLink.mockReset()
     mockResolveMessageLink.mockResolvedValue({
       accessTier: "full",
@@ -43,10 +32,17 @@ describe("MessageLinkPreviewCard", () => {
       authorAvatarUrl: null,
       contentPreview: "Hello from preview",
     })
+    vi.spyOn(linkPreviewsApi, "resolveMessageLink").mockImplementation(
+      (...args: Parameters<typeof linkPreviewsApi.resolveMessageLink>) => mockResolveMessageLink(...args)
+    )
   })
 
   it("does not throw when the preview URL is malformed", async () => {
-    render(<MessageLinkPreviewCard preview={preview} workspaceId={workspaceId} />)
+    render(
+      <MemoryRouter>
+        <MessageLinkPreviewCard preview={preview} workspaceId={workspaceId} />
+      </MemoryRouter>
+    )
 
     await waitFor(() => {
       expect(screen.getByText("Test User")).toBeInTheDocument()

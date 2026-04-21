@@ -2,24 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useAutoMarkAsRead } from "./use-auto-mark-as-read"
 import { SW_MSG_CLEAR_NOTIFICATIONS } from "../lib/sw-messages"
+import * as useUnreadCountsModule from "./use-unread-counts"
+import * as useActivityCountsModule from "./use-activity-counts"
 
 const mockMarkAsRead = vi.fn()
 const mockGetUnreadCount = vi.fn()
 const mockGetActivityCount = vi.fn()
 const mockPostMessage = vi.fn()
-
-vi.mock("./use-unread-counts", () => ({
-  useUnreadCounts: () => ({
-    markAsRead: mockMarkAsRead,
-    getUnreadCount: mockGetUnreadCount,
-  }),
-}))
-
-vi.mock("./use-activity-counts", () => ({
-  useActivityCounts: () => ({
-    getActivityCount: mockGetActivityCount,
-  }),
-}))
 
 let unreadCount = 1
 let activityCount = 0
@@ -39,7 +28,11 @@ function restoreProperty(target: object, key: PropertyKey, descriptor?: Property
 
 describe("useAutoMarkAsRead", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    mockMarkAsRead.mockReset()
+    mockGetUnreadCount.mockReset()
+    mockGetActivityCount.mockReset()
+    mockPostMessage.mockReset()
     vi.useFakeTimers()
 
     unreadCount = 1
@@ -49,6 +42,14 @@ describe("useAutoMarkAsRead", () => {
 
     mockGetUnreadCount.mockImplementation(() => unreadCount)
     mockGetActivityCount.mockImplementation(() => activityCount)
+
+    vi.spyOn(useUnreadCountsModule, "useUnreadCounts").mockReturnValue({
+      markAsRead: mockMarkAsRead,
+      getUnreadCount: mockGetUnreadCount,
+    } as unknown as ReturnType<typeof useUnreadCountsModule.useUnreadCounts>)
+    vi.spyOn(useActivityCountsModule, "useActivityCounts").mockReturnValue({
+      getActivityCount: mockGetActivityCount,
+    } as unknown as ReturnType<typeof useActivityCountsModule.useActivityCounts>)
 
     vi.spyOn(document, "hasFocus").mockImplementation(() => hasFocus)
 

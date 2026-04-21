@@ -4,36 +4,14 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen } from "../test"
 import { UserSetupPage } from "./user-setup"
+import * as authModule from "@/auth"
+import { workspacesApi } from "@/api/workspaces"
+import * as timezonePickerModule from "@/components/ui/timezone-picker"
+import * as localePickerModule from "@/components/ui/locale-picker"
 
 const mockCheckSlugAvailable = vi.fn()
 const mockCompleteUserSetup = vi.fn()
 const SLUG_CHECK_DEBOUNCE_MS = 500
-
-vi.mock("@/auth", () => ({
-  useUser: () => ({
-    id: "user_1",
-    email: "kris@example.com",
-    name: "Taken Name",
-    workosUserId: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  }),
-}))
-
-vi.mock("@/api/workspaces", () => ({
-  workspacesApi: {
-    checkSlugAvailable: (...args: unknown[]) => mockCheckSlugAvailable(...args),
-    completeUserSetup: (...args: unknown[]) => mockCompleteUserSetup(...args),
-  },
-}))
-
-vi.mock("@/components/ui/timezone-picker", () => ({
-  TimezonePicker: () => <div data-testid="timezone-picker" />,
-}))
-
-vi.mock("@/components/ui/locale-picker", () => ({
-  LocalePicker: () => <div data-testid="locale-picker" />,
-}))
 
 function renderPage() {
   const queryClient = new QueryClient({
@@ -63,7 +41,26 @@ async function advanceSlugDebounce() {
 
 describe("UserSetupPage", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    vi.spyOn(authModule, "useUser").mockReturnValue({
+      id: "user_1",
+      email: "kris@example.com",
+      name: "Taken Name",
+      workosUserId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as ReturnType<typeof authModule.useUser>)
+    vi.spyOn(workspacesApi, "checkSlugAvailable").mockImplementation(
+      (...args) => mockCheckSlugAvailable(...args) as ReturnType<typeof workspacesApi.checkSlugAvailable>
+    )
+    vi.spyOn(workspacesApi, "completeUserSetup").mockImplementation(
+      (...args) => mockCompleteUserSetup(...args) as ReturnType<typeof workspacesApi.completeUserSetup>
+    )
+    vi.spyOn(timezonePickerModule, "TimezonePicker").mockImplementation(() => <div data-testid="timezone-picker" />)
+    vi.spyOn(localePickerModule, "LocalePicker").mockImplementation(() => <div data-testid="locale-picker" />)
+
+    mockCheckSlugAvailable.mockReset()
+    mockCompleteUserSetup.mockReset()
     vi.useFakeTimers()
     mockCompleteUserSetup.mockResolvedValue({
       id: "user_1",

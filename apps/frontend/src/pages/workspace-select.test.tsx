@@ -4,22 +4,13 @@ import { render, screen, userEvent } from "@/test"
 import { WorkspaceSelectPage } from "./workspace-select"
 import type { Workspace } from "@threa/types"
 import { ApiError } from "@/api/client"
+import * as authModule from "@/auth"
+import * as hooksModule from "@/hooks"
 
 const mockUseAuth = vi.fn()
 const mockUseWorkspaces = vi.fn()
 const mockUseCreateWorkspace = vi.fn()
 const mockUseAcceptInvitation = vi.fn()
-
-vi.mock("@/auth", () => ({
-  useAuth: () => mockUseAuth(),
-}))
-
-vi.mock("@/hooks", () => ({
-  useWorkspaces: () => mockUseWorkspaces(),
-  useCreateWorkspace: () => mockUseCreateWorkspace(),
-  useAcceptInvitation: () => mockUseAcceptInvitation(),
-  useRegions: () => ({ data: undefined, isLoading: false }),
-}))
 
 function WorkspaceRouteProbe() {
   const { workspaceId } = useParams()
@@ -52,6 +43,22 @@ function renderPage() {
 
 describe("WorkspaceSelectPage", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.spyOn(authModule, "useAuth").mockImplementation(() => mockUseAuth() as ReturnType<typeof authModule.useAuth>)
+    vi.spyOn(hooksModule, "useWorkspaces").mockImplementation(
+      () => mockUseWorkspaces() as ReturnType<typeof hooksModule.useWorkspaces>
+    )
+    vi.spyOn(hooksModule, "useCreateWorkspace").mockImplementation(
+      () => mockUseCreateWorkspace() as ReturnType<typeof hooksModule.useCreateWorkspace>
+    )
+    vi.spyOn(hooksModule, "useAcceptInvitation").mockImplementation(
+      () => mockUseAcceptInvitation() as ReturnType<typeof hooksModule.useAcceptInvitation>
+    )
+    vi.spyOn(hooksModule, "useRegions").mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    } as ReturnType<typeof hooksModule.useRegions>)
+
     mockUseAuth.mockReset()
     mockUseWorkspaces.mockReset()
     mockUseCreateWorkspace.mockReset()

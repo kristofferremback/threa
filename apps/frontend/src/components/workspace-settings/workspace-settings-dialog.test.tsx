@@ -1,24 +1,12 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
 import { WorkspaceSettingsDialog } from "./workspace-settings-dialog"
-
-vi.mock("./general-tab", () => ({
-  GeneralTab: () => <div>General panel</div>,
-}))
-
-vi.mock("./users-tab", () => ({
-  UsersTab: () => <div>Users panel</div>,
-}))
-
-vi.mock("./bots-tab", () => ({
-  BotsTab: () => <div>Bots panel</div>,
-}))
-
-vi.mock("./api-keys-tab", () => ({
-  ApiKeysTab: () => <div>API keys panel</div>,
-}))
+import * as generalTabModule from "./general-tab"
+import * as usersTabModule from "./users-tab"
+import * as botsTabModule from "./bots-tab"
+import * as apiKeysTabModule from "./api-keys-tab"
 
 function SearchEcho() {
   const location = useLocation()
@@ -35,6 +23,14 @@ function WorkspaceSettingsRoute() {
 }
 
 describe("WorkspaceSettingsDialog", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.spyOn(generalTabModule, "GeneralTab").mockImplementation(() => <div>General panel</div>)
+    vi.spyOn(usersTabModule, "UsersTab").mockImplementation(() => <div>Users panel</div>)
+    vi.spyOn(botsTabModule, "BotsTab").mockImplementation(() => <div>Bots panel</div>)
+    vi.spyOn(apiKeysTabModule, "ApiKeysTab").mockImplementation(() => <div>API keys panel</div>)
+  })
+
   it("uses the sidebar navigation and keeps URL tab state in sync", async () => {
     const user = userEvent.setup()
 

@@ -1,31 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { spyOnExport } from "@/test/spy"
 import { render, screen, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import * as mobileModule from "@/hooks/use-mobile"
+import * as drawerModule from "@/components/ui/drawer"
+import * as editorModule from "@/components/editor"
+import * as prosemirrorModule from "@threa/prosemirror"
+import * as contextsModule from "@/contexts"
 import { MessageEditForm } from "./message-edit-form"
 import type { JSONContent } from "@threa/types"
 
 let isMobileMockValue = false
 
-vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => isMobileMockValue,
-}))
+beforeEach(() => {
+  vi.restoreAllMocks()
+  isMobileMockValue = false
 
-vi.mock("@/components/ui/drawer", () => ({
-  Drawer: ({ children }: { children: React.ReactNode }) => <div data-testid="drawer-root">{children}</div>,
-  DrawerContent: ({ children, className }: { children: React.ReactNode; className?: string }) => (
+  vi.spyOn(mobileModule, "useIsMobile").mockImplementation(() => isMobileMockValue)
+
+  spyOnExport(drawerModule, "Drawer").mockReturnValue((({ children }: { children: React.ReactNode }) => (
+    <div data-testid="drawer-root">{children}</div>
+  )) as unknown as typeof drawerModule.Drawer)
+  spyOnExport(drawerModule, "DrawerContent").mockReturnValue((({
+    children,
+    className,
+  }: {
+    children: React.ReactNode
+    className?: string
+  }) => (
     <div data-testid="drawer-content" className={className}>
       {children}
     </div>
-  ),
-  DrawerTitle: ({ children, className }: { children: React.ReactNode; className?: string }) => (
-    <h2 className={className}>{children}</h2>
-  ),
-}))
+  )) as unknown as typeof drawerModule.DrawerContent)
+  spyOnExport(drawerModule, "DrawerTitle").mockReturnValue((({
+    children,
+    className,
+  }: {
+    children: React.ReactNode
+    className?: string
+  }) => <h2 className={className}>{children}</h2>) as unknown as typeof drawerModule.DrawerTitle)
 
-vi.mock("@/components/editor", () => ({
-  RichEditor: ({
+  spyOnExport(editorModule, "RichEditor").mockReturnValue((({
     value,
     onChange,
     onSubmit,
@@ -60,31 +77,34 @@ vi.mock("@/components/editor", () => ({
         }
       }}
     />
-  ),
-  EditorToolbar: () => null,
-  EditorActionBar: ({ trailingContent }: { trailingContent: React.ReactNode }) => <div>{trailingContent}</div>,
-  DocumentEditorModal: () => null,
-}))
+  )) as unknown as typeof editorModule.RichEditor)
+  vi.spyOn(editorModule, "EditorToolbar").mockImplementation(
+    (() => null) as unknown as typeof editorModule.EditorToolbar
+  )
+  vi.spyOn(editorModule, "EditorActionBar").mockImplementation((({
+    trailingContent,
+  }: {
+    trailingContent: React.ReactNode
+  }) => <div>{trailingContent}</div>) as unknown as typeof editorModule.EditorActionBar)
+  vi.spyOn(editorModule, "DocumentEditorModal").mockImplementation(
+    (() => null) as unknown as typeof editorModule.DocumentEditorModal
+  )
 
-vi.mock("@threa/prosemirror", () => ({
-  serializeToMarkdown: (json: JSONContent) => {
+  vi.spyOn(prosemirrorModule, "serializeToMarkdown").mockImplementation((json: JSONContent) => {
     const text = json.content?.[0]?.content?.[0]?.text
     return text ?? ""
-  },
-  parseMarkdown: (md: string) => ({
-    type: "doc",
-    content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
-  }),
-}))
+  })
+  vi.spyOn(prosemirrorModule, "parseMarkdown").mockImplementation(
+    (md: string) =>
+      ({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
+      }) as ReturnType<typeof prosemirrorModule.parseMarkdown>
+  )
 
-vi.mock("@/contexts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/contexts")>()
-  return {
-    ...actual,
-    useMessageService: () => ({
-      update: vi.fn().mockResolvedValue({}),
-    }),
-  }
+  vi.spyOn(contextsModule, "useMessageService").mockReturnValue({
+    update: vi.fn().mockResolvedValue({}),
+  } as unknown as ReturnType<typeof contextsModule.useMessageService>)
 })
 
 const initialContentJson: JSONContent = {
@@ -111,10 +131,6 @@ function renderForm(props: Partial<React.ComponentProps<typeof MessageEditForm>>
 }
 
 describe("MessageEditForm", () => {
-  beforeEach(() => {
-    isMobileMockValue = false
-  })
-
   it("should render editor with save and cancel buttons", () => {
     renderForm()
 

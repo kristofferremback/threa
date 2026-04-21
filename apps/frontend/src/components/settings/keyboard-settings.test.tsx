@@ -3,6 +3,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { formatKeyBindingText } from "@/lib/keyboard-shortcuts"
 import { KeyboardSettings } from "./keyboard-settings"
+import * as contextsModule from "@/contexts"
 
 const mockPreferences = {
   keyboardShortcuts: {} as Record<string, string>,
@@ -13,19 +14,20 @@ const updatePreference = vi.fn()
 const resetKeyboardShortcut = vi.fn()
 const resetAllKeyboardShortcuts = vi.fn()
 
-vi.mock("@/contexts", () => ({
-  usePreferences: () => ({
-    preferences: mockPreferences,
-    updatePreference,
-    resetKeyboardShortcut,
-    resetAllKeyboardShortcuts,
-  }),
-}))
-
 describe("KeyboardSettings", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    updatePreference.mockReset()
+    resetKeyboardShortcut.mockReset()
+    resetAllKeyboardShortcuts.mockReset()
     mockPreferences.keyboardShortcuts = {}
+
+    vi.spyOn(contextsModule, "usePreferences").mockReturnValue({
+      preferences: mockPreferences,
+      updatePreference,
+      resetKeyboardShortcut,
+      resetAllKeyboardShortcuts,
+    } as unknown as ReturnType<typeof contextsModule.usePreferences>)
   })
 
   it("saves conflict overrides as a single keyboardShortcuts update", async () => {

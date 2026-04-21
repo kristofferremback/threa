@@ -45,30 +45,12 @@ export function createMockSearchState(): MockSearchState {
 }
 
 /**
- * Creates a mock for @/hooks module.
+ * Builds an object implementing the shape of `@/hooks` for test scenarios that
+ * need a stable bootstrap and search state. Consumers install it per-hook via
+ * `vi.spyOn(hooksModule, "useWorkspaceBootstrap").mockReturnValue(...)` etc.
  *
  * @param options.bootstrap - Override bootstrap data (defaults to fixtures)
- * @param options.searchState - Search state (create with createMockSearchState())
- *
- * @example
- * ```ts
- * import { createHooksMock, createMockSearchState, defaultBootstrapData } from "@/test/mocks"
- * import { createMockStream } from "@/test/fixtures"
- *
- * let searchState: MockSearchState
- *
- * vi.mock("@/hooks", () => createHooksMock({
- *   bootstrap: {
- *     ...defaultBootstrapData,
- *     streams: [...defaultBootstrapData.streams, createMockStream({ id: "custom", type: "channel" })],
- *   },
- *   getSearchState: () => searchState,
- * }))
- *
- * beforeEach(() => {
- *   searchState = createMockSearchState()
- * })
- * ```
+ * @param options.getSearchState - Search state (create with createMockSearchState())
  */
 export function createHooksMock(options?: {
   bootstrap?: Partial<MockBootstrapData>
