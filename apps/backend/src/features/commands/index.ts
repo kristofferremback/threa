@@ -6,7 +6,7 @@
  * - Command registry and base types
  * - Outbox handler for command job dispatching
  * - Worker for command execution
- * - Built-in commands (echo)
+ * - Built-in commands
  */
 
 // HTTP handlers
@@ -26,5 +26,4 @@ export { createCommandWorker } from "./worker"
 export type { CommandWorkerDeps, CommandCompletedPayload, CommandFailedPayload } from "./worker"
 
 // Built-in commands
-export { EchoCommand } from "./echo-command"
 export { InviteCommand } from "./invite-command"

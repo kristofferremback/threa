@@ -10,8 +10,8 @@ describe("hasCommandNode", () => {
         {
           type: "paragraph",
           content: [
-            { type: "slashCommand", attrs: { name: "echo" } },
-            { type: "text", text: " hello world" },
+            { type: "slashCommand", attrs: { name: "invite" } },
+            { type: "text", text: " @alice" },
           ],
         },
       ],

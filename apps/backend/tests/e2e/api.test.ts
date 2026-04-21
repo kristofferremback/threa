@@ -638,7 +638,7 @@ describe("API E2E Tests", () => {
             content: [
               {
                 type: "command",
-                attrs: { name: "echo", args: "hello world" },
+                attrs: { name: "invite", args: "@alice" },
               },
             ],
           },
@@ -656,8 +656,8 @@ describe("API E2E Tests", () => {
       expect(status).toBe(202)
       expect(data.command).toBeDefined()
       expect(data.command!.id).toMatch(/^cmd_/)
-      expect(data.command!.name).toBe("echo")
-      expect(data.command!.args).toBe("hello world")
+      expect(data.command!.name).toBe("invite")
+      expect(data.command!.args).toBe("@alice")
       expect(data.command!.status).toBe("dispatched")
       expect(data.event).toBeDefined()
     })
@@ -739,7 +739,7 @@ describe("API E2E Tests", () => {
             content: [
               {
                 type: "command",
-                attrs: { name: "echo", args: "test" },
+                attrs: { name: "invite", args: "@alice" },
               },
             ],
           },

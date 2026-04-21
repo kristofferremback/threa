@@ -782,7 +782,7 @@ describe("Access Control", () => {
           eventType: "command_dispatched",
           payload: {
             commandId: cmdId,
-            name: "echo",
+            name: "invite",
             args: "test args",
             status: "dispatched",
           },
@@ -852,7 +852,7 @@ describe("Access Control", () => {
           eventType: "command_dispatched",
           payload: {
             commandId: cmdId,
-            name: "echo",
+            name: "invite",
             args: "bad args",
             status: "dispatched",
           },
