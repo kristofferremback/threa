@@ -39,6 +39,7 @@ function makeBootstrap(events: StreamEvent[], streamId: string): StreamBootstrap
     },
     events,
     members: [],
+    botMemberIds: [],
     membership: null as unknown as StreamBootstrap["membership"],
     latestSequence: events.length > 0 ? events[events.length - 1].sequence : "0",
     hasOlderEvents: false,

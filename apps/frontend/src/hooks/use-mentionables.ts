@@ -14,12 +14,17 @@ import { StreamTypes, type StreamType } from "@threa/types"
  * `memberIds` is the set of users/bots already in the stream (or its root
  * stream). When `inviteMode` is true, only users/bots NOT in this set are
  * shown, and broadcasts/personas are hidden.
+ *
+ * `botMemberIds` is the set of bots that are members of the current stream
+ * (or its root stream for threads). In normal chat mode, only bots in this
+ * set are mentionable.
  */
 export interface MentionStreamContext {
   streamType: StreamType
   rootStreamType?: StreamType
   inviteMode?: boolean
   memberIds?: Set<string>
+  botMemberIds?: Set<string>
   /** Whether the current user can invite bots (admin/owner only). */
   canInviteBots?: boolean
 }
@@ -142,7 +147,10 @@ export function useMentionables(streamContext?: MentionStreamContext) {
       return inviteables.filter((m) => !memberIds.has(m.id))
     }
 
-    return [...users, ...personas, ...bots, ...broadcasts]
+    // Normal mode: only bots that are members of the stream are mentionable.
+    const memberBots = streamContext?.botMemberIds ? bots.filter((b) => streamContext.botMemberIds!.has(b.id)) : bots
+
+    return [...users, ...personas, ...memberBots, ...broadcasts]
   }, [workspaceUsers, workspacePersonas, workspaceBots, currentUser?.id, toEmoji, streamContext])
 
   return {

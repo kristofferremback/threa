@@ -8,6 +8,7 @@ import { workspaceKeys } from "@/hooks/use-workspaces"
 import type {
   Stream,
   StreamBootstrap,
+  StreamEvent,
   User,
   Bot,
   WorkspaceBootstrap,
@@ -970,14 +971,22 @@ export function registerWorkspaceSocketHandlers(
     streamId: string
     memberId: string
     stream: Stream
+    event: StreamEvent
   }) => {
     if (payload.workspaceId !== workspaceId) return
     let shouldSubscribeStream = false
 
-    // Update stream bootstrap members list
+    // Update stream bootstrap members list (humans) or botMemberIds (bots)
     queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.streamId), (old: unknown) => {
       if (!old || typeof old !== "object") return old
-      const bootstrap = old as { members?: StreamMember[] }
+      const bootstrap = old as { members?: StreamMember[]; botMemberIds?: string[] }
+
+      if (payload.event.actorType === "bot") {
+        const botMemberIds = bootstrap.botMemberIds ?? []
+        if (botMemberIds.includes(payload.memberId)) return old
+        return { ...bootstrap, botMemberIds: [...botMemberIds, payload.memberId] }
+      }
+
       if (!bootstrap.members) return old
       const exists = bootstrap.members.some((m: StreamMember) => m.memberId === payload.memberId)
       if (exists) return old
@@ -1060,15 +1069,31 @@ export function registerWorkspaceSocketHandlers(
   const handleStreamMemberRemoved = (payload: { workspaceId: string; streamId: string; memberId: string }) => {
     if (payload.workspaceId !== workspaceId) return
 
-    // Update stream bootstrap members list
+    // Update stream bootstrap members list (humans) and botMemberIds (bots)
     queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.streamId), (old: unknown) => {
       if (!old || typeof old !== "object") return old
-      const bootstrap = old as { members?: StreamMember[] }
-      if (!bootstrap.members) return old
-      return {
-        ...bootstrap,
-        members: bootstrap.members.filter((m: StreamMember) => m.memberId !== payload.memberId),
+      const bootstrap = old as { members?: StreamMember[]; botMemberIds?: string[] }
+
+      const next: Record<string, unknown> = { ...bootstrap }
+      let changed = false
+
+      if (bootstrap.members) {
+        const filtered = bootstrap.members.filter((m: StreamMember) => m.memberId !== payload.memberId)
+        if (filtered.length !== bootstrap.members.length) {
+          next.members = filtered
+          changed = true
+        }
       }
+
+      if (bootstrap.botMemberIds) {
+        const filtered = bootstrap.botMemberIds.filter((id) => id !== payload.memberId)
+        if (filtered.length !== bootstrap.botMemberIds.length) {
+          next.botMemberIds = filtered
+          changed = true
+        }
+      }
+
+      return changed ? next : old
     })
 
     // If the removed member is the current user, remove from streamMemberships

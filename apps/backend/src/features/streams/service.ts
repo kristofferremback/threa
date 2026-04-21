@@ -891,6 +891,10 @@ export class StreamService {
     return StreamMemberRepository.list(this.pool, { streamId })
   }
 
+  async getBotMemberIds(workspaceId: string, streamId: string): Promise<string[]> {
+    return BotChannelAccessRepository.getGrantedBotIds(this.pool, workspaceId, streamId)
+  }
+
   async getMembership(streamId: string, memberId: string): Promise<StreamMember | null> {
     return StreamMemberRepository.findByStreamAndMember(this.pool, streamId, memberId)
   }

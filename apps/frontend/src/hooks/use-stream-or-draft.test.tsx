@@ -170,6 +170,7 @@ describe("useStreamOrDraft real stream send", () => {
       stream,
       events: [],
       members: [],
+      botMemberIds: [],
       membership: null,
       latestSequence: "0",
     })
