@@ -4,6 +4,7 @@ import {
   TestClient,
   createScratchpad,
   createWorkspace,
+  getWorkspaceBootstrap,
   joinRoom,
   joinWorkspace,
   loginAs,
@@ -166,6 +167,7 @@ describe("P0 Security Regression Coverage", () => {
       const privateStream = await createScratchpad(ownerClient, workspace.id, "off")
 
       await joinWorkspace(outsiderClient, workspace.id, "user")
+      await getWorkspaceBootstrap(outsiderClient, workspace.id)
 
       ownerSocket = createSocket(ownerClient)
       await connectSocket(ownerSocket)
