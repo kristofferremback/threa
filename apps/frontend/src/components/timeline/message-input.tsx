@@ -1,10 +1,15 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { useDraftComposer, getDraftMessageKey, useStreamOrDraft, useComposerHeightPublish } from "@/hooks"
+import {
+  useDraftComposer,
+  getDraftMessageKey,
+  useStreamOrDraft,
+  useComposerHeightPublish,
+  useStreamBootstrap,
+} from "@/hooks"
 import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
-import { useStreamBootstrap } from "@/hooks/use-streams"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
