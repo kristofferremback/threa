@@ -4,14 +4,12 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer"
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import {
   DESKTOP_GRID_COLUMNS,
   MAX_RECENTLY_USED_ROWS,
-  buildQuickEmojis,
   chunkByColumns,
   filterBySearch,
   indexToCoord,
@@ -22,7 +20,6 @@ import {
   type GridGeometry,
 } from "@/lib/emoji-picker"
 import type { EmojiEntry } from "@threa/types"
-import { EmojiQuickBar } from "./emoji-quick-bar"
 
 const MOBILE_EMOJI_SIZE = 44
 const MOBILE_ROW_HEIGHT = 46
@@ -550,25 +547,10 @@ export function ReactionEmojiPicker({
   const [search, setSearch] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { emojis, emojiWeights, getEmoji } = useWorkspaceEmoji(workspaceId)
+  const { emojis, emojiWeights } = useWorkspaceEmoji(workspaceId)
   const isNarrow = useIsMobile()
   const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window
   const useDrawer = isNarrow || isTouchDevice
-
-  const activeEmojisForBar = useMemo(
-    () => emojis.filter((e) => activeShortcodes.has(e.shortcode)),
-    [emojis, activeShortcodes]
-  )
-
-  const othersEmojisForBar = useMemo(
-    () => emojis.filter((e) => allReactionShortcodes.has(e.shortcode) && !activeShortcodes.has(e.shortcode)),
-    [emojis, allReactionShortcodes, activeShortcodes]
-  )
-
-  const quickEmojis = useMemo(
-    () => buildQuickEmojis(emojis, emojiWeights, undefined, undefined, allReactionShortcodes),
-    [emojis, emojiWeights, allReactionShortcodes]
-  )
 
   const handleSelect = useCallback(
     (item: EmojiEntry) => {
@@ -648,24 +630,7 @@ export function ReactionEmojiPicker({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <HoverCard openDelay={200} closeDelay={120}>
-        <HoverCardTrigger asChild>
-          <PopoverTrigger asChild>{triggerElement}</PopoverTrigger>
-        </HoverCardTrigger>
-        <HoverCardContent align="end" side="top" className="w-auto p-1.5">
-          <EmojiQuickBar
-            activeEmojis={activeEmojisForBar}
-            othersEmojis={othersEmojisForBar}
-            quickEmojis={quickEmojis}
-            onReact={(shortcode) => {
-              const entry = getEmoji(shortcode)
-              if (entry) handleSelect(entry)
-            }}
-            onOpenFullPicker={() => setOpen(true)}
-            size="sm"
-          />
-        </HoverCardContent>
-      </HoverCard>
+      <PopoverTrigger asChild>{triggerElement}</PopoverTrigger>
       <PopoverContent
         align="end"
         side="top"
