@@ -1,4 +1,5 @@
 export type { GitHubToolDeps } from "./deps"
+export { createMemoizedGithubClient } from "./client-accessor"
 export { createGithubListReposTool, createGithubListBranchesTool } from "./repos"
 export { createGithubListCommitsTool, createGithubGetCommitTool } from "./commits"
 export {

@@ -36,24 +36,6 @@ import {
   isToolEnabled,
 } from "../tools"
 
-const GITHUB_TOOL_NAMES: readonly string[] = [
-  AgentToolNames.GITHUB_LIST_REPOS,
-  AgentToolNames.GITHUB_LIST_BRANCHES,
-  AgentToolNames.GITHUB_LIST_COMMITS,
-  AgentToolNames.GITHUB_GET_COMMIT,
-  AgentToolNames.GITHUB_LIST_PULL_REQUESTS,
-  AgentToolNames.GITHUB_GET_PULL_REQUEST,
-  AgentToolNames.GITHUB_LIST_PR_FILES,
-  AgentToolNames.GITHUB_GET_FILE_CONTENTS,
-  AgentToolNames.GITHUB_SEARCH_CODE,
-  AgentToolNames.GITHUB_LIST_WORKFLOW_RUNS,
-  AgentToolNames.GITHUB_GET_WORKFLOW_RUN,
-  AgentToolNames.GITHUB_LIST_RELEASES,
-  AgentToolNames.GITHUB_GET_RELEASE,
-  AgentToolNames.GITHUB_SEARCH_ISSUES,
-  AgentToolNames.GITHUB_GET_ISSUE,
-]
-
 export interface ToolSetConfig {
   enabledTools: string[] | null
   tavilyApiKey?: string
@@ -72,7 +54,7 @@ export function buildToolSet(config: ToolSetConfig): AgentTool[] {
   const { enabledTools, tavilyApiKey, runWorkspaceAgent, workspace, github, supportsVision } = config
 
   if (!github && enabledTools !== null) {
-    const requestedGithubTools = enabledTools.filter((t) => GITHUB_TOOL_NAMES.includes(t))
+    const requestedGithubTools = enabledTools.filter((t) => t.startsWith("github_"))
     if (requestedGithubTools.length > 0) {
       logger.warn(
         { requestedGithubTools },

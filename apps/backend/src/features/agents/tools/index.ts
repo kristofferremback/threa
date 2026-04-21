@@ -61,6 +61,7 @@ export {
   createGithubGetReleaseTool,
   createGithubSearchIssuesTool,
   createGithubGetIssueTool,
+  createMemoizedGithubClient,
   type GitHubToolDeps,
 } from "./github"
 

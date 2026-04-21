@@ -31,6 +31,7 @@ import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
+import { createMemoizedGithubClient } from "./tools"
 import { AgentRuntime, SessionTraceObserver, OtelObserver, type NewMessageInfo } from "./runtime"
 import {
   SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS,
@@ -348,20 +349,8 @@ export class PersonaAgent {
           }
         }
 
-        // Build tool set. Resolve the GitHub client lazily but at most once per turn so
-        // chained GitHub tool calls don't each hit the DB and potentially refresh the token.
-        let cachedGithubClient: ReturnType<NonNullable<typeof workspaceIntegrationService>["getGithubClient"]> | null =
-          null
         const githubDeps = workspaceIntegrationService
-          ? {
-              workspaceId,
-              getClient: () => {
-                if (cachedGithubClient === null) {
-                  cachedGithubClient = workspaceIntegrationService.getGithubClient(workspaceId)
-                }
-                return cachedGithubClient
-              },
-            }
+          ? { workspaceId, getClient: createMemoizedGithubClient(workspaceIntegrationService, workspaceId) }
           : undefined
 
         const tools = buildToolSet({

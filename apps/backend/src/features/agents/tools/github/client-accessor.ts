@@ -1,4 +1,4 @@
-import type { GitHubClient } from "../../../workspace-integrations"
+import type { GitHubClient, WorkspaceIntegrationService } from "../../../workspace-integrations"
 import { logger } from "../../../../lib/logger"
 import type { AgentToolResult } from "../../runtime"
 import type { GitHubToolDeps } from "./deps"
@@ -17,18 +17,40 @@ export async function withGithubClient<T>(
   deps: GitHubToolDeps,
   fn: (client: GitHubClient) => Promise<T>
 ): Promise<T | GitHubToolError> {
-  const client = await deps.getClient()
-  if (!client) {
-    return {
-      error:
-        "GitHub is not connected for this workspace, or the installation has hit its API rate limit. Ask a workspace admin to connect GitHub from workspace settings.",
-      code: "GITHUB_NOT_CONNECTED",
-    }
-  }
   try {
+    const client = await deps.getClient()
+    if (!client) {
+      return {
+        error:
+          "GitHub is not connected for this workspace, or the installation has hit its API rate limit. Ask a workspace admin to connect GitHub from workspace settings.",
+        code: "GITHUB_NOT_CONNECTED",
+      }
+    }
     return await fn(client)
   } catch (err) {
     return mapGithubError(err, deps)
+  }
+}
+
+/**
+ * Memoize `WorkspaceIntegrationService.getGithubClient` for the lifetime of a single
+ * agent turn so chained GitHub tool calls share one DB fetch and (possibly) one token
+ * refresh. A rejection clears the cache so a later call in the same turn gets a fresh
+ * attempt instead of inheriting a transient failure.
+ */
+export function createMemoizedGithubClient(
+  service: WorkspaceIntegrationService,
+  workspaceId: string
+): () => Promise<GitHubClient | null> {
+  let cached: Promise<GitHubClient | null> | null = null
+  return async () => {
+    if (cached === null) cached = service.getGithubClient(workspaceId)
+    try {
+      return await cached
+    } catch (err) {
+      cached = null
+      throw err
+    }
   }
 }
 
