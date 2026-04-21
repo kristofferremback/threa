@@ -545,7 +545,7 @@ export function ReactionEmojiPicker({
   const [search, setSearch] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { emojis, emojiWeights } = useWorkspaceEmoji(workspaceId)
+  const { emojis, emojiWeights, getEmoji } = useWorkspaceEmoji(workspaceId)
   const isNarrow = useIsMobile()
   const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window
   const useDrawer = isNarrow || isTouchDevice
@@ -638,7 +638,7 @@ export function ReactionEmojiPicker({
             quickEmojis={quickEmojis}
             activeShortcodes={activeShortcodes}
             onReact={(shortcode) => {
-              const entry = emojis.find((e) => e.shortcode === shortcode)
+              const entry = getEmoji(shortcode)
               if (entry) handleSelect(entry)
             }}
             onOpenFullPicker={() => setOpen(true)}

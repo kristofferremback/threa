@@ -11,6 +11,11 @@ interface EmojiQuickBarProps {
   size?: "sm" | "md"
 }
 
+const SIZE_CONFIG = {
+  sm: { btn: "flex items-center justify-center w-8 h-8 rounded-full transition-colors text-lg", icon: "h-4 w-4" },
+  md: { btn: "flex items-center justify-center w-10 h-10 rounded-full transition-colors text-xl", icon: "h-5 w-5" },
+}
+
 export function EmojiQuickBar({
   quickEmojis,
   activeShortcodes,
@@ -18,10 +23,7 @@ export function EmojiQuickBar({
   onOpenFullPicker,
   size = "md",
 }: EmojiQuickBarProps) {
-  const btnClass =
-    size === "sm"
-      ? "flex items-center justify-center w-8 h-8 rounded-full transition-colors text-lg"
-      : "flex items-center justify-center w-10 h-10 rounded-full transition-colors text-xl"
+  const { btn: btnClass, icon: iconClass } = SIZE_CONFIG[size]
 
   return (
     <div className="flex items-center gap-1.5">
@@ -48,7 +50,7 @@ export function EmojiQuickBar({
         aria-label="More reactions"
         onClick={onOpenFullPicker}
       >
-        <SmilePlus className={size === "sm" ? "h-4 w-4" : "h-5 w-5"} />
+        <SmilePlus className={iconClass} />
       </button>
     </div>
   )
