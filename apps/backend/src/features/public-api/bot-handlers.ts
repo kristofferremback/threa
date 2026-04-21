@@ -5,6 +5,7 @@ import { BotRepository } from "./bot-repository"
 import { BotApiKeyRepository, type BotApiKeyRow } from "./bot-api-key-repository"
 import { BotChannelAccessRepository } from "../api-keys"
 import { StreamRepository } from "../streams"
+import type { StreamService } from "../streams"
 import type { AvatarService } from "../workspaces"
 import type { BotApiKeyService } from "./bot-api-key-service"
 import { serializeBot } from "./handlers"
@@ -62,10 +63,11 @@ function serializeBotKey(row: BotApiKeyRow): BotApiKey {
 interface BotHandlerDeps {
   botApiKeyService: BotApiKeyService
   avatarService: AvatarService
+  streamService: StreamService
   pool: Pool
 }
 
-export function createBotHandlers({ botApiKeyService, avatarService, pool }: BotHandlerDeps) {
+export function createBotHandlers({ botApiKeyService, avatarService, streamService, pool }: BotHandlerDeps) {
   return {
     /** POST /api/workspaces/:workspaceId/bots */
     async create(req: Request, res: Response) {
@@ -452,7 +454,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, pool }: Bot
       const workspaceId = req.workspaceId!
       const { botId: id, streamId } = req.params
 
-      await BotChannelAccessRepository.revokeAccess(pool, workspaceId, id, streamId)
+      await streamService.removeBotFromStream(streamId, id, workspaceId)
       res.status(204).send()
     },
 

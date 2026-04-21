@@ -3,7 +3,7 @@ import { Pool } from "pg"
 import { withClient, withTransaction, type Querier } from "../../db"
 import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview, type DmPeer } from "./repository"
 import { StreamMemberRepository, StreamMember } from "./member-repository"
-import { StreamEventRepository } from "./event-repository"
+import { StreamEventRepository, type StreamEvent } from "./event-repository"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
@@ -836,16 +836,32 @@ export class StreamService {
     })
   }
 
-  private async removeFromStream(client: Querier, stream: Stream, memberId: string): Promise<boolean> {
+  private async removeFromStream(
+    client: Querier,
+    stream: Stream,
+    memberId: string,
+    actorType: "user" | "bot" = "user"
+  ): Promise<StreamEvent | null> {
     const deleted = await StreamMemberRepository.delete(client, stream.id, memberId)
-    if (deleted) {
-      await OutboxRepository.insert(client, "stream:member_removed", {
-        workspaceId: stream.workspaceId,
-        streamId: stream.id,
-        memberId,
-      })
-    }
-    return deleted
+    if (!deleted) return null
+
+    const event = await StreamEventRepository.insert(client, {
+      id: eventId(),
+      streamId: stream.id,
+      eventType: "member_left",
+      payload: {},
+      actorId: memberId,
+      actorType,
+    })
+
+    await OutboxRepository.insert(client, "stream:member_removed", {
+      workspaceId: stream.workspaceId,
+      streamId: stream.id,
+      memberId,
+      event,
+    })
+
+    return event
   }
 
   async removeMember(streamId: string, memberId: string): Promise<boolean> {
@@ -869,21 +885,61 @@ export class StreamService {
         throw new HttpError("Cannot remove the only member", { status: 400, code: "LAST_MEMBER" })
       }
 
-      const deleted = await this.removeFromStream(client, stream, memberId)
+      const event = await this.removeFromStream(client, stream, memberId)
 
-      if (deleted) {
+      if (event) {
         // Batch-remove from all descendant threads the member is in (single recursive CTE)
         const removedStreamIds = await StreamMemberRepository.deleteByMemberInDescendants(client, memberId, streamId)
         for (const removedStreamId of removedStreamIds) {
+          const threadEvent = await StreamEventRepository.insert(client, {
+            id: eventId(),
+            streamId: removedStreamId,
+            eventType: "member_left",
+            payload: {},
+            actorId: memberId,
+            actorType: "user",
+          })
           await OutboxRepository.insert(client, "stream:member_removed", {
             workspaceId: stream.workspaceId,
             streamId: removedStreamId,
             memberId,
+            event: threadEvent,
           })
         }
       }
 
-      return deleted
+      return event !== null
+    })
+  }
+
+  /**
+   * Revoke a bot's access to a stream and emit a member_left event so the UI
+   * renders "Botty left the conversation" just like human removals.
+   */
+  async removeBotFromStream(targetStreamId: string, botId: string, workspaceId: string): Promise<void> {
+    return withTransaction(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, targetStreamId)
+      if (!stream) {
+        throw new StreamNotFoundError()
+      }
+
+      await BotChannelAccessRepository.revokeAccess(client, workspaceId, botId, stream.id)
+
+      const event = await StreamEventRepository.insert(client, {
+        id: eventId(),
+        streamId: stream.id,
+        eventType: "member_left",
+        payload: {},
+        actorId: botId,
+        actorType: "bot",
+      })
+
+      await OutboxRepository.insert(client, "stream:member_removed", {
+        workspaceId: stream.workspaceId,
+        streamId: stream.id,
+        memberId: botId,
+        event,
+      })
     })
   }
 
