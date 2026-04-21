@@ -11,7 +11,7 @@ export function AllReactionsPopover({ reactions, workspaceId, children }: AllRea
   return (
     <Popover>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-[260px] p-0">
+      <PopoverContent align="start" side="top" className="w-[300px] p-0">
         <ReactionDetailsContent reactions={reactions} workspaceId={workspaceId} />
       </PopoverContent>
     </Popover>
