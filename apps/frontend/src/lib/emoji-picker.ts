@@ -98,6 +98,17 @@ export function buildQuickEmojis(
     }
   }
 
+  // Fill any remaining slots from the full list in default order (picker top-left).
+  if (result.length < count) {
+    for (const e of sortByDefaultOrder(emojis)) {
+      if (result.length >= count) break
+      if (!seen.has(e.shortcode)) {
+        result.push(e)
+        seen.add(e.shortcode)
+      }
+    }
+  }
+
   return result
 }
 
