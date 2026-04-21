@@ -55,7 +55,7 @@ export function ReactionDetailsContent({ reactions, workspaceId, defaultEmoji = 
   return (
     <>
       {/* Emoji filter tabs */}
-      <div className="flex gap-0.5 px-1.5 pt-1.5 pb-1 overflow-x-auto scrollbar-none">
+      <div className="flex flex-wrap gap-0.5 px-1.5 pt-1.5 pb-1">
         <button
           type="button"
           className={cn(

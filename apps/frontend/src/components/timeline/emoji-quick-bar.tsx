@@ -103,16 +103,16 @@ export function EmojiQuickBar({
     </button>
   )
 
-  if (size === "md" && hasTopSection) {
+  if (hasTopSection) {
     return (
       <div className="flex flex-col gap-1 w-full">
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {mineButtons}
           {othersButtons}
           {overflowButton}
         </div>
         <div className="h-px bg-border/60 mx-0.5" />
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {quickButtons}
           {moreButton}
         </div>
@@ -121,15 +121,7 @@ export function EmojiQuickBar({
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      {hasTopSection && (
-        <>
-          {mineButtons}
-          {othersButtons}
-          {overflowButton}
-          <div className="w-px self-stretch bg-border mx-0.5" />
-        </>
-      )}
+    <div className="flex flex-wrap items-center gap-1.5">
       {quickButtons}
       {moreButton}
     </div>
