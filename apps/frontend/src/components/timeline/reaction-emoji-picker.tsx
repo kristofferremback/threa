@@ -361,7 +361,7 @@ function EmojiGridContent({
                   key={item.shortcode}
                   item={item}
                   isSelected={false}
-                  isActive={true}
+                  isActive={activeShortcodes.has(item.shortcode)}
                   isMobile={true}
                   onClick={() => onSelect(item)}
                   onMouseEnter={() => {}}
@@ -447,11 +447,11 @@ function EmojiGridContent({
         />
       </div>
 
-      {/* Your reactions row */}
+      {/* Reactions row */}
       {activeEmojis.length > 0 && !search && (
         <div className="px-2 pb-1">
           <p className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider px-0.5 mb-1">
-            Your reactions
+            Reactions
           </p>
           <div className="flex gap-0.5 flex-wrap">
             {activeEmojis.map((item) => (
@@ -459,7 +459,7 @@ function EmojiGridContent({
                 key={item.shortcode}
                 item={item}
                 isSelected={false}
-                isActive={true}
+                isActive={activeShortcodes.has(item.shortcode)}
                 isMobile={false}
                 onClick={() => onSelect(item)}
                 onMouseEnter={() => {}}
