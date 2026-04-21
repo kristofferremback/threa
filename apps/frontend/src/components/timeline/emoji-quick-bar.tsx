@@ -11,17 +11,13 @@ interface EmojiQuickBarProps {
   quickEmojis: EmojiEntry[]
   onReact: (shortcode: string) => void
   onOpenFullPicker: () => void
-  /** "sm" for the desktop hover card, "md" for the mobile action drawer */
-  size?: "sm" | "md"
 }
 
-const SIZE_CONFIG = {
-  sm: { btn: "flex items-center justify-center w-8 h-8 rounded-full transition-colors text-lg", icon: "h-4 w-4" },
-  md: { btn: "flex items-center justify-center w-10 h-10 rounded-full transition-colors text-xl", icon: "h-5 w-5" },
-}
+const btnClass = "flex items-center justify-center w-10 h-10 rounded-full transition-colors text-xl"
+const iconClass = "h-5 w-5"
 
 // Max top-section (mine + others) buttons before collapsing into "+N" overflow
-const MAX_ACTIVE_VISIBLE: Record<"sm" | "md", number> = { sm: 4, md: 5 }
+const MAX_ACTIVE_VISIBLE = 5
 
 export function EmojiQuickBar({
   activeEmojis,
@@ -29,14 +25,10 @@ export function EmojiQuickBar({
   quickEmojis,
   onReact,
   onOpenFullPicker,
-  size = "md",
 }: EmojiQuickBarProps) {
-  const { btn: btnClass, icon: iconClass } = SIZE_CONFIG[size]
-  const maxVisible = MAX_ACTIVE_VISIBLE[size]
-
   // Mine first, then others — truncate the combined total
-  const visibleMine = activeEmojis.slice(0, maxVisible)
-  const remainingSlots = maxVisible - visibleMine.length
+  const visibleMine = activeEmojis.slice(0, MAX_ACTIVE_VISIBLE)
+  const remainingSlots = MAX_ACTIVE_VISIBLE - visibleMine.length
   const visibleOthers = othersEmojis.slice(0, remainingSlots)
   const overflowCount = activeEmojis.length + othersEmojis.length - visibleMine.length - visibleOthers.length
 

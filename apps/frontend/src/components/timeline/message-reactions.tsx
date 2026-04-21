@@ -42,6 +42,10 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
     return active
   }, [currentUserId, reactions])
 
+  const allReactionShortcodes = useMemo(() => {
+    return new Set(Object.keys(reactions).map(stripColons))
+  }, [reactions])
+
   const handleToggleReaction = useCallback(
     (shortcode: string) => toggleReaction(shortcode, reactions, currentUserId),
     [toggleReaction, reactions, currentUserId]
@@ -78,6 +82,7 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
         workspaceId={workspaceId}
         onSelect={(emoji) => toggleByEmoji(emoji, reactions, currentUserId)}
         activeShortcodes={activeShortcodes}
+        allReactionShortcodes={allReactionShortcodes}
         trigger={
           <button
             type="button"

@@ -202,7 +202,6 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
                     // Deferred so the drawer finishes closing before the picker opens
                     setTimeout(() => context.onOpenFullPicker?.(), 150)
                   }}
-                  size="md"
                 />
               </div>
             )}
