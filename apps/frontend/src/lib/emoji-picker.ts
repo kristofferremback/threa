@@ -60,32 +60,45 @@ export const QUICK_REACTION_COUNT = 6
 export const DEFAULT_QUICK_REACTION_SHORTCODES = ["+1", "heart", "joy", "open_mouth", "cry", "fire"]
 
 /**
- * Build the quick-react emoji list: top N by weight, padded with defaults when
- * the user hasn't reacted enough to fill the row.
+ * Build the quick-react emoji list (the lower "fresh picks" row).
+ *
+ * Emojis in excludeShortcodes are omitted so the bar never duplicates
+ * reactions the user has already placed on the message — those are shown
+ * in a separate active-reactions row above the separator.
+ *
+ * Slot priority: most-used by weight → static defaults.
  */
 export function buildQuickEmojis(
   emojis: EmojiEntry[],
   weights: Record<string, number>,
   count: number = QUICK_REACTION_COUNT,
-  defaults: string[] = DEFAULT_QUICK_REACTION_SHORTCODES
+  defaults: string[] = DEFAULT_QUICK_REACTION_SHORTCODES,
+  excludeShortcodes?: Set<string>
 ): EmojiEntry[] {
   if (!emojis.length) return []
-  const weighted = emojis
-    .filter((e) => (weights[e.shortcode] ?? 0) > 0)
+  const result: EmojiEntry[] = []
+  const seen = new Set<string>(excludeShortcodes)
+
+  const byWeight = emojis
+    .filter((e) => (weights[e.shortcode] ?? 0) > 0 && !seen.has(e.shortcode))
     .sort((a, b) => (weights[b.shortcode] ?? 0) - (weights[a.shortcode] ?? 0))
-    .slice(0, count)
-  if (weighted.length >= count) return weighted
-  const usedShortcodes = new Set(weighted.map((e) => e.shortcode))
+  for (const e of byWeight) {
+    if (result.length >= count) break
+    result.push(e)
+    seen.add(e.shortcode)
+  }
+
   const emojiMap = new Map(emojis.map((e) => [e.shortcode, e]))
   for (const shortcode of defaults) {
-    if (weighted.length >= count) break
+    if (result.length >= count) break
     const entry = emojiMap.get(shortcode)
-    if (entry && !usedShortcodes.has(shortcode)) {
-      weighted.push(entry)
-      usedShortcodes.add(shortcode)
+    if (entry && !seen.has(shortcode)) {
+      result.push(entry)
+      seen.add(shortcode)
     }
   }
-  return weighted
+
+  return result
 }
 
 export function filterBySearch(emojis: EmojiEntry[], query: string): EmojiEntry[] {

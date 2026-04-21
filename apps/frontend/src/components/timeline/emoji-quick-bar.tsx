@@ -3,8 +3,10 @@ import { cn } from "@/lib/utils"
 import type { EmojiEntry } from "@threa/types"
 
 interface EmojiQuickBarProps {
+  /** Emojis the user has already reacted with on this message — shown above the separator */
+  activeEmojis: EmojiEntry[]
+  /** Fresh quick-pick emojis (active ones already excluded) */
   quickEmojis: EmojiEntry[]
-  activeShortcodes: Set<string>
   onReact: (shortcode: string) => void
   onOpenFullPicker: () => void
   /** "sm" for the desktop hover card, "md" for the mobile action drawer */
@@ -17,8 +19,8 @@ const SIZE_CONFIG = {
 }
 
 export function EmojiQuickBar({
+  activeEmojis,
   quickEmojis,
-  activeShortcodes,
   onReact,
   onOpenFullPicker,
   size = "md",
@@ -27,23 +29,33 @@ export function EmojiQuickBar({
 
   return (
     <div className="flex items-center gap-1.5">
-      {quickEmojis.map((entry) => {
-        const isActive = activeShortcodes.has(entry.shortcode)
-        return (
-          <button
-            key={entry.shortcode}
-            type="button"
-            className={cn(
-              btnClass,
-              isActive ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted active:bg-muted/80"
-            )}
-            title={`:${entry.shortcode}:`}
-            onClick={() => onReact(entry.shortcode)}
-          >
-            {entry.emoji}
-          </button>
-        )
-      })}
+      {activeEmojis.length > 0 && (
+        <>
+          {activeEmojis.map((entry) => (
+            <button
+              key={entry.shortcode}
+              type="button"
+              className={cn(btnClass, "bg-primary/10 ring-1 ring-primary/30 active:bg-primary/20")}
+              title={`:${entry.shortcode}:`}
+              onClick={() => onReact(entry.shortcode)}
+            >
+              {entry.emoji}
+            </button>
+          ))}
+          <div className="w-px self-stretch bg-border mx-0.5" />
+        </>
+      )}
+      {quickEmojis.map((entry) => (
+        <button
+          key={entry.shortcode}
+          type="button"
+          className={cn(btnClass, "hover:bg-muted active:bg-muted/80")}
+          title={`:${entry.shortcode}:`}
+          onClick={() => onReact(entry.shortcode)}
+        >
+          {entry.emoji}
+        </button>
+      ))}
       <button
         type="button"
         className={cn(btnClass, "hover:bg-muted active:bg-muted/80 text-muted-foreground")}

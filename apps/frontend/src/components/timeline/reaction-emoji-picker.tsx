@@ -550,7 +550,15 @@ export function ReactionEmojiPicker({
   const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window
   const useDrawer = isNarrow || isTouchDevice
 
-  const quickEmojis = useMemo(() => buildQuickEmojis(emojis, emojiWeights), [emojis, emojiWeights])
+  const activeEmojisForBar = useMemo(
+    () => emojis.filter((e) => activeShortcodes.has(e.shortcode)),
+    [emojis, activeShortcodes]
+  )
+
+  const quickEmojis = useMemo(
+    () => buildQuickEmojis(emojis, emojiWeights, undefined, undefined, activeShortcodes),
+    [emojis, emojiWeights, activeShortcodes]
+  )
 
   const handleSelect = useCallback(
     (item: EmojiEntry) => {
@@ -635,8 +643,8 @@ export function ReactionEmojiPicker({
         </HoverCardTrigger>
         <HoverCardContent align="end" side="top" className="w-auto p-1.5">
           <EmojiQuickBar
+            activeEmojis={activeEmojisForBar}
             quickEmojis={quickEmojis}
-            activeShortcodes={activeShortcodes}
             onReact={(shortcode) => {
               const entry = getEmoji(shortcode)
               if (entry) handleSelect(entry)
