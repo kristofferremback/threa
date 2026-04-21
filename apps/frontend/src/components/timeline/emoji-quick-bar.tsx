@@ -3,9 +3,11 @@ import { cn } from "@/lib/utils"
 import type { EmojiEntry } from "@threa/types"
 
 interface EmojiQuickBarProps {
-  /** Emojis the user has already reacted with on this message — shown above the separator */
+  /** Emojis the current user has already reacted with — shown with ring highlight */
   activeEmojis: EmojiEntry[]
-  /** Fresh quick-pick emojis (active ones already excluded) */
+  /** Emojis other users have reacted with that the current user hasn't — shown without ring */
+  othersEmojis?: EmojiEntry[]
+  /** Fresh quick-pick emojis (all message reactions already excluded) */
   quickEmojis: EmojiEntry[]
   onReact: (shortcode: string) => void
   onOpenFullPicker: () => void
@@ -18,11 +20,12 @@ const SIZE_CONFIG = {
   md: { btn: "flex items-center justify-center w-10 h-10 rounded-full transition-colors text-xl", icon: "h-5 w-5" },
 }
 
-// Max active-reaction buttons to show before collapsing into "+N" overflow
+// Max top-section (mine + others) buttons before collapsing into "+N" overflow
 const MAX_ACTIVE_VISIBLE: Record<"sm" | "md", number> = { sm: 4, md: 5 }
 
 export function EmojiQuickBar({
   activeEmojis,
+  othersEmojis = [],
   quickEmojis,
   onReact,
   onOpenFullPicker,
@@ -31,14 +34,31 @@ export function EmojiQuickBar({
   const { btn: btnClass, icon: iconClass } = SIZE_CONFIG[size]
   const maxVisible = MAX_ACTIVE_VISIBLE[size]
 
-  const visibleActive = activeEmojis.slice(0, maxVisible)
-  const overflowCount = activeEmojis.length - visibleActive.length
+  // Mine first, then others — truncate the combined total
+  const visibleMine = activeEmojis.slice(0, maxVisible)
+  const remainingSlots = maxVisible - visibleMine.length
+  const visibleOthers = othersEmojis.slice(0, remainingSlots)
+  const overflowCount = activeEmojis.length + othersEmojis.length - visibleMine.length - visibleOthers.length
 
-  const activeButtons = visibleActive.map((entry) => (
+  const hasTopSection = activeEmojis.length > 0 || othersEmojis.length > 0
+
+  const mineButtons = visibleMine.map((entry) => (
     <button
       key={entry.shortcode}
       type="button"
       className={cn(btnClass, "bg-primary/10 ring-1 ring-primary/30 active:bg-primary/20")}
+      title={`:${entry.shortcode}:`}
+      onClick={() => onReact(entry.shortcode)}
+    >
+      {entry.emoji}
+    </button>
+  ))
+
+  const othersButtons = visibleOthers.map((entry) => (
+    <button
+      key={entry.shortcode}
+      type="button"
+      className={cn(btnClass, "ring-1 ring-border hover:bg-muted active:bg-muted/80")}
       title={`:${entry.shortcode}:`}
       onClick={() => onReact(entry.shortcode)}
     >
@@ -83,11 +103,12 @@ export function EmojiQuickBar({
     </button>
   )
 
-  if (size === "md" && activeEmojis.length > 0) {
+  if (size === "md" && hasTopSection) {
     return (
       <div className="flex flex-col gap-1 w-full">
         <div className="flex items-center gap-1.5">
-          {activeButtons}
+          {mineButtons}
+          {othersButtons}
           {overflowButton}
         </div>
         <div className="h-px bg-border/60 mx-0.5" />
@@ -101,9 +122,10 @@ export function EmojiQuickBar({
 
   return (
     <div className="flex items-center gap-1.5">
-      {activeEmojis.length > 0 && (
+      {hasTopSection && (
         <>
-          {activeButtons}
+          {mineButtons}
+          {othersButtons}
           {overflowButton}
           <div className="w-px self-stretch bg-border mx-0.5" />
         </>

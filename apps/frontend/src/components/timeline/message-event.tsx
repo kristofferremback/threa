@@ -574,6 +574,11 @@ function SentMessageEvent({
     return active
   }, [currentUserId, payload.reactions])
 
+  const allReactionShortcodes = useMemo(() => {
+    if (!payload.reactions) return new Set<string>()
+    return new Set(Object.keys(payload.reactions).map(stripColons))
+  }, [payload.reactions])
+
   const handleDelete = async () => {
     setIsDeleting(true)
     try {
@@ -735,6 +740,7 @@ function SentMessageEvent({
               workspaceId={workspaceId}
               onSelect={handleAddReaction}
               activeShortcodes={activeReactionShortcodes}
+              allReactionShortcodes={allReactionShortcodes}
             />
             <SaveMessageButton workspaceId={workspaceId} messageId={payload.messageId} />
             {actionContext.onQuoteReply && (
@@ -887,6 +893,7 @@ function SentMessageEvent({
           workspaceId={workspaceId}
           onSelect={handleAddReaction}
           activeShortcodes={activeReactionShortcodes}
+          allReactionShortcodes={allReactionShortcodes}
           open={mobilePickerOpen}
           onOpenChange={setMobilePickerOpen}
         />

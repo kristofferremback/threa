@@ -39,8 +39,10 @@ interface ReactionEmojiPickerProps {
   trigger?: React.ReactNode
   /** Additional class for the trigger wrapper */
   triggerClassName?: string
-  /** Shortcodes the current user has already reacted with — shown first and highlighted */
+  /** Shortcodes the current user has already reacted with — highlighted */
   activeShortcodes?: Set<string>
+  /** All shortcodes that have any reaction on this message (mine + others') */
+  allReactionShortcodes?: Set<string>
   /** Controlled open state — when provided, the picker is externally controlled (no trigger rendered) */
   open?: boolean
   /** Controlled open change handler */
@@ -93,6 +95,7 @@ function EmojiGridContent({
   emojis,
   emojiWeights,
   activeShortcodes,
+  allReactionShortcodes,
   search,
   setSearch,
   selectedIndex,
@@ -106,6 +109,7 @@ function EmojiGridContent({
   emojis: EmojiEntry[]
   emojiWeights: Record<string, number>
   activeShortcodes: Set<string>
+  allReactionShortcodes: Set<string>
   search: string
   setSearch: (s: string) => void
   selectedIndex: number
@@ -140,9 +144,9 @@ function EmojiGridContent({
   }, [isMobile, open])
 
   const activeEmojis = useMemo(() => {
-    if (activeShortcodes.size === 0) return []
-    return emojis.filter((e) => activeShortcodes.has(e.shortcode))
-  }, [emojis, activeShortcodes])
+    if (allReactionShortcodes.size === 0) return []
+    return emojis.filter((e) => allReactionShortcodes.has(e.shortcode))
+  }, [emojis, allReactionShortcodes])
 
   const recentBase = useMemo(
     () => pickRecentlyUsed(emojis, emojiWeights, columns * MAX_RECENTLY_USED_ROWS),
@@ -349,7 +353,7 @@ function EmojiGridContent({
         {activeEmojis.length > 0 && !search && (
           <div className="px-4 pb-2">
             <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-1.5">
-              Your reactions
+              Reactions
             </p>
             <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
               {activeEmojis.map((item) => (
@@ -535,6 +539,7 @@ export function ReactionEmojiPicker({
   trigger,
   triggerClassName,
   activeShortcodes = EMPTY_SET,
+  allReactionShortcodes = EMPTY_SET,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: ReactionEmojiPickerProps) {
@@ -555,9 +560,14 @@ export function ReactionEmojiPicker({
     [emojis, activeShortcodes]
   )
 
+  const othersEmojisForBar = useMemo(
+    () => emojis.filter((e) => allReactionShortcodes.has(e.shortcode) && !activeShortcodes.has(e.shortcode)),
+    [emojis, allReactionShortcodes, activeShortcodes]
+  )
+
   const quickEmojis = useMemo(
-    () => buildQuickEmojis(emojis, emojiWeights, undefined, undefined, activeShortcodes),
-    [emojis, emojiWeights, activeShortcodes]
+    () => buildQuickEmojis(emojis, emojiWeights, undefined, undefined, allReactionShortcodes),
+    [emojis, emojiWeights, allReactionShortcodes]
   )
 
   const handleSelect = useCallback(
@@ -610,6 +620,7 @@ export function ReactionEmojiPicker({
       emojis={emojis}
       emojiWeights={emojiWeights}
       activeShortcodes={activeShortcodes}
+      allReactionShortcodes={allReactionShortcodes}
       search={search}
       setSearch={setSearch}
       selectedIndex={selectedIndex}
@@ -644,6 +655,7 @@ export function ReactionEmojiPicker({
         <HoverCardContent align="end" side="top" className="w-auto p-1.5">
           <EmojiQuickBar
             activeEmojis={activeEmojisForBar}
+            othersEmojis={othersEmojisForBar}
             quickEmojis={quickEmojis}
             onReact={(shortcode) => {
               const entry = getEmoji(shortcode)

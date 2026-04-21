@@ -95,14 +95,24 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     return active
   }, [context.currentUserId, context.reactions])
 
+  const allReactionShortcodes = useMemo(() => {
+    if (!context.reactions) return new Set<string>()
+    return new Set(Object.keys(context.reactions).map(stripColons))
+  }, [context.reactions])
+
   const activeEmojis = useMemo(
     () => emojis.filter((e) => activeShortcodes.has(e.shortcode)),
     [emojis, activeShortcodes]
   )
 
+  const othersEmojis = useMemo(
+    () => emojis.filter((e) => allReactionShortcodes.has(e.shortcode) && !activeShortcodes.has(e.shortcode)),
+    [emojis, allReactionShortcodes, activeShortcodes]
+  )
+
   const quickEmojis = useMemo(
-    () => buildQuickEmojis(emojis, emojiWeights, undefined, undefined, activeShortcodes),
-    [emojis, emojiWeights, activeShortcodes]
+    () => buildQuickEmojis(emojis, emojiWeights, undefined, undefined, allReactionShortcodes),
+    [emojis, emojiWeights, allReactionShortcodes]
   )
 
   // Quick-react toggles: removes if user already reacted, adds otherwise
@@ -180,10 +190,11 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
             </div>
 
             {/* Quick reactions row + full picker button */}
-            {(activeEmojis.length > 0 || quickEmojis.length > 0) && context.onReact && (
+            {(activeEmojis.length > 0 || othersEmojis.length > 0 || quickEmojis.length > 0) && context.onReact && (
               <div className="flex justify-center px-4 pb-3">
                 <EmojiQuickBar
                   activeEmojis={activeEmojis}
+                  othersEmojis={othersEmojis}
                   quickEmojis={quickEmojis}
                   onReact={handleQuickReact}
                   onOpenFullPicker={() => {
