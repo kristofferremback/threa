@@ -294,7 +294,7 @@ function serializeInline(nodes: JSONContent[] | undefined): string {
  * Lookup function to determine mention type from slug.
  * "me" is a special type for the current user's own mentions.
  */
-export type MentionTypeLookup = (slug: string) => "user" | "persona" | "broadcast" | "me"
+export type MentionTypeLookup = (slug: string) => "user" | "persona" | "bot" | "broadcast" | "me"
 
 /**
  * Lookup function to get emoji character from shortcode.
@@ -481,7 +481,7 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
   // Default lookup for mention types (without context, can't determine "me")
   const lookupMentionType: MentionTypeLookup =
     getMentionType ??
-    ((slug): "user" | "persona" | "broadcast" | "me" => {
+    ((slug): "user" | "persona" | "bot" | "broadcast" | "me" => {
       if (slug === "here" || slug === "channel") return "broadcast"
       return "user"
     })

@@ -83,6 +83,9 @@ export type StreamScopedEventType =
   | "agent_session:failed"
   | "agent_session:deleted"
   | "link_preview:ready"
+  | "command:dispatched"
+  | "command:completed"
+  | "command:failed"
 
 /** Events that are scoped to a workspace (no streamId) */
 export type WorkspaceScopedEventType =
@@ -493,6 +496,9 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "agent_session:failed",
   "agent_session:deleted",
   "link_preview:ready",
+  "command:dispatched",
+  "command:completed",
+  "command:failed",
 ]
 
 /**
@@ -504,18 +510,12 @@ export function isStreamScopedEvent(event: OutboxEvent): event is OutboxEvent<St
 
 /** Events that are author-scoped (only visible to the author) */
 export type AuthorScopedEventType =
-  | "command:dispatched"
-  | "command:completed"
-  | "command:failed"
   | "stream:read"
   | "stream:read_all"
   | "user_preferences:updated"
   | "link_preview:dismissed"
 
 const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
-  "command:dispatched",
-  "command:completed",
-  "command:failed",
   "stream:read",
   "stream:read_all",
   "link_preview:dismissed",

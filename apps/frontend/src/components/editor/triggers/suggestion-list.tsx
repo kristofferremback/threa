@@ -21,6 +21,8 @@ export interface SuggestionListProps<T> {
   renderItem: (item: T) => ReactNode
   /** Preferred placement direction. Defaults to "bottom-start". Uses flip() to auto-adjust. */
   placement?: Placement
+  /** Content shown when items is empty. When omitted, the list returns null for zero results. */
+  emptyState?: ReactNode
 }
 
 /**
@@ -37,6 +39,7 @@ function SuggestionListInner<T>(
     width = "w-64",
     renderItem,
     placement = "bottom-start",
+    emptyState,
   }: SuggestionListProps<T>,
   ref: React.ForwardedRef<SuggestionListRef>
 ) {
@@ -96,7 +99,11 @@ function SuggestionListInner<T>(
     },
   }))
 
-  if (!clientRect || items.length === 0) return null
+  if (!clientRect) return null
+
+  const isEmpty = items.length === 0
+
+  if (isEmpty && !emptyState) return null
 
   return (
     <div
@@ -111,26 +118,30 @@ function SuggestionListInner<T>(
     >
       <ScrollArea className="max-h-[280px]">
         <div className="p-1">
-          {items.map((item, index) => (
-            <button
-              key={getKey(item)}
-              ref={(el) => {
-                itemRefs.current[index] = el
-              }}
-              role="option"
-              aria-selected={index === selectedIndex}
-              className={cn(
-                "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none text-left",
-                "cursor-pointer transition-colors duration-100",
-                "hover:bg-muted",
-                index === selectedIndex && "bg-muted"
-              )}
-              onClick={() => command(item)}
-              onMouseEnter={() => setSelectedIndex(index)}
-            >
-              {renderItem(item)}
-            </button>
-          ))}
+          {isEmpty ? (
+            <div className="px-2.5 py-2 text-sm text-muted-foreground">{emptyState}</div>
+          ) : (
+            items.map((item, index) => (
+              <button
+                key={getKey(item)}
+                ref={(el) => {
+                  itemRefs.current[index] = el
+                }}
+                role="option"
+                aria-selected={index === selectedIndex}
+                className={cn(
+                  "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none text-left",
+                  "cursor-pointer transition-colors duration-100",
+                  "hover:bg-muted",
+                  index === selectedIndex && "bg-muted"
+                )}
+                onClick={() => command(item)}
+                onMouseEnter={() => setSelectedIndex(index)}
+              >
+                {renderItem(item)}
+              </button>
+            ))
+          )}
         </div>
       </ScrollArea>
     </div>

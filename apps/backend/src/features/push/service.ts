@@ -157,6 +157,9 @@ export class PushService {
     // Self rows represent the target user's own action — do not push.
     if (activity.isSelf) return
 
+    // Member-added activities notify via the feed only, not push.
+    if (activity.activityType === ActivityTypes.MEMBER_ADDED) return
+
     // 1. Load user's global notification preference (via injected lookup)
     const prefLevel = await this.lookups.getUserNotificationLevel(workspaceId, targetUserId)
 

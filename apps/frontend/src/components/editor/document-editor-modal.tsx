@@ -72,7 +72,7 @@ export function DocumentEditorModal({
 
   // Create lookup for mention types from mentionables
   const getMentionType = useMemo<MentionTypeLookup>(() => {
-    const slugToType = new Map<string, "user" | "persona" | "broadcast" | "me">()
+    const slugToType = new Map<string, "user" | "persona" | "bot" | "broadcast" | "me">()
     for (const m of mentionables) {
       slugToType.set(m.slug, m.isCurrentUser ? "me" : m.type)
     }

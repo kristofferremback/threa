@@ -15,6 +15,7 @@ const ACTIVITY_DISPLAY: Record<string, ActivityDisplay> = {
   message: { kind: "actor-prefixed", verb: "posted in", selfVerb: "You posted in" },
   reaction: { kind: "actor-prefixed", verb: "reacted to a message in", selfVerb: "You reacted to a message in" },
   saved_reminder: { kind: "verb-only", verb: "Reminder for message in" },
+  member_added: { kind: "actor-prefixed", verb: "added you to", selfVerb: "You were added to" },
 }
 
 const DEFAULT_DISPLAY: ActivityDisplay = ACTIVITY_DISPLAY.message

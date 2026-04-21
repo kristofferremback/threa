@@ -3,6 +3,7 @@ import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft, useComposerHeightPublish } from "@/hooks"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
+import { useStreamBootstrap } from "@/hooks/use-streams"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
@@ -182,15 +183,38 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   // Resolve stream context for broadcast mention filtering.
   // For threads, look up the root stream's type from IDB workspace streams.
   const idbStreams = useWorkspaceStreams(workspaceId)
+
+  // Determine which stream's bootstrap holds the member list for /invite filtering.
+  const memberListStreamId = useMemo(() => {
+    if (!stream) return null
+    const effectiveType =
+      stream.type === StreamTypes.THREAD && stream.rootStreamId
+        ? idbStreams.find((s) => s.id === stream.rootStreamId)?.type
+        : stream.type
+    if (effectiveType !== StreamTypes.CHANNEL) return null
+    return stream.rootStreamId ?? stream.id
+  }, [stream, idbStreams])
+
+  // Read bootstrap reactively so the member list updates when socket events arrive.
+  const { data: memberBootstrap } = useStreamBootstrap(workspaceId, memberListStreamId ?? "", {
+    enabled: !!memberListStreamId,
+  })
+
   const streamContext = useMemo<MentionStreamContext | undefined>(() => {
     if (!stream) return undefined
     const ctx: MentionStreamContext = { streamType: stream.type }
+
     if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
       const rootStream = idbStreams.find((s) => s.id === stream.rootStreamId)
       if (rootStream) ctx.rootStreamType = rootStream.type
     }
+
+    if (memberListStreamId && memberBootstrap?.members) {
+      ctx.memberIds = new Set(memberBootstrap.members.map((m) => m.memberId))
+    }
+
     return ctx
-  }, [stream, idbStreams])
+  }, [stream, idbStreams, memberListStreamId, memberBootstrap])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()

@@ -27,3 +27,4 @@ export type { CommandWorkerDeps, CommandCompletedPayload, CommandFailedPayload }
 
 // Built-in commands
 export { EchoCommand } from "./echo-command"
+export { InviteCommand } from "./invite-command"

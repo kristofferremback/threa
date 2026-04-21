@@ -1,5 +1,10 @@
 import type { Pool } from "pg"
-import { OutboxRepository, type ReactionOutboxPayload, type SavedReminderFiredOutboxPayload } from "../../lib/outbox"
+import {
+  OutboxRepository,
+  type ReactionOutboxPayload,
+  type SavedReminderFiredOutboxPayload,
+  type StreamMemberAddedOutboxPayload,
+} from "../../lib/outbox"
 import { parseMessagePayload } from "../../lib/outbox"
 import { AuthorTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
@@ -100,6 +105,9 @@ export class ActivityFeedHandler implements OutboxHandler {
             await this.processReactionRemoved(event)
           } else if (event.eventType === "saved_reminder:fired") {
             const activities = await this.processSavedReminderFired(event)
+            await this.publishActivityCreated(activities)
+          } else if (event.eventType === "stream:member_added") {
+            const activities = await this.processMemberAdded(event)
             await this.publishActivityCreated(activities)
           }
 
@@ -214,6 +222,30 @@ export class ActivityFeedHandler implements OutboxHandler {
       messageId: payload.messageId,
       contentPreview,
       streamName,
+    })
+  }
+
+  private async processMemberAdded(event: { id: bigint; payload: unknown }): Promise<Activity[]> {
+    const payload = event.payload as StreamMemberAddedOutboxPayload
+    if (
+      !payload ||
+      typeof payload.workspaceId !== "string" ||
+      typeof payload.streamId !== "string" ||
+      typeof payload.memberId !== "string" ||
+      !payload.event
+    ) {
+      logger.debug(
+        { eventId: event.id.toString() },
+        "ActivityFeedHandler: malformed stream:member_added event, skipping"
+      )
+      return []
+    }
+
+    return this.activityService.processMemberAdded({
+      workspaceId: payload.workspaceId,
+      streamId: payload.streamId,
+      memberId: payload.memberId,
+      event: payload.event,
     })
   }
 

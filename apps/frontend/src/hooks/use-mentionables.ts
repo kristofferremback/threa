@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import type { Mentionable } from "@/components/editor/triggers/types"
-import { useWorkspaceUsers, useWorkspacePersonas } from "@/stores/workspace-store"
+import { useWorkspaceUsers, useWorkspacePersonas, useWorkspaceBots } from "@/stores/workspace-store"
 import { useParams } from "react-router-dom"
 import { useUser } from "@/auth"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
@@ -10,10 +10,16 @@ import { StreamTypes, type StreamType } from "@threa/types"
  * Stream context for filtering which broadcast mentions are available.
  * `streamType` is the current stream's type; `rootStreamType` is the root
  * stream's type when the current stream is a thread.
+ *
+ * `memberIds` is the set of users/bots already in the stream (or its root
+ * stream). When `inviteMode` is true, only users/bots NOT in this set are
+ * shown, and broadcasts/personas are hidden.
  */
 export interface MentionStreamContext {
   streamType: StreamType
   rootStreamType?: StreamType
+  inviteMode?: boolean
+  memberIds?: Set<string>
 }
 
 /**
@@ -75,6 +81,7 @@ export function useMentionables(streamContext?: MentionStreamContext) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const workspaceUsers = useWorkspaceUsers(workspaceId ?? "")
   const workspacePersonas = useWorkspacePersonas(workspaceId ?? "")
+  const workspaceBots = useWorkspaceBots(workspaceId ?? "")
   const currentUser = useUser()
   const { toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
 
@@ -110,8 +117,27 @@ export function useMentionables(streamContext?: MentionStreamContext) {
       }
     })
 
-    return [...users, ...personas, ...broadcasts]
-  }, [workspaceUsers, workspacePersonas, currentUser?.id, toEmoji, streamContext])
+    const bots: Mentionable[] = workspaceBots
+      .filter((b) => b.slug !== null && b.archivedAt === null)
+      .map((bot) => ({
+        id: bot.id,
+        slug: bot.slug!,
+        name: bot.name,
+        type: "bot",
+        avatarEmoji: bot.avatarEmoji ?? undefined,
+        avatarUrl: bot.avatarUrl ?? undefined,
+      }))
+
+    // In invite mode, only users and bots that are NOT already members are shown.
+    // Broadcasts and personas are hidden since they cannot be invited.
+    if (streamContext?.inviteMode && streamContext.memberIds) {
+      const memberIds = streamContext.memberIds
+      const inviteables = [...users, ...bots].filter((m) => !memberIds.has(m.id))
+      return inviteables
+    }
+
+    return [...users, ...personas, ...bots, ...broadcasts]
+  }, [workspaceUsers, workspacePersonas, workspaceBots, currentUser?.id, toEmoji, streamContext])
 
   return {
     mentionables,

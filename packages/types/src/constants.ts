@@ -103,7 +103,7 @@ export const NOTIFICATION_CONFIG: Record<StreamType, NotificationConfig> = {
 }
 
 // Activity types
-export const ACTIVITY_TYPES = ["mention", "message", "reaction", "saved_reminder"] as const
+export const ACTIVITY_TYPES = ["mention", "message", "reaction", "saved_reminder", "member_added"] as const
 export type ActivityType = (typeof ACTIVITY_TYPES)[number]
 
 export const ActivityTypes = {
@@ -111,6 +111,7 @@ export const ActivityTypes = {
   MESSAGE: "message",
   REACTION: "reaction",
   SAVED_REMINDER: "saved_reminder",
+  MEMBER_ADDED: "member_added",
 } as const satisfies Record<string, ActivityType>
 
 // Saved message statuses

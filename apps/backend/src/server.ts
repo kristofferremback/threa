@@ -87,7 +87,7 @@ import { SavedMessagesService, createSavedReminderWorker } from "./features/save
 import { PushService, PushNotificationHandler, createPushSessionCleanup } from "./features/push"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
-import { CommandRegistry, EchoCommand, createCommandWorker, CommandHandler } from "./features/commands"
+import { CommandRegistry, EchoCommand, InviteCommand, createCommandWorker, CommandHandler } from "./features/commands"
 import {
   createImageCaptionWorker,
   createPdfPrepareWorker,
@@ -379,6 +379,7 @@ export async function startServer(): Promise<ServerInstance> {
   // Command infrastructure - created early for route registration
   const commandRegistry = new CommandRegistry()
   commandRegistry.register(new EchoCommand())
+  commandRegistry.register(new InviteCommand({ pool, streamService }))
 
   // Public API key service — WorkOS validates API keys in production, stub in dev
   const apiKeyService = config.useStubAuth ? new StubApiKeyService() : new WorkosApiKeyService(config.workos)

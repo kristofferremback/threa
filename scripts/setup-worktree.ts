@@ -100,7 +100,10 @@ async function findPostgresContainer(): Promise<string | null> {
   const result = await $`docker ps --format '{{.Names}}' --filter 'name=threa-postgres'`.quiet().nothrow()
   const containers = result.stdout.toString().trim().split("\n").filter(Boolean)
 
-  return containers[0] || null
+  // Exclude test containers (e.g. threa-postgres-test-1) which also match the filter
+  const mainContainers = containers.filter((name) => !name.includes("test"))
+
+  return mainContainers[0] || null
 }
 
 async function createDatabaseIfNotExists(dbName: string): Promise<boolean> {
