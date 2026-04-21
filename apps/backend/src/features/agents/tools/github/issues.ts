@@ -132,17 +132,22 @@ export function createGithubGetIssueTool(deps: GitHubToolDeps) {
           htmlUrl: string | null
         }> = []
         if (input.includeComments && (issue.comments ?? 0) > 0) {
+          // Request newest-first and take the first N so issues with >100 comments
+          // still surface the latest activity (default ascending order would give us
+          // the oldest N from page 1).
           const commentsResponse = await client.request<any[]>(
             "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
             {
               owner: input.owner,
               repo: input.repo,
               issue_number: input.number,
-              per_page: 100,
+              per_page: MAX_ISSUE_COMMENTS,
+              sort: "created",
+              direction: "desc",
             }
           )
-          const tail = commentsResponse.slice(-MAX_ISSUE_COMMENTS)
-          comments = tail.map((c: any) => {
+          const latestFirst = commentsResponse.slice(0, MAX_ISSUE_COMMENTS).reverse()
+          comments = latestFirst.map((c: any) => {
             const b = truncateBytes(typeof c.body === "string" ? c.body : "", MAX_ISSUE_COMMENT_BYTES)
             return {
               id: c.id,

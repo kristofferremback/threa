@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test"
 import { createGithubListCommitsTool, createGithubGetCommitTool } from "./commits"
 import { createGithubGetFileContentsTool } from "./content"
 import { createGithubGetPullRequestTool, createGithubListPrFilesTool } from "./pull-requests"
+import { createGithubGetIssueTool } from "./issues"
 import { createGithubGetWorkflowRunTool } from "./workflows"
 import type { GitHubToolDeps } from "./deps"
 import type { WorkspaceIntegrationService } from "../../../workspace-integrations"
@@ -174,6 +175,76 @@ describe("github_get_pull_request", () => {
     expect(parsed.pullRequest.reviews.changesRequested).toBe(1)
     expect(parsed.pullRequest.reviews.pendingReviewers).toBe(1)
     expect(result.sources?.[0].url).toBe("https://github.com/o/r/pull/42")
+  })
+})
+
+describe("github_get_pull_request recentCommits truncation", () => {
+  it("returns null recentCommits when the PR has more commits than fit on one page", async () => {
+    const request: RequestFn = async (route) => {
+      switch (route) {
+        case "GET /repos/{owner}/{repo}/pulls/{pull_number}":
+          return {
+            number: 1,
+            title: "Big PR",
+            state: "open",
+            body: "",
+            commits: 250,
+            html_url: "https://github.com/o/r/pull/1",
+          }
+        case "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews":
+          return []
+        case "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits":
+          return Array.from({ length: 100 }, (_, i) => ({
+            sha: `sha${i}`,
+            commit: { message: `c${i}`, author: { date: "2026-04-20T10:00:00Z" } },
+          }))
+        default:
+          throw new Error(`unexpected: ${route}`)
+      }
+    }
+    const tool = createGithubGetPullRequestTool(makeDeps(request))
+    const { output } = await tool.config.execute({ owner: "o", repo: "r", number: 1 }, toolOpts)
+    const parsed = JSON.parse(output)
+    expect(parsed.pullRequest.recentCommits).toBeNull()
+    expect(parsed.pullRequest.commitsCount).toBe(250)
+  })
+})
+
+describe("github_get_issue comment ordering", () => {
+  it("requests comments newest-first and returns them in chronological order", async () => {
+    const captured: Array<Record<string, unknown> | undefined> = []
+    const request: RequestFn = async (route, params) => {
+      captured.push(params)
+      switch (route) {
+        case "GET /repos/{owner}/{repo}/issues/{issue_number}":
+          return {
+            number: 7,
+            title: "Bug",
+            state: "open",
+            body: "",
+            comments: 300,
+            html_url: "https://github.com/o/r/issues/7",
+          }
+        case "GET /repos/{owner}/{repo}/issues/{issue_number}/comments":
+          // GitHub returns newest-first given direction=desc; simulate.
+          return [
+            { id: 3, body: "newest", user: { login: "a" }, created_at: "3", updated_at: "3" },
+            { id: 2, body: "middle", user: { login: "b" }, created_at: "2", updated_at: "2" },
+            { id: 1, body: "oldest", user: { login: "c" }, created_at: "1", updated_at: "1" },
+          ]
+        default:
+          throw new Error(`unexpected: ${route}`)
+      }
+    }
+    const tool = createGithubGetIssueTool(makeDeps(request))
+    const { output } = await tool.config.execute({ owner: "o", repo: "r", number: 7, includeComments: true }, toolOpts)
+    const parsed = JSON.parse(output)
+    const commentsCall = captured[1] as Record<string, unknown>
+    expect(commentsCall.direction).toBe("desc")
+    expect(commentsCall.sort).toBe("created")
+    // Returned to caller chronologically (oldest first → newest last) so the
+    // model reads the conversation naturally.
+    expect(parsed.issue.comments.map((c: any) => c.id)).toEqual([1, 2, 3])
   })
 })
 

@@ -1,5 +1,3 @@
-import type { TraceSource } from "@threa/types"
-
 export interface LineSliceResult {
   text: string
   startLine: number
@@ -93,20 +91,6 @@ export function truncateBytes(text: string, maxBytes: number): BytesTruncateResu
   while (end > 0 && (buf[end] & 0xc0) === 0x80) end -= 1
   const sliced = buf.subarray(0, end).toString("utf8")
   return { text: sliced, truncated: true, totalBytes, returnedBytes: Buffer.byteLength(sliced, "utf8") }
-}
-
-export function githubSource(params: {
-  title: string
-  url: string | null | undefined
-  snippet?: string
-}): TraceSource | null {
-  if (!params.url) return null
-  return {
-    type: "github",
-    title: params.title,
-    url: params.url,
-    snippet: params.snippet,
-  }
 }
 
 /**

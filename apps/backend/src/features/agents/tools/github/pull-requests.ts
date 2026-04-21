@@ -108,7 +108,7 @@ export type GetPullRequestInput = z.infer<typeof GetPullRequestSchema>
 export function createGithubGetPullRequestTool(deps: GitHubToolDeps) {
   return defineAgentTool({
     name: "github_get_pull_request",
-    description: `Fetch detailed PR information including title, body (truncated to ${MAX_PR_BODY_BYTES} bytes), author, branches, merge state, review summary, and recent commits. Use github_list_pr_files to see which files changed.`,
+    description: `Fetch detailed PR information including title, body (truncated to ${MAX_PR_BODY_BYTES} bytes), author, branches, merge state, and review summary. For PRs with ≤100 commits the 10 most recent are included inline; larger PRs return null and should be explored via github_list_commits with --sha=<head-branch>. Use github_list_pr_files to see which files changed.`,
     inputSchema: GetPullRequestSchema,
 
     execute: async (input): Promise<AgentToolResult> => {
@@ -158,13 +158,20 @@ export function createGithubGetPullRequestTool(deps: GitHubToolDeps) {
           mergeCommitSha: pull.merge_commit_sha ?? null,
           htmlUrl: typeof pull.html_url === "string" ? pull.html_url : null,
           reviews: summarizeReviews(reviews, pull),
-          recentCommits: commits.slice(-10).map((c: any) => ({
-            sha: c.sha,
-            shortSha: typeof c.sha === "string" ? c.sha.slice(0, 7) : null,
-            message: typeof c.commit?.message === "string" ? c.commit.message.split("\n")[0] : null,
-            author: toActor(c.author) ?? toActor(c.commit?.author),
-            committedAt: c.commit?.author?.date ?? null,
-          })),
+          // Commits come back oldest-first. Only surface them when we have the
+          // full list — for PRs with >100 commits, page 1 doesn't contain the
+          // most recent ones, and returning "recent commits" that aren't actually
+          // the most recent would mislead the model. In that case suggest
+          // github_list_commits for enumeration.
+          recentCommits: commitsComplete(pull, commits)
+            ? commits.slice(-10).map((c: any) => ({
+                sha: c.sha,
+                shortSha: typeof c.sha === "string" ? c.sha.slice(0, 7) : null,
+                message: typeof c.commit?.message === "string" ? c.commit.message.split("\n")[0] : null,
+                author: toActor(c.author) ?? toActor(c.commit?.author),
+                committedAt: c.commit?.author?.date ?? null,
+              }))
+            : null,
         }
       })
 
@@ -267,6 +274,11 @@ export function createGithubListPrFilesTool(deps: GitHubToolDeps) {
         }),
     },
   })
+}
+
+function commitsComplete(pull: any, fetchedCommits: unknown[]): boolean {
+  const totalCount = typeof pull.commits === "number" ? pull.commits : fetchedCommits.length
+  return fetchedCommits.length >= totalCount
 }
 
 function normalizeState(pull: any): "open" | "closed" | "merged" | "draft" {
