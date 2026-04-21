@@ -56,6 +56,38 @@ export function pickRecentlyUsed(emojis: EmojiEntry[], weights: Record<string, n
   return recent.slice(0, limit)
 }
 
+export const QUICK_REACTION_COUNT = 6
+export const DEFAULT_QUICK_REACTION_SHORTCODES = ["+1", "heart", "joy", "open_mouth", "cry", "fire"]
+
+/**
+ * Build the quick-react emoji list: top N by weight, padded with defaults when
+ * the user hasn't reacted enough to fill the row.
+ */
+export function buildQuickEmojis(
+  emojis: EmojiEntry[],
+  weights: Record<string, number>,
+  count: number = QUICK_REACTION_COUNT,
+  defaults: string[] = DEFAULT_QUICK_REACTION_SHORTCODES
+): EmojiEntry[] {
+  if (!emojis.length) return []
+  const weighted = emojis
+    .filter((e) => (weights[e.shortcode] ?? 0) > 0)
+    .sort((a, b) => (weights[b.shortcode] ?? 0) - (weights[a.shortcode] ?? 0))
+    .slice(0, count)
+  if (weighted.length >= count) return weighted
+  const usedShortcodes = new Set(weighted.map((e) => e.shortcode))
+  const emojiMap = new Map(emojis.map((e) => [e.shortcode, e]))
+  for (const shortcode of defaults) {
+    if (weighted.length >= count) break
+    const entry = emojiMap.get(shortcode)
+    if (entry && !usedShortcodes.has(shortcode)) {
+      weighted.push(entry)
+      usedShortcodes.add(shortcode)
+    }
+  }
+  return weighted
+}
+
 export function filterBySearch(emojis: EmojiEntry[], query: string): EmojiEntry[] {
   if (!query) return emojis
   const q = query.toLowerCase()

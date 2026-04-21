@@ -4,12 +4,14 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import {
   DESKTOP_GRID_COLUMNS,
   MAX_RECENTLY_USED_ROWS,
+  buildQuickEmojis,
   chunkByColumns,
   filterBySearch,
   indexToCoord,
@@ -20,6 +22,7 @@ import {
   type GridGeometry,
 } from "@/lib/emoji-picker"
 import type { EmojiEntry } from "@threa/types"
+import { EmojiQuickBar } from "./emoji-quick-bar"
 
 const MOBILE_EMOJI_SIZE = 44
 const MOBILE_ROW_HEIGHT = 46
@@ -547,6 +550,8 @@ export function ReactionEmojiPicker({
   const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window
   const useDrawer = isNarrow || isTouchDevice
 
+  const quickEmojis = useMemo(() => buildQuickEmojis(emojis, emojiWeights), [emojis, emojiWeights])
+
   const handleSelect = useCallback(
     (item: EmojiEntry) => {
       onSelect(item.emoji)
@@ -624,7 +629,23 @@ export function ReactionEmojiPicker({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>{triggerElement}</PopoverTrigger>
+      <HoverCard openDelay={200} closeDelay={120}>
+        <HoverCardTrigger asChild>
+          <PopoverTrigger asChild>{triggerElement}</PopoverTrigger>
+        </HoverCardTrigger>
+        <HoverCardContent align="end" side="top" className="w-auto p-1.5">
+          <EmojiQuickBar
+            quickEmojis={quickEmojis}
+            activeShortcodes={activeShortcodes}
+            onReact={(shortcode) => {
+              const entry = emojis.find((e) => e.shortcode === shortcode)
+              if (entry) handleSelect(entry)
+            }}
+            onOpenFullPicker={() => setOpen(true)}
+            size="sm"
+          />
+        </HoverCardContent>
+      </HoverCard>
       <PopoverContent
         align="end"
         side="top"
