@@ -5,19 +5,15 @@ import { createGithubGetPullRequestTool, createGithubListPrFilesTool } from "./p
 import { createGithubGetIssueTool } from "./issues"
 import { createGithubGetWorkflowRunTool } from "./workflows"
 import type { GitHubToolDeps } from "./deps"
-import type { WorkspaceIntegrationService } from "../../../workspace-integrations"
+import type { GitHubClient } from "../../../workspace-integrations"
 
 type RequestFn = (route: string, params?: Record<string, unknown>) => Promise<unknown>
 
 function makeDeps(request: RequestFn | null): GitHubToolDeps {
-  const workspaceIntegrationService = {
-    async getGithubClient() {
-      if (!request) return null
-      return { request }
-    },
-  } as unknown as WorkspaceIntegrationService
-
-  return { workspaceId: "ws_test", workspaceIntegrationService }
+  return {
+    workspaceId: "ws_test",
+    getClient: async () => (request ? ({ request } as unknown as GitHubClient) : null),
+  }
 }
 
 const toolOpts = { toolCallId: "test" }

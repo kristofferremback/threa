@@ -348,8 +348,21 @@ export class PersonaAgent {
           }
         }
 
-        // Build tool set
-        const githubDeps = workspaceIntegrationService ? { workspaceId, workspaceIntegrationService } : undefined
+        // Build tool set. Resolve the GitHub client lazily but at most once per turn so
+        // chained GitHub tool calls don't each hit the DB and potentially refresh the token.
+        let cachedGithubClient: ReturnType<NonNullable<typeof workspaceIntegrationService>["getGithubClient"]> | null =
+          null
+        const githubDeps = workspaceIntegrationService
+          ? {
+              workspaceId,
+              getClient: () => {
+                if (cachedGithubClient === null) {
+                  cachedGithubClient = workspaceIntegrationService.getGithubClient(workspaceId)
+                }
+                return cachedGithubClient
+              },
+            }
+          : undefined
 
         const tools = buildToolSet({
           enabledTools: persona.enabledTools,

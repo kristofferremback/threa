@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { AgentStepTypes, type SourceItem } from "@threa/types"
+import { logger } from "../../../../lib/logger"
 import { defineAgentTool, type AgentToolResult } from "../../runtime"
 import type { GitHubToolDeps } from "./deps"
 import { withGithubClient, isGitHubToolError, toToolResult } from "./client-accessor"
@@ -188,13 +189,19 @@ export function createGithubGetWorkflowRunTool(deps: GitHubToolDeps) {
                 job_id: j.id,
               })
               if (typeof logs !== "string") return base
-              const totalBytes = Buffer.byteLength(logs, "utf8")
-              const tailStart = Math.max(0, totalBytes - MAX_JOB_LOG_BYTES)
-              const tailBuf = Buffer.from(logs, "utf8").subarray(tailStart)
-              const tail = tailBuf.toString("utf8")
+              const buf = Buffer.from(logs, "utf8")
+              const totalBytes = buf.length
+              let tailStart = Math.max(0, totalBytes - MAX_JOB_LOG_BYTES)
+              // Walk forward past any UTF-8 continuation bytes (10xxxxxx) so we
+              // don't slice mid-character and emit U+FFFD at the tail's head.
+              while (tailStart < totalBytes && (buf[tailStart] & 0xc0) === 0x80) tailStart += 1
+              const tail = buf.subarray(tailStart).toString("utf8")
               base.logs = { tail, truncated: tailStart > 0, totalBytes }
-            } catch {
-              // Logs may be gone / not ready yet; surface the absence implicitly.
+            } catch (err) {
+              logger.warn(
+                { err, workspaceId: deps.workspaceId, runId: input.runId, jobId: j.id },
+                "failed to fetch workflow job logs"
+              )
             }
             return base
           })

@@ -17,7 +17,7 @@ export async function withGithubClient<T>(
   deps: GitHubToolDeps,
   fn: (client: GitHubClient) => Promise<T>
 ): Promise<T | GitHubToolError> {
-  const client = await deps.workspaceIntegrationService.getGithubClient(deps.workspaceId)
+  const client = await deps.getClient()
   if (!client) {
     return {
       error:
@@ -48,7 +48,7 @@ function mapGithubError(err: unknown, deps: GitHubToolDeps): GitHubToolError {
       code: "GITHUB_FORBIDDEN",
     }
   }
-  if (status === 429 || (status !== null && isRateLimitError(err))) {
+  if (status === 429 || (status === null && isRateLimitError(err))) {
     return { error: "GitHub API rate limit exceeded. Try again later.", code: "GITHUB_RATE_LIMITED" }
   }
   logger.error({ err, workspaceId: deps.workspaceId }, "GitHub tool request failed")
