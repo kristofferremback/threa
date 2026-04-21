@@ -11,6 +11,7 @@ describe("Invitation Shadows", () => {
         id: "inv_test_create",
         workspaceId: "ws_test_1",
         email: "shadow@example.com",
+        roleSlug: "member",
         region: "local",
         expiresAt: futureDate,
       })
@@ -23,6 +24,7 @@ describe("Invitation Shadows", () => {
         id: "inv_no_auth",
         workspaceId: "ws_test_1",
         email: "noauth@example.com",
+        roleSlug: "member",
         region: "local",
         expiresAt: futureDate,
       })
