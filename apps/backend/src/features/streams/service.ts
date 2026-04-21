@@ -792,12 +792,19 @@ export class StreamService {
         throw new StreamNotFoundError()
       }
 
+      if (stream.workspaceId !== workspaceId) {
+        throw new HttpError("Stream does not belong to this workspace", { status: 403, code: "WRONG_WORKSPACE" })
+      }
+
       if (stream.type === StreamTypes.DM) {
         throw new HttpError("Cannot add bots to direct messages", {
           status: 400,
           code: "DM_MEMBERS_IMMUTABLE",
         })
       }
+
+      // Check for existing grant before inserting so we know whether to emit.
+      const hadGrant = await BotChannelAccessRepository.hasGrant(client, workspaceId, botId, stream.id)
 
       // Idempotent: ON CONFLICT DO NOTHING handles duplicates gracefully
       await BotChannelAccessRepository.grantAccess(client, {
@@ -808,17 +815,27 @@ export class StreamService {
         grantedBy: actorId,
       })
 
-      // Create timeline event so "Botty was added" appears in the stream.
-      // Only emit if this is a new grant (not a duplicate). We detect this
-      // by checking if the grant was the only one for this bot+stream.
-      const hasExistingGrant = await BotChannelAccessRepository.hasGrant(client, workspaceId, botId, stream.id)
-      // hasGrant returns true because we just inserted it, so we always emit.
-      // For true idempotency we'd need to know if the INSERT actually happened,
-      // but emitting a duplicate member_added event is harmless — clients dedupe
-      // by event ID and the UX is still correct.
-      const evtId = eventId()
+      // For threads, also grant access to the root stream so the bot is
+      // mentionable there (frontend checks root stream membership for threads).
+      if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
+        const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
+        if (rootStream && rootStream.type !== StreamTypes.DM) {
+          await BotChannelAccessRepository.grantAccess(client, {
+            id: streamId(),
+            workspaceId,
+            botId,
+            streamId: rootStream.id,
+            grantedBy: actorId,
+          })
+        }
+      }
+
+      // Only emit member_added for new grants, avoiding duplicate timeline
+      // and activity events on re-invite.
+      if (hadGrant) return
+
       const event = await StreamEventRepository.insert(client, {
-        id: evtId,
+        id: eventId(),
         streamId: stream.id,
         eventType: "member_added",
         payload: { addedBy: actorId },
@@ -921,6 +938,10 @@ export class StreamService {
       const stream = await StreamRepository.findById(client, targetStreamId)
       if (!stream) {
         throw new StreamNotFoundError()
+      }
+
+      if (stream.workspaceId !== workspaceId) {
+        throw new HttpError("Stream does not belong to this workspace", { status: 403, code: "WRONG_WORKSPACE" })
       }
 
       await BotChannelAccessRepository.revokeAccess(client, workspaceId, botId, stream.id)
