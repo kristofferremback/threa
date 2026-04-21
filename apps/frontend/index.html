@@ -118,10 +118,11 @@
       // Recovery: detect when styles fail to load (stale SW cache, blocked CSS
       // @import, network hiccup, etc.). If no same-origin stylesheets have
       // loaded after the page is interactive, unregister SW, clear caches, and
-      // hard-reload to get a clean state. A counter prevents infinite loops:
-      // we allow up to 2 recovery attempts per session.
+      // hard-reload to get a clean state. The same counter key is read by
+      // src/lib/sw-recovery.ts so the router-level recovery (for failed
+      // dynamic imports) and this CSS watchdog can't loop past the shared cap.
       ;(function () {
-        var attempts = parseInt(sessionStorage.getItem("css-recovery-attempts") || "0", 10)
+        var attempts = parseInt(sessionStorage.getItem("sw-recovery-attempts") || "0", 10)
         if (attempts >= 2) return
         setTimeout(function () {
           var hasStyles = false
@@ -138,10 +139,10 @@
           }
           if (hasStyles) {
             // Styles loaded successfully — reset counter so future breaks can recover
-            sessionStorage.removeItem("css-recovery-attempts")
+            sessionStorage.removeItem("sw-recovery-attempts")
             return
           }
-          sessionStorage.setItem("css-recovery-attempts", String(attempts + 1))
+          sessionStorage.setItem("sw-recovery-attempts", String(attempts + 1))
           var tasks = []
           if (navigator.serviceWorker) {
             tasks.push(

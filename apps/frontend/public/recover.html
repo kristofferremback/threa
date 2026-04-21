@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reset Threa</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="/threa-favicon.svg" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/threa-favicon-light.svg" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/x-icon" href="/threa-favicon.ico" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1a1a;
+        --muted: #6b7280;
+        --accent: #8b7332;
+        --border: #e5e7eb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0c0c0d;
+          --fg: #f5f5f5;
+          --muted: #9ca3af;
+          --accent: #c8a055;
+          --border: #27272a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+      }
+      main {
+        width: 100%;
+        max-width: 28rem;
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+      p {
+        margin: 0 0 1.5rem;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .status {
+        margin: 1.5rem 0;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.875rem;
+        text-align: left;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .status.ok {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .status.err {
+        border-color: #dc2626;
+        color: #dc2626;
+      }
+      .actions {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      button,
+      a.btn {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+        font-family: inherit;
+        border: 1px solid var(--border);
+        border-radius: 0.375rem;
+        background: transparent;
+        color: var(--fg);
+        text-decoration: none;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--bg);
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Reset Threa</h1>
+      <p>Unregistering the service worker and clearing cached assets. You'll be sent back to Threa once it's done.</p>
+      <div id="status" class="status" aria-live="polite">Starting…</div>
+      <div class="actions">
+        <a class="btn primary" href="/" id="home" hidden>Back to Threa</a>
+        <button id="retry" hidden>Try again</button>
+      </div>
+    </main>
+    <script>
+      // Fully self-contained: no external imports, no app dependencies. This
+      // page has to work when the SPA is broken, so it runs the same
+      // SW-unregister + caches.delete sequence as lib/sw-recovery.ts using
+      // only platform APIs. Safe to bookmark: users can type /recover in the
+      // URL bar any time they get stuck.
+      ;(function () {
+        var status = document.getElementById("status")
+        var home = document.getElementById("home")
+        var retry = document.getElementById("retry")
+        var log = []
+
+        function setStatus(line, cls) {
+          log.push(line)
+          status.textContent = log.join("\n")
+          status.className = "status" + (cls ? " " + cls : "")
+        }
+
+        function showDone() {
+          home.hidden = false
+          retry.hidden = false
+        }
+
+        retry.addEventListener("click", function () {
+          location.reload()
+        })
+        ;(async function () {
+          try {
+            if ("serviceWorker" in navigator) {
+              var regs = await navigator.serviceWorker.getRegistrations()
+              await Promise.all(
+                regs.map(function (r) {
+                  return r.unregister()
+                })
+              )
+              setStatus("Unregistered " + regs.length + " service worker(s).")
+            } else {
+              setStatus("Service workers not supported — skipped.")
+            }
+
+            if ("caches" in window) {
+              var names = await caches.keys()
+              await Promise.all(
+                names.map(function (n) {
+                  return caches.delete(n)
+                })
+              )
+              setStatus("Cleared " + names.length + " cache bucket(s).")
+            } else {
+              setStatus("Cache Storage not supported — skipped.")
+            }
+
+            // Reset the in-app auto-recovery counter so if something goes
+            // wrong again, the app gets its full quota of auto-retries.
+            try {
+              sessionStorage.removeItem("sw-recovery-attempts")
+            } catch (e) {
+              // sessionStorage can throw in privacy modes — ignore.
+            }
+
+            setStatus("Done. Returning to Threa…", "ok")
+            setTimeout(function () {
+              // replace() so Back doesn't bring the user back to /recover.
+              location.replace("/")
+            }, 800)
+          } catch (err) {
+            setStatus("Recovery failed: " + ((err && err.message) || err), "err")
+            showDone()
+          }
+        })()
+      })()
+    </script>
+  </body>
+</html>
