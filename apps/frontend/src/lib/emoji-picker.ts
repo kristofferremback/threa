@@ -66,7 +66,8 @@ export const DEFAULT_QUICK_REACTION_SHORTCODES = ["+1", "heart", "joy", "open_mo
  * reactions the user has already placed on the message — those are shown
  * in a separate active-reactions row above the separator.
  *
- * Slot priority: most-used by weight → static defaults.
+ * Slot priority: most-used by weight → static defaults → full picker in
+ * default order (top-left), ensuring the bar always fills to count.
  */
 export function buildQuickEmojis(
   emojis: EmojiEntry[],
