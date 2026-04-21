@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useMessageQueue } from "./use-message-queue"
+import * as contextsModule from "@/contexts"
+import * as syncEngineModule from "@/sync/sync-engine"
+import * as dbModule from "@/db"
+import * as prosemirrorModule from "@threa/prosemirror"
+import * as draftPromotionsModule from "@/lib/draft-promotions"
+import * as streamSyncModule from "@/sync/stream-sync"
+import * as draftStoreModule from "@/stores/draft-store"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { createElement, type ReactNode } from "react"
 
 // Mock dependencies
 const mockCreate = vi.fn()
@@ -12,35 +21,7 @@ let mockIsConnected = true
 
 const mockStreamCreate = vi.fn()
 
-vi.mock("@/contexts", () => ({
-  useSocketConnected: () => mockIsConnected,
-  useMessageService: () => ({
-    create: mockCreate,
-  }),
-  useStreamService: () => ({
-    create: mockStreamCreate,
-  }),
-  usePendingMessages: () => ({
-    markPending: mockMarkPending,
-    markFailed: mockMarkFailed,
-    markSent: mockMarkSent,
-    registerQueueNotify: mockRegisterQueueNotify,
-  }),
-}))
-
 const mockSubscribeStream = vi.fn()
-vi.mock("@/sync/sync-engine", () => ({
-  useSyncEngine: () => ({
-    subscribeStream: mockSubscribeStream,
-  }),
-}))
-
-const mockSetQueryData = vi.fn()
-vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({
-    setQueryData: mockSetQueryData,
-  }),
-}))
 
 // Mock IndexedDB
 interface MockPendingMessage {
@@ -65,86 +46,117 @@ const mockUpdate = vi.fn().mockResolvedValue(1)
 
 const mockEventsDelete = vi.fn().mockResolvedValue(undefined)
 const mockEventsUpdate = vi.fn().mockResolvedValue(1)
+const mockSetQueryData = vi.fn()
 
-vi.mock("@/db", () => ({
-  db: {
-    pendingMessages: {
-      orderBy: () => ({
-        toArray: () => Promise.resolve([...mockPendingMessages]),
-      }),
-      get: (id: string) => Promise.resolve(mockPendingMessages.find((m) => m.clientId === id)),
-      delete: (...args: unknown[]) => mockDelete(...args),
-      update: (...args: unknown[]) => mockUpdate(...args),
-    },
-    events: {
-      get: vi.fn().mockResolvedValue(undefined),
-      put: vi.fn().mockResolvedValue(undefined),
-      delete: (...args: unknown[]) => mockEventsDelete(...args),
-      update: (...args: unknown[]) => mockEventsUpdate(...args),
-    },
-    streams: {
-      put: vi.fn().mockResolvedValue(undefined),
-    },
-    draftScratchpads: {
-      delete: vi.fn().mockResolvedValue(undefined),
-    },
-    draftMessages: {
-      delete: vi.fn().mockResolvedValue(undefined),
-    },
-    transaction: vi.fn().mockImplementation((_mode: string, _tables: unknown, fn: () => Promise<void>) => fn()),
-  },
-  sequenceToNum: (seq: string) => Number(seq),
-}))
-
-vi.mock("./use-streams", () => ({
-  streamKeys: {
-    bootstrap: (wsId: string, sId: string) => ["stream", "bootstrap", wsId, sId],
-  },
-}))
-
-vi.mock("./use-workspaces", () => ({
-  workspaceKeys: {
-    bootstrap: (wsId: string) => ["workspace", "bootstrap", wsId],
-  },
-}))
-
-vi.mock("@threa/prosemirror", () => ({
-  parseMarkdown: (md: string) => ({
-    type: "doc",
-    content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
-  }),
-}))
-
-vi.mock("@/lib/draft-promotions", () => ({
-  emitDraftPromoted: vi.fn(),
-}))
-
-vi.mock("@/sync/stream-sync", () => ({
-  optimisticReplyCountUpdate: vi.fn(),
-}))
-
-vi.mock("@/stores/draft-store", () => ({
-  deleteDraftScratchpadFromCache: vi.fn(),
-  deleteDraftMessageFromCache: vi.fn(),
-}))
-
-vi.mock("@threa/types", () => ({
-  StreamTypes: {
-    THREAD: "thread",
-    SCRATCHPAD: "scratchpad",
-  },
-}))
+function createWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // Spy on setQueryData so tests can observe interactions if needed
+  vi.spyOn(client, "setQueryData").mockImplementation(((...args: unknown[]) =>
+    mockSetQueryData(...args)) as unknown as typeof client.setQueryData)
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client }, children)
+  }
+}
 
 describe("useMessageQueue", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    mockCreate.mockReset()
+    mockMarkPending.mockReset()
+    mockMarkFailed.mockReset()
+    mockMarkSent.mockReset()
+    mockRegisterQueueNotify.mockReset()
+    mockStreamCreate.mockReset()
+    mockSubscribeStream.mockReset()
+    mockDelete.mockClear()
+    mockUpdate.mockClear()
+    mockUpdate.mockResolvedValue(1)
+    mockEventsDelete.mockClear()
+    mockEventsDelete.mockResolvedValue(undefined)
+    mockEventsUpdate.mockClear()
+    mockEventsUpdate.mockResolvedValue(1)
+    mockSetQueryData.mockReset()
+
     mockPendingMessages = []
     mockIsConnected = true
     mockCreate.mockResolvedValue({ id: "msg_1" })
+
+    // Contexts
+    vi.spyOn(contextsModule, "useSocketConnected").mockImplementation(() => mockIsConnected)
+    vi.spyOn(contextsModule, "useMessageService").mockReturnValue({
+      create: mockCreate,
+    } as unknown as ReturnType<typeof contextsModule.useMessageService>)
+    vi.spyOn(contextsModule, "useStreamService").mockReturnValue({
+      create: mockStreamCreate,
+    } as unknown as ReturnType<typeof contextsModule.useStreamService>)
+    vi.spyOn(contextsModule, "usePendingMessages").mockReturnValue({
+      markPending: mockMarkPending,
+      markFailed: mockMarkFailed,
+      markSent: mockMarkSent,
+      registerQueueNotify: mockRegisterQueueNotify,
+    } as unknown as ReturnType<typeof contextsModule.usePendingMessages>)
+
+    // Sync engine
+    vi.spyOn(syncEngineModule, "useSyncEngine").mockReturnValue({
+      subscribeStream: mockSubscribeStream,
+    } as unknown as ReturnType<typeof syncEngineModule.useSyncEngine>)
+
+    // DB tables
+    vi.spyOn(dbModule.db.pendingMessages, "orderBy").mockReturnValue({
+      toArray: () => Promise.resolve([...mockPendingMessages]),
+    } as unknown as ReturnType<typeof dbModule.db.pendingMessages.orderBy>)
+    vi.spyOn(dbModule.db.pendingMessages, "get").mockImplementation(((id: string) =>
+      Promise.resolve(
+        mockPendingMessages.find((m) => m.clientId === id)
+      )) as unknown as typeof dbModule.db.pendingMessages.get)
+    vi.spyOn(dbModule.db.pendingMessages, "delete").mockImplementation(((...args: unknown[]) =>
+      mockDelete(...args)) as unknown as typeof dbModule.db.pendingMessages.delete)
+    vi.spyOn(
+      dbModule.db.pendingMessages as unknown as { update: (...args: unknown[]) => Promise<number> },
+      "update"
+    ).mockImplementation((...args: unknown[]) => mockUpdate(...args))
+
+    vi.spyOn(dbModule.db.events, "get").mockResolvedValue(undefined as never)
+    vi.spyOn(dbModule.db.events, "put").mockResolvedValue(undefined as never)
+    vi.spyOn(dbModule.db.events, "delete").mockImplementation(((...args: unknown[]) =>
+      mockEventsDelete(...args)) as unknown as typeof dbModule.db.events.delete)
+    vi.spyOn(dbModule.db.events, "update").mockImplementation(((...args: unknown[]) =>
+      mockEventsUpdate(...args)) as unknown as typeof dbModule.db.events.update)
+
+    vi.spyOn(dbModule.db.streams, "put").mockResolvedValue(undefined as never)
+    vi.spyOn(dbModule.db.draftScratchpads, "delete").mockResolvedValue(undefined as never)
+    vi.spyOn(dbModule.db.draftMessages, "delete").mockResolvedValue(undefined as never)
+
+    vi.spyOn(dbModule.db, "transaction").mockImplementation(((
+      _mode: string,
+      _tables: unknown,
+      fn: () => Promise<void>
+    ) => fn()) as unknown as typeof dbModule.db.transaction)
+
+    vi.spyOn(dbModule, "sequenceToNum").mockImplementation((seq: string) => Number(seq))
+
+    // Prosemirror
+    vi.spyOn(prosemirrorModule, "parseMarkdown").mockImplementation(
+      (md: string) =>
+        ({
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
+        }) as unknown as ReturnType<typeof prosemirrorModule.parseMarkdown>
+    )
+
+    // Draft promotions
+    vi.spyOn(draftPromotionsModule, "emitDraftPromoted").mockImplementation(() => {})
+
+    // Stream sync
+    vi.spyOn(streamSyncModule, "setParentThreadId").mockResolvedValue(undefined as never)
+
+    // Draft store
+    vi.spyOn(draftStoreModule, "deleteDraftScratchpadFromCache").mockImplementation(() => {})
+    vi.spyOn(draftStoreModule, "deleteDraftMessageFromCache").mockImplementation(() => {})
   })
 
   it("should register its notify callback on mount", () => {
-    renderHook(() => useMessageQueue())
+    renderHook(() => useMessageQueue(), { wrapper: createWrapper() })
 
     expect(mockRegisterQueueNotify).toHaveBeenCalledWith(expect.any(Function))
   })
@@ -163,7 +175,7 @@ describe("useMessageQueue", () => {
       },
     ]
 
-    renderHook(() => useMessageQueue())
+    renderHook(() => useMessageQueue(), { wrapper: createWrapper() })
 
     // Wait for async queue processing
     await act(async () => {
@@ -196,7 +208,7 @@ describe("useMessageQueue", () => {
       },
     ]
 
-    renderHook(() => useMessageQueue())
+    renderHook(() => useMessageQueue(), { wrapper: createWrapper() })
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
@@ -224,7 +236,7 @@ describe("useMessageQueue", () => {
       },
     ]
 
-    renderHook(() => useMessageQueue())
+    renderHook(() => useMessageQueue(), { wrapper: createWrapper() })
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
@@ -249,7 +261,7 @@ describe("useMessageQueue", () => {
       },
     ]
 
-    renderHook(() => useMessageQueue())
+    renderHook(() => useMessageQueue(), { wrapper: createWrapper() })
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
@@ -276,7 +288,7 @@ describe("useMessageQueue", () => {
       },
     ]
 
-    renderHook(() => useMessageQueue())
+    renderHook(() => useMessageQueue(), { wrapper: createWrapper() })
 
     // Trigger the queue via the registered notify callback
     const notifyFn = mockRegisterQueueNotify.mock.calls[0][0]
@@ -307,7 +319,7 @@ describe("useMessageQueue", () => {
       },
     ]
 
-    renderHook(() => useMessageQueue())
+    renderHook(() => useMessageQueue(), { wrapper: createWrapper() })
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
@@ -348,7 +360,7 @@ describe("useMessageQueue", () => {
       },
     ]
 
-    renderHook(() => useMessageQueue())
+    renderHook(() => useMessageQueue(), { wrapper: createWrapper() })
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50))
@@ -379,7 +391,7 @@ describe("useMessageQueue", () => {
       },
     ]
 
-    renderHook(() => useMessageQueue())
+    renderHook(() => useMessageQueue(), { wrapper: createWrapper() })
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))

@@ -1,109 +1,29 @@
-import { act, forwardRef, type MouseEvent, type ReactNode, type TouchEvent } from "react"
+import { act, type ReactNode } from "react"
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest"
-import { fireEvent, render, screen } from "@/test"
+import { MemoryRouter } from "react-router-dom"
+import { fireEvent, render, screen, spyOnExport } from "@/test"
 import { StreamTypes, Visibilities } from "@threa/types"
 import { StreamItem } from "./stream-item"
 import type { StreamItemData } from "./types"
+import * as contextsModule from "@/contexts"
+import * as hooksModule from "@/hooks"
+import * as useMobileModule from "@/hooks/use-mobile"
+import * as relativeTimeModule from "@/components/relative-time"
+import * as drawerModule from "@/components/ui/drawer"
+import * as streamSettingsModule from "@/components/stream-settings/use-stream-settings"
+import * as urgencyTrackingModule from "./use-urgency-tracking"
 
-const { collapseOnMobile, openStreamSettings, setMenuOpen } = vi.hoisted(() => ({
-  collapseOnMobile: vi.fn(),
-  openStreamSettings: vi.fn(),
-  setMenuOpen: vi.fn(),
-}))
+const collapseOnMobile = vi.fn()
+const openStreamSettings = vi.fn()
+const setMenuOpen = vi.fn()
 
-const mobileState = vi.hoisted(() => ({
+const mobileState = {
   isMobileValue: true,
-}))
+}
 
-vi.mock("react-router-dom", () => ({
-  Link: forwardRef<
-    HTMLAnchorElement,
-    {
-      to: string
-      children: ReactNode
-      className?: string
-      onClick?: (e: MouseEvent<HTMLAnchorElement>) => void
-      onTouchStart?: (e: TouchEvent<HTMLAnchorElement>) => void
-      onTouchEnd?: (e: TouchEvent<HTMLAnchorElement>) => void
-      onTouchMove?: (e: TouchEvent<HTMLAnchorElement>) => void
-      onContextMenu?: (e: MouseEvent<HTMLAnchorElement>) => void
-    }
-  >(function MockLink({ to, children, className, onClick, onTouchStart, onTouchEnd, onTouchMove, onContextMenu }, ref) {
-    return (
-      <a
-        ref={ref}
-        href={to}
-        className={className}
-        onClick={onClick}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        onTouchMove={onTouchMove}
-        onContextMenu={onContextMenu}
-      >
-        {children}
-      </a>
-    )
-  }),
-}))
-
-vi.mock("@/contexts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/contexts")>()
-  return {
-    ...actual,
-    useSidebar: () => ({
-      collapseOnMobile,
-      setMenuOpen,
-      setUrgencyBlock: vi.fn(),
-      sidebarHeight: 0,
-      scrollContainerOffset: 0,
-    }),
-  }
-})
-
-vi.mock("@/hooks", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/hooks")>()
-  return {
-    ...actual,
-    isDraftId: () => false,
-    useActors: () => ({
-      getActorName: () => "Ariadne",
-      getActorAvatar: () => null,
-    }),
-  }
-})
-
-vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => mobileState.isMobileValue,
-}))
-
-vi.mock("@/components/relative-time", () => ({
-  RelativeTime: ({ date, className }: { date: string; className?: string }) => (
-    <span className={className}>{date}</span>
-  ),
-}))
-
-vi.mock("@/components/ui/drawer", () => ({
-  Drawer: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
-  DrawerContent: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
-  DrawerDescription: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
-  DrawerTitle: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
-}))
-
-vi.mock("@/components/stream-settings/use-stream-settings", () => ({
-  useStreamSettings: () => ({
-    openStreamSettings,
-  }),
-}))
-
-vi.mock("./use-urgency-tracking", () => ({
-  useUrgencyTracking: () => {},
-}))
+function renderWithRouter(ui: React.ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>)
+}
 
 function createStream(overrides: Partial<StreamItemData> = {}): StreamItemData {
   return {
@@ -137,11 +57,71 @@ function createStream(overrides: Partial<StreamItemData> = {}): StreamItemData {
 
 describe("StreamItem", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     vi.useFakeTimers()
     collapseOnMobile.mockReset()
     openStreamSettings.mockReset()
     setMenuOpen.mockReset()
     mobileState.isMobileValue = true
+
+    vi.spyOn(contextsModule, "useSidebar").mockReturnValue({
+      collapseOnMobile,
+      setMenuOpen,
+      setUrgencyBlock: vi.fn(),
+      sidebarHeight: 0,
+      scrollContainerOffset: 0,
+    } as unknown as ReturnType<typeof contextsModule.useSidebar>)
+
+    vi.spyOn(hooksModule, "isDraftId").mockImplementation(() => false)
+    vi.spyOn(hooksModule, "useActors").mockReturnValue({
+      getActorName: () => "Ariadne",
+      getActorAvatar: () => null,
+    } as unknown as ReturnType<typeof hooksModule.useActors>)
+
+    vi.spyOn(useMobileModule, "useIsMobile").mockImplementation(() => mobileState.isMobileValue)
+
+    vi.spyOn(relativeTimeModule, "RelativeTime").mockImplementation((({
+      date,
+      className,
+    }: {
+      date: string
+      className?: string
+    }) => <span className={className}>{date}</span>) as unknown as typeof relativeTimeModule.RelativeTime)
+
+    spyOnExport(drawerModule, "Drawer").mockReturnValue((({
+      open,
+      children,
+    }: {
+      open: boolean
+      children: ReactNode
+    }) => (open ? <div>{children}</div> : null)) as unknown as typeof drawerModule.Drawer)
+    spyOnExport(drawerModule, "DrawerContent").mockReturnValue((({
+      children,
+      className,
+    }: {
+      children: ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>) as unknown as typeof drawerModule.DrawerContent)
+    spyOnExport(drawerModule, "DrawerDescription").mockReturnValue((({
+      children,
+      className,
+    }: {
+      children: ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>) as unknown as typeof drawerModule.DrawerDescription)
+    spyOnExport(drawerModule, "DrawerTitle").mockReturnValue((({
+      children,
+      className,
+    }: {
+      children: ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>) as unknown as typeof drawerModule.DrawerTitle)
+
+    vi.spyOn(streamSettingsModule, "useStreamSettings").mockReturnValue({
+      openStreamSettings,
+    } as unknown as ReturnType<typeof streamSettingsModule.useStreamSettings>)
+
+    vi.spyOn(urgencyTrackingModule, "useUrgencyTracking").mockImplementation(() => undefined)
   })
 
   afterEach(() => {
@@ -151,7 +131,7 @@ describe("StreamItem", () => {
   it("opens the mobile action drawer with the latest preview on long press", async () => {
     const stream = createStream()
 
-    render(
+    renderWithRouter(
       <StreamItem
         workspaceId="workspace_1"
         stream={stream}
@@ -183,7 +163,7 @@ describe("StreamItem", () => {
   it("keeps compact hover previews hidden on mobile", () => {
     const stream = createStream()
 
-    const { container } = render(
+    const { container } = renderWithRouter(
       <StreamItem
         workspaceId="workspace_1"
         stream={stream}
@@ -210,7 +190,7 @@ describe("StreamItem", () => {
       dmPeerUserId: "user_2",
     })
 
-    render(
+    renderWithRouter(
       <StreamItem
         workspaceId="workspace_1"
         stream={stream}
@@ -247,7 +227,7 @@ describe("StreamItem", () => {
       lastMessagePreview: null,
     })
 
-    render(
+    renderWithRouter(
       <StreamItem
         workspaceId="workspace_1"
         stream={stream}
@@ -284,7 +264,7 @@ describe("StreamItem", () => {
       dmPeerUserId: "user_2",
     })
 
-    render(
+    renderWithRouter(
       <StreamItem
         workspaceId="workspace_1"
         stream={stream}

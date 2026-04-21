@@ -2,22 +2,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { RelativeTime } from "./relative-time"
 import { formatDisplayDate, formatTime, formatRelativeTime, formatFullDateTime } from "@/lib/dates"
-
-// Mock useFormattedDate to avoid needing PreferencesProvider
-vi.mock("@/hooks", () => ({
-  useFormattedDate: () => ({
-    formatDate: (date: Date) => formatDisplayDate(date),
-    formatTime: (date: Date) => formatTime(date),
-    formatRelative: (date: Date, now?: Date) => formatRelativeTime(date, now),
-    formatFull: (date: Date) => formatFullDateTime(date),
-  }),
-}))
+import * as hooksModule from "@/hooks"
 
 describe("RelativeTime", () => {
   // Fixed to Sunday, June 15, 2025 at 12:00:00 UTC
   const fixedNow = new Date("2025-06-15T12:00:00Z")
 
   beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.spyOn(hooksModule, "useFormattedDate").mockReturnValue({
+      formatDate: (date: Date) => formatDisplayDate(date),
+      formatTime: (date: Date) => formatTime(date),
+      formatRelative: (date: Date, now?: Date) => formatRelativeTime(date, now),
+      formatFull: (date: Date) => formatFullDateTime(date),
+    } as unknown as ReturnType<typeof hooksModule.useFormattedDate>)
     vi.useFakeTimers()
     vi.setSystemTime(fixedNow)
   })

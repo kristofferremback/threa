@@ -1,17 +1,22 @@
-import { describe, it, expect, vi } from "vitest"
+import { beforeEach, describe, it, expect, vi } from "vitest"
+import { spyOnExport } from "@/test/spy"
 import { render, screen } from "@testing-library/react"
 import { MarkdownContent } from "./markdown-content"
-
-// Mock the lazy-loaded CodeBlock to avoid async complexity in most tests
-vi.mock("@/lib/markdown/code-block", () => ({
-  default: ({ language, children }: { language: string; children: string }) => (
-    <pre data-testid="code-block" data-language={language}>
-      <code>{children}</code>
-    </pre>
-  ),
-}))
+import * as codeBlockModule from "@/lib/markdown/code-block"
 
 describe("MarkdownContent", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    // Replace the lazy-loaded CodeBlock default export with a simple mock
+    // to avoid shiki syntax highlighting in tests.
+    const MockCodeBlock = ({ language, children }: { language: string; children: string }) => (
+      <pre data-testid="code-block" data-language={language}>
+        <code>{children}</code>
+      </pre>
+    )
+    spyOnExport(codeBlockModule, "default").mockReturnValue(MockCodeBlock as unknown as typeof codeBlockModule.default)
+  })
+
   describe("basic text formatting", () => {
     it("should render plain text", () => {
       render(<MarkdownContent content="Hello world" />)

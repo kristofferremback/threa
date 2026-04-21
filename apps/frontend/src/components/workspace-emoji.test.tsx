@@ -5,12 +5,9 @@ import { createElement, type ReactNode } from "react"
 import { WorkspaceEmoji } from "./workspace-emoji"
 // eslint-disable-next-line no-restricted-imports -- test file needs DB type for mock data
 import type { CachedWorkspaceMetadata } from "@/db"
+import * as workspaceStoreModule from "@/stores/workspace-store"
 
 let mockMetadata: CachedWorkspaceMetadata | undefined
-
-vi.mock("@/stores/workspace-store", () => ({
-  useWorkspaceMetadata: () => mockMetadata,
-}))
 
 function createTestWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -30,8 +27,10 @@ describe("WorkspaceEmoji", () => {
   let queryClient: QueryClient
 
   beforeEach(() => {
+    vi.restoreAllMocks()
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     mockMetadata = undefined
+    vi.spyOn(workspaceStoreModule, "useWorkspaceMetadata").mockImplementation(() => mockMetadata)
   })
 
   it("should render emoji for known shortcode", () => {

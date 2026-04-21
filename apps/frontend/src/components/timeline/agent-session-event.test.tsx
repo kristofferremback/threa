@@ -1,29 +1,18 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
+import { MemoryRouter } from "react-router-dom"
 import type { StreamEvent } from "@threa/types"
+import * as contextsModule from "@/contexts"
+import * as relativeTimeModule from "@/components/relative-time"
 import { AgentSessionEvent } from "./agent-session-event"
 
-vi.mock("react-router-dom", () => ({
-  Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
-    <a href={to} className={className}>
-      {children}
-    </a>
-  ),
-}))
-
-vi.mock("@/contexts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/contexts")>()
-  return {
-    ...actual,
-    useTrace: () => ({
-      getTraceUrl: (sessionId: string) => `/trace/${sessionId}`,
-    }),
-  }
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.spyOn(contextsModule, "useTrace").mockReturnValue({
+    getTraceUrl: (sessionId: string) => `/trace/${sessionId}`,
+  } as ReturnType<typeof contextsModule.useTrace>)
+  vi.spyOn(relativeTimeModule, "RelativeTime").mockImplementation(() => <span>just now</span>)
 })
-
-vi.mock("@/components/relative-time", () => ({
-  RelativeTime: () => <span>just now</span>,
-}))
 
 function createSessionEvent(eventType: StreamEvent["eventType"], payload: unknown): StreamEvent {
   return {
@@ -36,6 +25,10 @@ function createSessionEvent(eventType: StreamEvent["eventType"], payload: unknow
     actorType: "persona",
     createdAt: "2026-02-19T18:00:00.000Z",
   }
+}
+
+function renderEvent(ui: React.ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 describe("AgentSessionEvent", () => {
@@ -57,7 +50,7 @@ describe("AgentSessionEvent", () => {
       }),
     ]
 
-    render(<AgentSessionEvent events={events} sessionVersion={2} />)
+    renderEvent(<AgentSessionEvent events={events} sessionVersion={2} />)
 
     expect(screen.getByText("Version 2")).toBeInTheDocument()
   })
@@ -80,7 +73,7 @@ describe("AgentSessionEvent", () => {
       }),
     ]
 
-    render(<AgentSessionEvent events={events} sessionVersion={1} />)
+    renderEvent(<AgentSessionEvent events={events} sessionVersion={1} />)
 
     expect(screen.queryByText("Version 1")).not.toBeInTheDocument()
   })
@@ -107,7 +100,7 @@ describe("AgentSessionEvent", () => {
       }),
     ]
 
-    render(<AgentSessionEvent events={events} sessionVersion={2} />)
+    renderEvent(<AgentSessionEvent events={events} sessionVersion={2} />)
 
     expect(screen.getByText("Rerun after follow-up message edit • 1 step • 1.0s • 1 message sent")).toBeInTheDocument()
   })

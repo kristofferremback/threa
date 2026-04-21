@@ -8,17 +8,10 @@ import type { CreateStreamInput } from "@/api"
 import type { Stream, WorkspaceBootstrap } from "@threa/types"
 import { workspaceKeys } from "./use-workspaces"
 import { useCreateStream } from "./use-streams"
+import * as syncEngineModule from "@/sync/sync-engine"
 
 const mockCreate = vi.fn<(workspaceId: string, data: CreateStreamInput) => Promise<Stream>>()
 const mockSubscribeStream = vi.fn<(streamId: string) => Promise<void>>()
-
-vi.mock("@/sync/sync-engine", async () => {
-  const actual = await vi.importActual<typeof import("@/sync/sync-engine")>("@/sync/sync-engine")
-  return {
-    ...actual,
-    useSyncEngine: () => ({ subscribeStream: mockSubscribeStream }),
-  }
-})
 
 function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -92,8 +85,12 @@ function makeWorkspaceBootstrap(): WorkspaceBootstrap {
 
 describe("useCreateStream", () => {
   beforeEach(async () => {
+    vi.restoreAllMocks()
     mockCreate.mockReset()
     mockSubscribeStream.mockReset()
+    vi.spyOn(syncEngineModule, "useSyncEngine").mockReturnValue({
+      subscribeStream: mockSubscribeStream,
+    } as unknown as ReturnType<typeof syncEngineModule.useSyncEngine>)
     await clearAllCachedData()
   })
 

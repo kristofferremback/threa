@@ -12,8 +12,8 @@ import threaPlugin, {
  * - Runtime: do not import dotenv (Bun loads .env automatically)
  * - INV-15: components/pages do not reach into persistence directly
  * - INV-18: do not define components inside other components
- * - INV-26 / INV-48: no skipped/todo tests and no mock.module(); vi.mock warns
- *   until existing usage is migrated to scoped spyOn patterns
+ * - INV-26 / INV-48: no skipped/todo tests and no mock.module()/vi.mock();
+ *   prefer scoped spyOn patterns so mocks don't leak across tests
  * - INV-47: no nested ternaries
  * - Frontend Patterns: no direct queryClient.getQueryData() reads during render
  *
@@ -71,7 +71,7 @@ export default [
     files: ["src/**/*.{test,spec}.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-properties": ["error", ...testRestrictedProperties],
-      "no-restricted-syntax": ["warn", viMockRestrictedSyntax],
+      "no-restricted-syntax": ["error", viMockRestrictedSyntax],
     },
   },
 ]

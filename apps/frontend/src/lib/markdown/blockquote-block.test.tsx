@@ -5,35 +5,26 @@ import { DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD } from "@threa/types"
 import { db } from "@/db"
 import { BlockquoteBlock } from "./blockquote-block"
 import { MarkdownBlockProvider, composeBlockCollapseKey, hashMarkdownBlock } from "./markdown-block-context"
+import * as preferencesModule from "@/contexts/preferences-context"
 
 // Stubbable preferences mock — each test can override via `currentPrefs`.
 let currentPrefs: { blockquoteCollapseThreshold?: number } | null = {
   blockquoteCollapseThreshold: DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD,
 }
 
-vi.mock("@/contexts/preferences-context", () => {
-  const mockContext = () => {
-    if (!currentPrefs) return null
-    return {
-      preferences: currentPrefs,
-      resolvedTheme: "light",
-      isLoading: false,
-      updatePreference: vi.fn(),
-      updateAccessibility: vi.fn(),
-      updateKeyboardShortcut: vi.fn(),
-      resetKeyboardShortcut: vi.fn(),
-      resetAllKeyboardShortcuts: vi.fn(),
-    }
-  }
+function buildPreferencesContext() {
+  if (!currentPrefs) return null
   return {
-    usePreferences: () => {
-      const value = mockContext()
-      if (!value) throw new Error("no preferences")
-      return value
-    },
-    usePreferencesOptional: () => mockContext(),
-  }
-})
+    preferences: currentPrefs,
+    resolvedTheme: "light",
+    isLoading: false,
+    updatePreference: vi.fn(),
+    updateAccessibility: vi.fn(),
+    updateKeyboardShortcut: vi.fn(),
+    resetKeyboardShortcut: vi.fn(),
+    resetAllKeyboardShortcuts: vi.fn(),
+  } as unknown as ReturnType<typeof preferencesModule.usePreferences>
+}
 
 function renderBlockquote(children: React.ReactNode, messageId = "msg_quote") {
   return render(
@@ -45,6 +36,13 @@ function renderBlockquote(children: React.ReactNode, messageId = "msg_quote") {
 
 describe("BlockquoteBlock collapse behavior", () => {
   beforeEach(async () => {
+    vi.restoreAllMocks()
+    vi.spyOn(preferencesModule, "usePreferences").mockImplementation(() => {
+      const value = buildPreferencesContext()
+      if (!value) throw new Error("no preferences")
+      return value
+    })
+    vi.spyOn(preferencesModule, "usePreferencesOptional").mockImplementation(() => buildPreferencesContext())
     currentPrefs = { blockquoteCollapseThreshold: DEFAULT_BLOCKQUOTE_COLLAPSE_THRESHOLD }
     await db.markdownBlockCollapse.clear()
   })

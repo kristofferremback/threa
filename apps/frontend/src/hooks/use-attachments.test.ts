@@ -1,23 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { renderHook, act, waitFor } from "@testing-library/react"
 import { useAttachments } from "./use-attachments"
+import { attachmentsApi } from "@/api"
 
 // Mock the attachments API
 const mockUpload = vi.fn()
 const mockDelete = vi.fn()
 
-vi.mock("@/api", () => ({
-  attachmentsApi: {
-    upload: (...args: unknown[]) => mockUpload(...args),
-    delete: (...args: unknown[]) => mockDelete(...args),
-  },
-}))
-
 describe("useAttachments", () => {
   const workspaceId = "ws_123"
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    mockUpload.mockReset()
+    mockDelete.mockReset()
+    vi.spyOn(attachmentsApi, "upload").mockImplementation((...args: Parameters<typeof attachmentsApi.upload>) =>
+      mockUpload(...args)
+    )
+    vi.spyOn(attachmentsApi, "delete").mockImplementation((...args: Parameters<typeof attachmentsApi.delete>) =>
+      mockDelete(...args)
+    )
   })
 
   function createFile(name: string, type: string, size: number = 1024): File {

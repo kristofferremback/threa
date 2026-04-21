@@ -1,16 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { streamsApi } from "@/api"
 import { JoinChannelBar } from "./join-channel-bar"
 import type { StreamMember } from "@threa/types"
 
 const mockJoin = vi.fn()
-
-vi.mock("@/api", () => ({
-  streamsApi: {
-    join: (...args: unknown[]) => mockJoin(...args),
-  },
-}))
 
 const mockMembership: StreamMember = {
   streamId: "stream_1",
@@ -32,8 +27,11 @@ describe("JoinChannelBar", () => {
   }
 
   beforeEach(() => {
+    vi.restoreAllMocks()
     vi.clearAllMocks()
+    mockJoin.mockReset()
     mockJoin.mockResolvedValue(mockMembership)
+    vi.spyOn(streamsApi, "join").mockImplementation((...args: Parameters<typeof streamsApi.join>) => mockJoin(...args))
   })
 
   it("should render channel name and join button", () => {

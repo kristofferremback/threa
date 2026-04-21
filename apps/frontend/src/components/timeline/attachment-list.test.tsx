@@ -3,16 +3,20 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { MediaGalleryProvider } from "@/contexts"
+import { attachmentsApi } from "@/api"
 import { AttachmentList } from "./attachment-list"
 import type { AttachmentSummary } from "@threa/types"
 
-// Mock the attachments API
 const mockGetDownloadUrl = vi.fn()
-vi.mock("@/api", () => ({
-  attachmentsApi: {
-    getDownloadUrl: (...args: unknown[]) => mockGetDownloadUrl(...args),
-  },
-}))
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+  mockGetDownloadUrl.mockReset()
+  mockGetDownloadUrl.mockResolvedValue("https://example.com/download")
+  vi.spyOn(attachmentsApi, "getDownloadUrl").mockImplementation(
+    (...args: Parameters<typeof attachmentsApi.getDownloadUrl>) => mockGetDownloadUrl(...args)
+  )
+})
 
 function Wrapper({ children }: { children: React.ReactNode }) {
   return (
@@ -26,11 +30,6 @@ const renderOpts = { wrapper: Wrapper }
 
 describe("AttachmentList", () => {
   const workspaceId = "ws_123"
-
-  beforeEach(() => {
-    mockGetDownloadUrl.mockReset()
-    mockGetDownloadUrl.mockResolvedValue("https://example.com/download")
-  })
 
   const createAttachment = (overrides: Partial<AttachmentSummary> = {}): AttachmentSummary => ({
     id: "attach_abc123",
@@ -222,8 +221,6 @@ describe("AttachmentList", () => {
       await waitFor(() => {
         expect(clickSpy).toHaveBeenCalled()
       })
-
-      vi.restoreAllMocks()
     })
 
     it("should open PDF in new tab", async () => {
@@ -238,8 +235,6 @@ describe("AttachmentList", () => {
       await waitFor(() => {
         expect(windowOpen).toHaveBeenCalledWith("https://example.com/download", "_blank")
       })
-
-      windowOpen.mockRestore()
     })
   })
 

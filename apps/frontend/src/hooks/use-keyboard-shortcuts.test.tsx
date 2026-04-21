@@ -1,16 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { useKeyboardShortcuts } from "./use-keyboard-shortcuts"
+import * as contextsModule from "@/contexts"
 
 const mockPreferences = {
   keyboardShortcuts: {} as Record<string, string>,
 }
-
-vi.mock("@/contexts", () => ({
-  usePreferences: () => ({
-    preferences: mockPreferences,
-  }),
-}))
 
 function TestShortcutHandler({
   onSearchInStream,
@@ -31,7 +26,11 @@ function TestShortcutHandler({
 
 describe("useKeyboardShortcuts", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     mockPreferences.keyboardShortcuts = {}
+    vi.spyOn(contextsModule, "usePreferences").mockReturnValue({
+      preferences: mockPreferences,
+    } as unknown as ReturnType<typeof contextsModule.usePreferences>)
   })
 
   it("triggers searchInStream on the default mod+f binding", () => {

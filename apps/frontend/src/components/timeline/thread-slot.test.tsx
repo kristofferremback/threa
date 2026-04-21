@@ -1,36 +1,33 @@
-import { describe, it, expect, vi } from "vitest"
+import { beforeEach, describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
+import { MemoryRouter } from "react-router-dom"
 import type { MessageAgentActivity } from "@/hooks"
 import type { ThreadSummary } from "@threa/types"
+import * as contextsModule from "@/contexts"
+import * as hooksModule from "@/hooks"
+import * as workspaceEmojiModule from "@/hooks/use-workspace-emoji"
+import * as relativeTimeModule from "@/components/relative-time"
 import { ThreadSlot } from "./thread-slot"
 
-vi.mock("react-router-dom", () => ({
-  Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
-    <a href={to} className={className}>
-      {children}
-    </a>
-  ),
-}))
-
-vi.mock("@/contexts", () => ({
-  useTrace: () => ({ getTraceUrl: (id: string) => `/trace/${id}` }),
-}))
-
-vi.mock("@/hooks", () => ({
-  getStepLabel: (step: string | null) => (step ? `Step-${step}` : "Thinking"),
-  useActors: () => ({
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.spyOn(contextsModule, "useTrace").mockReturnValue({
+    getTraceUrl: (id: string) => `/trace/${id}`,
+  } as ReturnType<typeof contextsModule.useTrace>)
+  vi.spyOn(hooksModule, "getStepLabel").mockImplementation((step: string | null) =>
+    step ? `Step-${step}` : "Thinking"
+  )
+  vi.spyOn(hooksModule, "useActors").mockReturnValue({
     getActorName: (id: string) => `Name-${id.slice(-4)}`,
     getActorAvatar: (id: string) => ({ fallback: id.slice(0, 2).toUpperCase(), avatarUrl: null }),
-  }),
-}))
-
-vi.mock("@/hooks/use-workspace-emoji", () => ({
-  useWorkspaceEmoji: () => ({ toEmoji: () => null }),
-}))
-
-vi.mock("@/components/relative-time", () => ({
-  RelativeTime: ({ date }: { date: string }) => <time dateTime={date}>{date}</time>,
-}))
+  } as unknown as ReturnType<typeof hooksModule.useActors>)
+  vi.spyOn(workspaceEmojiModule, "useWorkspaceEmoji").mockReturnValue({
+    toEmoji: () => null,
+  } as unknown as ReturnType<typeof workspaceEmojiModule.useWorkspaceEmoji>)
+  vi.spyOn(relativeTimeModule, "RelativeTime").mockImplementation((({ date }: { date: string }) => (
+    <time dateTime={date}>{date}</time>
+  )) as unknown as typeof relativeTimeModule.RelativeTime)
+})
 
 function makeActivity(overrides: Partial<MessageAgentActivity> = {}): MessageAgentActivity {
   return {
@@ -55,16 +52,20 @@ const summary: ThreadSummary = {
   },
 }
 
+function renderSlot(ui: React.ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>)
+}
+
 describe("ThreadSlot", () => {
   it("renders nothing when there's no activity and no replies", () => {
-    const { container } = render(
+    const { container } = renderSlot(
       <ThreadSlot activity={undefined} replyCount={0} threadHref={null} summary={undefined} workspaceId="ws_1" />
     )
     expect(container.firstChild).toBeNull()
   })
 
   it("renders the thinking row when session is active with no replies yet", () => {
-    render(
+    renderSlot(
       <ThreadSlot activity={makeActivity()} replyCount={0} threadHref={null} summary={undefined} workspaceId="ws_1" />
     )
     expect(screen.getByText("Ariadne")).toBeInTheDocument()
@@ -72,14 +73,14 @@ describe("ThreadSlot", () => {
   })
 
   it("renders the ThreadCard when replies exist", () => {
-    render(
+    renderSlot(
       <ThreadSlot activity={undefined} replyCount={2} threadHref="/thread/1" summary={summary} workspaceId="ws_1" />
     )
     expect(screen.getByText("2 replies")).toBeInTheDocument()
   })
 
   it("renders the ThreadCard with activity indicator when both are present (mid-session thread)", () => {
-    const { container } = render(
+    const { container } = renderSlot(
       <ThreadSlot
         activity={makeActivity()}
         replyCount={1}
@@ -94,7 +95,7 @@ describe("ThreadSlot", () => {
   })
 
   it("owns the gold left-line so the card suppresses its own (no double-draw)", () => {
-    const { container } = render(
+    const { container } = renderSlot(
       <ThreadSlot activity={undefined} replyCount={2} threadHref="/thread/1" summary={summary} workspaceId="ws_1" />
     )
     // Exactly one 2px gold line should be in the DOM. The slot's line is a
@@ -109,7 +110,7 @@ describe("ThreadSlot", () => {
     // On initial mount with visible=true (replies already exist when we first
     // see the component, e.g. a Virtuoso scroll-in), the useEffect's wasRef
     // matches the current value and animation does not fire.
-    const { container } = render(
+    const { container } = renderSlot(
       <ThreadSlot activity={undefined} replyCount={2} threadHref="/thread/1" summary={summary} workspaceId="ws_1" />
     )
     expect(container.querySelector(".animate-thread-grow")).toBeNull()

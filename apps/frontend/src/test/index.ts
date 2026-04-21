@@ -3,8 +3,7 @@
  *
  * @example
  * ```tsx
- * import { render, screen, userEvent, waitFor } from "@/test"
- * import { mockNavigate, createRouterMock, createHooksMock, createMockSearchState } from "@/test/mocks"
+ * import { render, screen, userEvent, waitFor, spyOnExport } from "@/test"
  * import { createMockStream, mockStreams, mockUsers } from "@/test/fixtures"
  * ```
  */
@@ -12,6 +11,7 @@
 // Re-export render utilities
 export * from "./render"
 
-// Fixtures and mocks are imported from their own paths for clarity:
-// - "@/test/fixtures" for data factories
-// - "@/test/mocks" for vi.mock() factories
+// Spy helper for replacing const-like module exports in tests
+export { spyOnExport } from "./spy"
+
+// Fixtures live in "@/test/fixtures" for data factories.

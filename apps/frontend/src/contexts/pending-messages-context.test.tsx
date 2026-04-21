@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { spyOnExport } from "@/test/spy"
 import { renderHook, act, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { PendingMessagesProvider, usePendingMessages } from "./pending-messages-context"
+import * as dbModule from "@/db"
 
 const mockGet = vi.fn()
 const mockUpdate = vi.fn().mockResolvedValue(1)
@@ -14,37 +16,35 @@ let mockHydratedPendingIds: string[] = []
 let mockHydratedFailedIds: string[] = []
 let mockHydratedEditingIds: string[] = []
 
-vi.mock("@/db", () => ({
-  db: {
-    pendingMessages: {
-      get: (...args: unknown[]) => mockGet(...args),
-      update: (...args: unknown[]) => mockUpdate(...args),
-      delete: (...args: unknown[]) => mockDelete(...args),
-    },
-    events: {
-      get: (...args: unknown[]) => mockEventsGet(...args),
-      update: (...args: unknown[]) => mockEventsUpdate(...args),
-      put: (...args: unknown[]) => mockEventsPut(...args),
-      delete: (...args: unknown[]) => mockEventsDelete(...args),
-      where: (field: string) => ({
-        equals: (value: string) => ({
-          primaryKeys: () => {
-            if (field !== "_status") return Promise.resolve([])
-            if (value === "pending") return Promise.resolve(mockHydratedPendingIds)
-            if (value === "failed") return Promise.resolve(mockHydratedFailedIds)
-            if (value === "editing") return Promise.resolve(mockHydratedEditingIds)
-            return Promise.resolve([])
-          },
-        }),
-      }),
-    },
-    // Dexie transaction — execute the callback immediately for tests
-    transaction: (_mode: string, ..._tables: unknown[]) => {
-      const cb = _tables[_tables.length - 1]
-      if (typeof cb === "function") return cb()
-    },
+const fakeDb = {
+  pendingMessages: {
+    get: (...args: unknown[]) => mockGet(...args),
+    update: (...args: unknown[]) => mockUpdate(...args),
+    delete: (...args: unknown[]) => mockDelete(...args),
   },
-}))
+  events: {
+    get: (...args: unknown[]) => mockEventsGet(...args),
+    update: (...args: unknown[]) => mockEventsUpdate(...args),
+    put: (...args: unknown[]) => mockEventsPut(...args),
+    delete: (...args: unknown[]) => mockEventsDelete(...args),
+    where: (field: string) => ({
+      equals: (value: string) => ({
+        primaryKeys: () => {
+          if (field !== "_status") return Promise.resolve([])
+          if (value === "pending") return Promise.resolve(mockHydratedPendingIds)
+          if (value === "failed") return Promise.resolve(mockHydratedFailedIds)
+          if (value === "editing") return Promise.resolve(mockHydratedEditingIds)
+          return Promise.resolve([])
+        },
+      }),
+    }),
+  },
+  // Dexie transaction — execute the callback immediately for tests
+  transaction: (_mode: string, ..._tables: unknown[]) => {
+    const cb = _tables[_tables.length - 1]
+    if (typeof cb === "function") return cb()
+  },
+} as unknown as typeof dbModule.db
 
 function wrapper({ children }: { children: ReactNode }) {
   return <PendingMessagesProvider>{children}</PendingMessagesProvider>
@@ -52,7 +52,15 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe("PendingMessagesContext", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    spyOnExport(dbModule, "db").mockReturnValue(fakeDb)
+    mockGet.mockReset()
+    mockUpdate.mockReset().mockResolvedValue(1)
+    mockDelete.mockReset().mockResolvedValue(undefined)
+    mockEventsGet.mockReset()
+    mockEventsUpdate.mockReset().mockResolvedValue(1)
+    mockEventsPut.mockReset().mockResolvedValue(undefined)
+    mockEventsDelete.mockReset().mockResolvedValue(undefined)
     mockHydratedPendingIds = []
     mockHydratedFailedIds = []
     mockHydratedEditingIds = []

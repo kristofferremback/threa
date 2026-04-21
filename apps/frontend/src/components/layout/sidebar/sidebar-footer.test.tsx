@@ -1,85 +1,79 @@
 import type { ReactNode } from "react"
 import { describe, expect, it, beforeEach, vi } from "vitest"
-import { render, screen, userEvent } from "@/test"
+import { MemoryRouter } from "react-router-dom"
+import { render, screen, userEvent, spyOnExport } from "@/test"
 import { SidebarFooter } from "./sidebar-footer"
+import * as authModule from "@/auth"
+import * as contextsModule from "@/contexts"
+import * as useMobileModule from "@/hooks/use-mobile"
+import * as drawerModule from "@/components/ui/drawer"
 
-const { logout, openSettings, collapseOnMobile, setSearchParams, isMobile } = vi.hoisted(() => ({
-  logout: vi.fn(),
-  openSettings: vi.fn(),
-  collapseOnMobile: vi.fn(),
-  setSearchParams: vi.fn(),
-  isMobile: { value: true },
-}))
+const logout = vi.fn()
+const openSettings = vi.fn()
+const collapseOnMobile = vi.fn()
+const isMobile = { value: true }
 
-vi.mock("react-router-dom", () => ({
-  Link: ({
-    to,
-    children,
-    className,
-    onClick,
-  }: {
-    to: string
-    children: ReactNode
-    className?: string
-    onClick?: () => void
-  }) => (
-    <a href={to} className={className} onClick={onClick}>
-      {children}
-    </a>
-  ),
-  useSearchParams: () => [new URLSearchParams(), setSearchParams],
-}))
-
-vi.mock("@/auth", () => ({
-  useAuth: () => ({
-    logout,
-  }),
-}))
-
-vi.mock("@/contexts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/contexts")>()
-  return {
-    ...actual,
-    useSettings: () => ({
-      openSettings,
-    }),
-    useSidebar: () => ({
-      collapseOnMobile,
-      setMenuOpen: vi.fn(),
-    }),
-  }
-})
-
-vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => isMobile.value,
-}))
-
-vi.mock("@/components/ui/drawer", () => ({
-  Drawer: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
-  DrawerContent: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
-  DrawerDescription: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
-  DrawerTitle: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
-}))
+function renderWithRouter(ui: React.ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>)
+}
 
 describe("SidebarFooter", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     logout.mockReset()
     openSettings.mockReset()
     collapseOnMobile.mockReset()
-    setSearchParams.mockReset()
     isMobile.value = true
+
+    vi.spyOn(authModule, "useAuth").mockReturnValue({
+      logout,
+    } as unknown as ReturnType<typeof authModule.useAuth>)
+
+    vi.spyOn(contextsModule, "useSettings").mockReturnValue({
+      openSettings,
+    } as unknown as ReturnType<typeof contextsModule.useSettings>)
+
+    vi.spyOn(contextsModule, "useSidebar").mockReturnValue({
+      collapseOnMobile,
+      setMenuOpen: vi.fn(),
+    } as unknown as ReturnType<typeof contextsModule.useSidebar>)
+
+    vi.spyOn(useMobileModule, "useIsMobile").mockImplementation(() => isMobile.value)
+
+    spyOnExport(drawerModule, "Drawer").mockReturnValue((({
+      open,
+      children,
+    }: {
+      open: boolean
+      children: ReactNode
+    }) => (open ? <div>{children}</div> : null)) as unknown as typeof drawerModule.Drawer)
+    spyOnExport(drawerModule, "DrawerContent").mockReturnValue((({
+      children,
+      className,
+    }: {
+      children: ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>) as unknown as typeof drawerModule.DrawerContent)
+    spyOnExport(drawerModule, "DrawerDescription").mockReturnValue((({
+      children,
+      className,
+    }: {
+      children: ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>) as unknown as typeof drawerModule.DrawerDescription)
+    spyOnExport(drawerModule, "DrawerTitle").mockReturnValue((({
+      children,
+      className,
+    }: {
+      children: ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>) as unknown as typeof drawerModule.DrawerTitle)
   })
 
   it("opens the mobile account drawer on tap and exposes the same actions", async () => {
     const user = userEvent.setup()
 
-    render(
+    renderWithRouter(
       <SidebarFooter
         workspaceId="workspace_1"
         currentUser={{
@@ -118,7 +112,7 @@ describe("SidebarFooter", () => {
     isMobile.value = false
     const user = userEvent.setup()
 
-    render(
+    renderWithRouter(
       <SidebarFooter
         workspaceId="workspace_1"
         currentUser={{

@@ -4,36 +4,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { StreamTypes, type Stream, type StreamBootstrap } from "@threa/types"
 import { streamKeys } from "@/hooks"
 import { StreamSettingsDialog } from "./stream-settings-dialog"
+import * as useStreamSettingsModule from "./use-stream-settings"
+import * as workspaceStoreModule from "@/stores/workspace-store"
+import * as generalTabModule from "./general-tab"
+import * as companionTabModule from "./companion-tab"
+import * as membersTabModule from "./members-tab"
 
-const mocks = vi.hoisted(() => ({
-  useStreamSettings: vi.fn(),
-  useWorkspaceStreams: vi.fn(),
-  useWorkspaceStreamMemberships: vi.fn(),
-  closeStreamSettings: vi.fn(),
-  setTab: vi.fn(),
-}))
-
-vi.mock("./use-stream-settings", () => ({
-  STREAM_SETTINGS_TABS: ["general", "companion", "members"],
-  useStreamSettings: () => mocks.useStreamSettings(),
-}))
-
-vi.mock("@/stores/workspace-store", () => ({
-  useWorkspaceStreams: (...args: unknown[]) => mocks.useWorkspaceStreams(...args),
-  useWorkspaceStreamMemberships: (...args: unknown[]) => mocks.useWorkspaceStreamMemberships(...args),
-}))
-
-vi.mock("./general-tab", () => ({
-  GeneralTab: () => <div>General panel</div>,
-}))
-
-vi.mock("./companion-tab", () => ({
-  CompanionTab: () => <div>Companion panel</div>,
-}))
-
-vi.mock("./members-tab", () => ({
-  MembersTab: () => <div>Members panel</div>,
-}))
+const useStreamSettingsMock = vi.fn()
+const useWorkspaceStreamsMock = vi.fn()
+const useWorkspaceStreamMembershipsMock = vi.fn()
+const closeStreamSettings = vi.fn()
+const setTab = vi.fn()
 
 function makeStream(overrides: Partial<Stream> = {}): Stream {
   return {
@@ -61,19 +42,25 @@ describe("StreamSettingsDialog", () => {
   let queryClient: QueryClient
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    useStreamSettingsMock.mockReset()
+    useWorkspaceStreamsMock.mockReset()
+    useWorkspaceStreamMembershipsMock.mockReset()
+    closeStreamSettings.mockReset()
+    setTab.mockReset()
+
     queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
       },
     })
 
-    mocks.useStreamSettings.mockReturnValue({
+    useStreamSettingsMock.mockReturnValue({
       isOpen: true,
       activeTab: "general",
       streamId: "stream_dm",
-      closeStreamSettings: mocks.closeStreamSettings,
-      setTab: mocks.setTab,
+      closeStreamSettings,
+      setTab,
     })
 
     const stream = makeStream()
@@ -92,14 +79,33 @@ describe("StreamSettingsDialog", () => {
 
     queryClient.setQueryData(streamKeys.bootstrap("ws_1", "stream_dm"), bootstrap)
 
-    mocks.useWorkspaceStreams.mockReturnValue([])
-    mocks.useWorkspaceStreamMemberships.mockReturnValue([
+    useWorkspaceStreamsMock.mockReturnValue([])
+    useWorkspaceStreamMembershipsMock.mockReturnValue([
       {
         streamId: "stream_dm",
         memberId: "user_1",
         notificationLevel: "activity",
       },
     ])
+
+    vi.spyOn(useStreamSettingsModule, "useStreamSettings").mockImplementation((() =>
+      useStreamSettingsMock()) as unknown as typeof useStreamSettingsModule.useStreamSettings)
+    vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockImplementation(((...args: unknown[]) =>
+      useWorkspaceStreamsMock(...args)) as unknown as typeof workspaceStoreModule.useWorkspaceStreams)
+    vi.spyOn(workspaceStoreModule, "useWorkspaceStreamMemberships").mockImplementation(((...args: unknown[]) =>
+      useWorkspaceStreamMembershipsMock(
+        ...args
+      )) as unknown as typeof workspaceStoreModule.useWorkspaceStreamMemberships)
+
+    vi.spyOn(generalTabModule, "GeneralTab").mockImplementation((() => (
+      <div>General panel</div>
+    )) as unknown as typeof generalTabModule.GeneralTab)
+    vi.spyOn(companionTabModule, "CompanionTab").mockImplementation((() => (
+      <div>Companion panel</div>
+    )) as unknown as typeof companionTabModule.CompanionTab)
+    vi.spyOn(membersTabModule, "MembersTab").mockImplementation((() => (
+      <div>Members panel</div>
+    )) as unknown as typeof membersTabModule.MembersTab)
   })
 
   it("shows only the available sidebar items for the resolved stream type", async () => {

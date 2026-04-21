@@ -1,10 +1,14 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { act, renderHook } from "@testing-library/react"
 import { useUnreadDivider } from "./use-unread-divider"
+import * as useScrollToElementModule from "./use-scroll-to-element"
 
-vi.mock("./use-scroll-to-element", () => ({
-  useScrollToElement: vi.fn(),
-}))
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.spyOn(useScrollToElementModule, "useScrollToElement").mockImplementation(
+    (() => undefined) as unknown as typeof useScrollToElementModule.useScrollToElement
+  )
+})
 
 function makeMessageEvent(id: string, actorId: string) {
   return {

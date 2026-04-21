@@ -1,13 +1,10 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { AgentReconsiderationDecisions, type AgentSessionStep } from "@threa/types"
 import { TraceStep } from "./trace-step"
-
-vi.mock("@/components/relative-time", () => ({
-  RelativeTime: () => <span>just now</span>,
-}))
+import * as relativeTimeModule from "@/components/relative-time"
 
 function createStep(overrides: Partial<AgentSessionStep> = {}): AgentSessionStep {
   return {
@@ -26,6 +23,13 @@ function createStep(overrides: Partial<AgentSessionStep> = {}): AgentSessionStep
 }
 
 describe("TraceStep", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.spyOn(relativeTimeModule, "RelativeTime").mockImplementation((() => (
+      <span>just now</span>
+    )) as unknown as typeof relativeTimeModule.RelativeTime)
+  })
+
   it("shows explicit keep-response reasoning for supersede no-change decisions", () => {
     render(
       <MemoryRouter>

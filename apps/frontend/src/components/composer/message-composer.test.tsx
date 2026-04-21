@@ -1,131 +1,134 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { spyOnExport } from "@/test/spy"
 import { render, screen, fireEvent, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { forwardRef, useEffect, useImperativeHandle, useState } from "react"
 import { MessageComposer } from "./message-composer"
 import type { PendingAttachment } from "@/hooks/use-attachments"
 import type { JSONContent } from "@threa/types"
+import * as useMobileModule from "@/hooks/use-mobile"
+import * as editorModule from "@/components/editor"
 
 let isMobileMockValue = false
 
-vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => isMobileMockValue,
-}))
+const MockRichEditor = forwardRef<
+  {
+    focus: () => void
+    insertMention: () => void
+    insertSlash: () => void
+    insertEmoji: () => void
+    getEditor: () => { id: string; getJSON: () => JSONContent } | null
+  },
+  {
+    value: JSONContent
+    onChange: (v: JSONContent) => void
+    onSubmit: () => void
+    placeholder: string
+    disabled: boolean
+    ariaLabel?: string
+    ariaDescribedBy?: string
+  }
+>(function MockRichEditor({ value, onChange, onSubmit, placeholder, disabled, ariaLabel, ariaDescribedBy }, ref) {
+  const valueRef = { current: value }
+  valueRef.current = value
+  const [editorInstance, setEditorInstance] = useState<{
+    id: string
+    getJSON: () => JSONContent
+  } | null>(null)
+  useEffect(() => {
+    const timer = setTimeout(() => setEditorInstance({ id: "mock-editor", getJSON: () => valueRef.current }), 0)
+    return () => clearTimeout(timer)
+  }, [])
 
-// Mock RichEditor/EditorToolbar for deterministic behavior with JSONContent
-vi.mock("@/components/editor", () => {
-  const RichEditor = forwardRef<
-    {
-      focus: () => void
-      insertMention: () => void
-      insertSlash: () => void
-      insertEmoji: () => void
-      getEditor: () => { id: string; getJSON: () => JSONContent } | null
-    },
-    {
-      value: JSONContent
-      onChange: (v: JSONContent) => void
-      onSubmit: () => void
-      placeholder: string
-      disabled: boolean
-      ariaLabel?: string
-      ariaDescribedBy?: string
-    }
-  >(function MockRichEditor({ value, onChange, onSubmit, placeholder, disabled, ariaLabel, ariaDescribedBy }, ref) {
-    const valueRef = { current: value }
-    valueRef.current = value
-    const [editorInstance, setEditorInstance] = useState<{
-      id: string
-      getJSON: () => JSONContent
-    } | null>(null)
-    useEffect(() => {
-      const timer = setTimeout(() => setEditorInstance({ id: "mock-editor", getJSON: () => valueRef.current }), 0)
-      return () => clearTimeout(timer)
-    }, [])
-
-    useImperativeHandle(
-      ref,
-      () => ({
-        focus: () => undefined,
-        insertMention: () => undefined,
-        insertSlash: () => undefined,
-        insertEmoji: () => undefined,
-        getEditor: () => editorInstance,
-      }),
-      [editorInstance]
-    )
-
-    return (
-      <div data-testid="rich-editor-wrapper">
-        <textarea
-          data-testid="rich-editor"
-          data-content-type="json"
-          onChange={(e) => {
-            // Simulate content change by creating a simple doc with the text
-            const text = e.target.value
-            onChange({
-              type: "doc",
-              content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
-            })
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && e.metaKey) onSubmit()
-          }}
-          placeholder={placeholder}
-          disabled={disabled}
-          aria-label={ariaLabel}
-          aria-describedby={ariaDescribedBy}
-        />
-      </div>
-    )
-  })
-
-  const EditorToolbar = ({
-    editor,
-    isVisible,
-    showSpecialInputControls,
-  }: {
-    editor: { id: string } | null
-    isVisible: boolean
-    showSpecialInputControls?: boolean
-  }) =>
-    isVisible ? (
-      <div
-        data-testid="mobile-editor-toolbar"
-        data-has-editor={editor ? "yes" : "no"}
-        data-has-special-input-controls={showSpecialInputControls ? "yes" : "no"}
-      >
-        {showSpecialInputControls && (
-          <>
-            <button type="button">Indent</button>
-            <button type="button">Dedent</button>
-          </>
-        )}
-      </div>
-    ) : null
-
-  const EditorActionBar = (props: Record<string, unknown>) => (
-    <div data-testid="editor-action-bar">
-      <button
-        type="button"
-        aria-label="Formatting"
-        onClick={() => (props.onFormatOpenChange as (v: boolean) => void)!(!(props.formatOpen as boolean))}
-      >
-        Aa
-      </button>
-      {props.trailingContent as any}
-    </div>
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => undefined,
+      insertMention: () => undefined,
+      insertSlash: () => undefined,
+      insertEmoji: () => undefined,
+      getEditor: () => editorInstance,
+    }),
+    [editorInstance]
   )
 
-  return { RichEditor, EditorToolbar, EditorActionBar }
+  return (
+    <div data-testid="rich-editor-wrapper">
+      <textarea
+        data-testid="rich-editor"
+        data-content-type="json"
+        onChange={(e) => {
+          // Simulate content change by creating a simple doc with the text
+          const text = e.target.value
+          onChange({
+            type: "doc",
+            content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+          })
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && e.metaKey) onSubmit()
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+      />
+    </div>
+  )
 })
+
+const MockEditorToolbar = ({
+  editor,
+  isVisible,
+  showSpecialInputControls,
+}: {
+  editor: { id: string } | null
+  isVisible: boolean
+  showSpecialInputControls?: boolean
+}) =>
+  isVisible ? (
+    <div
+      data-testid="mobile-editor-toolbar"
+      data-has-editor={editor ? "yes" : "no"}
+      data-has-special-input-controls={showSpecialInputControls ? "yes" : "no"}
+    >
+      {showSpecialInputControls && (
+        <>
+          <button type="button">Indent</button>
+          <button type="button">Dedent</button>
+        </>
+      )}
+    </div>
+  ) : null
+
+const MockEditorActionBar = (props: Record<string, unknown>) => (
+  <div data-testid="editor-action-bar">
+    <button
+      type="button"
+      aria-label="Formatting"
+      onClick={() => (props.onFormatOpenChange as (v: boolean) => void)!(!(props.formatOpen as boolean))}
+    >
+      Aa
+    </button>
+    {props.trailingContent as any}
+  </div>
+)
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
 describe("MessageComposer", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     isMobileMockValue = false
     vi.useRealTimers()
+    vi.spyOn(useMobileModule, "useIsMobile").mockImplementation(() => isMobileMockValue)
+    spyOnExport(editorModule, "RichEditor").mockReturnValue(MockRichEditor as unknown as typeof editorModule.RichEditor)
+    spyOnExport(editorModule, "EditorToolbar").mockReturnValue(
+      MockEditorToolbar as unknown as typeof editorModule.EditorToolbar
+    )
+    spyOnExport(editorModule, "EditorActionBar").mockReturnValue(
+      MockEditorActionBar as unknown as typeof editorModule.EditorActionBar
+    )
   })
 
   afterEach(() => {

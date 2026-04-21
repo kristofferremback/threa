@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest"
+import { spyOnExport } from "@/test/spy"
 import { render, screen, act } from "@testing-library/react"
+import { MemoryRouter } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ServicesProvider, type SavedService } from "@/contexts"
@@ -8,6 +10,10 @@ import { EditLastMessageContext } from "./edit-last-message-context"
 import * as editorModule from "@/components/editor"
 import * as hooksModule from "@/hooks"
 import * as prosemirrorModule from "@threa/prosemirror"
+import * as syncEngineModule from "@/sync/sync-engine"
+import * as contextsModule from "@/contexts"
+import * as authModule from "@/auth"
+import * as userProfileModule from "@/components/user-profile"
 import userEvent from "@testing-library/user-event"
 import type { StreamEvent } from "@threa/types"
 import type { JSONContent } from "@threa/types"
@@ -19,115 +25,6 @@ const mockMarkEditing = vi.fn()
 const mockDeleteMessage = vi.fn()
 const mockSaveEditedMessage = vi.fn()
 const mockCancelEditing = vi.fn()
-
-// RichEditor is a forwardRef object — vi.spyOn can't spy on non-function values,
-// so we replace it at the module level with a vi.fn() that tests can configure.
-vi.mock("@/components/editor", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/components/editor")>()
-  return {
-    ...actual,
-    RichEditor: vi.fn().mockReturnValue(null),
-    DocumentEditorModal: vi.fn().mockReturnValue(null),
-  }
-})
-
-// Only mock what can't run in jsdom: routing and data-fetching hooks
-vi.mock("react-router-dom", () => ({
-  Link: ({
-    to,
-    children,
-    className,
-    onClick,
-  }: {
-    to: string
-    children: React.ReactNode
-    className?: string
-    onClick?: () => void
-  }) => (
-    <a href={to} className={className} onClick={onClick}>
-      {children}
-    </a>
-  ),
-}))
-
-vi.mock("@/sync/sync-engine", () => ({
-  useSyncEngine: () => ({ kickOperationQueue: vi.fn() }),
-}))
-
-vi.mock("@/contexts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/contexts")>()
-  return {
-    ...actual,
-    usePendingMessages: () => ({
-      getStatus: (id: string) => mockGetStatus(id),
-      markPending: vi.fn(),
-      markFailed: vi.fn(),
-      markSent: vi.fn(),
-      markEditing: mockMarkEditing,
-      saveEditedMessage: mockSaveEditedMessage,
-      cancelEditing: mockCancelEditing,
-      retryMessage: mockRetryMessage,
-      deleteMessage: mockDeleteMessage,
-      notifyQueue: vi.fn(),
-      registerQueueNotify: vi.fn(),
-    }),
-    usePanel: () => ({
-      panelId: null,
-      getPanelUrl: (streamId: string) => `/panel/${streamId}`,
-    }),
-    useTrace: () => ({
-      getTraceUrl: (sessionId: string) => `/trace/${sessionId}`,
-    }),
-    useMediaGallery: () => ({
-      mediaAttachmentId: null,
-      openMedia: vi.fn(),
-      closeMedia: vi.fn(),
-    }),
-    usePreferences: () => ({
-      preferences: { timezone: "UTC", locale: "en-US" },
-    }),
-    useMessageService: () => ({
-      delete: vi.fn().mockResolvedValue(undefined),
-      update: vi.fn().mockResolvedValue({}),
-      getVersions: vi.fn().mockResolvedValue([]),
-    }),
-  }
-})
-
-// MessageEvent calls useSaveMessage/useDeleteSaved which reach the
-// SavedService context. We satisfy them by providing a no-op SavedService
-// through the real ServicesProvider in the test Wrapper below — no mocking
-// of the saved hooks themselves (INV-48).
-
-vi.mock("@/auth", () => ({
-  useUser: () => ({ id: "workos_user_123" }),
-}))
-
-vi.mock("@/components/user-profile", () => ({
-  useUserProfile: () => ({ openUserProfile: vi.fn() }),
-}))
-
-vi.mock("@/hooks", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/hooks")>()
-  return {
-    ...actual,
-    useActors: () => ({
-      getActorName: (_actorId: string | null, actorType: string | null) => {
-        if (actorType === "persona") return "Ariadne"
-        return "Test User"
-      },
-      getActorAvatar: (_actorId: string | null, actorType: string | null) => {
-        if (actorType === "persona") return { fallback: "🜃", slug: "ariadne" }
-        return { fallback: "TU", slug: undefined }
-      },
-    }),
-    useWorkspaceBootstrap: () => ({
-      data: { users: [{ id: "member_123", workosUserId: "workos_user_123" }] },
-    }),
-    useWorkspaceUserId: () => "member_123",
-    focusAtEnd: vi.fn(),
-  }
-})
 
 const createMessageEvent = (messageId: string, contentMarkdown: string): StreamEvent => ({
   id: `event_${messageId}`,
@@ -141,15 +38,6 @@ const createMessageEvent = (messageId: string, contentMarkdown: string): StreamE
 })
 
 let queryClient: QueryClient
-beforeEach(() => {
-  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  mockGetStatus = () => null // default: sent/confirmed message
-  mockRetryMessage.mockReset()
-  mockMarkEditing.mockReset()
-  mockDeleteMessage.mockReset()
-  mockSaveEditedMessage.mockReset()
-  mockCancelEditing.mockReset()
-})
 
 // Minimal SavedService shim — the tests don't exercise save/reminder flows,
 // they just need the context lookup to succeed. `useLiveQuery` over
@@ -164,13 +52,94 @@ const noopSavedService: SavedService = {
 
 function Wrapper({ children }: { children: React.ReactNode }) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ServicesProvider services={{ saved: noopSavedService }}>
-        <TooltipProvider>{children}</TooltipProvider>
-      </ServicesProvider>
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <ServicesProvider services={{ saved: noopSavedService }}>
+          <TooltipProvider>{children}</TooltipProvider>
+        </ServicesProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   )
 }
+
+function installDefaultSpies() {
+  // RichEditor is a forwardRef object — use the "get" accessor to swap the export.
+  spyOnExport(editorModule, "RichEditor").mockReturnValue((() => null) as unknown as typeof editorModule.RichEditor)
+  vi.spyOn(editorModule, "DocumentEditorModal").mockImplementation(
+    (() => null) as unknown as typeof editorModule.DocumentEditorModal
+  )
+
+  vi.spyOn(syncEngineModule, "useSyncEngine").mockReturnValue({
+    kickOperationQueue: vi.fn(),
+  } as unknown as ReturnType<typeof syncEngineModule.useSyncEngine>)
+
+  vi.spyOn(contextsModule, "usePendingMessages").mockReturnValue({
+    getStatus: (id: string) => mockGetStatus(id),
+    markPending: vi.fn(),
+    markFailed: vi.fn(),
+    markSent: vi.fn(),
+    markEditing: mockMarkEditing,
+    saveEditedMessage: mockSaveEditedMessage,
+    cancelEditing: mockCancelEditing,
+    retryMessage: mockRetryMessage,
+    deleteMessage: mockDeleteMessage,
+    notifyQueue: vi.fn(),
+    registerQueueNotify: vi.fn(),
+  } as unknown as ReturnType<typeof contextsModule.usePendingMessages>)
+  vi.spyOn(contextsModule, "usePanel").mockReturnValue({
+    panelId: null,
+    getPanelUrl: (streamId: string) => `/panel/${streamId}`,
+  } as unknown as ReturnType<typeof contextsModule.usePanel>)
+  vi.spyOn(contextsModule, "useTrace").mockReturnValue({
+    getTraceUrl: (sessionId: string) => `/trace/${sessionId}`,
+  } as unknown as ReturnType<typeof contextsModule.useTrace>)
+  vi.spyOn(contextsModule, "useMediaGallery").mockReturnValue({
+    mediaAttachmentId: null,
+    openMedia: vi.fn(),
+    closeMedia: vi.fn(),
+  } as unknown as ReturnType<typeof contextsModule.useMediaGallery>)
+  vi.spyOn(contextsModule, "usePreferences").mockReturnValue({
+    preferences: { timezone: "UTC", locale: "en-US" },
+  } as unknown as ReturnType<typeof contextsModule.usePreferences>)
+  vi.spyOn(contextsModule, "useMessageService").mockReturnValue({
+    delete: vi.fn().mockResolvedValue(undefined),
+    update: vi.fn().mockResolvedValue({}),
+    getVersions: vi.fn().mockResolvedValue([]),
+  } as unknown as ReturnType<typeof contextsModule.useMessageService>)
+
+  vi.spyOn(authModule, "useUser").mockReturnValue({ id: "workos_user_123" } as ReturnType<typeof authModule.useUser>)
+  vi.spyOn(userProfileModule, "useUserProfile").mockReturnValue({
+    openUserProfile: vi.fn(),
+  } as unknown as ReturnType<typeof userProfileModule.useUserProfile>)
+
+  vi.spyOn(hooksModule, "useActors").mockReturnValue({
+    getActorName: (_actorId: string | null, actorType: string | null) => {
+      if (actorType === "persona") return "Ariadne"
+      return "Test User"
+    },
+    getActorAvatar: (_actorId: string | null, actorType: string | null) => {
+      if (actorType === "persona") return { fallback: "🜃", slug: "ariadne" }
+      return { fallback: "TU", slug: undefined }
+    },
+  } as unknown as ReturnType<typeof hooksModule.useActors>)
+  vi.spyOn(hooksModule, "useWorkspaceBootstrap").mockReturnValue({
+    data: { users: [{ id: "member_123", workosUserId: "workos_user_123" }] },
+  } as unknown as ReturnType<typeof hooksModule.useWorkspaceBootstrap>)
+  vi.spyOn(hooksModule, "useWorkspaceUserId").mockReturnValue("member_123")
+  vi.spyOn(hooksModule, "focusAtEnd").mockImplementation(() => undefined)
+}
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  mockGetStatus = () => null // default: sent/confirmed message
+  mockRetryMessage.mockReset()
+  mockMarkEditing.mockReset()
+  mockDeleteMessage.mockReset()
+  mockSaveEditedMessage.mockReset()
+  mockCancelEditing.mockReset()
+  installDefaultSpies()
+})
 
 describe("MessageEvent", () => {
   const workspaceId = "ws_123"
@@ -309,57 +278,63 @@ describe("MessageEvent", () => {
 
   describe("ArrowUp edit-last-message trigger", () => {
     beforeAll(() => {
-      // RichEditor is mocked at module level as vi.fn() — configure its implementation here
-      ;(editorModule.RichEditor as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-        ({
-          value,
-          onChange,
-          onSubmit,
-          placeholder,
-        }: {
-          value: JSONContent
-          onChange: (v: JSONContent) => void
-          onSubmit: () => void
-          placeholder?: string
-        }) => (
-          <textarea
-            data-testid="rich-editor"
-            defaultValue={JSON.stringify(value)}
-            placeholder={placeholder}
-            onChange={(e) => {
-              try {
-                onChange(JSON.parse(e.target.value))
-              } catch {
-                /* ignore */
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault()
-                onSubmit()
-              }
-            }}
-          />
-        )
-      )
-      vi.spyOn(prosemirrorModule, "serializeToMarkdown").mockImplementation((json) => {
-        return json.content?.[0]?.content?.[0]?.text ?? ""
-      })
-      vi.spyOn(prosemirrorModule, "parseMarkdown").mockImplementation((md) => ({
-        type: "doc",
-        content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
-      }))
+      // Nothing — per-test beforeEach installs default spies; these tests
+      // override the RichEditor to an interactive textarea and re-install
+      // prosemirror impls because the suite-level beforeEach restoreAllMocks
+      // clears them.
     })
 
     afterAll(() => {
-      // Restore prosemirror spies; reset RichEditor to module-level default (returns null)
       vi.restoreAllMocks()
-      ;(editorModule.RichEditor as unknown as ReturnType<typeof vi.fn>).mockReturnValue(null)
     })
 
+    function installInteractiveEditor() {
+      spyOnExport(editorModule, "RichEditor").mockReturnValue((({
+        value,
+        onChange,
+        onSubmit,
+        placeholder,
+      }: {
+        value: JSONContent
+        onChange: (v: JSONContent) => void
+        onSubmit: () => void
+        placeholder?: string
+      }) => (
+        <textarea
+          data-testid="rich-editor"
+          defaultValue={JSON.stringify(value)}
+          placeholder={placeholder}
+          onChange={(e) => {
+            try {
+              onChange(JSON.parse(e.target.value))
+            } catch {
+              /* ignore */
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault()
+              onSubmit()
+            }
+          }}
+        />
+      )) as unknown as typeof editorModule.RichEditor)
+      vi.spyOn(prosemirrorModule, "serializeToMarkdown").mockImplementation((json) => {
+        return json.content?.[0]?.content?.[0]?.text ?? ""
+      })
+      vi.spyOn(prosemirrorModule, "parseMarkdown").mockImplementation(
+        (md) =>
+          ({
+            type: "doc",
+            content: [{ type: "paragraph", content: [{ type: "text", text: md }] }],
+          }) as ReturnType<typeof prosemirrorModule.parseMarkdown>
+      )
+    }
+
     it("registers an edit handler and opens inline edit when it is called", async () => {
+      installInteractiveEditor()
       const event = createMessageEvent("msg_edit", "Hello world")
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const queryClientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
       let capturedHandler: (() => void) | undefined
       const registerMessage = vi.fn((_messageId: string, handler: () => void) => {
@@ -368,15 +343,17 @@ describe("MessageEvent", () => {
       })
 
       render(
-        <QueryClientProvider client={queryClient}>
-          <ServicesProvider services={{ saved: noopSavedService }}>
-            <TooltipProvider>
-              <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
-                <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
-              </EditLastMessageContext.Provider>
-            </TooltipProvider>
-          </ServicesProvider>
-        </QueryClientProvider>
+        <MemoryRouter>
+          <QueryClientProvider client={queryClientLocal}>
+            <ServicesProvider services={{ saved: noopSavedService }}>
+              <TooltipProvider>
+                <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
+                  <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
+                </EditLastMessageContext.Provider>
+              </TooltipProvider>
+            </ServicesProvider>
+          </QueryClientProvider>
+        </MemoryRouter>
       )
 
       // Handler should be registered for this message
@@ -393,6 +370,7 @@ describe("MessageEvent", () => {
     })
 
     it("does not open edit form when context is absent", () => {
+      installInteractiveEditor()
       const event = createMessageEvent("msg_edit", "Hello world")
 
       render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
@@ -401,8 +379,9 @@ describe("MessageEvent", () => {
     })
 
     it("restores focus to the visible zone editor after canceling inline edit", async () => {
+      installInteractiveEditor()
       const event = createMessageEvent("msg_edit", "Hello world")
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const queryClientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
       const focusAtEnd = vi.mocked(hooksModule.focusAtEnd)
       focusAtEnd.mockClear()
 
@@ -415,15 +394,17 @@ describe("MessageEvent", () => {
       render(
         <div data-editor-zone="main">
           <div data-testid="zone-editor" contentEditable />
-          <QueryClientProvider client={queryClient}>
-            <ServicesProvider services={{ saved: noopSavedService }}>
-              <TooltipProvider>
-                <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
-                  <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
-                </EditLastMessageContext.Provider>
-              </TooltipProvider>
-            </ServicesProvider>
-          </QueryClientProvider>
+          <MemoryRouter>
+            <QueryClientProvider client={queryClientLocal}>
+              <ServicesProvider services={{ saved: noopSavedService }}>
+                <TooltipProvider>
+                  <EditLastMessageContext.Provider value={{ registerMessage, triggerEditLast: vi.fn() }}>
+                    <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
+                  </EditLastMessageContext.Provider>
+                </TooltipProvider>
+              </ServicesProvider>
+            </QueryClientProvider>
+          </MemoryRouter>
         </div>
       )
 

@@ -13,14 +13,6 @@ import { SyncEngineContext } from "@/sync/sync-engine"
 import { workspaceKeys } from "./use-workspaces"
 import { useStreamOrDraft } from "./use-stream-or-draft"
 
-vi.mock("@/auth", async () => {
-  const actual = await vi.importActual<typeof import("@/auth")>("@/auth")
-  return {
-    ...actual,
-    useUser: () => ({ id: "workos_1", email: "kris@example.com", name: "Kris" }),
-  }
-})
-
 function createWrapper(
   queryClient: QueryClient,
   options?: {

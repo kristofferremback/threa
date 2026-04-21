@@ -4,12 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
 import type { CachedWorkspaceMetadata } from "@/db"
+import * as workspaceStoreModule from "@/stores/workspace-store"
 
 let mockMetadata: CachedWorkspaceMetadata | undefined
-
-vi.mock("@/stores/workspace-store", () => ({
-  useWorkspaceMetadata: () => mockMetadata,
-}))
 
 function createTestWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -22,8 +19,10 @@ describe("useWorkspaceEmoji", () => {
   let queryClient: QueryClient
 
   beforeEach(() => {
+    vi.restoreAllMocks()
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     mockMetadata = undefined
+    vi.spyOn(workspaceStoreModule, "useWorkspaceMetadata").mockImplementation(() => mockMetadata)
   })
 
   describe("toEmoji", () => {

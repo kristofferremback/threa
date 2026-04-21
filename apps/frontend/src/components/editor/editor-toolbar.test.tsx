@@ -4,25 +4,12 @@ import { render, screen, fireEvent, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import type { Editor } from "@tiptap/react"
 import { EditorToolbar } from "./editor-toolbar"
-import { indentSelection, dedentSelection, handleLinkToolbarAction, isSuggestionActive } from "./editor-behaviors"
+import * as editorBehaviors from "./editor-behaviors"
+import * as contextsModule from "@/contexts"
 
 const mockPreferences = {
   keyboardShortcuts: {} as Record<string, string>,
 }
-
-vi.mock("./editor-behaviors", () => ({
-  indentSelection: vi.fn(),
-  dedentSelection: vi.fn(),
-  handleLinkToolbarAction: vi.fn(() => "opened"),
-  isSuggestionActive: vi.fn(() => false),
-}))
-
-vi.mock("@/contexts", () => ({
-  usePreferences: () => ({
-    preferences: mockPreferences,
-    isLoading: false,
-  }),
-}))
 
 function createEditorStub() {
   const chain = {
@@ -75,8 +62,16 @@ function ToolbarHarness({ editor }: { editor: Editor }) {
 
 describe("EditorToolbar", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
     mockPreferences.keyboardShortcuts = {}
+    vi.spyOn(editorBehaviors, "indentSelection").mockImplementation(() => false)
+    vi.spyOn(editorBehaviors, "dedentSelection").mockImplementation(() => false)
+    vi.spyOn(editorBehaviors, "handleLinkToolbarAction").mockImplementation(() => "opened")
+    vi.spyOn(editorBehaviors, "isSuggestionActive").mockImplementation(() => false)
+    vi.spyOn(contextsModule, "usePreferences").mockReturnValue({
+      preferences: mockPreferences,
+      isLoading: false,
+    } as unknown as ReturnType<typeof contextsModule.usePreferences>)
   })
 
   it("keeps inline formatting buttons in the tab order", async () => {
@@ -149,7 +144,7 @@ describe("EditorToolbar", () => {
 
     await user.click(screen.getByRole("button", { name: "Link" }))
 
-    expect(handleLinkToolbarAction).toHaveBeenCalledWith(editor, false, undefined)
+    expect(editorBehaviors.handleLinkToolbarAction).toHaveBeenCalledWith(editor, false, undefined)
   })
 
   it("defers the link action until click so opening the editor does not race the click sequence", () => {
@@ -158,16 +153,16 @@ describe("EditorToolbar", () => {
     render(<EditorToolbar editor={editor} isVisible inline />)
 
     fireEvent.pointerDown(screen.getByRole("button", { name: "Link" }))
-    expect(handleLinkToolbarAction).not.toHaveBeenCalled()
+    expect(editorBehaviors.handleLinkToolbarAction).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: "Link" }))
-    expect(handleLinkToolbarAction).toHaveBeenCalledWith(editor, false, undefined)
+    expect(editorBehaviors.handleLinkToolbarAction).toHaveBeenCalledWith(editor, false, undefined)
   })
 
   it("keeps the initially selected link URL after the editor selection changes", async () => {
     const user = userEvent.setup()
     const editor = createEditorStub()
-    vi.mocked(handleLinkToolbarAction).mockImplementation((_editor, _open, onLinkPopoverOpenChange) => {
+    vi.mocked(editorBehaviors.handleLinkToolbarAction).mockImplementation((_editor, _open, onLinkPopoverOpenChange) => {
       onLinkPopoverOpenChange?.(true)
       return "opened"
     })
@@ -186,7 +181,7 @@ describe("EditorToolbar", () => {
   it("focuses the link input when the floating link editor opens", () => {
     vi.useFakeTimers()
     const editor = createEditorStub()
-    vi.mocked(handleLinkToolbarAction).mockImplementation((_editor, _open, onLinkPopoverOpenChange) => {
+    vi.mocked(editorBehaviors.handleLinkToolbarAction).mockImplementation((_editor, _open, onLinkPopoverOpenChange) => {
       onLinkPopoverOpenChange?.(true)
       return "opened"
     })
@@ -235,26 +230,26 @@ describe("EditorToolbar", () => {
 
     fireEvent.pointerDown(screen.getByRole("button", { name: "Indent" }))
     fireEvent.pointerDown(screen.getByRole("button", { name: "Dedent" }))
-    expect(indentSelection).not.toHaveBeenCalled()
-    expect(dedentSelection).not.toHaveBeenCalled()
+    expect(editorBehaviors.indentSelection).not.toHaveBeenCalled()
+    expect(editorBehaviors.dedentSelection).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: "Indent" }))
     fireEvent.click(screen.getByRole("button", { name: "Dedent" }))
 
-    expect(indentSelection).toHaveBeenCalledWith(editor)
-    expect(dedentSelection).toHaveBeenCalledWith(editor)
+    expect(editorBehaviors.indentSelection).toHaveBeenCalledWith(editor)
+    expect(editorBehaviors.dedentSelection).toHaveBeenCalledWith(editor)
   })
 
   it("skips indent and dedent when a suggestion popup is active", () => {
     const editor = createEditorStub()
-    vi.mocked(isSuggestionActive).mockReturnValue(true)
+    vi.mocked(editorBehaviors.isSuggestionActive).mockReturnValue(true)
     render(<EditorToolbar editor={editor} isVisible inline inlinePosition="below" showSpecialInputControls />)
 
     fireEvent.click(screen.getByRole("button", { name: "Indent" }))
     fireEvent.click(screen.getByRole("button", { name: "Dedent" }))
 
-    expect(indentSelection).not.toHaveBeenCalled()
-    expect(dedentSelection).not.toHaveBeenCalled()
+    expect(editorBehaviors.indentSelection).not.toHaveBeenCalled()
+    expect(editorBehaviors.dedentSelection).not.toHaveBeenCalled()
   })
 
   it("uses a dedicated scroll container for the mobile inline toolbar without the edge fade overlay", () => {

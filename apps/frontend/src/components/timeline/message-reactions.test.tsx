@@ -1,37 +1,47 @@
-import { describe, it, expect, vi } from "vitest"
+import { beforeEach, describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
+import * as hooksModule from "@/hooks"
+import * as mobileModule from "@/hooks/use-mobile"
+import * as workspaceEmojiModule from "@/hooks/use-workspace-emoji"
+import * as reactionPickerModule from "./reaction-emoji-picker"
+import * as allReactionsPopoverModule from "./all-reactions-popover"
+import * as reactionDetailsModule from "./reaction-details"
 import { MessageReactions } from "./message-reactions"
 
 const mockToggleReaction = vi.fn()
 const mockToggleByEmoji = vi.fn()
 
-vi.mock("@/hooks", () => ({
-  useMessageReactions: () => ({
+beforeEach(() => {
+  vi.restoreAllMocks()
+  mockToggleReaction.mockReset()
+  mockToggleByEmoji.mockReset()
+  vi.spyOn(hooksModule, "useMessageReactions").mockReturnValue({
     toggleReaction: mockToggleReaction,
     toggleByEmoji: mockToggleByEmoji,
-  }),
-  stripColons: (s: string) => s.replace(/:/g, ""),
-}))
-
-vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => false,
-}))
-
-vi.mock("@/hooks/use-workspace-emoji", () => ({
-  useWorkspaceEmoji: () => ({ toEmoji: (s: string) => s }),
-}))
-
-// Pickers/popovers use portals + Radix; render their triggers only so we can
-// assert on the structural chrome (pills, overflow button).
-vi.mock("./reaction-emoji-picker", () => ({
-  ReactionEmojiPicker: ({ trigger }: { trigger: React.ReactNode }) => <>{trigger}</>,
-}))
-vi.mock("./all-reactions-popover", () => ({
-  AllReactionsPopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}))
-vi.mock("./reaction-details", () => ({
-  ReactionPillDetails: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}))
+  } as unknown as ReturnType<typeof hooksModule.useMessageReactions>)
+  vi.spyOn(hooksModule, "stripColons").mockImplementation((s: string) => s.replace(/:/g, ""))
+  vi.spyOn(mobileModule, "useIsMobile").mockReturnValue(false)
+  vi.spyOn(workspaceEmojiModule, "useWorkspaceEmoji").mockReturnValue({
+    toEmoji: (s: string) => s,
+  } as ReturnType<typeof workspaceEmojiModule.useWorkspaceEmoji>)
+  // Pickers/popovers use portals + Radix; render their triggers only so we can
+  // assert on the structural chrome (pills, overflow button).
+  vi.spyOn(reactionPickerModule, "ReactionEmojiPicker").mockImplementation((({
+    trigger,
+  }: {
+    trigger: React.ReactNode
+  }) => <>{trigger}</>) as unknown as typeof reactionPickerModule.ReactionEmojiPicker)
+  vi.spyOn(allReactionsPopoverModule, "AllReactionsPopover").mockImplementation((({
+    children,
+  }: {
+    children: React.ReactNode
+  }) => <>{children}</>) as unknown as typeof allReactionsPopoverModule.AllReactionsPopover)
+  vi.spyOn(reactionDetailsModule, "ReactionPillDetails").mockImplementation((({
+    children,
+  }: {
+    children: React.ReactNode
+  }) => <>{children}</>) as unknown as typeof reactionDetailsModule.ReactionPillDetails)
+})
 
 describe("MessageReactions", () => {
   it("renders nothing when the reactions map is empty", () => {

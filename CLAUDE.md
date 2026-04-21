@@ -240,7 +240,7 @@ Tests should verify behavior, not brittle internals:
 - Do not assert event counts; assert presence/content of specific events (INV-23)
 - Prefer one object comparison over chains of narrow assertions (INV-24)
 - No `.skip()` or `.todo()` tests (INV-26)
-- Avoid `mock.module()` for shared modules; prefer scoped `spyOn` patterns (INV-48)
+- Avoid `mock.module()` and `vi.mock()` for shared modules; prefer scoped `spyOn` patterns against namespace imports (INV-48)
 
 Frontend integration tests should mount real components and exercise observable user behavior (INV-39).
 

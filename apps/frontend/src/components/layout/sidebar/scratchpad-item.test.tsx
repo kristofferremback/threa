@@ -1,131 +1,43 @@
 import { describe, expect, it, beforeEach, vi } from "vitest"
-import { forwardRef, type MouseEvent, type ReactNode, type TouchEvent } from "react"
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom"
 import { fireEvent, render, screen, waitFor } from "@/test"
 import { StreamTypes, Visibilities } from "@threa/types"
 import { ScratchpadItem } from "./scratchpad-item"
 import type { StreamItemData } from "./types"
+import * as contextsModule from "@/contexts"
+import * as hooksModule from "@/hooks"
+import * as streamSettingsModule from "@/components/stream-settings/use-stream-settings"
+import * as urgencyTrackingModule from "./use-urgency-tracking"
+import * as itemDrawerModule from "./use-sidebar-item-drawer"
+import * as sidebarActionsModule from "./sidebar-actions"
 
-const { collapseOnMobile, archiveStream, navigate, deleteDraft, openStreamSettings } = vi.hoisted(() => ({
-  collapseOnMobile: vi.fn(),
-  archiveStream: vi.fn(async () => {}),
-  navigate: vi.fn(),
-  deleteDraft: vi.fn(async () => {}),
-  openStreamSettings: vi.fn(),
-}))
+const collapseOnMobile = vi.fn()
+const archiveStream = vi.fn(async () => {})
+const deleteDraft = vi.fn(async () => {})
+const openStreamSettings = vi.fn()
 
-vi.mock("react-router-dom", () => ({
-  Link: forwardRef<
-    HTMLAnchorElement,
-    {
-      to: string
-      children: ReactNode
-      className?: string
-      onClick?: (e: MouseEvent<HTMLAnchorElement>) => void
-      onTouchStart?: (e: TouchEvent<HTMLAnchorElement>) => void
-      onTouchEnd?: (e: TouchEvent<HTMLAnchorElement>) => void
-      onTouchMove?: (e: TouchEvent<HTMLAnchorElement>) => void
-      onContextMenu?: (e: MouseEvent<HTMLAnchorElement>) => void
-    }
-  >(function MockLink({ to, children, className, onClick, onTouchStart, onTouchEnd, onTouchMove, onContextMenu }, ref) {
-    return (
-      <a
-        ref={ref}
-        href={to}
-        className={className}
-        onClick={onClick}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        onTouchMove={onTouchMove}
-        onContextMenu={onContextMenu}
-      >
-        {children}
-      </a>
-    )
-  }),
-  useNavigate: () => navigate,
-}))
+function LocationEcho() {
+  const location = useLocation()
+  return <div data-testid="location">{location.pathname}</div>
+}
 
-vi.mock("@/contexts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/contexts")>()
-  return {
-    ...actual,
-    useSidebar: () => ({
-      collapseOnMobile,
-      setMenuOpen: vi.fn(),
-      setUrgencyBlock: vi.fn(),
-      sidebarHeight: 0,
-      scrollContainerOffset: 0,
-    }),
-  }
-})
-
-vi.mock("@/hooks", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/hooks")>()
-  return {
-    ...actual,
-    isDraftId: (id: string) => id.startsWith("draft_"),
-    useActors: () => ({
-      getActorName: () => "Ariadne",
-      getActorAvatar: () => null,
-    }),
-    useArchiveStream: () => ({
-      mutateAsync: archiveStream,
-    }),
-    useDraftScratchpads: () => ({
-      deleteDraft,
-    }),
-    useStreamOrDraft: () => {
-      throw new Error("ScratchpadItem should not call useStreamOrDraft")
-    },
-  }
-})
-
-vi.mock("@/components/stream-settings/use-stream-settings", () => ({
-  useStreamSettings: () => ({
-    openStreamSettings,
-  }),
-}))
-
-vi.mock("./use-urgency-tracking", () => ({
-  useUrgencyTracking: () => {},
-}))
-
-vi.mock("./use-sidebar-item-drawer", () => ({
-  useSidebarItemDrawer: ({ collapseOnMobile }: { collapseOnMobile: () => void }) => ({
-    drawerOpen: false,
-    setDrawerOpen: vi.fn(),
-    handleClick: () => collapseOnMobile(),
-    isMobile: false,
-    longPress: {
-      handlers: {
-        onTouchStart: undefined,
-        onTouchEnd: undefined,
-        onTouchMove: undefined,
-        onContextMenu: undefined,
-      },
-      isPressed: false,
-    },
-  }),
-}))
-
-vi.mock("./sidebar-actions", () => ({
-  SidebarActionMenu: ({
-    actions,
-    ariaLabel,
-  }: {
-    actions: Array<{ id: string; label: string; onSelect: () => void }>
-    ariaLabel: string
-  }) => (
-    <div aria-label={ariaLabel}>
-      {actions.map((action) => (
-        <button key={action.id} type="button" onClick={action.onSelect}>
-          {action.label}
-        </button>
-      ))}
-    </div>
-  ),
-  SidebarActionDrawer: () => null,
-}))
+function renderWithRouter(ui: React.ReactElement, initialPath = "/w/workspace_1/stream/stream_scratchpad_1") {
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <Routes>
+        <Route
+          path="*"
+          element={
+            <>
+              {ui}
+              <LocationEcho />
+            </>
+          }
+        />
+      </Routes>
+    </MemoryRouter>
+  )
+}
 
 function createScratchpad(overrides: Partial<StreamItemData> = {}): StreamItemData {
   return {
@@ -154,15 +66,80 @@ function createScratchpad(overrides: Partial<StreamItemData> = {}): StreamItemDa
 
 describe("ScratchpadItem", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     collapseOnMobile.mockReset()
     archiveStream.mockReset()
-    navigate.mockReset()
     deleteDraft.mockReset()
     openStreamSettings.mockReset()
+
+    vi.spyOn(contextsModule, "useSidebar").mockReturnValue({
+      collapseOnMobile,
+      setMenuOpen: vi.fn(),
+      setUrgencyBlock: vi.fn(),
+      sidebarHeight: 0,
+      scrollContainerOffset: 0,
+    } as unknown as ReturnType<typeof contextsModule.useSidebar>)
+
+    vi.spyOn(hooksModule, "isDraftId").mockImplementation((id: string) => id.startsWith("draft_"))
+    vi.spyOn(hooksModule, "useActors").mockReturnValue({
+      getActorName: () => "Ariadne",
+      getActorAvatar: () => null,
+    } as unknown as ReturnType<typeof hooksModule.useActors>)
+    vi.spyOn(hooksModule, "useArchiveStream").mockReturnValue({
+      mutateAsync: archiveStream,
+    } as unknown as ReturnType<typeof hooksModule.useArchiveStream>)
+    vi.spyOn(hooksModule, "useDraftScratchpads").mockReturnValue({
+      deleteDraft,
+    } as unknown as ReturnType<typeof hooksModule.useDraftScratchpads>)
+    vi.spyOn(hooksModule, "useStreamOrDraft").mockImplementation(() => {
+      throw new Error("ScratchpadItem should not call useStreamOrDraft")
+    })
+
+    vi.spyOn(streamSettingsModule, "useStreamSettings").mockReturnValue({
+      openStreamSettings,
+    } as unknown as ReturnType<typeof streamSettingsModule.useStreamSettings>)
+
+    vi.spyOn(urgencyTrackingModule, "useUrgencyTracking").mockImplementation(() => undefined)
+
+    vi.spyOn(itemDrawerModule, "useSidebarItemDrawer").mockImplementation(
+      ({ collapseOnMobile }: { collapseOnMobile: () => void }) =>
+        ({
+          drawerOpen: false,
+          setDrawerOpen: vi.fn(),
+          handleClick: () => collapseOnMobile(),
+          isMobile: false,
+          longPress: {
+            handlers: {
+              onTouchStart: undefined,
+              onTouchEnd: undefined,
+              onTouchMove: undefined,
+              onContextMenu: undefined,
+            },
+            isPressed: false,
+          },
+        }) as unknown as ReturnType<typeof itemDrawerModule.useSidebarItemDrawer>
+    )
+
+    vi.spyOn(sidebarActionsModule, "SidebarActionMenu").mockImplementation((({
+      actions,
+      ariaLabel,
+    }: {
+      actions: Array<{ id: string; label: string; onSelect: () => void }>
+      ariaLabel: string
+    }) => (
+      <div aria-label={ariaLabel}>
+        {actions.map((action) => (
+          <button key={action.id} type="button" onClick={action.onSelect}>
+            {action.label}
+          </button>
+        ))}
+      </div>
+    )) as unknown as typeof sidebarActionsModule.SidebarActionMenu)
+    vi.spyOn(sidebarActionsModule, "SidebarActionDrawer").mockImplementation(() => null)
   })
 
   it("archives real scratchpads without mounting the page-level stream hook", async () => {
-    render(
+    renderWithRouter(
       <ScratchpadItem
         workspaceId="workspace_1"
         stream={createScratchpad()}
@@ -174,23 +151,27 @@ describe("ScratchpadItem", () => {
 
     expect(screen.getByText("Settings")).toBeInTheDocument()
 
+    const initialPath = screen.getByTestId("location").textContent
+
     fireEvent.click(screen.getByText("Archive"))
 
     await waitFor(() => {
       expect(archiveStream).toHaveBeenCalledWith("stream_scratchpad_1")
     })
-    expect(navigate).not.toHaveBeenCalled()
+    // URL should not have changed since no navigation happens on archive
+    expect(screen.getByTestId("location").textContent).toBe(initialPath)
   })
 
   it("deletes draft scratchpads directly and navigates away when the active draft is removed", async () => {
-    render(
+    renderWithRouter(
       <ScratchpadItem
         workspaceId="workspace_1"
         stream={createScratchpad({ id: "draft_scratchpad_1", displayName: null })}
         isActive
         unreadCount={0}
         mentionCount={0}
-      />
+      />,
+      "/w/workspace_1/drafts/draft_scratchpad_1"
     )
 
     expect(screen.queryByText("Settings")).not.toBeInTheDocument()
@@ -200,7 +181,7 @@ describe("ScratchpadItem", () => {
 
     await waitFor(() => {
       expect(deleteDraft).toHaveBeenCalledWith("draft_scratchpad_1")
-      expect(navigate).toHaveBeenCalledWith("/w/workspace_1")
+      expect(screen.getByTestId("location").textContent).toBe("/w/workspace_1")
     })
     expect(archiveStream).not.toHaveBeenCalled()
   })

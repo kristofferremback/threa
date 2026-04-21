@@ -1,33 +1,28 @@
-import { describe, it, expect, vi } from "vitest"
+import { beforeEach, describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
+import * as messageEventModule from "./message-event"
+import * as membershipEventModule from "./membership-event"
+import * as systemEventModule from "./system-event"
 import { EventItem } from "./event-item"
 import type { StreamEvent } from "@threa/types"
 
-// Mock child components to isolate EventItem logic
-vi.mock("./message-event", () => ({
-  MessageEvent: ({
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.spyOn(messageEventModule, "MessageEvent").mockImplementation((({
     event,
     isHighlighted,
-  }: {
-    event: StreamEvent
-    workspaceId: string
-    streamId: string
-    hideActions?: boolean
-    isHighlighted?: boolean
-  }) => (
+  }: Parameters<typeof messageEventModule.MessageEvent>[0]) => (
     <div data-testid="message-event" data-highlighted={isHighlighted}>
       {(event.payload as { content: string }).content}
     </div>
-  ),
-}))
-
-vi.mock("./membership-event", () => ({
-  MembershipEvent: () => <div data-testid="membership-event" />,
-}))
-
-vi.mock("./system-event", () => ({
-  SystemEvent: () => <div data-testid="system-event" />,
-}))
+  )) as unknown as typeof messageEventModule.MessageEvent)
+  vi.spyOn(membershipEventModule, "MembershipEvent").mockImplementation((() => (
+    <div data-testid="membership-event" />
+  )) as unknown as typeof membershipEventModule.MembershipEvent)
+  vi.spyOn(systemEventModule, "SystemEvent").mockImplementation((() => (
+    <div data-testid="system-event" />
+  )) as unknown as typeof systemEventModule.SystemEvent)
+})
 
 const createMessageEvent = (messageId: string, contentMarkdown: string): StreamEvent => ({
   id: `event_${messageId}`,

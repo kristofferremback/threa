@@ -1,17 +1,15 @@
-import { describe, it, expect, vi } from "vitest"
+import { beforeEach, describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import * as contextsModule from "@/contexts"
 import { EditedIndicator } from "./edited-indicator"
 
-vi.mock("@/contexts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/contexts")>()
-  return {
-    ...actual,
-    usePreferences: () => ({
-      preferences: { timezone: "UTC", locale: "en-US" },
-    }),
-  }
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.spyOn(contextsModule, "usePreferences").mockReturnValue({
+    preferences: { timezone: "UTC", locale: "en-US" },
+  } as unknown as ReturnType<typeof contextsModule.usePreferences>)
 })
 
 function renderWithTooltip(ui: React.ReactElement) {
