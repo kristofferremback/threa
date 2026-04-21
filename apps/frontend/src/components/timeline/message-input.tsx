@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft, useComposerHeightPublish } from "@/hooks"
-import { useWorkspaceStreams } from "@/stores/workspace-store"
+import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
+import { useUser } from "@/auth"
 import { useStreamBootstrap } from "@/hooks/use-streams"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
@@ -200,6 +201,12 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     enabled: !!memberListStreamId,
   })
 
+  const currentUser = useUser()
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const currentUserRole = useMemo(() => {
+    return workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role
+  }, [workspaceUsers, currentUser?.id])
+
   const streamContext = useMemo<MentionStreamContext | undefined>(() => {
     if (!stream) return undefined
     const ctx: MentionStreamContext = { streamType: stream.type }
@@ -213,8 +220,10 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       ctx.memberIds = new Set(memberBootstrap.members.map((m) => m.memberId))
     }
 
+    ctx.canInviteBots = currentUserRole === "admin" || currentUserRole === "owner"
+
     return ctx
-  }, [stream, idbStreams, memberListStreamId, memberBootstrap])
+  }, [stream, idbStreams, memberListStreamId, memberBootstrap, currentUserRole])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()

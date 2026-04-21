@@ -20,6 +20,8 @@ export interface MentionStreamContext {
   rootStreamType?: StreamType
   inviteMode?: boolean
   memberIds?: Set<string>
+  /** Whether the current user can invite bots (admin/owner only). */
+  canInviteBots?: boolean
 }
 
 /**
@@ -130,10 +132,14 @@ export function useMentionables(streamContext?: MentionStreamContext) {
 
     // In invite mode, only users and bots that are NOT already members are shown.
     // Broadcasts and personas are hidden since they cannot be invited.
+    // Bots are only shown if the current user has permission to invite them.
     if (streamContext?.inviteMode && streamContext.memberIds) {
       const memberIds = streamContext.memberIds
-      const inviteables = [...users, ...bots].filter((m) => !memberIds.has(m.id))
-      return inviteables
+      const inviteables = [...users]
+      if (streamContext.canInviteBots) {
+        inviteables.push(...bots)
+      }
+      return inviteables.filter((m) => !memberIds.has(m.id))
     }
 
     return [...users, ...personas, ...bots, ...broadcasts]

@@ -37,6 +37,61 @@ async function createWorkspaceAndChannel(page: import("@playwright/test").Page, 
 }
 
 test.describe("Invite command", () => {
+  test("should allow inviting a bot for admins", async ({ browser }) => {
+    test.setTimeout(60000)
+
+    const ctxA = await loginInNewContext(browser, `inviter-${Date.now()}@example.com`, "Inviter")
+
+    try {
+      const { workspaceId, streamId, channelSlug } = await createWorkspaceAndChannel(ctxA.page, "invite")
+
+      // Create a bot via API (creator is owner/admin)
+      const botRes = await ctxA.page.request.post(`/api/workspaces/${workspaceId}/bots`, {
+        data: { name: "TestBot", slug: "test-bot", description: "A test bot", avatarEmoji: "🤖" },
+      })
+      await expectApiOk(botRes, "Create bot")
+      const { data: bot } = (await botRes.json()) as { data: { id: string; slug: string; name: string } }
+
+      // Navigate to channel
+      await ctxA.page.goto(`/w/${workspaceId}/s/${streamId}`)
+      await expect(ctxA.page.getByRole("heading", { name: `#${channelSlug}`, level: 1 })).toBeVisible({
+        timeout: 10000,
+      })
+
+      const editor = ctxA.page.locator("[contenteditable='true']")
+      await editor.click()
+
+      // Type /inv to trigger command dropdown, then select /invite
+      await ctxA.page.keyboard.type("/inv")
+      const commandPopup = ctxA.page.locator("[aria-label='Slash command suggestions']")
+      await expect(commandPopup).toBeVisible({ timeout: 5000 })
+      await commandPopup.getByRole("option", { name: /invite/ }).click()
+
+      // Type @ to trigger mention suggestions
+      await ctxA.page.keyboard.type("@")
+      await ctxA.page.waitForTimeout(300)
+
+      const suggestionPopup = ctxA.page.locator("[aria-label='Mention suggestions']")
+      await expect(suggestionPopup).toBeVisible({ timeout: 5000 })
+
+      // Bot should be visible in the dropdown for an admin
+      await expect(suggestionPopup.getByRole("option", { name: new RegExp(bot.name) })).toBeVisible({
+        timeout: 5000,
+      })
+
+      // Select bot and send invite
+      await suggestionPopup.getByRole("option", { name: new RegExp(bot.name) }).click()
+      await ctxA.page.getByRole("button", { name: "Send" }).click()
+
+      // Wait for member_added event with bot name
+      await expect(ctxA.page.getByText(`${bot.name} was added to the conversation`)).toBeVisible({
+        timeout: 20000,
+      })
+    } finally {
+      await ctxA.context.close()
+    }
+  })
+
   test("should filter @mentions to non-members and exclude broadcasts", async ({ browser }) => {
     test.setTimeout(60000)
 
