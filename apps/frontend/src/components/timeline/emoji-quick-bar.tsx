@@ -27,43 +27,64 @@ export function EmojiQuickBar({
 }: EmojiQuickBarProps) {
   const { btn: btnClass, icon: iconClass } = SIZE_CONFIG[size]
 
+  const activeButtons = activeEmojis.map((entry) => (
+    <button
+      key={entry.shortcode}
+      type="button"
+      className={cn(btnClass, "bg-primary/10 ring-1 ring-primary/30 active:bg-primary/20")}
+      title={`:${entry.shortcode}:`}
+      onClick={() => onReact(entry.shortcode)}
+    >
+      {entry.emoji}
+    </button>
+  ))
+
+  const quickButtons = quickEmojis.map((entry) => (
+    <button
+      key={entry.shortcode}
+      type="button"
+      className={cn(btnClass, "hover:bg-muted active:bg-muted/80")}
+      title={`:${entry.shortcode}:`}
+      onClick={() => onReact(entry.shortcode)}
+    >
+      {entry.emoji}
+    </button>
+  ))
+
+  const moreButton = (
+    <button
+      type="button"
+      className={cn(btnClass, "hover:bg-muted active:bg-muted/80 text-muted-foreground")}
+      aria-label="More reactions"
+      onClick={onOpenFullPicker}
+    >
+      <SmilePlus className={iconClass} />
+    </button>
+  )
+
+  if (size === "md" && activeEmojis.length > 0) {
+    return (
+      <div className="flex flex-col gap-1 w-full">
+        <div className="flex items-center gap-1.5">{activeButtons}</div>
+        <div className="h-px bg-border/60 mx-0.5" />
+        <div className="flex items-center gap-1.5">
+          {quickButtons}
+          {moreButton}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center gap-1.5">
       {activeEmojis.length > 0 && (
         <>
-          {activeEmojis.map((entry) => (
-            <button
-              key={entry.shortcode}
-              type="button"
-              className={cn(btnClass, "bg-primary/10 ring-1 ring-primary/30 active:bg-primary/20")}
-              title={`:${entry.shortcode}:`}
-              onClick={() => onReact(entry.shortcode)}
-            >
-              {entry.emoji}
-            </button>
-          ))}
+          {activeButtons}
           <div className="w-px self-stretch bg-border mx-0.5" />
         </>
       )}
-      {quickEmojis.map((entry) => (
-        <button
-          key={entry.shortcode}
-          type="button"
-          className={cn(btnClass, "hover:bg-muted active:bg-muted/80")}
-          title={`:${entry.shortcode}:`}
-          onClick={() => onReact(entry.shortcode)}
-        >
-          {entry.emoji}
-        </button>
-      ))}
-      <button
-        type="button"
-        className={cn(btnClass, "hover:bg-muted active:bg-muted/80 text-muted-foreground")}
-        aria-label="More reactions"
-        onClick={onOpenFullPicker}
-      >
-        <SmilePlus className={iconClass} />
-      </button>
+      {quickButtons}
+      {moreButton}
     </div>
   )
 }
