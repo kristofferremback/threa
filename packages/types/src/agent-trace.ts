@@ -1,7 +1,7 @@
 import type { AgentSessionStatus, AgentStepType } from "./constants"
 
 // Source types for trace steps
-export const TRACE_SOURCE_TYPES = ["web", "workspace", "workspace_message", "workspace_memo"] as const
+export const TRACE_SOURCE_TYPES = ["web", "workspace", "workspace_message", "workspace_memo", "github"] as const
 export type TraceSourceType = (typeof TRACE_SOURCE_TYPES)[number]
 
 export interface TraceSource {

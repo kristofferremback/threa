@@ -478,6 +478,7 @@ export async function startServer(): Promise<ServerInstance> {
     attachmentService,
     storage,
     modelRegistry,
+    workspaceIntegrationService,
     tavilyApiKey: config.ai.tavilyApiKey || undefined,
     stubResponse: config.useStubCompanion
       ? "This is a stub response from the companion. The real AI integration is disabled."

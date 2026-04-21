@@ -44,7 +44,7 @@ interface GitHubApiHeaders {
   [key: string]: string | number | string[] | undefined
 }
 
-export class GitHubPreviewClient {
+export class GitHubClient {
   private octokit: Octokit
 
   constructor(
@@ -72,7 +72,7 @@ export class GitHubPreviewClient {
       await this.captureRateLimit(headers)
 
       if (status === 401 && !retried) {
-        const refreshed = await this.service.refreshGithubCredentialsForPreview(this.workspaceId, this.record)
+        const refreshed = await this.service.refreshGithubCredentialsForClient(this.workspaceId, this.record)
         if (!refreshed) {
           throw error
         }
@@ -196,7 +196,7 @@ export class WorkspaceIntegrationService {
     return { workspaceId }
   }
 
-  async getGithubPreviewClient(workspaceId: string): Promise<GitHubPreviewClient | null> {
+  async getGithubClient(workspaceId: string): Promise<GitHubClient | null> {
     if (!this.app) return null
 
     const record = await WorkspaceIntegrationRepository.findByWorkspaceAndProvider(
@@ -222,12 +222,12 @@ export class WorkspaceIntegrationService {
     }
 
     if (this.shouldRefreshToken(credentials.tokenExpiresAt)) {
-      const refreshed = await this.refreshGithubCredentialsForPreview(workspaceId, record)
+      const refreshed = await this.refreshGithubCredentialsForClient(workspaceId, record)
       if (!refreshed) return null
-      return new GitHubPreviewClient(this, workspaceId, refreshed.record, refreshed.credentials, refreshed.metadata)
+      return new GitHubClient(this, workspaceId, refreshed.record, refreshed.credentials, refreshed.metadata)
     }
 
-    return new GitHubPreviewClient(this, workspaceId, record, credentials, metadata)
+    return new GitHubClient(this, workspaceId, record, credentials, metadata)
   }
 
   async updateGithubRateLimitMetadata(
@@ -249,7 +249,7 @@ export class WorkspaceIntegrationService {
     return nextMetadata
   }
 
-  async refreshGithubCredentialsForPreview(
+  async refreshGithubCredentialsForClient(
     workspaceId: string,
     record: WorkspaceIntegrationRecord
   ): Promise<RefreshResult | null> {

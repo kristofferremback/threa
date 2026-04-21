@@ -1,7 +1,7 @@
 import { AgentToolNames } from "@threa/types"
 import type { AgentTool } from "../runtime"
 import type { WorkspaceAgentResult } from "../researcher"
-import type { RunWorkspaceAgentOptions } from "../tools"
+import type { GitHubToolDeps, RunWorkspaceAgentOptions } from "../tools"
 import type { WorkspaceToolDeps } from "../tools/tool-deps"
 import {
   createWebSearchTool,
@@ -17,6 +17,21 @@ import {
   createLoadFileSectionTool,
   createLoadExcelSectionTool,
   createWorkspaceResearchTool,
+  createGithubListReposTool,
+  createGithubListBranchesTool,
+  createGithubListCommitsTool,
+  createGithubGetCommitTool,
+  createGithubListPullRequestsTool,
+  createGithubGetPullRequestTool,
+  createGithubListPrFilesTool,
+  createGithubGetFileContentsTool,
+  createGithubSearchCodeTool,
+  createGithubListWorkflowRunsTool,
+  createGithubGetWorkflowRunTool,
+  createGithubListReleasesTool,
+  createGithubGetReleaseTool,
+  createGithubSearchIssuesTool,
+  createGithubGetIssueTool,
   isToolEnabled,
 } from "../tools"
 
@@ -25,6 +40,7 @@ export interface ToolSetConfig {
   tavilyApiKey?: string
   runWorkspaceAgent?: (query: string, opts: RunWorkspaceAgentOptions) => Promise<WorkspaceAgentResult>
   workspace?: WorkspaceToolDeps
+  github?: GitHubToolDeps
   supportsVision?: boolean
 }
 
@@ -34,7 +50,7 @@ export interface ToolSetConfig {
  * Returns AgentTool[] — send_message is NOT included (the runtime handles it).
  */
 export function buildToolSet(config: ToolSetConfig): AgentTool[] {
-  const { enabledTools, tavilyApiKey, runWorkspaceAgent, workspace, supportsVision } = config
+  const { enabledTools, tavilyApiKey, runWorkspaceAgent, workspace, github, supportsVision } = config
 
   const tools: Array<AgentTool | null> = [
     // Workspace research (available when agent has trigger context)
@@ -73,6 +89,47 @@ export function buildToolSet(config: ToolSetConfig): AgentTool[] {
     workspace && isToolEnabled(enabledTools, AgentToolNames.LOAD_EXCEL_SECTION)
       ? createLoadExcelSectionTool(workspace)
       : null,
+
+    // GitHub tools (workspace-scoped via installed GitHub App; read-only)
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_LIST_REPOS) ? createGithubListReposTool(github) : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_LIST_BRANCHES)
+      ? createGithubListBranchesTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_LIST_COMMITS)
+      ? createGithubListCommitsTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_GET_COMMIT) ? createGithubGetCommitTool(github) : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_LIST_PULL_REQUESTS)
+      ? createGithubListPullRequestsTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_GET_PULL_REQUEST)
+      ? createGithubGetPullRequestTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_LIST_PR_FILES)
+      ? createGithubListPrFilesTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_GET_FILE_CONTENTS)
+      ? createGithubGetFileContentsTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_SEARCH_CODE)
+      ? createGithubSearchCodeTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_LIST_WORKFLOW_RUNS)
+      ? createGithubListWorkflowRunsTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_GET_WORKFLOW_RUN)
+      ? createGithubGetWorkflowRunTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_LIST_RELEASES)
+      ? createGithubListReleasesTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_GET_RELEASE)
+      ? createGithubGetReleaseTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_SEARCH_ISSUES)
+      ? createGithubSearchIssuesTool(github)
+      : null,
+    github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_GET_ISSUE) ? createGithubGetIssueTool(github) : null,
   ]
 
   return tools.filter((t): t is AgentTool => t !== null)

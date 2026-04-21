@@ -45,6 +45,24 @@ export {
   type WorkspaceResearchCallbacks,
   type RunWorkspaceAgentOptions,
 } from "./workspace-research-tool"
+export {
+  createGithubListReposTool,
+  createGithubListBranchesTool,
+  createGithubListCommitsTool,
+  createGithubGetCommitTool,
+  createGithubListPullRequestsTool,
+  createGithubGetPullRequestTool,
+  createGithubListPrFilesTool,
+  createGithubGetFileContentsTool,
+  createGithubSearchCodeTool,
+  createGithubListWorkflowRunsTool,
+  createGithubGetWorkflowRunTool,
+  createGithubListReleasesTool,
+  createGithubGetReleaseTool,
+  createGithubSearchIssuesTool,
+  createGithubGetIssueTool,
+  type GitHubToolDeps,
+} from "./github"
 
 /**
  * Check if a tool is enabled for a persona.

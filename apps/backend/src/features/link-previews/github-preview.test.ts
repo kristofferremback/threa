@@ -5,7 +5,7 @@ import type { WorkspaceIntegrationService } from "../workspace-integrations"
 describe("fetchGitHubPreview", () => {
   test("builds a rich pull request preview", async () => {
     const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world/pull/42", {
-      async getGithubPreviewClient() {
+      async getGithubClient() {
         return {
           async request(route: string) {
             switch (route) {
@@ -82,7 +82,7 @@ describe("fetchGitHubPreview", () => {
       "ws_123",
       "https://github.com/octocat/hello-world/pull/42/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R8-R10",
       {
-        async getGithubPreviewClient() {
+        async getGithubClient() {
           return {
             async request(route: string) {
               switch (route) {
@@ -155,7 +155,7 @@ describe("fetchGitHubPreview", () => {
       "ws_123",
       "https://github.com/octocat/hello-world/pull/42/changes#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5",
       {
-        async getGithubPreviewClient() {
+        async getGithubClient() {
           return {
             async request(route: string) {
               switch (route) {
@@ -227,7 +227,7 @@ describe("fetchGitHubPreview", () => {
       "ws_123",
       "https://github.com/octocat/hello-world/blob/feature/foo/src/app.ts#L2-L3",
       {
-        async getGithubPreviewClient() {
+        async getGithubClient() {
           return {
             async request(route: string, params?: Record<string, unknown>) {
               requests.push({ route, params })
@@ -301,7 +301,7 @@ describe("fetchGitHubPreview", () => {
       // loop must bail out at the cap rather than issuing one request per segment.
       "https://github.com/octocat/hello-world/blob/a/b/c/d/e/f/g/h/i.ts",
       {
-        async getGithubPreviewClient() {
+        async getGithubClient() {
           return {
             async request(route: string, params?: Record<string, unknown>) {
               requests.push({ route, params })
@@ -335,7 +335,7 @@ describe("fetchGitHubPreview", () => {
 
   test("normalizes issue label colors and rejects non-hex values", async () => {
     const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world/issues/7", {
-      async getGithubPreviewClient() {
+      async getGithubClient() {
         return {
           async request(route: string) {
             if (route === "GET /repos/{owner}/{repo}") {
@@ -388,7 +388,7 @@ describe("fetchGitHubPreview", () => {
 
   test("builds a README-backed file preview for tree URLs", async () => {
     const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world/tree/main", {
-      async getGithubPreviewClient() {
+      async getGithubClient() {
         return {
           async request(route: string, params?: Record<string, unknown>) {
             if (route === "GET /repos/{owner}/{repo}") {
@@ -439,7 +439,7 @@ describe("fetchGitHubPreview", () => {
     const requests: Array<{ route: string; params: Record<string, unknown> | undefined }> = []
 
     const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world", {
-      async getGithubPreviewClient() {
+      async getGithubClient() {
         return {
           async request(route: string, params?: Record<string, unknown>) {
             requests.push({ route, params })
