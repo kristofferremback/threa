@@ -167,7 +167,7 @@ export interface StreamMemberAddedOutboxPayload extends StreamScopedPayload {
 
 export interface StreamMemberRemovedOutboxPayload extends StreamScopedPayload {
   memberId: string
-  event?: StreamEvent
+  event: StreamEvent
 }
 
 // Workspace-scoped event payloads (no streamId)

@@ -185,38 +185,23 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   // For threads, look up the root stream's type from IDB workspace streams.
   const idbStreams = useWorkspaceStreams(workspaceId)
 
-  // Determine which stream's bootstrap holds the member list for /invite filtering.
-  const memberListStreamId = useMemo(() => {
-    if (!stream) return null
-    const effectiveType =
-      stream.type === StreamTypes.THREAD && stream.rootStreamId
-        ? idbStreams.find((s) => s.id === stream.rootStreamId)?.type
-        : stream.type
-    if (effectiveType !== StreamTypes.CHANNEL) return null
-    return stream.rootStreamId ?? stream.id
-  }, [stream, idbStreams])
-
-  // Read bootstrap reactively so the member list updates when socket events arrive.
-  const { data: memberBootstrap } = useStreamBootstrap(workspaceId, memberListStreamId ?? "", {
-    enabled: !!memberListStreamId,
-  })
-
-  // Load current stream bootstrap for bot member filtering (all stream types).
-  const { data: currentBootstrap } = useStreamBootstrap(workspaceId, streamId, {
-    enabled: !!streamId,
-  })
-
-  // For threads, also load root stream bootstrap since bot membership is checked there.
+  // Access is gated at the channel level: threads inherit their member list
+  // and bot grants from the root channel. For channels/DMs, read from self.
   const rootStreamId = stream?.rootStreamId
+  const { data: currentBootstrap } = useStreamBootstrap(workspaceId, streamId, {
+    enabled: !!streamId && !rootStreamId,
+  })
   const { data: rootBootstrap } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
     enabled: !!rootStreamId,
   })
+  const accessBootstrap = rootStreamId ? rootBootstrap : currentBootstrap
 
   const currentUser = useUser()
   const workspaceUsers = useWorkspaceUsers(workspaceId)
-  const currentUserRole = useMemo(() => {
-    return workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role
-  }, [workspaceUsers, currentUser?.id])
+  const currentUserRole = useMemo(
+    () => workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role,
+    [workspaceUsers, currentUser?.id]
+  )
 
   const streamContext = useMemo<MentionStreamContext | undefined>(() => {
     if (!stream) return undefined
@@ -227,34 +212,22 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       if (rootStream) ctx.rootStreamType = rootStream.type
     }
 
-    // For invite mode: memberIds should include both human and bot members
-    // so already-member bots are not shown as inviteable.
-    if (memberListStreamId && memberBootstrap?.members) {
-      const ids = new Set(memberBootstrap.members.map((m) => m.memberId))
-      if (memberBootstrap.botMemberIds) {
-        for (const botId of memberBootstrap.botMemberIds) {
-          ids.add(botId)
-        }
-      }
+    // Invite-mode exclusion: everyone who already has channel-level access —
+    // since threads inherit access from the root, inviting a root-member to a
+    // thread is a no-op (they can already see and @mention inside it).
+    if (accessBootstrap?.members) {
+      const ids = new Set(accessBootstrap.members.map((m) => m.memberId))
+      for (const botId of accessBootstrap.botMemberIds ?? []) ids.add(botId)
       ctx.memberIds = ids
     }
 
-    // For normal mode: botMemberIds filters which bots are mentionable.
-    // In threads, check the root stream's bot members.
-    if (stream.type === StreamTypes.THREAD && rootStreamId) {
-      if (rootBootstrap?.botMemberIds) {
-        ctx.botMemberIds = new Set(rootBootstrap.botMemberIds)
-      }
-    } else {
-      if (currentBootstrap?.botMemberIds) {
-        ctx.botMemberIds = new Set(currentBootstrap.botMemberIds)
-      }
-    }
+    // Bot mention filter: the same channel-level grants determine mentionability.
+    if (accessBootstrap?.botMemberIds) ctx.botMemberIds = new Set(accessBootstrap.botMemberIds)
 
     ctx.canInviteBots = currentUserRole === "admin" || currentUserRole === "owner"
 
     return ctx
-  }, [stream, idbStreams, memberListStreamId, memberBootstrap, currentBootstrap, rootBootstrap, currentUserRole])
+  }, [stream, idbStreams, accessBootstrap, currentUserRole])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()

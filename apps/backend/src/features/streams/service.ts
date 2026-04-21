@@ -782,61 +782,49 @@ export class StreamService {
   }
 
   /**
-   * Grant a bot access to a stream and emit a member_added event so the UI
-   * renders "Botty was added to the conversation" just like human invites.
+   * Resolve the stream that holds bot grants for `target`. Bot access is
+   * channel-scoped: a thread redirects to its root channel, so grants and
+   * `member_added`/`member_left` events always land on the channel. Threads
+   * inherit mentionability from the channel and do not carry their own
+   * `bot_channel_access` rows.
+   */
+  private async resolveBotGrantStream(client: Querier, target: Stream): Promise<Stream> {
+    if (target.type === StreamTypes.THREAD && target.rootStreamId) {
+      const root = await StreamRepository.findById(client, target.rootStreamId)
+      if (root) return root
+    }
+    return target
+  }
+
+  /**
+   * Grant a bot access to a stream. Idempotent and race-safe: emits
+   * `member_added` only when a new grant was created. Threads are redirected
+   * to the root channel (see `resolveBotGrantStream`).
    */
   async addBotToStream(targetStreamId: string, botId: string, workspaceId: string, actorId: string): Promise<void> {
     return withTransaction(this.pool, async (client) => {
-      const stream = await StreamRepository.findById(client, targetStreamId)
-      if (!stream) {
-        throw new StreamNotFoundError()
-      }
-
-      if (stream.workspaceId !== workspaceId) {
+      const target = await StreamRepository.findById(client, targetStreamId)
+      if (!target) throw new StreamNotFoundError()
+      if (target.workspaceId !== workspaceId) {
         throw new HttpError("Stream does not belong to this workspace", { status: 403, code: "WRONG_WORKSPACE" })
       }
-
-      if (stream.type === StreamTypes.DM) {
-        throw new HttpError("Cannot add bots to direct messages", {
-          status: 400,
-          code: "DM_MEMBERS_IMMUTABLE",
-        })
+      if (target.type === StreamTypes.DM) {
+        throw new HttpError("Cannot add bots to direct messages", { status: 400, code: "DM_MEMBERS_IMMUTABLE" })
       }
 
-      // Check for existing grant before inserting so we know whether to emit.
-      const hadGrant = await BotChannelAccessRepository.hasGrant(client, workspaceId, botId, stream.id)
-
-      // Idempotent: ON CONFLICT DO NOTHING handles duplicates gracefully
-      await BotChannelAccessRepository.grantAccess(client, {
+      const grantStream = await this.resolveBotGrantStream(client, target)
+      const inserted = await BotChannelAccessRepository.grantAccess(client, {
         id: streamId(),
         workspaceId,
         botId,
-        streamId: stream.id,
+        streamId: grantStream.id,
         grantedBy: actorId,
       })
-
-      // For threads, also grant access to the root stream so the bot is
-      // mentionable there (frontend checks root stream membership for threads).
-      if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
-        const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
-        if (rootStream && rootStream.type !== StreamTypes.DM) {
-          await BotChannelAccessRepository.grantAccess(client, {
-            id: streamId(),
-            workspaceId,
-            botId,
-            streamId: rootStream.id,
-            grantedBy: actorId,
-          })
-        }
-      }
-
-      // Only emit member_added for new grants, avoiding duplicate timeline
-      // and activity events on re-invite.
-      if (hadGrant) return
+      if (!inserted) return
 
       const event = await StreamEventRepository.insert(client, {
         id: eventId(),
-        streamId: stream.id,
+        streamId: grantStream.id,
         eventType: "member_added",
         payload: { addedBy: actorId },
         actorId: botId,
@@ -844,10 +832,10 @@ export class StreamService {
       })
 
       await OutboxRepository.insert(client, "stream:member_added", {
-        workspaceId: stream.workspaceId,
-        streamId: stream.id,
+        workspaceId: grantStream.workspaceId,
+        streamId: grantStream.id,
         memberId: botId,
-        stream,
+        stream: grantStream,
         event,
       })
     })
@@ -930,25 +918,25 @@ export class StreamService {
   }
 
   /**
-   * Revoke a bot's access to a stream and emit a member_left event so the UI
-   * renders "Botty left the conversation" just like human removals.
+   * Revoke a bot's access. Idempotent and race-safe: emits `member_left` only
+   * when a grant was actually deleted. Mirrors `addBotToStream` — threads are
+   * redirected to the root channel.
    */
   async removeBotFromStream(targetStreamId: string, botId: string, workspaceId: string): Promise<void> {
     return withTransaction(this.pool, async (client) => {
-      const stream = await StreamRepository.findById(client, targetStreamId)
-      if (!stream) {
-        throw new StreamNotFoundError()
-      }
-
-      if (stream.workspaceId !== workspaceId) {
+      const target = await StreamRepository.findById(client, targetStreamId)
+      if (!target) throw new StreamNotFoundError()
+      if (target.workspaceId !== workspaceId) {
         throw new HttpError("Stream does not belong to this workspace", { status: 403, code: "WRONG_WORKSPACE" })
       }
 
-      await BotChannelAccessRepository.revokeAccess(client, workspaceId, botId, stream.id)
+      const grantStream = await this.resolveBotGrantStream(client, target)
+      const deleted = await BotChannelAccessRepository.revokeAccess(client, workspaceId, botId, grantStream.id)
+      if (!deleted) return
 
       const event = await StreamEventRepository.insert(client, {
         id: eventId(),
-        streamId: stream.id,
+        streamId: grantStream.id,
         eventType: "member_left",
         payload: {},
         actorId: botId,
@@ -956,8 +944,8 @@ export class StreamService {
       })
 
       await OutboxRepository.insert(client, "stream:member_removed", {
-        workspaceId: stream.workspaceId,
-        streamId: stream.id,
+        workspaceId: grantStream.workspaceId,
+        streamId: grantStream.id,
         memberId: botId,
         event,
       })

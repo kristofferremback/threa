@@ -451,14 +451,18 @@ export class ActivityService {
   /**
    * Create a member_added activity for a user who was added to a stream.
    * Behaves like a mention in the activity feed but does not trigger push.
+   * Skipped for bot additions: bots don't consume the activity feed, so a
+   * row keyed to a bot ID would be dead data.
    */
   async processMemberAdded(params: {
     workspaceId: string
     streamId: string
     memberId: string
-    event: { id: string; payload: unknown }
+    event: { id: string; payload: unknown; actorType?: string | null }
   }): Promise<Activity[]> {
     const { workspaceId, streamId, memberId, event } = params
+
+    if (event.actorType === "bot") return []
 
     const addedBy =
       typeof event.payload === "object" && event.payload !== null && "addedBy" in event.payload
