@@ -11,6 +11,12 @@ export function stripColons(shortcode: string): string {
   return shortcode.startsWith(":") && shortcode.endsWith(":") ? shortcode.slice(1, -1) : shortcode
 }
 
+/** Derive the set of all reacted shortcodes (stripped) from a reactions dict. */
+export function reactionShortcodes(reactions: Record<string, string[]> | null | undefined): Set<string> {
+  if (!reactions) return new Set()
+  return new Set(Object.keys(reactions).map(stripColons))
+}
+
 interface UseMessageReactionsResult {
   /** Add a reaction (emoji character, e.g. "👍") */
   addReaction: (emoji: string) => Promise<void>

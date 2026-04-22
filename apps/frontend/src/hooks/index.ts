@@ -72,7 +72,7 @@ export { useActors } from "./use-actors"
 
 export { useWorkspaceEmoji } from "./use-workspace-emoji"
 
-export { useMessageReactions, stripColons } from "./use-message-reactions"
+export { useMessageReactions, stripColons, reactionShortcodes } from "./use-message-reactions"
 
 export { useConversations, conversationKeys } from "./use-conversations"
 

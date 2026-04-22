@@ -23,6 +23,7 @@ import {
   useWorkspaceUserId,
   useMessageReactions,
   stripColons,
+  reactionShortcodes,
   focusAtEnd,
   type MessageAgentActivity,
 } from "@/hooks"
@@ -574,10 +575,7 @@ function SentMessageEvent({
     return active
   }, [currentUserId, payload.reactions])
 
-  const allReactionShortcodes = useMemo(() => {
-    if (!payload.reactions) return new Set<string>()
-    return new Set(Object.keys(payload.reactions).map(stripColons))
-  }, [payload.reactions])
+  const allReactionShortcodes = useMemo(() => reactionShortcodes(payload.reactions), [payload.reactions])
 
   const handleDelete = async () => {
     setIsDeleting(true)

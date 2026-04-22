@@ -1,6 +1,6 @@
 import { forwardRef, useMemo, useCallback } from "react"
 import { SmilePlus, X } from "lucide-react"
-import { useMessageReactions, stripColons } from "@/hooks"
+import { useMessageReactions, stripColons, reactionShortcodes } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -42,9 +42,7 @@ export function MessageReactions({ reactions, workspaceId, messageId, currentUse
     return active
   }, [currentUserId, reactions])
 
-  const allReactionShortcodes = useMemo(() => {
-    return new Set(Object.keys(reactions).map(stripColons))
-  }, [reactions])
+  const allReactionShortcodes = useMemo(() => reactionShortcodes(reactions), [reactions])
 
   const handleToggleReaction = useCallback(
     (shortcode: string) => toggleReaction(shortcode, reactions, currentUserId),

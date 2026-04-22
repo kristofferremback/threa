@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
-import { useMessageReactions, stripColons } from "@/hooks/use-message-reactions"
+import { useMessageReactions, stripColons, reactionShortcodes } from "@/hooks/use-message-reactions"
 import { getInitials } from "@/lib/initials"
 import { cn } from "@/lib/utils"
 import { buildQuickEmojis } from "@/lib/emoji-picker"
@@ -95,10 +95,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     return active
   }, [context.currentUserId, context.reactions])
 
-  const allReactionShortcodes = useMemo(() => {
-    if (!context.reactions) return new Set<string>()
-    return new Set(Object.keys(context.reactions).map(stripColons))
-  }, [context.reactions])
+  const allReactionShortcodes = useMemo(() => reactionShortcodes(context.reactions), [context.reactions])
 
   const activeEmojis = useMemo(
     () => emojis.filter((e) => activeShortcodes.has(e.shortcode)),
