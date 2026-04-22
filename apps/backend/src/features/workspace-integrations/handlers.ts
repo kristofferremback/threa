@@ -4,7 +4,12 @@ import { WorkspaceIntegrationService } from "./service"
 import { HttpError } from "../../lib/errors"
 import { resolveWorkspaceAuthorization } from "../../middleware/workspace-authz-resolver"
 import { UserRepository } from "../workspaces"
-import { SESSION_COOKIE_CONFIG, SESSION_COOKIE_NAME, type AuthService } from "@threa/backend-common"
+import {
+  SESSION_COOKIE_CLEAR_CONFIG,
+  SESSION_COOKIE_CONFIG,
+  SESSION_COOKIE_NAME,
+  type AuthService,
+} from "@threa/backend-common"
 import type { Pool } from "pg"
 
 const githubCallbackSchema = z.object({
@@ -113,7 +118,7 @@ export function createWorkspaceIntegrationHandlers({
           organizationId: authz.organizationId,
         })
         if (!refreshed.success || !refreshed.user || !refreshed.session || !refreshed.sealedSession) {
-          res.clearCookie(SESSION_COOKIE_NAME)
+          res.clearCookie(SESSION_COOKIE_NAME, SESSION_COOKIE_CLEAR_CONFIG)
           throw new HttpError("Session expired", { status: 401, code: "SESSION_EXPIRED" })
         }
 

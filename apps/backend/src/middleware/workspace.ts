@@ -1,6 +1,11 @@
 import type { Request, Response, NextFunction } from "express"
 import type { Pool } from "pg"
-import { SESSION_COOKIE_CONFIG, SESSION_COOKIE_NAME, type AuthService } from "@threa/backend-common"
+import {
+  SESSION_COOKIE_CLEAR_CONFIG,
+  SESSION_COOKIE_CONFIG,
+  SESSION_COOKIE_NAME,
+  type AuthService,
+} from "@threa/backend-common"
 import { UserRepository, type User } from "../features/workspaces"
 import { storedCompatibilityRole } from "./authorization"
 import { resolveWorkspaceAuthorization } from "./workspace-authz-resolver"
@@ -58,7 +63,7 @@ export function createWorkspaceUserMiddleware({ pool, authService }: Dependencie
         organizationId: authz.organizationId,
       })
       if (!refreshed.success || !refreshed.user || !refreshed.session || !refreshed.sealedSession) {
-        res.clearCookie(SESSION_COOKIE_NAME)
+        res.clearCookie(SESSION_COOKIE_NAME, SESSION_COOKIE_CLEAR_CONFIG)
         return res.status(401).json({ error: "Session expired" })
       }
 

@@ -4,47 +4,13 @@ import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import type { WorkspaceRole } from "@threa/types"
+import { invitationsApi } from "@/api/invitations"
+import { spyOnExport } from "@/test/spy"
+import * as responsiveDialogModule from "@/components/ui/responsive-dialog"
+import * as selectModule from "@/components/ui/select"
 import { InviteDialog } from "./invite-dialog"
 
 const mockSendInvitations = vi.fn()
-
-vi.mock("@/api/invitations", () => ({
-  invitationsApi: {
-    send: (...args: unknown[]) => mockSendInvitations(...args),
-  },
-}))
-
-vi.mock("@/components/ui/responsive-dialog", () => ({
-  ResponsiveDialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ResponsiveDialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ResponsiveDialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ResponsiveDialogTitle: ({ children }: { children: ReactNode }) => <h1>{children}</h1>,
-  ResponsiveDialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}))
-
-vi.mock("@/components/ui/select", () => ({
-  Select: ({
-    value,
-    onValueChange,
-    disabled,
-    children,
-  }: {
-    value: string
-    onValueChange?: (value: string) => void
-    disabled?: boolean
-    children: ReactNode
-  }) => (
-    <select value={value} onChange={(event) => onValueChange?.(event.target.value)} disabled={disabled}>
-      {children}
-    </select>
-  ),
-  SelectTrigger: ({ children }: { children: ReactNode }) => children,
-  SelectValue: ({ placeholder }: { placeholder?: string }) => <option value="">{placeholder ?? ""}</option>,
-  SelectContent: ({ children }: { children: ReactNode }) => children,
-  SelectItem: ({ value, children }: { value: string; children: ReactNode }) => (
-    <option value={value}>{children}</option>
-  ),
-}))
 
 function renderInviteDialog(roles: WorkspaceRole[]) {
   const queryClient = new QueryClient({
@@ -63,8 +29,69 @@ function renderInviteDialog(roles: WorkspaceRole[]) {
 
 describe("InviteDialog", () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     mockSendInvitations.mockReset()
     mockSendInvitations.mockResolvedValue({ sent: [], skipped: [] })
+
+    vi.spyOn(invitationsApi, "send").mockImplementation((...args) => mockSendInvitations(...args))
+
+    spyOnExport(responsiveDialogModule, "ResponsiveDialog").mockReturnValue((({
+      children,
+    }: {
+      children: ReactNode
+    }) => <div>{children}</div>) as unknown as typeof responsiveDialogModule.ResponsiveDialog)
+    spyOnExport(responsiveDialogModule, "ResponsiveDialogContent").mockReturnValue((({
+      children,
+    }: {
+      children: ReactNode
+    }) => <div>{children}</div>) as unknown as typeof responsiveDialogModule.ResponsiveDialogContent)
+    spyOnExport(responsiveDialogModule, "ResponsiveDialogHeader").mockReturnValue((({
+      children,
+    }: {
+      children: ReactNode
+    }) => <div>{children}</div>) as unknown as typeof responsiveDialogModule.ResponsiveDialogHeader)
+    spyOnExport(responsiveDialogModule, "ResponsiveDialogTitle").mockReturnValue((({
+      children,
+    }: {
+      children: ReactNode
+    }) => <h1>{children}</h1>) as unknown as typeof responsiveDialogModule.ResponsiveDialogTitle)
+    spyOnExport(responsiveDialogModule, "ResponsiveDialogFooter").mockReturnValue((({
+      children,
+    }: {
+      children: ReactNode
+    }) => <div>{children}</div>) as unknown as typeof responsiveDialogModule.ResponsiveDialogFooter)
+
+    spyOnExport(selectModule, "Select").mockReturnValue((({
+      value,
+      onValueChange,
+      disabled,
+      children,
+    }: {
+      value: string
+      onValueChange?: (value: string) => void
+      disabled?: boolean
+      children: ReactNode
+    }) => (
+      <select value={value} onChange={(event) => onValueChange?.(event.target.value)} disabled={disabled}>
+        {children}
+      </select>
+    )) as unknown as typeof selectModule.Select)
+    spyOnExport(selectModule, "SelectTrigger").mockReturnValue(
+      (({ children }: { children: ReactNode }) => children) as unknown as typeof selectModule.SelectTrigger
+    )
+    spyOnExport(selectModule, "SelectValue").mockReturnValue((({ placeholder }: { placeholder?: string }) => (
+      <option value="">{placeholder ?? ""}</option>
+    )) as unknown as typeof selectModule.SelectValue)
+    spyOnExport(selectModule, "SelectContent").mockReturnValue(
+      (({ children }: { children: ReactNode }) => children) as unknown as typeof selectModule.SelectContent
+    )
+    spyOnExport(selectModule, "SelectItem").mockReturnValue((({
+      value,
+      children,
+    }: {
+      value: string
+      children: ReactNode
+    }) => <option value={value}>{children}</option>) as unknown as typeof selectModule.SelectItem)
   })
 
   it("maps admin-capable WorkOS roles to the legacy admin compatibility role", async () => {

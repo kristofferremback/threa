@@ -4,7 +4,13 @@ import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import type { WorkspaceBootstrap, WorkspaceRole } from "@threa/types"
+import { invitationsApi } from "@/api/invitations"
+import { workspacesApi } from "@/api/workspaces"
 import { workspaceKeys } from "@/hooks/use-workspaces"
+import { spyOnExport } from "@/test/spy"
+import * as hooksModule from "@/hooks"
+import * as inviteDialogModule from "./invite-dialog"
+import * as selectModule from "@/components/ui/select"
 import { UsersTab } from "./users-tab"
 
 const mockListRoles = vi.fn()
@@ -13,58 +19,6 @@ const mockListInvitations = vi.fn()
 const mockRevokeInvitation = vi.fn()
 const mockResendInvitation = vi.fn()
 const inviteDialogRoles: WorkspaceRole[][] = []
-
-vi.mock("@/api/workspaces", () => ({
-  workspacesApi: {
-    listRoles: (...args: unknown[]) => mockListRoles(...args),
-    updateUserRole: (...args: unknown[]) => mockUpdateUserRole(...args),
-  },
-}))
-
-vi.mock("@/api/invitations", () => ({
-  invitationsApi: {
-    list: (...args: unknown[]) => mockListInvitations(...args),
-    revoke: (...args: unknown[]) => mockRevokeInvitation(...args),
-    resend: (...args: unknown[]) => mockResendInvitation(...args),
-  },
-}))
-
-vi.mock("@/hooks", () => ({
-  useFormattedDate: () => ({
-    formatDate: () => "Apr 18, 2026",
-  }),
-}))
-
-vi.mock("./invite-dialog", () => ({
-  InviteDialog: ({ roles }: { roles: WorkspaceRole[] }) => {
-    inviteDialogRoles.push(roles)
-    return <div data-testid="invite-dialog">{roles.map((role) => role.name).join(", ")}</div>
-  },
-}))
-
-vi.mock("@/components/ui/select", () => ({
-  Select: ({
-    value,
-    onValueChange,
-    disabled,
-    children,
-  }: {
-    value: string
-    onValueChange?: (value: string) => void
-    disabled?: boolean
-    children: ReactNode
-  }) => (
-    <select value={value} onChange={(event) => onValueChange?.(event.target.value)} disabled={disabled}>
-      {children}
-    </select>
-  ),
-  SelectTrigger: ({ children }: { children: ReactNode }) => children,
-  SelectValue: ({ placeholder }: { placeholder?: string }) => <option value="">{placeholder ?? ""}</option>,
-  SelectContent: ({ children }: { children: ReactNode }) => children,
-  SelectItem: ({ value, children }: { value: string; children: ReactNode }) => (
-    <option value={value}>{children}</option>
-  ),
-}))
 
 function renderUsersTab(bootstrap: Partial<WorkspaceBootstrap>) {
   const workspaceId = "ws_1"
@@ -96,6 +50,7 @@ describe("UsersTab", () => {
   ]
 
   beforeEach(() => {
+    vi.restoreAllMocks()
     mockListRoles.mockReset()
     mockUpdateUserRole.mockReset()
     mockListInvitations.mockReset()
@@ -106,6 +61,54 @@ describe("UsersTab", () => {
     mockListRoles.mockResolvedValue(roles)
     mockUpdateUserRole.mockResolvedValue({})
     mockListInvitations.mockResolvedValue([])
+
+    vi.spyOn(workspacesApi, "listRoles").mockImplementation((...args) => mockListRoles(...args))
+    vi.spyOn(workspacesApi, "updateUserRole").mockImplementation((...args) => mockUpdateUserRole(...args))
+    vi.spyOn(invitationsApi, "list").mockImplementation((...args) => mockListInvitations(...args))
+    vi.spyOn(invitationsApi, "revoke").mockImplementation((...args) => mockRevokeInvitation(...args))
+    vi.spyOn(invitationsApi, "resend").mockImplementation((...args) => mockResendInvitation(...args))
+    vi.spyOn(hooksModule, "useFormattedDate").mockReturnValue({
+      formatDate: () => "Apr 18, 2026",
+      formatTime: () => "10:00",
+      formatRelative: () => "4 days ago",
+      formatFull: () => "Apr 18, 2026 10:00",
+    })
+    vi.spyOn(inviteDialogModule, "InviteDialog").mockImplementation((({ roles }: { roles: WorkspaceRole[] }) => {
+      inviteDialogRoles.push(roles)
+      return <div data-testid="invite-dialog">{roles.map((role) => role.name).join(", ")}</div>
+    }) as unknown as typeof inviteDialogModule.InviteDialog)
+
+    spyOnExport(selectModule, "Select").mockReturnValue((({
+      value,
+      onValueChange,
+      disabled,
+      children,
+    }: {
+      value: string
+      onValueChange?: (value: string) => void
+      disabled?: boolean
+      children: ReactNode
+    }) => (
+      <select value={value} onChange={(event) => onValueChange?.(event.target.value)} disabled={disabled}>
+        {children}
+      </select>
+    )) as unknown as typeof selectModule.Select)
+    spyOnExport(selectModule, "SelectTrigger").mockReturnValue(
+      (({ children }: { children: ReactNode }) => children) as unknown as typeof selectModule.SelectTrigger
+    )
+    spyOnExport(selectModule, "SelectValue").mockReturnValue((({ placeholder }: { placeholder?: string }) => (
+      <option value="">{placeholder ?? ""}</option>
+    )) as unknown as typeof selectModule.SelectValue)
+    spyOnExport(selectModule, "SelectContent").mockReturnValue(
+      (({ children }: { children: ReactNode }) => children) as unknown as typeof selectModule.SelectContent
+    )
+    spyOnExport(selectModule, "SelectItem").mockReturnValue((({
+      value,
+      children,
+    }: {
+      value: string
+      children: ReactNode
+    }) => <option value={value}>{children}</option>) as unknown as typeof selectModule.SelectItem)
   })
 
   it("shows owner badges and passes fetched roles to the invite dialog", async () => {

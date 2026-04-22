@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
 import type { NextFunction, Request, Response } from "express"
+import { SESSION_COOKIE_CLEAR_CONFIG, SESSION_COOKIE_NAME } from "@threa/backend-common"
 import { createWorkspaceUserMiddleware } from "./workspace"
 import { UserRepository } from "../features/workspaces"
 import * as authzResolver from "./workspace-authz-resolver"
@@ -103,7 +104,7 @@ describe("createWorkspaceUserMiddleware", () => {
     const middleware = createWorkspaceUserMiddleware({ pool: {} as never, authService })
     const req = {
       params: { workspaceId: "ws_1" },
-      cookies: { wos_session: "session_old" },
+      cookies: { [SESSION_COOKIE_NAME]: "session_old" },
       workosUserId: "wos_1",
       authSession: {
         sealedSession: "session_old",
@@ -132,6 +133,63 @@ describe("createWorkspaceUserMiddleware", () => {
     })
     expect(nextCalled).toBe(true)
     expect(req.workspaceId).toBe("ws_1")
+  })
+
+  test("clears the session cookie with matching attributes when org refresh fails", async () => {
+    findWorkspaceUserAccess.mockResolvedValue({
+      workspaceExists: true,
+      user: {
+        id: "user_1",
+        workspaceId: "ws_1",
+        workosUserId: "wos_1",
+        email: "user@example.com",
+        role: "user",
+        slug: "user",
+        name: "User",
+        description: null,
+        avatarUrl: null,
+        timezone: null,
+        locale: null,
+        pronouns: null,
+        phone: null,
+        githubUsername: null,
+        setupCompleted: true,
+        joinedAt: new Date(),
+        assignedRole: null,
+        assignedRoles: [],
+        canEditRole: false,
+      },
+    } as never)
+    resolveWorkspaceAuthorization.mockResolvedValue({ status: "org_mismatch", organizationId: "org_ws" } as never)
+
+    const authService = {
+      refreshSession: mock(async () => ({ success: false })),
+    } as any
+
+    const middleware = createWorkspaceUserMiddleware({ pool: {} as never, authService })
+    const req = {
+      params: { workspaceId: "ws_1" },
+      cookies: { [SESSION_COOKIE_NAME]: "session_old" },
+      workosUserId: "wos_1",
+      authSession: {
+        sealedSession: "session_old",
+        organizationId: "org_other",
+        role: "member",
+        roles: ["member"],
+        permissions: ["messages:read"],
+      },
+    } as unknown as Request
+    const res = createResponse()
+    let nextCalled = false
+
+    await middleware(req, res, (() => {
+      nextCalled = true
+    }) as NextFunction)
+
+    expect(res.clearCookie).toHaveBeenCalledWith(SESSION_COOKIE_NAME, SESSION_COOKIE_CLEAR_CONFIG)
+    expect(res.statusCode).toBe(401)
+    expect(res.body).toEqual({ error: "Session expired" })
+    expect(nextCalled).toBe(false)
   })
 
   test("preserves legacy owner rows while authorizing from permissions", async () => {
