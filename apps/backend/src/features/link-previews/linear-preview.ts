@@ -121,11 +121,6 @@ const ISSUE_QUERY = /* GraphQL */ `
         id
         name
       }
-      comments(first: 1) {
-        pageInfo {
-          hasNextPage
-        }
-      }
       createdAt
       updatedAt
     }
@@ -265,11 +260,6 @@ const PROJECT_QUERY = /* GraphQL */ `
           displayName
           avatarUrl
         }
-        issues(first: 0) {
-          pageInfo {
-            hasNextPage
-          }
-        }
       }
     }
   }
@@ -299,7 +289,6 @@ async function fetchProjectPreview(
     lead: toLinearActor(node.lead),
     targetDate: typeof node.targetDate === "string" ? node.targetDate : null,
     startDate: typeof node.startDate === "string" ? node.startDate : null,
-    issueCount: node.issues?.pageInfo?.hasNextPage ? -1 : 0,
   }
 
   const preview: LinearPreview = {
@@ -437,7 +426,6 @@ interface LinearIssueNode {
   team: LinearTeamNode
   labels?: { nodes?: LinearLabelNode[] } | null
   project?: { id?: string; name?: string } | null
-  comments?: { pageInfo?: { hasNextPage?: boolean } } | null
   createdAt: string
   updatedAt: string
 }
@@ -464,7 +452,6 @@ interface LinearProjectNode {
   startDate?: string | null
   targetDate?: string | null
   lead?: LinearUserNode | null
-  issues?: { pageInfo?: { hasNextPage?: boolean } } | null
 }
 
 interface LinearDocumentNode {
@@ -501,7 +488,6 @@ function toIssuePreviewData(issue: LinearIssueNode): LinearIssuePreviewData {
     estimate: typeof issue.estimate === "number" ? issue.estimate : null,
     dueDate: typeof issue.dueDate === "string" ? issue.dueDate : null,
     projectName: issue.project?.name ?? null,
-    commentCount: issue.comments?.pageInfo?.hasNextPage ? 1 : 0,
     createdAt: issue.createdAt,
     updatedAt: issue.updatedAt,
   }

@@ -926,7 +926,6 @@ export interface LinearIssuePreviewData {
   estimate: number | null
   dueDate: string | null
   projectName: string | null
-  commentCount: number
   createdAt: string
   updatedAt: string
 }
@@ -954,7 +953,6 @@ export interface LinearProjectPreviewData {
   lead: LinearActor | null
   targetDate: string | null
   startDate: string | null
-  issueCount: number
 }
 
 export interface LinearDocumentPreviewData {

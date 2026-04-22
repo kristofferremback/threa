@@ -134,6 +134,19 @@ export class LinearClient {
     const complexityRemaining = parseIntegerHeader(headers.get("x-ratelimit-complexity-remaining"))
     const complexityResetSeconds = parseIntegerHeader(headers.get("x-ratelimit-complexity-reset"))
 
+    // Responses without rate-limit headers (401 auth failures, CORS preflights, etc.) parse
+    // to all-null; persisting that would wipe a previously-captured near-limit state and
+    // temporarily neuter `isNearLinearRateLimit`. Skip the write when there is nothing
+    // fresh to record.
+    if (
+      requestsRemaining === null &&
+      requestsResetSeconds === null &&
+      complexityRemaining === null &&
+      complexityResetSeconds === null
+    ) {
+      return
+    }
+
     // Linear documents both second-precision and ms-precision reset timestamps across
     // its pages; treat any reset value > 10^12 as already-in-ms.
     const requestsResetAt = secondsOrMsToIso(requestsResetSeconds)

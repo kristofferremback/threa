@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildGithubCallbackRedirectUrl } from "./handlers"
+import { buildGithubCallbackRedirectUrl, buildProviderCallbackRedirectUrl } from "./handlers"
 
 describe("buildGithubCallbackRedirectUrl", () => {
   const allowedOrigins = ["http://localhost:3000", "https://app.threa.io"]
@@ -80,5 +80,57 @@ describe("buildGithubCallbackRedirectUrl", () => {
     )
 
     expect(url).toBe("/w/ws_123?ws-settings=integrations&provider=github")
+  })
+})
+
+describe("buildProviderCallbackRedirectUrl (linear)", () => {
+  const allowedOrigins = ["http://localhost:3000", "https://app.threa.io"]
+
+  test("returns an absolute frontend URL with provider=linear when the forwarded origin is allowlisted", () => {
+    const url = buildProviderCallbackRedirectUrl(
+      {
+        headers: {
+          "x-forwarded-host": "app.threa.io",
+          "x-forwarded-proto": "https",
+        },
+        protocol: "https",
+      } as any,
+      "ws_abc",
+      "linear",
+      allowedOrigins
+    )
+
+    expect(url).toBe("https://app.threa.io/w/ws_abc?ws-settings=integrations&provider=linear")
+  })
+
+  test("falls back to a relative workspace path with provider=linear when the forwarded origin is not allowlisted", () => {
+    const url = buildProviderCallbackRedirectUrl(
+      {
+        headers: {
+          "x-forwarded-host": "evil.example",
+          "x-forwarded-proto": "https",
+        },
+        protocol: "https",
+      } as any,
+      "ws_abc",
+      "linear",
+      allowedOrigins
+    )
+
+    expect(url).toBe("/w/ws_abc?ws-settings=integrations&provider=linear")
+  })
+
+  test("falls back to a relative path with provider=linear when no forwarded headers are present", () => {
+    const url = buildProviderCallbackRedirectUrl(
+      {
+        headers: {},
+        protocol: "https",
+      } as any,
+      "ws_abc",
+      "linear",
+      allowedOrigins
+    )
+
+    expect(url).toBe("/w/ws_abc?ws-settings=integrations&provider=linear")
   })
 })
