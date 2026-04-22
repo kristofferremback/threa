@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { buildGithubCallbackRedirectUrl, buildProviderCallbackRedirectUrl } from "./handlers"
+import { buildProviderCallbackRedirectUrl } from "./handlers"
 
-describe("buildGithubCallbackRedirectUrl", () => {
+describe("buildProviderCallbackRedirectUrl (github)", () => {
   const allowedOrigins = ["http://localhost:3000", "https://app.threa.io"]
 
   test("returns an absolute frontend URL when the forwarded origin is allowlisted", () => {
-    const url = buildGithubCallbackRedirectUrl(
+    const url = buildProviderCallbackRedirectUrl(
       {
         headers: {
           "x-forwarded-host": "localhost:3000",
@@ -14,6 +14,7 @@ describe("buildGithubCallbackRedirectUrl", () => {
         protocol: "http",
       } as any,
       "ws_123",
+      "github",
       allowedOrigins
     )
 
@@ -21,7 +22,7 @@ describe("buildGithubCallbackRedirectUrl", () => {
   })
 
   test("prefers x-forwarded-port over an intermediate proxy port in the host header", () => {
-    const url = buildGithubCallbackRedirectUrl(
+    const url = buildProviderCallbackRedirectUrl(
       {
         headers: {
           "x-forwarded-host": "localhost:3001",
@@ -31,6 +32,7 @@ describe("buildGithubCallbackRedirectUrl", () => {
         protocol: "http",
       } as any,
       "ws_123",
+      "github",
       allowedOrigins
     )
 
@@ -38,12 +40,13 @@ describe("buildGithubCallbackRedirectUrl", () => {
   })
 
   test("falls back to a relative workspace path without forwarded headers", () => {
-    const url = buildGithubCallbackRedirectUrl(
+    const url = buildProviderCallbackRedirectUrl(
       {
         headers: {},
         protocol: "https",
       } as any,
       "ws_123",
+      "github",
       allowedOrigins
     )
 
@@ -51,7 +54,7 @@ describe("buildGithubCallbackRedirectUrl", () => {
   })
 
   test("falls back to a relative path when the forwarded origin is not in the allowlist", () => {
-    const url = buildGithubCallbackRedirectUrl(
+    const url = buildProviderCallbackRedirectUrl(
       {
         headers: {
           "x-forwarded-host": "evil.example",
@@ -60,6 +63,7 @@ describe("buildGithubCallbackRedirectUrl", () => {
         protocol: "https",
       } as any,
       "ws_123",
+      "github",
       allowedOrigins
     )
 
@@ -67,7 +71,7 @@ describe("buildGithubCallbackRedirectUrl", () => {
   })
 
   test("falls back to a relative path when the forwarded host is malformed", () => {
-    const url = buildGithubCallbackRedirectUrl(
+    const url = buildProviderCallbackRedirectUrl(
       {
         headers: {
           "x-forwarded-host": "not a valid host",
@@ -76,6 +80,7 @@ describe("buildGithubCallbackRedirectUrl", () => {
         protocol: "https",
       } as any,
       "ws_123",
+      "github",
       allowedOrigins
     )
 

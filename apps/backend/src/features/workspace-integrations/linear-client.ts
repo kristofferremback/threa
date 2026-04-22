@@ -17,6 +17,13 @@ import type { WorkspaceIntegrationRecord } from "./repository"
 
 const LINEAR_GRAPHQL_ENDPOINT = "https://api.linear.app/graphql"
 
+/**
+ * Exposed so the callback flow (which runs before any integration record exists)
+ * can share the same endpoint constant as `LinearClient`. Not part of the public
+ * `workspace-integrations/index.ts` surface — internal to the feature.
+ */
+export { LINEAR_GRAPHQL_ENDPOINT as LinearGraphQLEndpoint }
+
 export interface LinearIntegrationCredentials {
   accessToken: string
   refreshToken: string | null

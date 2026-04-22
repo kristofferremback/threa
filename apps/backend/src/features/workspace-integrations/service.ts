@@ -23,7 +23,12 @@ import {
   verifyLinearInstallState,
 } from "./crypto"
 import { WorkspaceIntegrationRepository, type WorkspaceIntegrationRecord } from "./repository"
-import { LinearClient, type LinearIntegrationCredentials, type LinearIntegrationMetadata } from "./linear-client"
+import {
+  LinearClient,
+  LinearGraphQLEndpoint,
+  type LinearIntegrationCredentials,
+  type LinearIntegrationMetadata,
+} from "./linear-client"
 import {
   buildLinearAuthorizationUrl,
   exchangeLinearCode,
@@ -932,7 +937,7 @@ interface LinearViewerResponse {
  * exists yet at this point.
  */
 async function fetchLinearViewer(accessToken: string): Promise<LinearViewerResponse | null> {
-  const response = await fetch("https://api.linear.app/graphql", {
+  const response = await fetch(LinearGraphQLEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

@@ -55,18 +55,6 @@ export function buildProviderCallbackRedirectUrl(
   return `${origin}${path}`
 }
 
-/**
- * Preserved GitHub-specific alias — pinned by existing `handlers.test.ts`
- * assertions. Forwards to `buildProviderCallbackRedirectUrl(provider="github")`.
- */
-export function buildGithubCallbackRedirectUrl(
-  req: Pick<Request, "headers" | "protocol">,
-  workspaceId: string,
-  allowedFrontendOrigins: string[]
-): string {
-  return buildProviderCallbackRedirectUrl(req, workspaceId, "github", allowedFrontendOrigins)
-}
-
 export function createWorkspaceIntegrationHandlers({
   workspaceIntegrationService,
   allowedFrontendOrigins,
