@@ -3,6 +3,7 @@ import type { Command, CommandContext, CommandResult } from "./registry"
 import { StreamRepository, type Stream, type StreamService } from "../streams"
 import { UserRepository } from "../workspaces"
 import { BotRepository } from "../public-api"
+import { resolveWorkspaceAuthorization } from "../../middleware/workspace-authz-resolver"
 import { StreamTypes } from "@threa/types"
 
 interface InviteCommandDeps {
@@ -28,7 +29,8 @@ interface InviteResult {
 
 /**
  * /invite @slug1 @slug2 ... — invite users or bots to a channel or a thread
- * rooted in a channel. Bots may only be invited by workspace owners/admins.
+ * rooted in a channel. Bots may only be invited by users with workspace admin
+ * permission.
  */
 export class InviteCommand implements Command {
   name = "invite"
@@ -56,9 +58,19 @@ export class InviteCommand implements Command {
       UserRepository.findById(this.deps.pool, ctx.workspaceId, ctx.userId),
     ])
 
-    const canInviteBots = actor?.role === "admin" || actor?.role === "owner"
+    const actorAuthz =
+      actor &&
+      (await resolveWorkspaceAuthorization({
+        pool: this.deps.pool,
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        source: "user_api_key",
+        workosUserId: actor.workosUserId,
+      }))
+
+    const canInviteBots = actorAuthz?.status === "ok" && actorAuthz.value.permissions.has("workspace:admin")
     if (bots.length > 0 && !canInviteBots) {
-      return { success: false, error: "Only admins and owners can invite bots" }
+      return { success: false, error: "Missing required permission: workspace:admin" }
     }
 
     const entities: Entity[] = [

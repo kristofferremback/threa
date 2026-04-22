@@ -25,7 +25,7 @@ export interface MentionStreamContext {
   inviteMode?: boolean
   memberIds?: Set<string>
   botMemberIds?: Set<string>
-  /** Whether the current user can invite bots (admin/owner only). */
+  /** Whether the current user can invite bots (workspace:admin only). */
   canInviteBots?: boolean
 }
 
