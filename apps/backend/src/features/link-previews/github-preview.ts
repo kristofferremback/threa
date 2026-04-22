@@ -42,7 +42,7 @@ export async function fetchGitHubPreview(
   const parsed = parseGitHubUrl(url)
   if (!parsed) return null
 
-  const client = await workspaceIntegrationService.getGithubPreviewClient(workspaceId)
+  const client = await workspaceIntegrationService.getGithubClient(workspaceId)
   if (!client) return null
 
   try {

@@ -342,7 +342,7 @@ describe("createLinkPreviewWorker", () => {
         publishEmptyPreviews: mock(async () => {}),
       } as any,
       workspaceIntegrationService: {
-        getGithubPreviewClient: mock(async () => null),
+        getGithubClient: mock(async () => null),
       } as any,
     })
 
@@ -400,7 +400,7 @@ describe("createLinkPreviewWorker", () => {
         publishEmptyPreviews: mock(async () => {}),
       } as any,
       workspaceIntegrationService: {
-        getGithubPreviewClient: mock(async () => ({
+        getGithubClient: mock(async () => ({
           async request(route: string, params?: Record<string, unknown>) {
             if (route === "GET /repos/{owner}/{repo}") {
               return {

@@ -262,6 +262,21 @@ export const AGENT_TOOL_NAMES = [
   "load_pdf_section",
   "load_file_section",
   "load_excel_section",
+  "github_list_repos",
+  "github_list_branches",
+  "github_list_commits",
+  "github_get_commit",
+  "github_list_pull_requests",
+  "github_get_pull_request",
+  "github_list_pr_files",
+  "github_get_file_contents",
+  "github_search_code",
+  "github_list_workflow_runs",
+  "github_get_workflow_run",
+  "github_list_releases",
+  "github_get_release",
+  "github_search_issues",
+  "github_get_issue",
 ] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
@@ -279,15 +294,31 @@ export const AgentToolNames = {
   LOAD_PDF_SECTION: "load_pdf_section",
   LOAD_FILE_SECTION: "load_file_section",
   LOAD_EXCEL_SECTION: "load_excel_section",
+  GITHUB_LIST_REPOS: "github_list_repos",
+  GITHUB_LIST_BRANCHES: "github_list_branches",
+  GITHUB_LIST_COMMITS: "github_list_commits",
+  GITHUB_GET_COMMIT: "github_get_commit",
+  GITHUB_LIST_PULL_REQUESTS: "github_list_pull_requests",
+  GITHUB_GET_PULL_REQUEST: "github_get_pull_request",
+  GITHUB_LIST_PR_FILES: "github_list_pr_files",
+  GITHUB_GET_FILE_CONTENTS: "github_get_file_contents",
+  GITHUB_SEARCH_CODE: "github_search_code",
+  GITHUB_LIST_WORKFLOW_RUNS: "github_list_workflow_runs",
+  GITHUB_GET_WORKFLOW_RUN: "github_get_workflow_run",
+  GITHUB_LIST_RELEASES: "github_list_releases",
+  GITHUB_GET_RELEASE: "github_get_release",
+  GITHUB_SEARCH_ISSUES: "github_search_issues",
+  GITHUB_GET_ISSUE: "github_get_issue",
 } as const satisfies Record<string, AgentToolName>
 
 // Source types for message citations
-export const SOURCE_TYPES = ["web", "workspace"] as const
+export const SOURCE_TYPES = ["web", "workspace", "github"] as const
 export type SourceType = (typeof SOURCE_TYPES)[number]
 
 export const SourceTypes = {
   WEB: "web",
   WORKSPACE: "workspace",
+  GITHUB: "github",
 } as const satisfies Record<string, SourceType>
 
 // Agent invocation triggers
@@ -316,6 +347,7 @@ export const AGENT_STEP_TYPES = [
   "web_search",
   "visit_page",
   "workspace_search",
+  "github_access",
   "message_sent",
   "message_edited",
   "tool_call",
@@ -330,6 +362,7 @@ export const AgentStepTypes = {
   WEB_SEARCH: "web_search",
   VISIT_PAGE: "visit_page",
   WORKSPACE_SEARCH: "workspace_search",
+  GITHUB_ACCESS: "github_access",
   MESSAGE_SENT: "message_sent",
   MESSAGE_EDITED: "message_edited",
   TOOL_CALL: "tool_call",

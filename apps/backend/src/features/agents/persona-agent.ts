@@ -11,6 +11,7 @@ import {
   type SourceItem,
 } from "@threa/types"
 import type { UserPreferencesService } from "../user-preferences"
+import type { WorkspaceIntegrationService } from "../workspace-integrations"
 import { StreamRepository } from "../streams"
 import { MessageRepository, MessageVersionRepository } from "../messaging"
 import { UserRepository } from "../workspaces"
@@ -30,6 +31,7 @@ import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
+import { createMemoizedGithubClient } from "./tools"
 import { AgentRuntime, SessionTraceObserver, OtelObserver, type NewMessageInfo } from "./runtime"
 import {
   SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS,
@@ -56,6 +58,7 @@ export interface PersonaAgentDeps {
   attachmentService: AttachmentService
   storage: StorageProvider
   modelRegistry: ModelRegistry
+  workspaceIntegrationService?: WorkspaceIntegrationService
   tavilyApiKey?: string
   stubResponse?: string
   createMessage: (params: {
@@ -131,6 +134,7 @@ export class PersonaAgent {
       attachmentService,
       storage,
       modelRegistry,
+      workspaceIntegrationService,
       tavilyApiKey,
       stubResponse,
       createMessage,
@@ -345,12 +349,16 @@ export class PersonaAgent {
           }
         }
 
-        // Build tool set
+        const githubDeps = workspaceIntegrationService
+          ? { workspaceId, getClient: createMemoizedGithubClient(workspaceIntegrationService, workspaceId) }
+          : undefined
+
         const tools = buildToolSet({
           enabledTools: persona.enabledTools,
           tavilyApiKey,
           runWorkspaceAgent,
           workspace: workspaceDeps,
+          github: githubDeps,
           supportsVision: modelRegistry.supportsVision(persona.model),
         })
 

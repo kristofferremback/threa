@@ -11,6 +11,7 @@ import {
   Search,
   FileText,
   Building2,
+  Github,
   MessageSquare,
   Wrench,
   AlertTriangle,
@@ -80,6 +81,14 @@ export const STEP_DISPLAY_CONFIG: Record<AgentStepType, StepDisplayConfig> = {
     hue: 270,
     saturation: 60,
     lightness: 50,
+  },
+  github_access: {
+    label: "GitHub",
+    inlineLabel: "Reading GitHub...",
+    icon: Github,
+    hue: 210,
+    saturation: 10,
+    lightness: 25,
   },
   message_sent: {
     label: "Response",
