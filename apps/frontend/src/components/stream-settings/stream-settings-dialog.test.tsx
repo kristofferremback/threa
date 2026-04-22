@@ -68,6 +68,7 @@ describe("StreamSettingsDialog", () => {
       stream,
       events: [],
       members: [],
+      botMemberIds: [],
       membership: null,
       latestSequence: "0",
       hasOlderEvents: false,

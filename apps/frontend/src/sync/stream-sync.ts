@@ -271,6 +271,13 @@ interface AgentSessionEventPayload {
   event: StreamEvent
 }
 
+interface MemberRemovedPayload {
+  workspaceId: string
+  streamId: string
+  memberId: string
+  event: StreamEvent
+}
+
 interface LinkPreviewReadyPayload {
   workspaceId: string
   streamId: string
@@ -509,7 +516,7 @@ export function registerStreamSocketHandlers(
     })
   }
 
-  const handleAppendEvent = async (payload: AgentSessionEventPayload | CommandEventPayload) => {
+  const handleAppendEvent = async (payload: AgentSessionEventPayload | CommandEventPayload | MemberRemovedPayload) => {
     if (payload.streamId !== streamId) return
     const now = Date.now()
     // Dedupe by event ID
@@ -539,6 +546,8 @@ export function registerStreamSocketHandlers(
   socket.on("stream:created", handleStreamCreated)
   socket.on("message:updated", handleMessageUpdated)
   socket.on("stream:member_joined", handleAppendEvent)
+  socket.on("stream:member_added", handleAppendEvent)
+  socket.on("stream:member_removed", handleAppendEvent)
   socket.on("command:dispatched", handleAppendEvent)
   socket.on("command:completed", handleAppendEvent)
   socket.on("command:failed", handleAppendEvent)
@@ -557,6 +566,8 @@ export function registerStreamSocketHandlers(
     socket.off("stream:created", handleStreamCreated)
     socket.off("message:updated", handleMessageUpdated)
     socket.off("stream:member_joined", handleAppendEvent)
+    socket.off("stream:member_added", handleAppendEvent)
+    socket.off("stream:member_removed", handleAppendEvent)
     socket.off("command:dispatched", handleAppendEvent)
     socket.off("command:completed", handleAppendEvent)
     socket.off("command:failed", handleAppendEvent)

@@ -39,11 +39,12 @@ describe("Command Visibility E2E", () => {
     await joinWorkspace(clientB, workspace.id)
     await joinStream(clientB, workspace.id, channel.id)
 
-    // User A dispatches a command
-    const cmdResult = await dispatchCommand(clientA, workspace.id, channel.id, "/echo test scenario")
+    // User A dispatches a command. Args resolve to nothing, so execution will
+    // emit command_failed — these tests assert on the dispatch event only.
+    const cmdResult = await dispatchCommand(clientA, workspace.id, channel.id, "/invite @ghost")
     expect(cmdResult.success).toBe(true)
-    expect(cmdResult.command).toBe("echo")
-    expect(cmdResult.args).toBe("test scenario")
+    expect(cmdResult.command).toBe("invite")
+    expect(cmdResult.args).toBe("@ghost")
 
     // User A fetches bootstrap - should see command_dispatched event
     const bootstrapA = await getBootstrap(clientA, workspace.id, channel.id)
@@ -77,7 +78,7 @@ describe("Command Visibility E2E", () => {
     await joinStream(clientB, workspace.id, channel.id)
 
     // User A dispatches a command
-    await dispatchCommand(clientA, workspace.id, channel.id, "/echo another test")
+    await dispatchCommand(clientA, workspace.id, channel.id, "/invite @ghost")
 
     // User A lists events - should see command events
     const eventsA = await listEvents(clientA, workspace.id, channel.id)
@@ -104,8 +105,8 @@ describe("Command Visibility E2E", () => {
     await joinStream(clientB, workspace.id, channel.id)
 
     // Both users dispatch commands
-    const cmdA = await dispatchCommand(clientA, workspace.id, channel.id, "/echo from A")
-    const cmdB = await dispatchCommand(clientB, workspace.id, channel.id, "/echo from B")
+    const cmdA = await dispatchCommand(clientA, workspace.id, channel.id, "/invite @ghost-a")
+    const cmdB = await dispatchCommand(clientB, workspace.id, channel.id, "/invite @ghost-b")
 
     // Resolve workspace user IDs for comparison
     const userIdA = await getUserId(clientA, workspace.id, userA.id)

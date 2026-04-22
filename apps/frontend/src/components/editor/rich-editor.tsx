@@ -142,11 +142,28 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   const [toolbarVisible, setToolbarVisible] = useState(false)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Detect /invite mode from editor content so @mentions filter to inviteables only.
+  const isInviteMode = useMemo(() => {
+    if (!value || !value.content || value.content.length === 0) return false
+    const firstBlock = value.content[0]
+    const firstInline = firstBlock?.content?.[0]
+    // Case 1: user selected /invite from the command dropdown (materialised node)
+    if (firstInline?.type === "slashCommand" && firstInline.attrs?.name === "invite") return true
+    // Case 2: user typed /invite as plain text (paragraph with text node)
+    const firstText = firstInline?.text ?? ""
+    return typeof firstText === "string" && /^\/invite\b/.test(firstText)
+  }, [value])
+
+  const mentionStreamContext = useMemo<MentionStreamContext | undefined>(() => {
+    if (!streamContext) return undefined
+    return { ...streamContext, inviteMode: isInviteMode }
+  }, [streamContext, isInviteMode])
+
   // Mention, channel, command, and emoji autocomplete
   // Unfiltered for type-lookup: ensures all broadcast slugs always resolve correctly
   const { mentionables } = useMentionables()
   // Filtered for autocomplete dropdown only
-  const { suggestionConfig: mentionConfig, renderMentionList } = useMentionSuggestion(streamContext)
+  const { suggestionConfig: mentionConfig, renderMentionList } = useMentionSuggestion(mentionStreamContext)
   const { suggestionConfig: channelConfig, renderChannelList } = useChannelSuggestion()
   const { suggestionConfig: commandConfig, renderCommandList } = useCommandSuggestion()
 
@@ -158,7 +175,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   // Create lookup for mention types from mentionables
   // Current user's slug maps to "me" for special highlighting
   const getMentionType = useMemo<MentionTypeLookup>(() => {
-    const slugToType = new Map<string, "user" | "persona" | "broadcast" | "me">()
+    const slugToType = new Map<string, "user" | "persona" | "bot" | "broadcast" | "me">()
     for (const m of mentionables) {
       // Map current user to "me" type for special highlighting
       slugToType.set(m.slug, m.isCurrentUser ? "me" : m.type)

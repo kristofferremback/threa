@@ -54,6 +54,8 @@ export interface StreamBootstrap {
   stream: Stream
   events: StreamEvent[]
   members: StreamMember[]
+  /** Bot IDs that have been granted access to this stream. */
+  botMemberIds: string[]
   membership: StreamMember | null
   latestSequence: string
   hasOlderEvents: boolean

@@ -1,8 +1,15 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { useDraftComposer, getDraftMessageKey, useStreamOrDraft, useComposerHeightPublish } from "@/hooks"
-import { useWorkspaceStreams } from "@/stores/workspace-store"
+import {
+  useDraftComposer,
+  getDraftMessageKey,
+  useStreamOrDraft,
+  useComposerHeightPublish,
+  useStreamBootstrap,
+} from "@/hooks"
+import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
+import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
@@ -182,15 +189,50 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   // Resolve stream context for broadcast mention filtering.
   // For threads, look up the root stream's type from IDB workspace streams.
   const idbStreams = useWorkspaceStreams(workspaceId)
+
+  // Access is gated at the channel level: threads inherit their member list
+  // and bot grants from the root channel. For channels/DMs, read from self.
+  const rootStreamId = stream?.rootStreamId
+  const { data: currentBootstrap } = useStreamBootstrap(workspaceId, streamId, {
+    enabled: !!streamId && !rootStreamId,
+  })
+  const { data: rootBootstrap } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
+    enabled: !!rootStreamId,
+  })
+  const accessBootstrap = rootStreamId ? rootBootstrap : currentBootstrap
+
+  const currentUser = useUser()
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const currentUserRole = useMemo(
+    () => workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role,
+    [workspaceUsers, currentUser?.id]
+  )
+
   const streamContext = useMemo<MentionStreamContext | undefined>(() => {
     if (!stream) return undefined
     const ctx: MentionStreamContext = { streamType: stream.type }
+
     if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
       const rootStream = idbStreams.find((s) => s.id === stream.rootStreamId)
       if (rootStream) ctx.rootStreamType = rootStream.type
     }
+
+    // Invite-mode exclusion: everyone who already has channel-level access —
+    // since threads inherit access from the root, inviting a root-member to a
+    // thread is a no-op (they can already see and @mention inside it).
+    if (accessBootstrap?.members) {
+      const ids = new Set(accessBootstrap.members.map((m) => m.memberId))
+      for (const botId of accessBootstrap.botMemberIds ?? []) ids.add(botId)
+      ctx.memberIds = ids
+    }
+
+    // Bot mention filter: the same channel-level grants determine mentionability.
+    if (accessBootstrap?.botMemberIds) ctx.botMemberIds = new Set(accessBootstrap.botMemberIds)
+
+    ctx.canInviteBots = currentUserRole === "admin" || currentUserRole === "owner"
+
     return ctx
-  }, [stream, idbStreams])
+  }, [stream, idbStreams, accessBootstrap, currentUserRole])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()

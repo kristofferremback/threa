@@ -14,6 +14,7 @@ import { MENTION_PATTERN, isValidSlug } from "@threa/types"
 const triggerStyles = {
   user: "bg-[hsl(200_70%_50%/0.1)] text-[hsl(200_70%_50%)]",
   persona: "bg-primary/10 text-primary",
+  bot: "bg-green-500/10 text-green-600 dark:text-green-400",
   broadcast: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
   channel: "bg-muted text-foreground",
   command: "bg-[hsl(280_60%_55%/0.15)] text-[hsl(280_60%_55%)] font-mono",

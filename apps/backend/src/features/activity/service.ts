@@ -448,6 +448,55 @@ export class ActivityService {
     }
   }
 
+  /**
+   * Create a member_added activity for a user who was added to a stream.
+   * Behaves like a mention in the activity feed but does not trigger push.
+   * Skipped for bot additions: bots don't consume the activity feed, so a
+   * row keyed to a bot ID would be dead data.
+   */
+  async processMemberAdded(params: {
+    workspaceId: string
+    streamId: string
+    memberId: string
+    event: { id: string; payload: unknown; actorType?: string | null }
+  }): Promise<Activity[]> {
+    const { workspaceId, streamId, memberId, event } = params
+
+    if (event.actorType === "bot") return []
+
+    const addedBy =
+      typeof event.payload === "object" && event.payload !== null && "addedBy" in event.payload
+        ? (event.payload as Record<string, unknown>).addedBy
+        : null
+
+    if (typeof addedBy !== "string") {
+      logger.warn({ eventId: event.id }, "processMemberAdded: missing addedBy, skipping")
+      return []
+    }
+
+    return withClient(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream || stream.workspaceId !== workspaceId) return []
+
+      const rootStream = stream.rootStreamId ? await StreamRepository.findById(client, stream.rootStreamId) : null
+      const streamContext = resolveStreamContext(stream, rootStream)
+      const actorName = await this.resolveAuthorName(client, workspaceId, addedBy, AuthorTypes.USER)
+
+      const rows = await ActivityRepository.insertBatch(client, {
+        workspaceId,
+        userIds: [memberId],
+        activityType: ActivityTypes.MEMBER_ADDED,
+        streamId,
+        messageId: event.id,
+        actorId: addedBy,
+        actorType: AuthorTypes.USER,
+        context: { authorName: actorName, ...streamContext },
+      })
+
+      return rows
+    })
+  }
+
   async listFeed(
     userId: string,
     workspaceId: string,

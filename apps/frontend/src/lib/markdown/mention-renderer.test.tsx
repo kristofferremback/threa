@@ -319,13 +319,13 @@ describe("mention-renderer", () => {
   })
 
   describe("slash command rendering", () => {
-    const isKnown = (name: string) => name === "echo" || name === "help"
+    const isKnown = (name: string) => name === "invite" || name === "help"
 
     it("renders a known command as a styled chip", () => {
-      const result = renderMentions("/echo hello", noEmoji, isKnown)
+      const result = renderMentions("/invite @alice", noEmoji, isKnown)
       render(<>{result}</>)
 
-      expect(screen.getByText("/echo")).toBeInTheDocument()
+      expect(screen.getByText("/invite")).toBeInTheDocument()
     })
 
     it("leaves an unknown command as plain text", () => {
@@ -335,9 +335,9 @@ describe("mention-renderer", () => {
     })
 
     it("defaults to plain text when no predicate is provided", () => {
-      const result = renderMentions("/echo hi", noEmoji)
+      const result = renderMentions("/invite foo", noEmoji)
 
-      expect(result).toEqual(["/echo hi"])
+      expect(result).toEqual(["/invite foo"])
     })
 
     it("does not treat a slash in the middle of a line as a command", () => {

@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react"
 import type { Mentionable } from "@/components/editor/triggers/types"
 
-export type MentionType = "user" | "persona" | "broadcast" | "me"
+export type MentionType = "user" | "persona" | "bot" | "broadcast" | "me"
 
 interface MentionContextValue {
   getMentionType: (slug: string) => MentionType

@@ -19,6 +19,7 @@ interface MentionListProps {
 const avatarStyles: Record<Mentionable["type"], string> = {
   user: "bg-[hsl(200_70%_50%/0.15)] text-[hsl(200_70%_50%)]",
   persona: "bg-primary/15 text-primary",
+  bot: "bg-green-500/15 text-green-600 dark:text-green-400",
   broadcast: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
 }
 
@@ -26,12 +27,14 @@ const avatarStyles: Record<Mentionable["type"], string> = {
 const typeBadgeStyles: Record<Mentionable["type"], string> = {
   user: "bg-[hsl(200_70%_50%/0.1)] text-[hsl(200_70%_50%)]",
   persona: "bg-primary/10 text-primary",
+  bot: "bg-green-500/10 text-green-600 dark:text-green-400",
   broadcast: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
 }
 
 const typeLabels: Record<Mentionable["type"], string> = {
   user: "User",
   persona: "AI",
+  bot: "Bot",
   broadcast: "Notify",
 }
 
@@ -84,6 +87,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(function
       renderItem={(item) => <MentionItem item={item} />}
       placement={placement}
       width="w-60"
+      emptyState="No matches found"
     />
   )
 })

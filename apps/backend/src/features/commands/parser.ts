@@ -3,13 +3,13 @@
  *
  * Commands follow the format: /command [args]
  * Examples:
- *   /echo hello world
+ *   /invite @alice @bob
  *   /help
  *   /status away
  */
 
 export interface ParsedCommand {
-  /** Command name without the leading slash (e.g., "echo") */
+  /** Command name without the leading slash (e.g., "invite") */
   name: string
   /** Everything after the command name, trimmed */
   args: string

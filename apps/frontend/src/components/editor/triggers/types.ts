@@ -5,7 +5,7 @@ export interface Mentionable {
   id: string
   slug: string
   name: string
-  type: "user" | "persona" | "broadcast"
+  type: "user" | "persona" | "bot" | "broadcast"
   avatarEmoji?: string
   avatarUrl?: string
   /** True if this is the current user */

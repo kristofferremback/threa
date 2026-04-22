@@ -89,6 +89,17 @@ export const BotRepository = {
     return result.rows.map(mapRowToBot)
   },
 
+  async findBySlugs(db: Querier, workspaceId: string, slugs: string[]): Promise<Bot[]> {
+    if (slugs.length === 0) return []
+
+    const result = await db.query<BotRow>(sql`
+      SELECT ${sql.raw(BOT_COLUMNS)}
+      FROM bots
+      WHERE workspace_id = ${workspaceId} AND slug = ANY(${slugs}) AND archived_at IS NULL
+    `)
+    return result.rows.map(mapRowToBot)
+  },
+
   async create(
     db: Querier,
     params: {

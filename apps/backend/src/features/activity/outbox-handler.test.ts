@@ -27,6 +27,7 @@ function createHandler() {
     processSelfMessageActivity: mock(async () => null),
     processReactionAdded: mock(async () => []),
     processReactionRemoved: mock(async () => []),
+    processMemberAdded: mock(async () => []),
     listFeed: mock(async () => []),
     getUnreadCounts: mock(async () => ({ mentionsByStream: new Map(), totalByStream: new Map(), total: 0 })),
     markAsRead: mock(async () => {}),

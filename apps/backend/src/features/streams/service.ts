@@ -3,7 +3,7 @@ import { Pool } from "pg"
 import { withClient, withTransaction, type Querier } from "../../db"
 import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview, type DmPeer } from "./repository"
 import { StreamMemberRepository, StreamMember } from "./member-repository"
-import { StreamEventRepository } from "./event-repository"
+import { StreamEventRepository, type StreamEvent } from "./event-repository"
 import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
@@ -17,6 +17,7 @@ import {
 } from "../../lib/errors"
 import { formatParticipantNames } from "./display-name"
 import { UserRepository } from "../workspaces"
+import { BotChannelAccessRepository } from "../api-keys"
 import {
   StreamTypes,
   Visibilities,
@@ -780,16 +781,92 @@ export class StreamService {
     })
   }
 
-  private async removeFromStream(client: Querier, stream: Stream, memberId: string): Promise<boolean> {
-    const deleted = await StreamMemberRepository.delete(client, stream.id, memberId)
-    if (deleted) {
-      await OutboxRepository.insert(client, "stream:member_removed", {
-        workspaceId: stream.workspaceId,
-        streamId: stream.id,
-        memberId,
-      })
+  /**
+   * Resolve the stream that holds bot grants for `target`. Bot access is
+   * channel-scoped: a thread redirects to its root channel, so grants and
+   * `member_added`/`member_left` events always land on the channel. Threads
+   * inherit mentionability from the channel and do not carry their own
+   * `bot_channel_access` rows.
+   */
+  private async resolveBotGrantStream(client: Querier, target: Stream): Promise<Stream> {
+    if (target.type === StreamTypes.THREAD && target.rootStreamId) {
+      const root = await StreamRepository.findById(client, target.rootStreamId)
+      if (root) return root
     }
-    return deleted
+    return target
+  }
+
+  /**
+   * Grant a bot access to a stream. Idempotent and race-safe: emits
+   * `member_added` only when a new grant was created. Threads are redirected
+   * to the root channel (see `resolveBotGrantStream`).
+   */
+  async addBotToStream(targetStreamId: string, botId: string, workspaceId: string, actorId: string): Promise<void> {
+    return withTransaction(this.pool, async (client) => {
+      const target = await StreamRepository.findById(client, targetStreamId)
+      if (!target) throw new StreamNotFoundError()
+      if (target.workspaceId !== workspaceId) {
+        throw new HttpError("Stream does not belong to this workspace", { status: 403, code: "WRONG_WORKSPACE" })
+      }
+      if (target.type === StreamTypes.DM) {
+        throw new HttpError("Cannot add bots to direct messages", { status: 400, code: "DM_MEMBERS_IMMUTABLE" })
+      }
+
+      const grantStream = await this.resolveBotGrantStream(client, target)
+      const inserted = await BotChannelAccessRepository.grantAccess(client, {
+        id: streamId(),
+        workspaceId,
+        botId,
+        streamId: grantStream.id,
+        grantedBy: actorId,
+      })
+      if (!inserted) return
+
+      const event = await StreamEventRepository.insert(client, {
+        id: eventId(),
+        streamId: grantStream.id,
+        eventType: "member_added",
+        payload: { addedBy: actorId },
+        actorId: botId,
+        actorType: "bot",
+      })
+
+      await OutboxRepository.insert(client, "stream:member_added", {
+        workspaceId: grantStream.workspaceId,
+        streamId: grantStream.id,
+        memberId: botId,
+        stream: grantStream,
+        event,
+      })
+    })
+  }
+
+  private async removeFromStream(
+    client: Querier,
+    stream: Stream,
+    memberId: string,
+    actorType: "user" | "bot" = "user"
+  ): Promise<StreamEvent | null> {
+    const deleted = await StreamMemberRepository.delete(client, stream.id, memberId)
+    if (!deleted) return null
+
+    const event = await StreamEventRepository.insert(client, {
+      id: eventId(),
+      streamId: stream.id,
+      eventType: "member_left",
+      payload: {},
+      actorId: memberId,
+      actorType,
+    })
+
+    await OutboxRepository.insert(client, "stream:member_removed", {
+      workspaceId: stream.workspaceId,
+      streamId: stream.id,
+      memberId,
+      event,
+    })
+
+    return event
   }
 
   async removeMember(streamId: string, memberId: string): Promise<boolean> {
@@ -813,26 +890,74 @@ export class StreamService {
         throw new HttpError("Cannot remove the only member", { status: 400, code: "LAST_MEMBER" })
       }
 
-      const deleted = await this.removeFromStream(client, stream, memberId)
+      const event = await this.removeFromStream(client, stream, memberId)
 
-      if (deleted) {
+      if (event) {
         // Batch-remove from all descendant threads the member is in (single recursive CTE)
         const removedStreamIds = await StreamMemberRepository.deleteByMemberInDescendants(client, memberId, streamId)
         for (const removedStreamId of removedStreamIds) {
+          const threadEvent = await StreamEventRepository.insert(client, {
+            id: eventId(),
+            streamId: removedStreamId,
+            eventType: "member_left",
+            payload: {},
+            actorId: memberId,
+            actorType: "user",
+          })
           await OutboxRepository.insert(client, "stream:member_removed", {
             workspaceId: stream.workspaceId,
             streamId: removedStreamId,
             memberId,
+            event: threadEvent,
           })
         }
       }
 
-      return deleted
+      return event !== null
+    })
+  }
+
+  /**
+   * Revoke a bot's access. Idempotent and race-safe: emits `member_left` only
+   * when a grant was actually deleted. Mirrors `addBotToStream` — threads are
+   * redirected to the root channel.
+   */
+  async removeBotFromStream(targetStreamId: string, botId: string, workspaceId: string): Promise<void> {
+    return withTransaction(this.pool, async (client) => {
+      const target = await StreamRepository.findById(client, targetStreamId)
+      if (!target) throw new StreamNotFoundError()
+      if (target.workspaceId !== workspaceId) {
+        throw new HttpError("Stream does not belong to this workspace", { status: 403, code: "WRONG_WORKSPACE" })
+      }
+
+      const grantStream = await this.resolveBotGrantStream(client, target)
+      const deleted = await BotChannelAccessRepository.revokeAccess(client, workspaceId, botId, grantStream.id)
+      if (!deleted) return
+
+      const event = await StreamEventRepository.insert(client, {
+        id: eventId(),
+        streamId: grantStream.id,
+        eventType: "member_left",
+        payload: {},
+        actorId: botId,
+        actorType: "bot",
+      })
+
+      await OutboxRepository.insert(client, "stream:member_removed", {
+        workspaceId: grantStream.workspaceId,
+        streamId: grantStream.id,
+        memberId: botId,
+        event,
+      })
     })
   }
 
   async getMembers(streamId: string): Promise<StreamMember[]> {
     return StreamMemberRepository.list(this.pool, { streamId })
+  }
+
+  async getBotMemberIds(workspaceId: string, streamId: string): Promise<string[]> {
+    return BotChannelAccessRepository.getGrantedBotIds(this.pool, workspaceId, streamId)
   }
 
   async getMembership(streamId: string, memberId: string): Promise<StreamMember | null> {

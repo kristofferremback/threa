@@ -76,6 +76,7 @@ function makeStreamBootstrap(streamId: string, overrides: Partial<StreamBootstra
     },
     events: [],
     members: [],
+    botMemberIds: [],
     membership: null,
     latestSequence: "0",
     hasOlderEvents: false,

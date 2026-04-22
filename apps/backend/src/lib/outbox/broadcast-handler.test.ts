@@ -74,7 +74,7 @@ describe("BroadcastHandler", () => {
     })
   })
 
-  it("should emit author-scoped event to user room", async () => {
+  it("should emit command event to stream room", async () => {
     const event = makeEvent(1n, "command:dispatched", {
       workspaceId: "ws_1",
       streamId: "stream_1",
@@ -89,7 +89,7 @@ describe("BroadcastHandler", () => {
     await new Promise((r) => setTimeout(r, 300))
 
     expect(emitChains).toContainEqual({
-      room: "ws:ws_1:user:usr_bob",
+      room: "ws:ws_1:stream:stream_1",
       eventType: "command:dispatched",
       payload: event.payload,
     })

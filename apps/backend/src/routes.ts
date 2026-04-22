@@ -372,7 +372,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/user-api-keys/:keyId/revoke", ...authed, userApiKeys.revoke)
 
   // Bot management (admin-only)
-  const botHandlers = createBotHandlers({ botApiKeyService, avatarService, pool })
+  const botHandlers = createBotHandlers({ botApiKeyService, avatarService, streamService, pool })
   app.get("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.list)
   app.post("/api/workspaces/:workspaceId/bots", ...authed, requireRole("admin"), botHandlers.create)
   app.get("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.get)

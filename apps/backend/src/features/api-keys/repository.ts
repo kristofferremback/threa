@@ -13,24 +13,37 @@ export const BotChannelAccessRepository = {
     return result.rows.map((r) => r.stream_id)
   },
 
+  /**
+   * Idempotent grant. Returns true when a new row was inserted, false when the
+   * grant already existed. Callers rely on this to decide whether to emit
+   * state-transition events without a separate pre-check (INV-20).
+   */
   async grantAccess(
     db: Querier,
     params: { id: string; workspaceId: string; botId: string; streamId: string; grantedBy: string }
-  ): Promise<void> {
-    await db.query(sql`
+  ): Promise<boolean> {
+    const result = await db.query(sql`
       INSERT INTO bot_channel_access (id, workspace_id, bot_id, stream_id, granted_by)
       VALUES (${params.id}, ${params.workspaceId}, ${params.botId}, ${params.streamId}, ${params.grantedBy})
       ON CONFLICT (workspace_id, bot_id, stream_id) DO NOTHING
+      RETURNING id
     `)
+    return result.rowCount === 1
   },
 
-  async revokeAccess(db: Querier, workspaceId: string, botId: string, streamId: string): Promise<void> {
-    await db.query(sql`
+  /**
+   * Returns true when a row was deleted, false when no grant existed. Callers
+   * use this to skip emitting state-transition events on no-op revokes.
+   */
+  async revokeAccess(db: Querier, workspaceId: string, botId: string, streamId: string): Promise<boolean> {
+    const result = await db.query(sql`
       DELETE FROM bot_channel_access
       WHERE workspace_id = ${workspaceId}
         AND bot_id = ${botId}
         AND stream_id = ${streamId}
+      RETURNING id
     `)
+    return (result.rowCount ?? 0) > 0
   },
 
   async revokeAllByBot(db: Querier, workspaceId: string, botId: string): Promise<void> {
