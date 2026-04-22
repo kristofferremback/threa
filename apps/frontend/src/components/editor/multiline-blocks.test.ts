@@ -257,6 +257,72 @@ describe("multiline block paste handling", () => {
     expect(serializeToMarkdown(editor.getJSON())).toBe("> line 1\n> line 2")
     editor.destroy()
   })
+
+  it("inserts a single-line paste inline without splitting the current paragraph", () => {
+    const editor = createTestEditor("Hello ")
+
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "World",
+      () => "user",
+      () => null
+    )
+
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.firstChild?.type.name).toBe("paragraph")
+    expect(serializeToMarkdown(editor.getJSON())).toBe("Hello World")
+    editor.destroy()
+  })
+
+  it("inserts a single-line paste mid-paragraph without splitting it in two", () => {
+    const editor = createTestEditor("Hi my  friend")
+
+    setCursor(editor, " friend")
+    insertPastedText(
+      editor,
+      "little",
+      () => "user",
+      () => null
+    )
+
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.firstChild?.type.name).toBe("paragraph")
+    expect(serializeToMarkdown(editor.getJSON())).toBe("Hi my little friend")
+    editor.destroy()
+  })
+
+  it("preserves active marks when pasting plain text inside a styled span", () => {
+    const editor = createTestEditor("**bold** text")
+
+    // Place the cursor in the middle of the bold word ("bol|d")
+    setCursor(editor, "d")
+    insertPastedText(
+      editor,
+      "X",
+      () => "user",
+      () => null
+    )
+
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("**bolXd** text")
+    editor.destroy()
+  })
+
+  it("keeps multi-line plain-text pastes as separate paragraphs", () => {
+    const editor = createTestEditor("prefix ")
+
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "line 1\nline 2",
+      () => "user",
+      () => null
+    )
+
+    expect(serializeToMarkdown(editor.getJSON())).toBe("prefix line 1\n\nline 2")
+    editor.destroy()
+  })
 })
 
 describe("multiline beforeinput enter handling", () => {
