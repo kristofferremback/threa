@@ -99,7 +99,23 @@ function applyAnchors<T extends { id: string; sequence: bigint }>(messages: T[],
   const fromIdx = ref.fromMessageId ? messages.findIndex((m) => m.id === ref.fromMessageId) : 0
   const toIdx = ref.toMessageId ? messages.findIndex((m) => m.id === ref.toMessageId) : messages.length - 1
 
-  if (fromIdx < 0 || toIdx < 0) return messages
+  // Fail loudly when an anchor can't be located in the fetched window — the
+  // caller asked for a narrowed slice and we'd rather surface the mismatch
+  // than silently widen to the full (already possibly truncated) window.
+  // This usually means the anchor predates the `MAX_FETCH` tail.
+  if (ref.fromMessageId && fromIdx < 0) {
+    throw new HttpError("fromMessageId anchor not found in the fetched window", {
+      status: 422,
+      code: "CONTEXT_ANCHOR_NOT_FOUND",
+    })
+  }
+  if (ref.toMessageId && toIdx < 0) {
+    throw new HttpError("toMessageId anchor not found in the fetched window", {
+      status: 422,
+      code: "CONTEXT_ANCHOR_NOT_FOUND",
+    })
+  }
+
   const [lo, hi] = fromIdx <= toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx]
   return messages.slice(lo, hi + 1)
 }

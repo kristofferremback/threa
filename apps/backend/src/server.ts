@@ -305,6 +305,8 @@ export async function startServer(): Promise<ServerInstance> {
     content: string
     sources?: { title: string; url: string }[]
     sessionId?: string
+    /** Idempotency key forwarded to `event-service.createMessage` so retried writes dedup via ON CONFLICT. */
+    clientMessageId?: string
   }) => {
     const contentMarkdown = normalizeMessage(params.content)
     const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
@@ -317,6 +319,7 @@ export async function startServer(): Promise<ServerInstance> {
       contentMarkdown,
       sources: params.sources,
       sessionId: params.sessionId,
+      clientMessageId: params.clientMessageId,
     })
   }
   const editMessage = async (params: {

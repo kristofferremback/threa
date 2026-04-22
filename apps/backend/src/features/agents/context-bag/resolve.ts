@@ -3,6 +3,7 @@ import type { Pool } from "pg"
 import { withClient } from "../../../db"
 import type { AI, CostContext } from "../../../lib/ai/ai"
 import { logger } from "../../../lib/logger"
+import type { ContextRefKind } from "@threa/types"
 import { ContextBagRepository } from "./repository"
 import { SummaryRepository } from "./summary-repository"
 import { getIntentConfig, getResolver } from "./registry"
@@ -122,7 +123,7 @@ async function loadOrCreateSummary(params: {
   ai: AI
   costContext: CostContext
   workspaceId: string
-  refKind: string
+  refKind: ContextRefKind
   refKey: string
   fingerprint: string
   inputs: SummaryInput[]
@@ -134,14 +135,14 @@ async function loadOrCreateSummary(params: {
   // only care about cache lookup + write, so a short single-query connection
   // is fine (INV-30). The AI call runs without holding any DB connection
   // (INV-41), then we write the result back through a fresh connection.
-  const cached = await SummaryRepository.find(pool, { workspaceId, refKind: refKind as "thread", refKey, fingerprint })
+  const cached = await SummaryRepository.find(pool, { workspaceId, refKind, refKey, fingerprint })
   if (cached) return cached.summaryText
 
   const { text, model } = await summarizeThread({ ai, costContext }, { refKey, items })
 
   await SummaryRepository.upsert(pool, {
     workspaceId,
-    refKind: refKind as "thread",
+    refKind,
     refKey,
     fingerprint,
     inputs,

@@ -5,7 +5,7 @@ import type { EventService } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { LinkPreviewService } from "../link-previews"
 import type { StreamEvent } from "./event-repository"
-import type { EventType, LinkPreviewSummary, StreamType } from "@threa/types"
+import type { EventType, LinkPreviewSummary, StreamType, ContextIntent, ContextRefKind } from "@threa/types"
 import { StreamTypes, SLUG_PATTERN, ContextIntents, ContextRefKinds, CompanionModes } from "@threa/types"
 import type { Pool } from "pg"
 import { PersonaRepository, getResolver } from "../agents"
@@ -13,12 +13,18 @@ import { serializeBigInt } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
 
+// Typed narrowings for the Zod enum: keep the parsed value as the concrete
+// union (`ContextIntent` / `ContextRefKind`) instead of a bare `string` so
+// downstream code doesn't have to re-cast at every call site.
+const contextIntentSchema = z.enum(Object.values(ContextIntents) as [ContextIntent, ...ContextIntent[]])
+const contextRefKindSchema = z.enum(Object.values(ContextRefKinds) as [ContextRefKind, ...ContextRefKind[]])
+
 const contextBagSchema = z.object({
-  intent: z.enum(Object.values(ContextIntents) as [string, ...string[]]),
+  intent: contextIntentSchema,
   refs: z
     .array(
       z.object({
-        kind: z.enum(Object.values(ContextRefKinds) as [string, ...string[]]),
+        kind: contextRefKindSchema,
         streamId: z.string().min(1),
         fromMessageId: z.string().optional(),
         toMessageId: z.string().optional(),
@@ -335,18 +341,8 @@ export function createStreamHandlers({
         // the check, but rejecting at create time gives the user a crisp
         // error instead of a silent empty-context scratchpad.
         for (const ref of contextBag.refs) {
-          const resolver = getResolver(ref.kind as typeof ContextRefKinds.THREAD)
-          await resolver.assertAccess(
-            pool,
-            {
-              kind: ref.kind as typeof ContextRefKinds.THREAD,
-              streamId: ref.streamId,
-              fromMessageId: ref.fromMessageId,
-              toMessageId: ref.toMessageId,
-            },
-            userId,
-            workspaceId
-          )
+          const resolver = getResolver(ref.kind)
+          await resolver.assertAccess(pool, ref, userId, workspaceId)
         }
 
         const ariadne = await PersonaRepository.findBySlug(pool, "ariadne", workspaceId)
@@ -370,17 +366,7 @@ export function createStreamHandlers({
         parentMessageId,
         memberIds,
         createdBy: userId,
-        contextBag: contextBag
-          ? {
-              intent: contextBag.intent as (typeof ContextIntents)[keyof typeof ContextIntents],
-              refs: contextBag.refs.map((ref) => ({
-                kind: ref.kind as typeof ContextRefKinds.THREAD,
-                streamId: ref.streamId,
-                fromMessageId: ref.fromMessageId,
-                toMessageId: ref.toMessageId,
-              })),
-            }
-          : undefined,
+        contextBag,
       })
 
       res.status(201).json({ stream })

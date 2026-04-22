@@ -153,6 +153,12 @@ export interface ContextBagOrientationWorkerDeps {
     authorType: "user" | "persona" | "system" | "bot"
     content: string
     sessionId?: string
+    /**
+     * Idempotency key forwarded to `event-service.createMessage`. Retries
+     * of the orientation job pass the same key, hit ON CONFLICT DO NOTHING
+     * inside the messages insert, and return the already-posted row.
+     */
+    clientMessageId?: string
   }) => Promise<{ id: string }>
 }
 
@@ -174,6 +180,25 @@ export function createContextBagOrientationWorker(
   return async (job) => {
     const { workspaceId, streamId, bagId, personaId } = job.data
     logger.info({ jobId: job.id, streamId, bagId }, "Processing context-bag orientation job")
+
+    // Idempotency guard: once the first turn renders, `lastRendered` flips to
+    // non-null. Queue retries (up to maxRetries=5) that land on an already-run
+    // orientation bail here. Note that even without this guard the message
+    // insert is deduped by `clientMessageId` below — this guard just avoids
+    // spending a second orientation AI call. (INV-7 coordination concern.)
+    const bag = await ContextBagRepository.findByStream(pool, streamId)
+    if (!bag) {
+      logger.warn({ streamId, bagId }, "context-bag orientation: bag missing, skipping")
+      return
+    }
+    if (bag.id !== bagId) {
+      logger.warn({ streamId, bagId, currentBagId: bag.id }, "context-bag orientation: bag id mismatch, skipping")
+      return
+    }
+    if (bag.lastRendered !== null) {
+      logger.info({ streamId, bagId }, "context-bag orientation: already rendered, skipping retry")
+      return
+    }
 
     const persona = await PersonaRepository.findById(pool, personaId)
     if (!persona || persona.status !== "active") {
@@ -229,18 +254,24 @@ export function createContextBagOrientationWorker(
       return
     }
 
+    // `clientMessageId` makes the message write idempotent across retries
+    // (INV-20: messages.insert uses ON CONFLICT DO NOTHING on the pair
+    // `(stream_id, client_message_id)`). Combined with the `lastRendered`
+    // guard above this gives us end-to-end safety: if a crash lands between
+    // the message write and the snapshot write, the retry's guard fires only
+    // once snapshot succeeds, and the message insert is a no-op either way.
     await createMessage({
       workspaceId,
       streamId,
       authorId: persona.id,
       authorType: AuthorTypes.PERSONA,
       content: orientText,
+      clientMessageId: `orient:${bagId}`,
     })
 
     // Persist the render snapshot so subsequent turns see this state as the
-    // baseline when computing the "since last turn" delta. We use a short
-    // single-query connection here — the message-write already emitted its
-    // own outbox entry, so this is a standalone update.
+    // baseline when computing the "since last turn" delta. Idempotent UPDATE,
+    // safe to re-run after a retry.
     await persistSnapshot(pool, bagId, resolved.nextSnapshot)
 
     logger.info({ streamId, bagId }, "context-bag orientation message posted")
