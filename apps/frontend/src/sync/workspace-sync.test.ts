@@ -624,6 +624,46 @@ describe("registerWorkspaceSocketHandlers", () => {
     await Promise.all([db.streams.clear(), db.streamMemberships.clear(), db.dmPeers.clear(), db.unreadState.clear()])
   })
 
+  it("invalidates the workspace bootstrap when the current user's role update arrives", async () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(
+      workspaceKeys.bootstrap("ws_1"),
+      makeBootstrap({
+        viewerPermissions: ["members:write"],
+        users: [makeWorkspaceUser()],
+      })
+    )
+
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+    const { socket, emit } = createTestSocket()
+    const cleanup = registerWorkspaceSocketHandlers(socket, "ws_1", queryClient, {
+      getCurrentStreamId: () => undefined,
+      getCurrentUser: () => ({ id: "workos_1" }),
+      subscribeStream: vi.fn(),
+    })
+
+    emit("workspace_user:updated", {
+      workspaceId: "ws_1",
+      user: {
+        ...makeWorkspaceUser(),
+        role: "user",
+        isOwner: true,
+        assignedRole: { slug: "member", name: "Member" },
+        assignedRoles: [{ slug: "member", name: "Member" }],
+        canEditRole: false,
+      },
+    })
+
+    await Promise.resolve()
+
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: workspaceKeys.bootstrap("ws_1"),
+      type: "active",
+    })
+
+    cleanup()
+  })
+
   it("subscribes the creator when a new stream is created at runtime", async () => {
     const queryClient = new QueryClient()
     queryClient.setQueryData(

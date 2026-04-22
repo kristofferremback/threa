@@ -13,6 +13,7 @@ import { BotRepository, serializeBot } from "../public-api"
 import { displayNameFromWorkos, type WorkosOrgService } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 import { getWorkspacePermissions, hasWorkspacePermission } from "../../middleware/authorization"
+import { decorateUsersWithAuthzMirror } from "./user-authz-decorator"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -66,21 +67,6 @@ export function createWorkspaceHandlers({
   workosOrgService,
   pool,
 }: Dependencies) {
-  async function decorateInvitations(
-    workspaceId: string,
-    invitations: Awaited<ReturnType<InvitationService["listInvitations"]>>
-  ) {
-    const roles = await workspaceService.listAssignableRoles(workspaceId)
-    const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
-    return invitations.map((invitation) => ({
-      ...invitation,
-      assignedRole: {
-        slug: invitation.roleSlug,
-        name: rolesBySlug.get(invitation.roleSlug)?.name ?? invitation.roleSlug,
-      },
-    }))
-  }
-
   return {
     async list(req: Request, res: Response) {
       // Pre-workspace route: uses WorkOS identity (no workspace user context yet)
@@ -137,21 +123,26 @@ export function createWorkspaceHandlers({
     async bootstrap(req: Request, res: Response) {
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
+      const canManageMembers = hasWorkspacePermission(req, "members:write")
 
-      const [workspace, users, streams, personas, bots, emojiWeights, userPreferences, dmPeers] = await Promise.all([
-        workspaceService.getWorkspaceById(workspaceId),
-        workspaceService.getUsersWithRoles(workspaceId),
-        streamService.listWithPreviews(workspaceId, userId),
-        workspaceService.getPersonasForWorkspace(workspaceId),
-        BotRepository.listByWorkspace(pool, workspaceId),
-        workspaceService.getEmojiWeights(workspaceId, userId),
-        userPreferencesService.getPreferences(workspaceId, userId),
-        streamService.listDmPeers(workspaceId, userId),
-      ])
+      const [workspace, roles, rawUsers, streams, personas, bots, emojiWeights, userPreferences, dmPeers] =
+        await Promise.all([
+          workspaceService.getWorkspaceById(workspaceId),
+          workspaceService.listAssignableRoles(workspaceId),
+          workspaceService.getUsers(workspaceId),
+          streamService.listWithPreviews(workspaceId, userId),
+          workspaceService.getPersonasForWorkspace(workspaceId),
+          BotRepository.listByWorkspace(pool, workspaceId),
+          workspaceService.getEmojiWeights(workspaceId, userId),
+          userPreferencesService.getPreferences(workspaceId, userId),
+          streamService.listDmPeers(workspaceId, userId),
+        ])
 
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" })
       }
+
+      const users = await decorateUsersWithAuthzMirror(pool, workspaceId, rawUsers, { workspace, roles })
 
       // Resolve DM display names — viewer-dependent, so computed at bootstrap time
       const resolvedStreams = await streamService.resolveDmDisplayNames(streams, users, userId)
@@ -200,9 +191,8 @@ export function createWorkspaceHandlers({
         })
         .map((m) => m.streamId)
 
-      // Include invitations for admin+ members
-      const invitations = hasWorkspacePermission(req, "members:write")
-        ? await decorateInvitations(workspaceId, await invitationService.listInvitations(workspaceId))
+      const invitations = canManageMembers
+        ? await invitationService.listInvitations(workspaceId, undefined, roles)
         : undefined
 
       res.json({

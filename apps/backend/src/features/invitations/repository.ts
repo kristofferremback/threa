@@ -50,7 +50,7 @@ function mapRow(row: InvitationRow): Invitation {
     email: row.email,
     role: row.role as Invitation["role"],
     roleSlug: row.role_slug,
-    assignedRole: { slug: row.role_slug, name: row.role_slug },
+    assignedRole: null,
     invitedBy: row.invited_by,
     workosInvitationId: row.workos_invitation_id,
     status: row.status as InvitationStatus,

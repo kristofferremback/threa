@@ -266,9 +266,9 @@ export class WorkspaceService {
     return UserRepository.listByWorkspace(this.pool, workspaceId)
   }
 
-  async getUsersWithRoles(workspaceId: string): Promise<User[]> {
+  async getUsersWithRoles(workspaceId: string, roles?: WorkspaceRole[]): Promise<User[]> {
     const users = await this.getUsers(workspaceId)
-    return decorateUsersWithAuthzMirror(this.pool, workspaceId, users)
+    return decorateUsersWithAuthzMirror(this.pool, workspaceId, users, { roles })
   }
 
   async listAssignableRoles(workspaceId: string): Promise<WorkspaceRole[]> {
@@ -373,7 +373,7 @@ export class WorkspaceService {
         throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
-      const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updatedUser, workspace)
+      const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updatedUser, { workspace })
 
       await OutboxRepository.insert(client, "workspace_user:updated", {
         workspaceId,
@@ -404,7 +404,7 @@ export class WorkspaceService {
         client,
         snapshot.workspaceId,
         await UserRepository.listByWorkspace(client, snapshot.workspaceId),
-        workspace
+        { workspace }
       )
       if (decoratedUsers.length > 0) {
         await OutboxRepository.insertMany(

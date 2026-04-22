@@ -40,12 +40,13 @@ export async function resolveWorkspaceAuthorization(params: {
   workosUserId?: string
   scopeFilter?: (permission: string) => boolean
 }): Promise<WorkspaceAuthorizationResolution> {
-  const workspaceMetadata = await WorkspaceRepository.getAuthorizationMetadata(params.pool, params.workspaceId)
+  const [workspaceMetadata, roles] = await Promise.all([
+    WorkspaceRepository.getAuthorizationMetadata(params.pool, params.workspaceId),
+    WorkosAuthzMirrorRepository.listRoles(params.pool, params.workspaceId),
+  ])
   if (!workspaceMetadata?.workosOrganizationId) {
     return { status: "missing_org" }
   }
-
-  const roles = await WorkosAuthzMirrorRepository.listRoles(params.pool, params.workspaceId)
   const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
 
   if (params.source === "session") {

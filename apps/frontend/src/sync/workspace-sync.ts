@@ -702,6 +702,11 @@ export function registerWorkspaceSocketHandlers(
       return withWorkspaceUsers(bootstrap, updatedUsers)
     })
 
+    const currentUser = refs.getCurrentUser()
+    if (currentUser?.id === user.workosUserId) {
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId), type: "active" })
+    }
+
     // Update IndexedDB
     void db.workspaceUsers.get(user.id).then((existingUser) => {
       db.workspaceUsers.put({
