@@ -13,6 +13,8 @@ import {
   GitCommitHorizontal,
   MessageSquare,
   FileCode,
+  Folder,
+  File,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -28,8 +30,18 @@ import type {
   GitHubDiffPreviewData,
   GitHubPreview,
   GitHubPreviewActor,
+  LinearActor,
+  LinearCommentPreviewData,
+  LinearDocumentPreviewData,
+  LinearIssuePreviewData,
+  LinearPreview,
+  LinearProjectPreviewData,
   LinkPreviewSummary,
 } from "@threa/types"
+
+function isLinearPreview(preview: GitHubPreview | LinearPreview | null | undefined): preview is LinearPreview {
+  return !!preview && typeof preview.type === "string" && preview.type.startsWith("linear_")
+}
 
 interface LinkPreviewCardProps {
   preview: LinkPreviewSummary
@@ -63,6 +75,27 @@ function getDomain(url: string): string {
   }
 }
 
+function resolveHeaderIcon(
+  githubPreview: GitHubPreview | null,
+  linearPreview: LinearPreview | null,
+  contentType: string
+) {
+  if (githubPreview) return <GitHubTypeIcon type={githubPreview.type} data={githubPreview.data} />
+  if (linearPreview) return <LinearTypeIcon type={linearPreview.type} />
+  return <ContentTypeIcon contentType={contentType} />
+}
+
+function resolveHeaderLabel(
+  githubPreview: GitHubPreview | null,
+  linearPreview: LinearPreview | null,
+  siteName: string | null,
+  domain: string
+): string {
+  if (githubPreview) return githubPreview.repository.fullName
+  if (linearPreview) return `${linearPreview.organization.name} · Linear`
+  return siteName ?? domain
+}
+
 export function LinkPreviewCard({
   preview,
   messageId,
@@ -73,7 +106,9 @@ export function LinkPreviewCard({
 }: LinkPreviewCardProps) {
   const [imageError, setImageError] = useState(false)
   const domain = getDomain(preview.url)
-  const githubPreview = preview.previewData
+  const providerPreview = preview.previewData
+  const githubPreview = providerPreview && !isLinearPreview(providerPreview) ? providerPreview : null
+  const linearPreview = isLinearPreview(providerPreview) ? providerPreview : null
 
   const handleDismiss = useCallback(
     (e: React.MouseEvent) => {
@@ -140,14 +175,9 @@ export function LinkPreviewCard({
     )
   }
 
-  // Resolve the header icon and label for GitHub previews
-  const headerIcon = githubPreview ? (
-    <GitHubTypeIcon type={githubPreview.type} data={githubPreview.data} />
-  ) : (
-    <ContentTypeIcon contentType={preview.contentType} />
-  )
-
-  const headerLabel = githubPreview ? githubPreview.repository.fullName : (preview.siteName ?? domain)
+  // Resolve the header icon and label for provider-rich previews (GitHub / Linear)
+  const headerIcon = resolveHeaderIcon(githubPreview, linearPreview, preview.contentType)
+  const headerLabel = resolveHeaderLabel(githubPreview, linearPreview, preview.siteName, domain)
 
   // Website, PDF, and GitHub previews render as a card.
   // data-native-context tells the message-level long-press hook to skip
@@ -173,7 +203,7 @@ export function LinkPreviewCard({
           {isCollapsedProp ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         </button>
         {headerIcon}
-        {!githubPreview && preview.faviconUrl && (
+        {!githubPreview && !linearPreview && preview.faviconUrl && (
           <img
             src={preview.faviconUrl}
             alt=""
@@ -214,12 +244,32 @@ export function LinkPreviewCard({
             rel="noopener noreferrer"
             className="block hover:bg-muted/20 transition-colors"
           >
-            <GitHubContent preview={preview} imageError={imageError} onImageError={() => setImageError(true)} />
+            <ProviderContent preview={preview} imageError={imageError} onImageError={() => setImageError(true)} />
           </a>
         </LinkPreviewBody>
       )}
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Provider dispatch (routes to GitHub / Linear / generic)
+// ---------------------------------------------------------------------------
+
+function ProviderContent({
+  preview,
+  imageError,
+  onImageError,
+}: {
+  preview: LinkPreviewSummary
+  imageError: boolean
+  onImageError: () => void
+}) {
+  const providerPreview = preview.previewData
+  if (isLinearPreview(providerPreview)) {
+    return <LinearContent preview={providerPreview} />
+  }
+  return <GitHubContent preview={preview} imageError={imageError} onImageError={onImageError} />
 }
 
 // ---------------------------------------------------------------------------
@@ -497,7 +547,7 @@ function GitHubFileContent({ preview, data }: { preview: LinkPreviewSummary; dat
       <div className="min-w-0">
         {preview.title && <h4 className="text-sm font-medium text-foreground line-clamp-1">{preview.title}</h4>}
         <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
-          {preview.previewData?.repository.fullName}
+          {preview.previewData && "repository" in preview.previewData && preview.previewData.repository.fullName}
           {" \u00b7 "}
           {data.ref}
           {data.language ? ` \u00b7 ${data.language}` : ""}
@@ -653,4 +703,176 @@ function getDiffLinePrefix(type: GitHubDiffPreviewData["lines"][number]["type"])
   if (type === "add") return "+"
   if (type === "delete") return "-"
   return " "
+}
+
+// ---------------------------------------------------------------------------
+// Linear type icon
+// ---------------------------------------------------------------------------
+
+function LinearTypeIcon({ type }: { type: LinearPreview["type"] }) {
+  switch (type) {
+    case "linear_issue":
+      return <CircleDot className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+    case "linear_comment":
+      return <MessageSquare className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+    case "linear_project":
+      return <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+    case "linear_document":
+      return <File className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+    default:
+      return <ExternalLink className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Linear content dispatcher
+// ---------------------------------------------------------------------------
+
+function LinearContent({ preview }: { preview: LinearPreview }) {
+  switch (preview.type) {
+    case "linear_issue":
+      return <LinearIssueContent data={preview.data as LinearIssuePreviewData} />
+    case "linear_comment":
+      return <LinearCommentContent data={preview.data as LinearCommentPreviewData} />
+    case "linear_project":
+      return <LinearProjectContent data={preview.data as LinearProjectPreviewData} />
+    case "linear_document":
+      return <LinearDocumentContent data={preview.data as LinearDocumentPreviewData} />
+    default:
+      return null
+  }
+}
+
+function LinearIssueContent({ data }: { data: LinearIssuePreviewData }) {
+  return (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <LinearActorAvatar actor={data.assignee} className="mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-medium text-foreground">
+            {data.title}
+            <span className="ml-1.5 font-normal text-muted-foreground">{data.identifier}</span>
+          </h4>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            <LinearStateBadge state={data.state} />
+            <span>{data.team.key}</span>
+            {data.priority && <span>{data.priority.label}</span>}
+            {data.projectName && <span className="truncate max-w-[10rem]">{data.projectName}</span>}
+          </div>
+          {data.labels.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {data.labels.slice(0, 5).map((label) => (
+                <span
+                  key={label.name}
+                  className="inline-flex items-center rounded px-1.5 py-px text-[11px] text-foreground/80"
+                  style={{ backgroundColor: colorWithAlpha(label.color, 0.18) }}
+                >
+                  {label.name}
+                </span>
+              ))}
+              {data.labels.length > 5 && (
+                <span className="text-[11px] text-muted-foreground">+{data.labels.length - 5}</span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LinearCommentContent({ data }: { data: LinearCommentPreviewData }) {
+  return (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <LinearActorAvatar actor={data.author} className="mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-muted-foreground line-clamp-1">
+            <span className="font-medium text-foreground">{data.author?.displayName ?? "Unknown"}</span>
+            {" commented on "}
+            <span className="text-foreground">{data.parent.identifier}</span>
+          </p>
+          {data.body && (
+            <div className="mt-1.5 overflow-hidden rounded-md border bg-muted/20 px-2.5 py-1.5">
+              <MarkdownContent
+                content={data.body}
+                className="text-xs leading-relaxed text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+              />
+            </div>
+          )}
+          {data.truncated && <p className="mt-1 text-[11px] text-muted-foreground">Comment truncated</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LinearProjectContent({ data }: { data: LinearProjectPreviewData }) {
+  const progressPct = Math.max(0, Math.min(100, Math.round(data.progress * 100)))
+  return (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <LinearActorAvatar actor={data.lead} className="mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-medium text-foreground">{data.name}</h4>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            {data.status && <span className="capitalize">{data.status}</span>}
+            <span>{progressPct}%</span>
+            {data.targetDate && <span>Due {data.targetDate}</span>}
+          </div>
+          {data.description && <p className="mt-1.5 text-xs text-muted-foreground line-clamp-3">{data.description}</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LinearDocumentContent({ data }: { data: LinearDocumentPreviewData }) {
+  return (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <LinearActorAvatar actor={data.updatedBy} className="mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-medium text-foreground">{data.title}</h4>
+          {data.parentProject && <p className="mt-0.5 text-xs text-muted-foreground">in {data.parentProject.name}</p>}
+          {data.summary && <p className="mt-1.5 text-xs text-muted-foreground line-clamp-3">{data.summary}</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LinearStateBadge({ state }: { state: LinearIssuePreviewData["state"] }) {
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-1.5 py-px text-[11px] font-medium leading-tight text-foreground"
+      style={{ backgroundColor: colorWithAlpha(state.color, 0.18) }}
+    >
+      {state.name}
+    </span>
+  )
+}
+
+function LinearActorAvatar({ actor, className }: { actor: LinearActor | null; className?: string }) {
+  if (!actor) return null
+  return (
+    <Avatar className={cn("h-5 w-5 shrink-0", className)}>
+      {actor.avatarUrl ? <AvatarImage src={actor.avatarUrl} alt={actor.displayName} /> : null}
+      <AvatarFallback className="text-[10px]">{actor.displayName.charAt(0).toUpperCase()}</AvatarFallback>
+    </Avatar>
+  )
+}
+
+/**
+ * Turn a Linear-provided hex color into an `rgba(...)` with alpha so state/label
+ * pills tint nicely against the card's neutral background without us
+ * maintaining a parallel palette. Falls back to a gray tint on parse failure.
+ */
+function colorWithAlpha(hex: string, alpha: number): string {
+  const clean = hex.replace(/^#/, "")
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return `rgba(149, 162, 179, ${alpha})`
+  const r = parseInt(clean.slice(0, 2), 16)
+  const g = parseInt(clean.slice(2, 4), 16)
+  const b = parseInt(clean.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }

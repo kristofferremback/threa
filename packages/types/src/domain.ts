@@ -40,6 +40,7 @@ import type {
   WorkspaceIntegrationProvider,
   WorkspaceIntegrationStatus,
   GitHubPreviewType,
+  LinearPreviewType,
 } from "./constants"
 import type { ThreaDocument } from "./prosemirror"
 
@@ -657,8 +658,8 @@ export interface LinkPreview {
   siteName: string | null
   contentType: LinkPreviewContentType
   status: LinkPreviewStatus
-  previewType?: GitHubPreviewType | null
-  previewData?: GitHubPreview | null
+  previewType?: GitHubPreviewType | LinearPreviewType | null
+  previewData?: GitHubPreview | LinearPreview | null
   fetchedAt: string | null
   expiresAt?: string | null
   createdAt: string
@@ -677,8 +678,8 @@ export interface LinkPreviewSummary {
   faviconUrl: string | null
   siteName: string | null
   contentType: LinkPreviewContentType
-  previewType?: GitHubPreviewType | null
-  previewData?: GitHubPreview | null
+  previewType?: GitHubPreviewType | LinearPreviewType | null
+  previewData?: GitHubPreview | LinearPreview | null
   position: number
 }
 
@@ -713,6 +714,30 @@ export interface GitHubWorkspaceIntegration extends WorkspaceIntegration {
   permissions: Record<string, string>
   repositories: GitHubInstalledRepository[]
   rateLimit: WorkspaceIntegrationRateLimit
+}
+
+export interface LinearAuthorizedUser {
+  id: string
+  name: string
+  email: string | null
+}
+
+export interface LinearRateLimit {
+  requestsRemaining: number | null
+  requestsResetAt: string | null
+  complexityRemaining: number | null
+  complexityResetAt: string | null
+}
+
+export interface LinearWorkspaceIntegration extends WorkspaceIntegration {
+  provider: "linear"
+  organizationId: string | null
+  organizationName: string | null
+  /** The `{workspace}` slug segment in `linear.app/{workspace}/...` URLs. Used to gate preview URL matching. */
+  organizationUrlKey: string | null
+  authorizedUser: LinearAuthorizedUser | null
+  scope: string | null
+  rateLimit: LinearRateLimit
 }
 
 // =============================================================================
@@ -849,6 +874,103 @@ export interface GitHubPreview {
     | GitHubFilePreviewData
     | GitHubDiffPreviewData
     | GitHubCommentPreviewData
+  fetchedAt: string
+}
+
+// =============================================================================
+// Rich Linear Link Previews
+// =============================================================================
+
+export interface LinearActor {
+  id: string
+  name: string
+  displayName: string
+  avatarUrl: string | null
+}
+
+export interface LinearTeam {
+  key: string
+  name: string
+}
+
+/**
+ * Linear workflow state. `type` is the canonical state kind (triage, backlog, unstarted,
+ * started, completed, canceled) — render state badges via `color` (hex without `#`) so
+ * workspace-specific state colors round-trip correctly.
+ */
+export interface LinearIssueState {
+  name: string
+  type: string
+  color: string
+}
+
+export interface LinearIssueLabel {
+  name: string
+  color: string
+}
+
+export interface LinearOrganizationSummary {
+  id: string
+  urlKey: string
+  name: string
+}
+
+export interface LinearIssuePreviewData {
+  identifier: string
+  title: string
+  state: LinearIssueState
+  priority: { label: string; value: number } | null
+  team: LinearTeam
+  assignee: LinearActor | null
+  labels: LinearIssueLabel[]
+  estimate: number | null
+  dueDate: string | null
+  projectName: string | null
+  commentCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface LinearCommentParent {
+  identifier: string
+  title: string
+  state: LinearIssueState
+  team: LinearTeam
+}
+
+export interface LinearCommentPreviewData {
+  body: string
+  truncated: boolean
+  author: LinearActor | null
+  createdAt: string
+  parent: LinearCommentParent
+}
+
+export interface LinearProjectPreviewData {
+  name: string
+  description: string | null
+  status: string
+  progress: number
+  lead: LinearActor | null
+  targetDate: string | null
+  startDate: string | null
+  issueCount: number
+}
+
+export interface LinearDocumentPreviewData {
+  title: string
+  summary: string | null
+  updatedBy: LinearActor | null
+  createdAt: string
+  updatedAt: string
+  parentProject: { id: string; name: string } | null
+}
+
+export interface LinearPreview {
+  type: LinearPreviewType
+  url: string
+  organization: LinearOrganizationSummary
+  data: LinearIssuePreviewData | LinearCommentPreviewData | LinearProjectPreviewData | LinearDocumentPreviewData
   fetchedAt: string
 }
 

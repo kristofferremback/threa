@@ -73,37 +73,62 @@ export function decryptJson<T>(secret: string, payload: Record<string, unknown>,
   return JSON.parse(plaintext) as T
 }
 
-function signStatePayload(secret: string, payload: string): string {
-  return createHmac("sha256", secret).update(`github-install-state:${payload}`).digest("hex")
+function signStatePayload(secret: string, domain: string, payload: string): string {
+  return createHmac("sha256", secret).update(`${domain}:${payload}`).digest("hex")
 }
 
-export function createGithubInstallState(secret: string, workspaceId: string, nowMs = Date.now()): string {
+function createInstallState(secret: string, domain: string, workspaceId: string, nowMs: number): string {
   const payload = `${workspaceId}.${nowMs}`
-  return `${payload}.${signStatePayload(secret, payload)}`
+  return `${payload}.${signStatePayload(secret, domain, payload)}`
 }
 
-export function verifyGithubInstallState(secret: string, state: string, nowMs = Date.now()): { workspaceId: string } {
+function verifyInstallState(
+  secret: string,
+  domain: string,
+  providerLabel: string,
+  state: string,
+  nowMs: number
+): { workspaceId: string } {
   const [workspaceId, issuedAtRaw, signature] = state.split(".")
   if (!workspaceId || !issuedAtRaw || !signature) {
-    throw new Error("Malformed GitHub install state")
+    throw new Error(`Malformed ${providerLabel} install state`)
   }
 
   const payload = `${workspaceId}.${issuedAtRaw}`
-  const expectedSignature = signStatePayload(secret, payload)
+  const expectedSignature = signStatePayload(secret, domain, payload)
   const expectedBuffer = Buffer.from(expectedSignature, "utf8")
   const providedBuffer = Buffer.from(signature, "utf8")
   if (expectedBuffer.length !== providedBuffer.length || !timingSafeEqual(expectedBuffer, providedBuffer)) {
-    throw new Error("Invalid GitHub install state signature")
+    throw new Error(`Invalid ${providerLabel} install state signature`)
   }
 
   const issuedAtMs = Number.parseInt(issuedAtRaw, 10)
   if (!Number.isFinite(issuedAtMs)) {
-    throw new Error("Malformed GitHub install state timestamp")
+    throw new Error(`Malformed ${providerLabel} install state timestamp`)
   }
 
   if (nowMs - issuedAtMs > MAX_STATE_AGE_MS) {
-    throw new Error("GitHub install state has expired")
+    throw new Error(`${providerLabel} install state has expired`)
   }
 
   return { workspaceId }
+}
+
+const GITHUB_STATE_DOMAIN = "github-install-state"
+const LINEAR_STATE_DOMAIN = "linear-install-state"
+
+export function createGithubInstallState(secret: string, workspaceId: string, nowMs = Date.now()): string {
+  return createInstallState(secret, GITHUB_STATE_DOMAIN, workspaceId, nowMs)
+}
+
+export function verifyGithubInstallState(secret: string, state: string, nowMs = Date.now()): { workspaceId: string } {
+  return verifyInstallState(secret, GITHUB_STATE_DOMAIN, "GitHub", state, nowMs)
+}
+
+export function createLinearInstallState(secret: string, workspaceId: string, nowMs = Date.now()): string {
+  return createInstallState(secret, LINEAR_STATE_DOMAIN, workspaceId, nowMs)
+}
+
+export function verifyLinearInstallState(secret: string, state: string, nowMs = Date.now()): { workspaceId: string } {
+  return verifyInstallState(secret, LINEAR_STATE_DOMAIN, "Linear", state, nowMs)
 }

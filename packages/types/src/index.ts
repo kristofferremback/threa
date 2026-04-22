@@ -150,6 +150,9 @@ export {
   GITHUB_PREVIEW_TYPES,
   type GitHubPreviewType,
   GitHubPreviewTypes,
+  LINEAR_PREVIEW_TYPES,
+  type LinearPreviewType,
+  LinearPreviewTypes,
   // Inter-service authentication
   INTERNAL_API_KEY_HEADER,
 } from "./constants"
@@ -218,6 +221,21 @@ export type {
   GitHubCommentParent,
   GitHubCommentPreviewData,
   GitHubPreview,
+  // Linear integration + previews
+  LinearWorkspaceIntegration,
+  LinearAuthorizedUser,
+  LinearRateLimit,
+  LinearActor,
+  LinearTeam,
+  LinearIssueState,
+  LinearIssueLabel,
+  LinearOrganizationSummary,
+  LinearIssuePreviewData,
+  LinearCommentParent,
+  LinearCommentPreviewData,
+  LinearProjectPreviewData,
+  LinearDocumentPreviewData,
+  LinearPreview,
   // Message link previews (internal permalinks)
   MessageLinkAccessTier,
   MessageLinkPreviewData,
