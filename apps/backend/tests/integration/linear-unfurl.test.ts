@@ -1,13 +1,14 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, spyOn } from "bun:test"
 import { Pool } from "pg"
-import { setupTestDatabase } from "./setup"
+import { addTestMember, setupTestDatabase, withTransaction } from "./setup"
 import {
-  WorkspaceIntegrationService,
   WorkspaceIntegrationRepository,
+  WorkspaceIntegrationService,
   createLinearInstallState,
 } from "../../src/features/workspace-integrations"
 import { fetchLinearPreview } from "../../src/features/link-previews/linear-preview"
-import { workspaceId as makeWorkspaceId, userId as makeUserId } from "../../src/lib/id"
+import { WorkspaceRepository } from "../../src/features/workspaces"
+import { workspaceId as makeWorkspaceId } from "../../src/lib/id"
 import { WorkspaceIntegrationProviders, WorkspaceIntegrationStatuses } from "@threa/types"
 
 /**
@@ -58,30 +59,21 @@ describe("Linear URL unfurl — integration", () => {
   })
 
   beforeEach(async () => {
-    // Clean slate for workspace-scoped rows that this suite touches.
     wsId = makeWorkspaceId()
-    adminUserWorkosId = `workos_${makeUserId()}`
+    adminUserWorkosId = `workos_${wsId.slice(-12)}`
 
-    await pool.query(`DELETE FROM workspace_integrations WHERE workspace_id = $1`, [wsId])
-
-    // Minimal workspace + admin user so `handleLinearCallback`'s role check passes.
-    await pool.query(
-      `INSERT INTO workspaces (id, name, slug, created_by, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, NOW(), NOW())
-       ON CONFLICT (id) DO NOTHING`,
-      [wsId, "Integration Test", `it-${wsId.slice(-8)}`, "seed"]
-    )
-    await pool.query(
-      `INSERT INTO users (id, workspace_id, workos_user_id, email, role, slug, name, joined_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, 'admin', $5, $6, NOW(), NOW(), NOW())
-       ON CONFLICT (workspace_id, workos_user_id) DO NOTHING`,
-      [makeUserId(), wsId, adminUserWorkosId, "admin@test.local", `admin-${wsId.slice(-8)}`, "Admin"]
-    )
+    await withTransaction(pool, async (client) => {
+      await WorkspaceRepository.insert(client, {
+        id: wsId,
+        name: "Integration Test",
+        slug: `it-${wsId.slice(-8)}`,
+        createdBy: adminUserWorkosId,
+      })
+      await addTestMember(client, wsId, adminUserWorkosId, "admin")
+    })
   })
 
   test("OAuth callback persists encrypted credentials, then fetchLinearPreview unfurls an issue URL", async () => {
-    // 1. Mock global fetch for the callback token-exchange + viewer query +
-    //    later GraphQL call from `fetchLinearPreview`.
     const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString()
       const body = typeof init?.body === "string" ? init.body : ""
@@ -158,11 +150,9 @@ describe("Linear URL unfurl — integration", () => {
     })
 
     try {
-      // 2. Complete the Linear OAuth callback (this persists encrypted credentials + metadata).
       const state = createLinearInstallState(INTEGRATION_SECRET, wsId)
       await service.handleLinearCallback({ state, code: "auth_code_e2e", workosUserId: adminUserWorkosId })
 
-      // 3. Verify the integration row landed correctly.
       const integration = await service.getLinearIntegration(wsId)
       expect(integration).not.toBeNull()
       expect(integration?.status).toBe(WorkspaceIntegrationStatuses.ACTIVE)
@@ -181,7 +171,6 @@ describe("Linear URL unfurl — integration", () => {
       expect(credsBlob).not.toContain("rt_e2e")
       expect(record?.credentials).toMatchObject({ v: expect.any(Number), ciphertext: expect.any(String) })
 
-      // 4. Unfurl a matching Linear issue URL end-to-end.
       const preview = await fetchLinearPreview(
         wsId,
         "https://linear.app/acme/issue/ENG-42/ship-the-linear-integration",
@@ -206,7 +195,7 @@ describe("Linear URL unfurl — integration", () => {
         },
       })
 
-      // 5. A URL from a different Linear workspace must not unfurl (organizationUrlKey gate).
+      // A URL from a different Linear workspace must not unfurl (organizationUrlKey gate).
       const strangerPreview = await fetchLinearPreview(
         wsId,
         "https://linear.app/not-our-workspace/issue/ENG-42",
