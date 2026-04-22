@@ -159,8 +159,56 @@ async function createRole(
   return workosRequest<WorkOSRole>(apiKey, "POST", "/authorization/roles", role)
 }
 
+async function updateRole(
+  apiKey: string,
+  slug: string,
+  updates: { name?: string; description?: string }
+): Promise<WorkOSRole> {
+  return workosRequest<WorkOSRole>(apiKey, "PATCH", `/authorization/roles/${slug}`, updates)
+}
+
 async function setRolePermissions(apiKey: string, roleSlug: string, permissions: string[]): Promise<void> {
   await workosRequest<unknown>(apiKey, "PUT", `/authorization/roles/${roleSlug}/permissions`, { permissions })
+}
+
+interface RoleDriftEntry {
+  slug: string
+  fields: string[]
+  missingPermissions: string[]
+  extraPermissions: string[]
+}
+
+function detectRoleDrift(remoteRoles: WorkOSRole[]): RoleDriftEntry[] {
+  const remoteRolesBySlug = new Map(remoteRoles.map((role) => [role.slug, role]))
+
+  return REQUIRED_ROLES.flatMap((role) => {
+    const existing = remoteRolesBySlug.get(role.slug)
+    if (!existing) {
+      return [
+        {
+          slug: role.slug,
+          fields: ["missing"],
+          missingPermissions: [...role.permissions],
+          extraPermissions: [],
+        },
+      ]
+    }
+
+    const fields: string[] = []
+    if (existing.name !== role.name) fields.push("name")
+    if ((existing.description ?? "") !== role.description) fields.push("description")
+
+    const existingPerms = new Set(existing.permissions)
+    const requiredPerms = new Set(role.permissions)
+    const missingPermissions = role.permissions.filter((permission) => !existingPerms.has(permission))
+    const extraPermissions = existing.permissions.filter((permission) => !requiredPerms.has(permission))
+
+    if (fields.length === 0 && missingPermissions.length === 0 && extraPermissions.length === 0) {
+      return []
+    }
+
+    return [{ slug: role.slug, fields, missingPermissions, extraPermissions }]
+  })
 }
 
 // --- Drift detection ---
@@ -258,27 +306,35 @@ async function check() {
   // --- Role check ---
   console.log("\n--- Roles ---\n")
   const remoteRoles = await listRoles(apiKey)
-  const remoteRolesBySlug = new Map(remoteRoles.map((r) => [r.slug, r]))
-  let roleDrift = false
+  const roleDriftEntries = detectRoleDrift(remoteRoles)
+  const roleDriftBySlug = new Map(roleDriftEntries.map((entry) => [entry.slug, entry]))
 
   for (const role of REQUIRED_ROLES) {
-    const existing = remoteRolesBySlug.get(role.slug)
-    if (!existing) {
-      console.log(`  [MISSING] role "${role.slug}" — will be created on merge`)
-      roleDrift = true
-    } else {
-      const existingPerms = new Set(existing.permissions)
-      const missingPerms = role.permissions.filter((p) => !existingPerms.has(p))
-      if (missingPerms.length > 0) {
-        console.log(`  [STALE] role "${role.slug}" — missing permissions: [${missingPerms.join(", ")}]`)
-        roleDrift = true
-      } else {
-        console.log(`  [OK] role "${role.slug}"`)
-      }
+    const driftEntry = roleDriftBySlug.get(role.slug)
+    if (!driftEntry) {
+      console.log(`  [OK] role "${role.slug}"`)
+      continue
     }
+
+    if (driftEntry.fields.includes("missing")) {
+      console.log(`  [MISSING] role "${role.slug}" — will be created on merge`)
+      continue
+    }
+
+    const issues: string[] = []
+    if (driftEntry.fields.length > 0) {
+      issues.push(`fields differ: [${driftEntry.fields.join(", ")}]`)
+    }
+    if (driftEntry.missingPermissions.length > 0) {
+      issues.push(`missing permissions: [${driftEntry.missingPermissions.join(", ")}]`)
+    }
+    if (driftEntry.extraPermissions.length > 0) {
+      issues.push(`extra permissions: [${driftEntry.extraPermissions.join(", ")}]`)
+    }
+    console.log(`  [STALE] role "${role.slug}" — ${issues.join("; ")}`)
   }
 
-  if (!roleDrift) {
+  if (roleDriftEntries.length === 0) {
     console.log("No role drift detected.")
   }
 }
@@ -334,9 +390,11 @@ async function sync(dryRun: boolean) {
   console.log("\n--- Roles ---\n")
   const remoteRoles = await listRoles(apiKey)
   const remoteRolesBySlug = new Map(remoteRoles.map((r) => [r.slug, r]))
+  const roleDriftBySlug = new Map(detectRoleDrift(remoteRoles).map((entry) => [entry.slug, entry]))
 
   for (const role of REQUIRED_ROLES) {
     const existing = remoteRolesBySlug.get(role.slug)
+    const driftEntry = roleDriftBySlug.get(role.slug)
 
     if (!existing) {
       if (dryRun) {
@@ -349,17 +407,29 @@ async function sync(dryRun: boolean) {
         console.log(`  [CREATED] role "${role.slug}" with permissions: [${role.permissions.join(", ")}]`)
       }
     } else {
-      // Check if permissions need updating
-      const existingPerms = new Set(existing.permissions)
-      const missingPerms = role.permissions.filter((p) => !existingPerms.has(p))
-
-      if (missingPerms.length > 0) {
-        const allPerms = [...new Set([...existing.permissions, ...role.permissions])]
+      if (driftEntry?.fields.length) {
+        const fieldSummary = driftEntry.fields.join(", ")
         if (dryRun) {
-          console.log(`  [UPDATE] role "${role.slug}" — adding permissions: [${missingPerms.join(", ")}]`)
+          console.log(`  [UPDATE] role "${role.slug}" — syncing fields: [${fieldSummary}]`)
         } else {
-          await setRolePermissions(apiKey, role.slug, allPerms)
-          console.log(`  [UPDATED] role "${role.slug}" — added permissions: [${missingPerms.join(", ")}]`)
+          await updateRole(apiKey, role.slug, { name: role.name, description: role.description })
+          console.log(`  [UPDATED] role "${role.slug}" — synced fields: [${fieldSummary}]`)
+        }
+      }
+
+      if (driftEntry && (driftEntry.missingPermissions.length > 0 || driftEntry.extraPermissions.length > 0)) {
+        const changes: string[] = []
+        if (driftEntry.missingPermissions.length > 0) {
+          changes.push(`adding [${driftEntry.missingPermissions.join(", ")}]`)
+        }
+        if (driftEntry.extraPermissions.length > 0) {
+          changes.push(`removing [${driftEntry.extraPermissions.join(", ")}]`)
+        }
+        if (dryRun) {
+          console.log(`  [UPDATE] role "${role.slug}" — ${changes.join("; ")}`)
+        } else {
+          await setRolePermissions(apiKey, role.slug, role.permissions)
+          console.log(`  [UPDATED] role "${role.slug}" — ${changes.join("; ")}`)
         }
       } else {
         console.log(`  [OK] role "${role.slug}"`)
