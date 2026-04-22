@@ -1,5 +1,5 @@
 import type { JSONContent, Editor } from "@tiptap/react"
-import { Fragment, type Node as ProseMirrorNode, type Schema } from "@tiptap/pm/model"
+import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from "@tiptap/pm/model"
 import { Selection, type Transaction, type EditorState } from "@tiptap/pm/state"
 import { parseMarkdown, type EmojiLookup, type MentionTypeLookup } from "./editor-markdown"
 
@@ -434,8 +434,43 @@ export function insertPastedText(
     return editor.chain().focus().insertContent(content).run()
   }
 
-  const parsed = parseMarkdown(normalizedText, getMentionType, getEmoji, parseOptions)
-  return editor.commands.insertContent(parsed)
+  const blocks = getParsedContent(normalizedText, getMentionType, getEmoji, parseOptions)
+  if (!blocks || blocks.length === 0) {
+    return false
+  }
+
+  // When the parsed markdown is a single paragraph (the common case for pasted
+  // plain text), unwrap to its inline content. Inserting a paragraph node mid-
+  // paragraph makes ProseMirror split the current paragraph, producing stray
+  // newlines around the paste. Inserting inline content lets tiptap route plain
+  // text through `tr.insertText`, which also preserves the cursor's active
+  // marks (bold, inline code, link, ...).
+  if (blocks.length === 1 && blocks[0].type === "paragraph") {
+    const inline = blocks[0].content
+    if (!inline || inline.length === 0) {
+      return false
+    }
+    return editor.commands.insertContent(inline)
+  }
+
+  // Multi-paragraph plain-text paste: build a slice open at both ends so the
+  // first and last pasted paragraphs merge with the paragraph surrounding the
+  // cursor, matching native paste behavior.
+  if (blocks.every((block) => block.type === "paragraph")) {
+    const { schema } = editor.state
+    const fragment = Fragment.fromArray(blocks.map((block) => schema.nodeFromJSON(block)))
+    const slice = new Slice(fragment, 1, 1)
+    return editor
+      .chain()
+      .focus()
+      .command(({ tr }) => {
+        tr.replaceSelection(slice)
+        return true
+      })
+      .run()
+  }
+
+  return editor.commands.insertContent(blocks)
 }
 
 /**
