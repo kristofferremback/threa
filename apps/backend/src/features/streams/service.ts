@@ -27,7 +27,9 @@ import {
   type CompanionMode,
   type NotificationLevel,
   type ThreadSummary,
+  type ContextBag,
 } from "@threa/types"
+import { ContextBagRepository } from "../agents"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../../lib/schemas"
 import { isAllowedLevel } from "./notification-config"
 
@@ -42,7 +44,10 @@ const createScratchpadParamsSchema = z.object({
   companionPersonaId: z.string().optional(),
 })
 
-export type CreateScratchpadParams = z.infer<typeof createScratchpadParamsSchema>
+export type CreateScratchpadParams = z.infer<typeof createScratchpadParamsSchema> & {
+  /** Optional context-bag to attach to the new scratchpad. */
+  contextBag?: ContextBag
+}
 
 const createChannelParamsSchema = z.object({
   workspaceId: z.string(),
@@ -326,7 +331,7 @@ export class StreamService {
     })
   }
 
-  async create(params: CreateStreamParams): Promise<Stream> {
+  async create(params: CreateStreamParams & { contextBag?: ContextBag }): Promise<Stream> {
     switch (params.type) {
       case StreamTypes.SCRATCHPAD:
         return this.createScratchpad({
@@ -336,6 +341,7 @@ export class StreamService {
           companionMode: params.companionMode,
           companionPersonaId: params.companionPersonaId,
           createdBy: params.createdBy,
+          contextBag: params.contextBag,
         })
       case StreamTypes.CHANNEL:
         if (!params.slug) {
@@ -382,6 +388,19 @@ export class StreamService {
 
       // Add creator as member
       await StreamMemberRepository.insert(client, id, params.createdBy)
+
+      // Attach optional context bag in the same transaction as the stream +
+      // outbox event so the orientation handler (which fires on stream:created)
+      // always sees a fully-wired bag by the time it processes the event. INV-7.
+      if (params.contextBag) {
+        await ContextBagRepository.insert(client, {
+          workspaceId: params.workspaceId,
+          streamId: stream.id,
+          intent: params.contextBag.intent,
+          refs: params.contextBag.refs,
+          createdBy: params.createdBy,
+        })
+      }
 
       // Publish to outbox for real-time delivery
       await OutboxRepository.insert(client, "stream:created", {

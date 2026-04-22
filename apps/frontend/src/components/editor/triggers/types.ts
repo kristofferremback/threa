@@ -30,6 +30,12 @@ export interface CommandItem {
   name: string
   description: string
   category?: string
+  /**
+   * Client-action id. When present the suggestion list invokes the matching
+   * handler directly instead of inserting a `/command` node that'd be sent
+   * to the backend. Used for UI-only commands like `/discuss-with-ariadne`.
+   */
+  clientActionId?: string
 }
 
 /**

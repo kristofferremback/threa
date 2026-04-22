@@ -345,7 +345,17 @@ export interface CachedWorkspaceMetadata {
   workspaceId: string
   emojis: Array<{ shortcode: string; emoji: string; type: string; group: string; order: number; aliases: string[] }>
   emojiWeights: Record<string, number>
-  commands: Array<{ name: string; description: string }>
+  /**
+   * Commands surfaced in the slash-command menu. `kind` defaults to "server"
+   * for backwards compatibility with older cached rows; "client-action" items
+   * carry a `clientActionId` the frontend dispatches on locally.
+   */
+  commands: Array<{
+    name: string
+    description: string
+    kind?: "server" | "client-action"
+    clientActionId?: string
+  }>
   _cachedAt: number
 }
 

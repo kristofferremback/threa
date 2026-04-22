@@ -46,6 +46,42 @@ export { MentionInvokeHandler } from "./mention-invoke-outbox-handler"
 export type { MentionInvokeHandlerConfig } from "./mention-invoke-outbox-handler"
 export { AgentMessageMutationHandler } from "./message-mutation-outbox-handler"
 export type { AgentMessageMutationHandlerConfig } from "./message-mutation-outbox-handler"
+export {
+  ContextBagOrientationHandler,
+  createContextBagOrientationWorker,
+  CONTEXT_BAG_ORIENT_QUEUE,
+} from "./context-bag-orientation-handler"
+export type {
+  ContextBagOrientationHandlerConfig,
+  ContextBagOrientationWorkerDeps,
+} from "./context-bag-orientation-handler"
+
+// Context-bag primitive
+export {
+  ContextBagRepository,
+  SummaryRepository,
+  resolveBagForStream,
+  persistSnapshot,
+  getIntentConfig,
+  getResolver,
+  DiscussThreadIntent,
+  ThreadResolver,
+  fingerprintContent,
+  fingerprintManifest,
+  diffInputs,
+  renderStable,
+  renderDelta,
+  buildSnapshot,
+} from "./context-bag"
+export type {
+  StoredContextBag,
+  SummaryInput,
+  LastRenderedSnapshot,
+  RenderableMessage,
+  ResolvedBag,
+  DiffResult,
+  IntentConfig,
+} from "./context-bag"
 
 // Workers
 export { createPersonaAgentWorker } from "./persona-agent-worker"

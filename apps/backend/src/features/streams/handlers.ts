@@ -6,10 +6,27 @@ import type { ActivityService } from "../activity"
 import type { LinkPreviewService } from "../link-previews"
 import type { StreamEvent } from "./event-repository"
 import type { EventType, LinkPreviewSummary, StreamType } from "@threa/types"
-import { StreamTypes, SLUG_PATTERN } from "@threa/types"
+import { StreamTypes, SLUG_PATTERN, ContextIntents, ContextRefKinds, CompanionModes } from "@threa/types"
+import type { Pool } from "pg"
+import { PersonaRepository, getResolver } from "../agents"
 import { serializeBigInt } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
+
+const contextBagSchema = z.object({
+  intent: z.enum(Object.values(ContextIntents) as [string, ...string[]]),
+  refs: z
+    .array(
+      z.object({
+        kind: z.enum(Object.values(ContextRefKinds) as [string, ...string[]]),
+        streamId: z.string().min(1),
+        fromMessageId: z.string().optional(),
+        toMessageId: z.string().optional(),
+      })
+    )
+    .min(1)
+    .max(10),
+})
 
 const createStreamSchema = z
   .object({
@@ -28,6 +45,12 @@ const createStreamSchema = z
     parentStreamId: z.string().optional(),
     parentMessageId: z.string().optional(),
     memberIds: z.array(z.string().min(1)).max(50).optional(),
+    /**
+     * Optional context-bag attached at creation time. Powers "Discuss with
+     * Ariadne": when present on a scratchpad, the orientation handler fires
+     * a kickoff message that has the referenced context pre-loaded.
+     */
+    contextBag: contextBagSchema.optional(),
   })
   .refine((data) => data.type !== "channel" || data.slug, {
     message: "Slug is required for channels",
@@ -36,6 +59,10 @@ const createStreamSchema = z
   .refine((data) => data.type !== "thread" || (data.parentStreamId && data.parentMessageId), {
     message: "parentStreamId and parentMessageId are required for threads",
     path: ["parentStreamId"],
+  })
+  .refine((data) => !data.contextBag || data.type === "scratchpad", {
+    message: "contextBag is only supported on scratchpad creation",
+    path: ["contextBag"],
   })
 
 const updateStreamSchema = z.object({
@@ -155,6 +182,7 @@ export {
 }
 
 interface Dependencies {
+  pool: Pool
   streamService: StreamService
   eventService: EventService
   activityService?: ActivityService
@@ -242,6 +270,7 @@ async function enrichEventsWithLinkPreviews(
 }
 
 export function createStreamHandlers({
+  pool,
   streamService,
   eventService,
   activityService,
@@ -288,7 +317,45 @@ export function createStreamHandlers({
         parentStreamId,
         parentMessageId,
         memberIds,
+        contextBag,
       } = result.data
+
+      // When a contextBag is attached, the stream must be a companion-mode
+      // scratchpad with Ariadne as the persona — otherwise the orientation
+      // handler has no persona to respond as. The client never sends Ariadne's
+      // id directly; we resolve it server-side so the persona id stays an
+      // implementation detail. INV-33: persona slug is the source of truth.
+      let resolvedCompanionMode = companionMode
+      let resolvedPersonaId = companionPersonaId
+      if (contextBag) {
+        // Verify the caller can read every referenced ref BEFORE we persist
+        // the bag. INV-8 workspace scoping plus per-kind access checks
+        // (membership / visibility) — bag creators can only point at streams
+        // they could already see. Bag resolution at render time re-enforces
+        // the check, but rejecting at create time gives the user a crisp
+        // error instead of a silent empty-context scratchpad.
+        for (const ref of contextBag.refs) {
+          const resolver = getResolver(ref.kind as typeof ContextRefKinds.THREAD)
+          await resolver.assertAccess(
+            pool,
+            {
+              kind: ref.kind as typeof ContextRefKinds.THREAD,
+              streamId: ref.streamId,
+              fromMessageId: ref.fromMessageId,
+              toMessageId: ref.toMessageId,
+            },
+            userId,
+            workspaceId
+          )
+        }
+
+        const ariadne = await PersonaRepository.findBySlug(pool, "ariadne", workspaceId)
+        if (!ariadne) {
+          return res.status(500).json({ error: "Ariadne persona not available in this workspace" })
+        }
+        resolvedCompanionMode = CompanionModes.ON
+        resolvedPersonaId = ariadne.id
+      }
 
       const stream = await streamService.create({
         workspaceId,
@@ -297,12 +364,23 @@ export function createStreamHandlers({
         displayName,
         description,
         visibility,
-        companionMode,
-        companionPersonaId,
+        companionMode: resolvedCompanionMode,
+        companionPersonaId: resolvedPersonaId,
         parentStreamId,
         parentMessageId,
         memberIds,
         createdBy: userId,
+        contextBag: contextBag
+          ? {
+              intent: contextBag.intent as (typeof ContextIntents)[keyof typeof ContextIntents],
+              refs: contextBag.refs.map((ref) => ({
+                kind: ref.kind as typeof ContextRefKinds.THREAD,
+                streamId: ref.streamId,
+                fromMessageId: ref.fromMessageId,
+                toMessageId: ref.toMessageId,
+              })),
+            }
+          : undefined,
       })
 
       res.status(201).json({ stream })

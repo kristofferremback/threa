@@ -1,10 +1,11 @@
 import { useCallback, useMemo } from "react"
 import { useParams } from "react-router-dom"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND } from "@threa/types"
 import type { CommandItem } from "./types"
 import { CommandList } from "./command-list"
 import { useWorkspaceMetadata, useWorkspaceStreams } from "@/stores/workspace-store"
 import { useSuggestion } from "./use-suggestion"
+import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
 
 /**
  * Filter commands by query string.
@@ -40,17 +41,25 @@ export function useCommandSuggestion() {
   const metadata = useWorkspaceMetadata(workspaceId)
   const streams = useWorkspaceStreams(workspaceId)
 
+  // Client-action handlers. Each clientActionId maps to a function that takes
+  // the current stream context. Declared here so the dispatch path in the
+  // render callback stays synchronous + simple.
+  const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId ?? "")
+
   const commands = useMemo<CommandItem[]>(() => {
     if (!metadata?.commands) return []
     const inviteAllowed = isInviteAllowed(streamId, streams)
     return metadata.commands
       .filter((cmd) => {
         if (cmd.name === "invite") return inviteAllowed
+        // Gate discuss-with-ariadne on there being a source stream to reference.
+        if (cmd.clientActionId === DISCUSS_WITH_ARIADNE_COMMAND) return !!streamId
         return true
       })
       .map((cmd) => ({
         name: cmd.name,
         description: cmd.description,
+        clientActionId: cmd.clientActionId,
       }))
   }, [metadata?.commands, streamId, streams])
 
@@ -60,8 +69,22 @@ export function useCommandSuggestion() {
       items: CommandItem[]
       clientRect: (() => DOMRect | null) | null
       command: (item: CommandItem) => void
-    }) => <CommandList ref={props.ref} items={props.items} clientRect={props.clientRect} command={props.command} />,
-    []
+    }) => {
+      // Wrap the TipTap `command` callback so client-action commands take a
+      // local-only path (fire the handler, don't insert a `/command` node
+      // that'd otherwise be sent to the backend command endpoint).
+      const onPick = (item: CommandItem) => {
+        if (item.clientActionId === DISCUSS_WITH_ARIADNE_COMMAND) {
+          if (streamId && workspaceId) {
+            void startDiscussWithAriadne({ sourceStreamId: streamId })
+          }
+          return
+        }
+        props.command(item)
+      }
+      return <CommandList ref={props.ref} items={props.items} clientRect={props.clientRect} command={onPick} />
+    },
+    [startDiscussWithAriadne, streamId, workspaceId]
   )
 
   const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<CommandItem>({

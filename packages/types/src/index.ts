@@ -280,6 +280,7 @@ export type {
   EmojiEntry,
   // Commands
   CommandInfo,
+  CommandKind,
   DispatchCommandInput,
   DispatchCommandResponse,
   DispatchCommandError,
@@ -301,6 +302,12 @@ export type {
 
 // Push Notifications
 export { DEVICE_KEY_LENGTH } from "./api"
+
+// Command kind constants
+export { CommandKinds } from "./api"
+
+// Discuss-with-Ariadne client-action id (single source of truth)
+export const DISCUSS_WITH_ARIADNE_COMMAND = "discuss-with-ariadne" as const
 
 // ProseMirror / TipTap JSON types
 export type {
@@ -421,6 +428,18 @@ export {
   type BotApiKey,
   type CreateBotApiKeyResponse,
 } from "./api-keys"
+
+// Context bag primitive
+export {
+  ContextIntents,
+  CONTEXT_INTENTS,
+  ContextRefKinds,
+  CONTEXT_REF_KINDS,
+  type ContextIntent,
+  type ContextRefKind,
+  type ContextRef,
+  type ContextBag,
+} from "./context-bag"
 
 // Agent trace types
 export {

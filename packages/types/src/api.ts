@@ -5,6 +5,7 @@
  */
 
 import type { StreamType, Visibility, CompanionMode, SavedStatus, AuthorType } from "./constants"
+import type { ContextBag } from "./context-bag"
 import type { JSONContent } from "./prosemirror"
 import type {
   Stream,
@@ -34,6 +35,8 @@ export interface CreateStreamInput {
   parentStreamId?: string
   parentMessageId?: string
   memberIds?: string[]
+  /** Context bag attached to a new scratchpad (triggers orientation). */
+  contextBag?: ContextBag
 }
 
 export interface UpdateStreamInput {
@@ -176,9 +179,24 @@ export interface EmojiEntry {
   aliases: string[]
 }
 
+export const CommandKinds = {
+  /** Server-executed: dispatched through POST /commands. */
+  SERVER: "server",
+  /**
+   * Client-action: the frontend recognizes the `id` and performs a local
+   * action (navigation, mutation) instead of round-tripping to the backend.
+   */
+  CLIENT_ACTION: "client-action",
+} as const
+export type CommandKind = (typeof CommandKinds)[keyof typeof CommandKinds]
+
 export interface CommandInfo {
   name: string
   description: string
+  /** Omitted for backwards compat = "server" (previous behaviour). */
+  kind?: CommandKind
+  /** For `kind: "client-action"`, the stable id the frontend dispatches on. */
+  clientActionId?: string
 }
 
 export interface WorkspaceBootstrap {

@@ -39,6 +39,7 @@ import { MessageContextMenu } from "./message-context-menu"
 import { SaveMessageButton } from "./save-message-button"
 import { ReminderPickerSheet } from "./reminder-picker-sheet"
 import { useSavedForMessage, useSaveMessage, useDeleteSaved } from "@/hooks/use-saved"
+import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
 import { MessageActionDrawer } from "./message-action-drawer"
 import { ThreadSlot } from "./thread-slot"
 import { DeleteMessageDialog } from "./delete-message-dialog"
@@ -631,6 +632,12 @@ function SentMessageEvent({
 
   const handleRequestReminder = useCallback(() => setReminderSheetOpen(true), [])
 
+  const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
+  const handleDiscussWithAriadne = useCallback(
+    () => startDiscussWithAriadne({ sourceStreamId: streamId }),
+    [startDiscussWithAriadne, streamId]
+  )
+
   // Shared action context for both desktop dropdown and mobile drawer
   const actionContext = useMemo(
     () => ({
@@ -661,6 +668,7 @@ function SentMessageEvent({
       isSaved,
       onToggleSave: handleToggleSave,
       onRequestReminder: handleRequestReminder,
+      onDiscussWithAriadne: handleDiscussWithAriadne,
       onQuoteReply: quoteReplyCtx
         ? () =>
             quoteReplyCtx.triggerQuoteReply({
@@ -709,6 +717,7 @@ function SentMessageEvent({
       isSaved,
       handleToggleSave,
       handleRequestReminder,
+      handleDiscussWithAriadne,
     ]
   )
 

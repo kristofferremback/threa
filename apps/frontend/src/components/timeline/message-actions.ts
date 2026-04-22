@@ -65,6 +65,8 @@ export interface MessageActionContext {
   onRequestReminder?: () => void
   /** Whether the message is currently saved by the viewer */
   isSaved?: boolean
+  /** Callback to start a private "Discuss with Ariadne" scratchpad seeded with this thread */
+  onDiscussWithAriadne?: () => void | Promise<void>
 }
 
 /** A variant within a sub-menu (e.g. "Copy as Markdown" vs "Copy as Plain text"). */
@@ -116,6 +118,16 @@ export const messageActions: MessageAction[] = [
     icon: MessageSquareReply,
     when: (ctx) => !ctx.isThreadParent,
     getHref: (ctx) => ctx.replyUrl,
+  },
+  {
+    // Seed a private scratchpad that has this message's thread pre-loaded as
+    // context and Ariadne already oriented — lets the user poke at a thread
+    // without polluting it with @mentions.
+    id: "discuss-with-ariadne",
+    label: "Discuss with Ariadne",
+    icon: Sparkles,
+    when: (ctx) => !!ctx.onDiscussWithAriadne && !!ctx.streamId,
+    action: (ctx) => ctx.onDiscussWithAriadne?.(),
   },
   {
     id: "quote-reply",

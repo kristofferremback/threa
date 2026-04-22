@@ -69,6 +69,8 @@ import {
   CompanionHandler,
   MentionInvokeHandler,
   AgentMessageMutationHandler,
+  ContextBagOrientationHandler,
+  createContextBagOrientationWorker,
   createOrphanSessionCleanup,
   createPersonaAgentWorker,
   WorkspaceAgent,
@@ -504,6 +506,15 @@ export async function startServer(): Promise<ServerInstance> {
     fairness: QueueFairness.NONE,
   })
 
+  // Context-bag orientation worker — runs Ariadne's kickoff turn on
+  // scratchpads created with a context bag. Same tier as persona agent since
+  // the user is sitting on the new scratchpad waiting for her first message.
+  const contextBagOrientationWorker = createContextBagOrientationWorker({ pool, ai, createMessage })
+  jobQueue.registerHandler(JobQueues.CONTEXT_BAG_ORIENT, contextBagOrientationWorker, {
+    tier: QueueTiers.INTERACTIVE,
+    fairness: QueueFairness.NONE,
+  })
+
   const namingWorker = createNamingWorker({ streamNamingService })
   jobQueue.registerHandler(JobQueues.NAMING_GENERATE, namingWorker, {
     tier: QueueTiers.LIGHT,
@@ -749,6 +760,7 @@ export async function startServer(): Promise<ServerInstance> {
   // use the main pool — they enqueue jobs and can tolerate back-pressure.
   const broadcastHandler = new BroadcastHandler(pools.realtime, io)
   const companionHandler = new CompanionHandler(pool, jobQueue)
+  const contextBagOrientationHandler = new ContextBagOrientationHandler(pool, jobQueue)
   const namingHandler = new NamingHandler(pool, jobQueue)
   const emojiUsageHandler = new EmojiUsageHandler(pool)
   const embeddingHandler = new EmbeddingHandler(pool, jobQueue)
@@ -771,6 +783,7 @@ export async function startServer(): Promise<ServerInstance> {
   const outboxHandlers: (OutboxHandler & { ensureListener(): Promise<void> })[] = [
     broadcastHandler,
     companionHandler,
+    contextBagOrientationHandler,
     namingHandler,
     emojiUsageHandler,
     embeddingHandler,

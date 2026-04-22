@@ -36,6 +36,7 @@ export const JobQueues = {
   VIDEO_TRANSCODE_SUBMIT: "video.transcode_submit",
   VIDEO_TRANSCODE_CHECK: "video.transcode_check",
   SAVED_REMINDER_FIRE: "saved.reminder_fire",
+  CONTEXT_BAG_ORIENT: "context_bag.orient",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -185,6 +186,18 @@ export interface SavedReminderFireJobData {
   savedMessageId: string
 }
 
+/**
+ * Context-bag orientation job. Fires Ariadne's kickoff message on a newly
+ * created scratchpad that has a context bag attached — see
+ * `context-bag-orientation-handler.ts` for the flow.
+ */
+export interface ContextBagOrientJobData {
+  workspaceId: string
+  streamId: string
+  bagId: string
+  personaId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -206,6 +219,7 @@ export interface JobDataMap {
   [JobQueues.VIDEO_TRANSCODE_SUBMIT]: VideoTranscodeSubmitJobData
   [JobQueues.VIDEO_TRANSCODE_CHECK]: VideoTranscodeCheckJobData
   [JobQueues.SAVED_REMINDER_FIRE]: SavedReminderFireJobData
+  [JobQueues.CONTEXT_BAG_ORIENT]: ContextBagOrientJobData
 }
 
 /**
