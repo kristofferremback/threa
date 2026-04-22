@@ -55,7 +55,7 @@ export function ReactionDetailsContent({ reactions, workspaceId, defaultEmoji = 
   return (
     <>
       {/* Emoji filter tabs */}
-      <div className="flex gap-0.5 px-1.5 pt-1.5 pb-1 overflow-x-auto scrollbar-none">
+      <div className="flex flex-wrap gap-0.5 px-1.5 pt-1.5 pb-1">
         <button
           type="button"
           className={cn(
@@ -89,19 +89,26 @@ export function ReactionDetailsContent({ reactions, workspaceId, defaultEmoji = 
 
       {/* User list */}
       <div className="max-h-[220px] overflow-y-auto py-1 px-1">
-        {displayedUsers.map(({ userId, emojis }) => (
-          <div
-            key={userId}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50 transition-colors"
-          >
-            <span className="truncate flex-1 text-foreground/90">{getActorName(userId, "user")}</span>
-            <span className="shrink-0 text-base flex gap-0.5">
-              {emojis.map((shortcode) => (
-                <span key={shortcode}>{toEmoji(shortcode) ?? shortcode}</span>
-              ))}
-            </span>
-          </div>
-        ))}
+        {displayedUsers.map(({ userId, emojis }) => {
+          const visibleEmojis = emojis.slice(0, 4)
+          const extraCount = emojis.length - visibleEmojis.length
+          return (
+            <div
+              key={userId}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50 transition-colors"
+            >
+              <span className="truncate flex-1 text-foreground/90">{getActorName(userId, "user")}</span>
+              <span className="shrink-0 text-base flex items-center gap-0.5">
+                {visibleEmojis.map((shortcode) => (
+                  <span key={shortcode}>{toEmoji(shortcode) ?? shortcode}</span>
+                ))}
+                {extraCount > 0 && (
+                  <span className="text-[11px] text-muted-foreground tabular-nums">+{extraCount}</span>
+                )}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </>
   )
@@ -133,7 +140,7 @@ export function ReactionPillDetails({ emoji, reactions, workspaceId, children }:
     return (
       <HoverCard openDelay={350} closeDelay={120}>
         <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-        <HoverCardContent side="top" align="start" className="w-[260px] p-0">
+        <HoverCardContent side="top" align="start" className="w-[300px] p-0">
           <ReactionDetailsContent reactions={reactions} workspaceId={workspaceId} defaultEmoji={emoji} />
         </HoverCardContent>
       </HoverCard>

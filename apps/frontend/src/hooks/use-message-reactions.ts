@@ -4,10 +4,17 @@ import { messagesApi } from "@/api/messages"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
 import { enqueueOperation } from "@/sync/operation-queue"
 import { useSyncEngine } from "@/sync/sync-engine"
+import { db } from "@/db"
 
 /** Strip surrounding colons from a shortcode (":laughing:" → "laughing") */
 export function stripColons(shortcode: string): string {
   return shortcode.startsWith(":") && shortcode.endsWith(":") ? shortcode.slice(1, -1) : shortcode
+}
+
+/** Derive the set of all reacted shortcodes (stripped) from a reactions dict. */
+export function reactionShortcodes(reactions: Record<string, string[]> | null | undefined): Set<string> {
+  if (!reactions) return new Set()
+  return new Set(Object.keys(reactions).map(stripColons))
 }
 
 interface UseMessageReactionsResult {
@@ -41,6 +48,18 @@ export function useMessageReactions(workspaceId: string, messageId: string): Use
 
   const addReaction = useCallback(
     async (emoji: string) => {
+      // Optimistically bump the local emoji weight so the quick-bar re-ranks
+      // without needing a page reload. Fire-and-forget — non-critical.
+      const shortcode = emojiToShortcode.get(emoji)
+      if (shortcode) {
+        db.workspaceMetadata.get(workspaceId).then((meta) => {
+          if (!meta) return
+          return db.workspaceMetadata.update(workspaceId, {
+            emojiWeights: { ...meta.emojiWeights, [shortcode]: (meta.emojiWeights[shortcode] ?? 0) + 1 },
+          })
+        })
+      }
+
       try {
         await messagesApi.addReaction(workspaceId, messageId, emoji)
       } catch {
@@ -49,7 +68,7 @@ export function useMessageReactions(workspaceId: string, messageId: string): Use
         syncEngine.kickOperationQueue()
       }
     },
-    [workspaceId, messageId, syncEngine]
+    [workspaceId, messageId, syncEngine, emojiToShortcode]
   )
 
   const removeReaction = useCallback(

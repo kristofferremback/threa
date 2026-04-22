@@ -56,6 +56,63 @@ export function pickRecentlyUsed(emojis: EmojiEntry[], weights: Record<string, n
   return recent.slice(0, limit)
 }
 
+export const QUICK_REACTION_COUNT = 6
+export const DEFAULT_QUICK_REACTION_SHORTCODES = ["+1", "heart", "joy", "open_mouth", "cry", "fire"]
+
+/**
+ * Build the quick-react emoji list (the lower "fresh picks" row).
+ *
+ * Emojis in excludeShortcodes are omitted so the bar never duplicates
+ * reactions the user has already placed on the message — those are shown
+ * in a separate active-reactions row above the separator.
+ *
+ * Slot priority: most-used by weight → static defaults → full picker in
+ * default order (top-left), ensuring the bar always fills to count.
+ */
+export function buildQuickEmojis(
+  emojis: EmojiEntry[],
+  weights: Record<string, number>,
+  count: number = QUICK_REACTION_COUNT,
+  defaults: string[] = DEFAULT_QUICK_REACTION_SHORTCODES,
+  excludeShortcodes?: Set<string>
+): EmojiEntry[] {
+  if (!emojis.length) return []
+  const result: EmojiEntry[] = []
+  const seen = new Set<string>(excludeShortcodes)
+
+  const byWeight = emojis
+    .filter((e) => (weights[e.shortcode] ?? 0) > 0 && !seen.has(e.shortcode))
+    .sort((a, b) => (weights[b.shortcode] ?? 0) - (weights[a.shortcode] ?? 0))
+  for (const e of byWeight) {
+    if (result.length >= count) break
+    result.push(e)
+    seen.add(e.shortcode)
+  }
+
+  const emojiMap = new Map(emojis.map((e) => [e.shortcode, e]))
+  for (const shortcode of defaults) {
+    if (result.length >= count) break
+    const entry = emojiMap.get(shortcode)
+    if (entry && !seen.has(shortcode)) {
+      result.push(entry)
+      seen.add(shortcode)
+    }
+  }
+
+  // Fill any remaining slots from the full list in default order (picker top-left).
+  if (result.length < count) {
+    for (const e of sortByDefaultOrder(emojis)) {
+      if (result.length >= count) break
+      if (!seen.has(e.shortcode)) {
+        result.push(e)
+        seen.add(e.shortcode)
+      }
+    }
+  }
+
+  return result
+}
+
 export function filterBySearch(emojis: EmojiEntry[], query: string): EmojiEntry[] {
   if (!query) return emojis
   const q = query.toLowerCase()

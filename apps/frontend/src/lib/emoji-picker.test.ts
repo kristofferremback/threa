@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import type { EmojiEntry } from "@threa/types"
 import {
+  buildQuickEmojis,
   filterBySearch,
   indexToCoord,
   moveSelection,
@@ -97,6 +98,76 @@ describe("indexToCoord", () => {
 describe("totalCount", () => {
   it("sums recent and all", () => {
     expect(totalCount({ recentCount: 3, allCount: 100, columns: 8 })).toBe(103)
+  })
+})
+
+describe("buildQuickEmojis", () => {
+  // Extra fixtures for a larger pool so fill-to-count is testable
+  const heart = make("heart", "symbols", 1)
+  const fire = make("fire", "symbols", 2)
+  const joy = make("joy", "smileys", 3)
+  const pool = [smile, grin, dog, cat, pizza, rocket, flag, heart, fire, joy]
+
+  it("returns empty when emojis array is empty", () => {
+    expect(buildQuickEmojis([], {}, 6)).toEqual([])
+  })
+
+  it("fills from weighted emojis first, sorted by weight desc", () => {
+    const weights = { dog: 5, smile: 10, pizza: 2 }
+    const result = buildQuickEmojis(pool, weights, 3)
+    expect(result.map((e) => e.shortcode)).toEqual(["smile", "dog", "pizza"])
+  })
+
+  it("falls back to defaults when weighted emojis are insufficient", () => {
+    // Only 1 weighted emoji; defaults fill the rest
+    const weights = { dog: 3 }
+    const defaults = ["smile", "grin"]
+    const result = buildQuickEmojis(pool, weights, 3, defaults)
+    expect(result.map((e) => e.shortcode)).toEqual(["dog", "smile", "grin"])
+  })
+
+  it("falls back to default order when defaults are also exhausted", () => {
+    // No weights, no defaults — result comes from sortByDefaultOrder
+    const result = buildQuickEmojis(pool, {}, 3, [])
+    // sortByDefaultOrder: smileys first (smile, grin, joy), then animals...
+    expect(result.map((e) => e.shortcode)).toEqual(["smile", "grin", "joy"])
+  })
+
+  it("always fills to count across all three passes", () => {
+    const result = buildQuickEmojis(pool, {}, 6, ["smile", "grin"])
+    expect(result).toHaveLength(6)
+    // smile + grin from defaults, then 4 from sortByDefaultOrder (excluding smile/grin)
+    expect(result.map((e) => e.shortcode)).toContain("smile")
+    expect(result.map((e) => e.shortcode)).toContain("grin")
+  })
+
+  it("excludes shortcodes in excludeShortcodes from all passes", () => {
+    const weights = { smile: 10, dog: 5 }
+    const excluded = new Set(["smile", "dog"])
+    const result = buildQuickEmojis(pool, weights, 2, [], excluded)
+    expect(result.map((e) => e.shortcode)).not.toContain("smile")
+    expect(result.map((e) => e.shortcode)).not.toContain("dog")
+    expect(result).toHaveLength(2)
+  })
+
+  it("respects the count parameter", () => {
+    expect(buildQuickEmojis(pool, {}, 2)).toHaveLength(2)
+    expect(buildQuickEmojis(pool, {}, 8)).toHaveLength(8)
+  })
+
+  it("never produces duplicates across passes", () => {
+    // smile appears in both weights and defaults — should appear only once
+    const weights = { smile: 1 }
+    const defaults = ["smile", "grin"]
+    const result = buildQuickEmojis(pool, weights, 4, defaults)
+    const codes = result.map((e) => e.shortcode)
+    expect(new Set(codes).size).toBe(codes.length)
+  })
+
+  it("returns fewer than count when not enough emojis exist", () => {
+    const tiny = [smile, grin]
+    const result = buildQuickEmojis(tiny, {}, 6, [])
+    expect(result).toHaveLength(2)
   })
 })
 

@@ -1,20 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { ChevronLeft, Quote, SmilePlus } from "lucide-react"
+import { ChevronLeft, Quote } from "lucide-react"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
-import { useMessageReactions, stripColons } from "@/hooks/use-message-reactions"
+import { useMessageReactions, stripColons, reactionShortcodes } from "@/hooks/use-message-reactions"
 import { getInitials } from "@/lib/initials"
 import { cn } from "@/lib/utils"
+import { buildQuickEmojis } from "@/lib/emoji-picker"
 import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
-
-const QUICK_REACTION_COUNT = 6
-
-const DEFAULT_QUICK_EMOJIS = ["+1", "heart", "joy", "open_mouth", "cry", "fire"]
+import { EmojiQuickBar } from "./emoji-quick-bar"
 
 interface MessageActionDrawerProps {
   open: boolean
@@ -86,31 +84,6 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     setExpanded(false)
   }, [])
 
-  const quickEmojis = useMemo(() => {
-    if (!emojis.length) return []
-
-    // Sort by weight descending, take top N
-    const weighted = emojis
-      .filter((e) => (emojiWeights[e.shortcode] ?? 0) > 0)
-      .sort((a, b) => (emojiWeights[b.shortcode] ?? 0) - (emojiWeights[a.shortcode] ?? 0))
-      .slice(0, QUICK_REACTION_COUNT)
-
-    if (weighted.length >= QUICK_REACTION_COUNT) return weighted
-
-    // Fill with defaults
-    const usedShortcodes = new Set(weighted.map((e) => e.shortcode))
-    const emojiMap = new Map(emojis.map((e) => [e.shortcode, e]))
-    for (const shortcode of DEFAULT_QUICK_EMOJIS) {
-      if (weighted.length >= QUICK_REACTION_COUNT) break
-      const entry = emojiMap.get(shortcode)
-      if (entry && !usedShortcodes.has(shortcode)) {
-        weighted.push(entry)
-        usedShortcodes.add(shortcode)
-      }
-    }
-    return weighted
-  }, [emojis, emojiWeights])
-
   const activeShortcodes = useMemo(() => {
     if (!context.currentUserId || !context.reactions) return new Set<string>()
     const active = new Set<string>()
@@ -121,6 +94,23 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     }
     return active
   }, [context.currentUserId, context.reactions])
+
+  const allReactionShortcodes = useMemo(() => reactionShortcodes(context.reactions), [context.reactions])
+
+  const activeEmojis = useMemo(
+    () => emojis.filter((e) => activeShortcodes.has(e.shortcode)),
+    [emojis, activeShortcodes]
+  )
+
+  const othersEmojis = useMemo(
+    () => emojis.filter((e) => allReactionShortcodes.has(e.shortcode) && !activeShortcodes.has(e.shortcode)),
+    [emojis, allReactionShortcodes, activeShortcodes]
+  )
+
+  const quickEmojis = useMemo(
+    () => buildQuickEmojis(emojis, emojiWeights, undefined, undefined, allReactionShortcodes),
+    [emojis, emojiWeights, allReactionShortcodes]
+  )
 
   // Quick-react toggles: removes if user already reacted, adds otherwise
   const handleQuickReact = useCallback(
@@ -197,37 +187,19 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
             </div>
 
             {/* Quick reactions row + full picker button */}
-            {quickEmojis.length > 0 && context.onReact && (
-              <div className="flex justify-center gap-2 px-4 pb-3">
-                {quickEmojis.map((entry) => {
-                  const isActive = activeShortcodes.has(entry.shortcode)
-                  return (
-                    <button
-                      key={entry.shortcode}
-                      type="button"
-                      className={cn(
-                        "flex items-center justify-center w-10 h-10 rounded-full transition-colors text-xl",
-                        isActive ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted active:bg-muted/80"
-                      )}
-                      title={`:${entry.shortcode}:`}
-                      onClick={() => handleQuickReact(entry.shortcode)}
-                    >
-                      {entry.emoji}
-                    </button>
-                  )
-                })}
-                <button
-                  type="button"
-                  className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted active:bg-muted/80 transition-colors text-muted-foreground"
-                  aria-label="More reactions"
-                  onClick={() => {
+            {(activeEmojis.length > 0 || othersEmojis.length > 0 || quickEmojis.length > 0) && context.onReact && (
+              <div className="flex justify-center px-4 pb-3">
+                <EmojiQuickBar
+                  activeEmojis={activeEmojis}
+                  othersEmojis={othersEmojis}
+                  quickEmojis={quickEmojis}
+                  onReact={handleQuickReact}
+                  onOpenFullPicker={() => {
                     handleOpenChange(false)
                     // Deferred so the drawer finishes closing before the picker opens
                     setTimeout(() => context.onOpenFullPicker?.(), 150)
                   }}
-                >
-                  <SmilePlus className="h-5 w-5" />
-                </button>
+                />
               </div>
             )}
 
