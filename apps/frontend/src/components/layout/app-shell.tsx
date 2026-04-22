@@ -1,9 +1,8 @@
 import { type ReactNode, useCallback } from "react"
-import { useQueryClient } from "@tanstack/react-query"
-import { useParams } from "react-router-dom"
 import { RefreshCw } from "lucide-react"
 import { useSidebar, useCoordinatedLoading } from "@/contexts"
-import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh, workspaceKeys, streamKeys } from "@/hooks"
+import { useResizeDrag, useVisualViewport, useSidebarSwipe, usePullToRefresh } from "@/hooks"
+import { useSyncEngine } from "@/sync/sync-engine"
 import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
 import { ConnectionStatus } from "./connection-status"
 import { cn } from "@/lib/utils"
@@ -101,16 +100,14 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
   const isKeyboardOpen = useVisualViewport(isMobile)
 
-  const queryClient = useQueryClient()
-  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const syncEngine = useSyncEngine()
 
+  // Workspace + stream bootstrap caches are primed by SyncEngine (not a React
+  // Query observer), so invalidateQueries never triggers a refetch. Route the
+  // refresh through the engine's reconnect-style bootstrap instead.
   const handleSoftRefresh = useCallback(async () => {
-    if (!workspaceId) return
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) }),
-      queryClient.invalidateQueries({ queryKey: [...streamKeys.all, "bootstrap", workspaceId] }),
-    ])
-  }, [queryClient, workspaceId])
+    await syncEngine.refreshAfterConnectivityResume()
+  }, [syncEngine])
 
   // Light pull = soft refresh (re-fetch data), heavy pull = hard refresh (page reload)
   const {
