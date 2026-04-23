@@ -1,10 +1,9 @@
 import type { Querier } from "../../../db"
 import { HttpError } from "../../../lib/errors"
 import { sharedMessageId } from "../../../lib/id"
-import { StreamRepository } from "../../streams"
 import { type JSONContent, ShareFlavors, type ShareFlavor } from "@threa/types"
 import { MessageRepository } from "../repository"
-import { crossesPrivacyBoundary } from "./access-check"
+import { crossesPrivacyBoundary, type FindStreamForSharing } from "./access-check"
 import { SharedMessageRepository } from "./repository"
 
 /**
@@ -65,6 +64,12 @@ export interface ValidateAndRecordSharesParams {
   sharerId: string
   contentJson: JSONContent
   /**
+   * Stream loader injected by the caller. Avoids importing StreamRepository
+   * directly from inside this sub-feature which would create a barrel cycle
+   * between messaging and streams.
+   */
+  findStream: FindStreamForSharing
+  /**
    * Set when the sharer has acknowledged the privacy warning in the modal.
    * Backend re-runs the check to prevent spoofed confirmations — the flag is
    * only consulted AFTER the cross-boundary condition is independently
@@ -99,7 +104,7 @@ export const ShareService = {
         })
       }
 
-      const sourceStream = await StreamRepository.findById(params.client, ref.sourceStreamId)
+      const sourceStream = await params.findStream(params.client, ref.sourceStreamId)
       if (!sourceStream) {
         throw new HttpError("Source stream not found", {
           status: 400,
@@ -113,7 +118,12 @@ export const ShareService = {
         })
       }
 
-      const boundary = await crossesPrivacyBoundary(params.client, ref.sourceStreamId, params.targetStreamId)
+      const boundary = await crossesPrivacyBoundary(
+        params.client,
+        params.findStream,
+        ref.sourceStreamId,
+        params.targetStreamId
+      )
       if (boundary.triggered && !params.confirmedPrivacyWarning) {
         throw new HttpError("Privacy confirmation required to share this message", {
           status: 409,

@@ -335,6 +335,7 @@ export class EventService {
         shareMessageId: msgId,
         sharerId: params.authorId,
         contentJson: params.contentJson,
+        findStream: (db, id) => StreamRepository.findById(db, id),
         confirmedPrivacyWarning: params.confirmedPrivacyWarning,
       })
 

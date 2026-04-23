@@ -1,6 +1,21 @@
 import type { Querier } from "../../../db"
 import { sql } from "../../../db"
-import { StreamRepository, type Stream } from "../../streams"
+
+/**
+ * Minimal structural shape needed to answer ancestor / privacy checks.
+ * Defined here so the sharing sub-feature does not import from the streams
+ * feature — satisfies INV-52 and breaks the barrel cycle that arises
+ * because streams/handlers.ts imports hydration helpers from the messaging
+ * barrel.
+ */
+export interface SharingStream {
+  id: string
+  workspaceId: string
+  visibility: string
+  parentStreamId: string | null
+}
+
+export type FindStreamForSharing = (db: Querier, id: string) => Promise<SharingStream | null>
 
 /**
  * Walk the parentStreamId chain starting at `streamId` and return true if
@@ -13,12 +28,17 @@ import { StreamRepository, type Stream } from "../../streams"
  */
 const MAX_ANCESTOR_DEPTH = 8
 
-export async function isAncestorStream(db: Querier, ancestorCandidateId: string, streamId: string): Promise<boolean> {
+export async function isAncestorStream(
+  db: Querier,
+  findStream: FindStreamForSharing,
+  ancestorCandidateId: string,
+  streamId: string
+): Promise<boolean> {
   if (ancestorCandidateId === streamId) return true
-  let current: Stream | null = await StreamRepository.findById(db, streamId)
+  let current: SharingStream | null = await findStream(db, streamId)
   for (let i = 0; i < MAX_ANCESTOR_DEPTH && current?.parentStreamId; i++) {
     if (current.parentStreamId === ancestorCandidateId) return true
-    current = await StreamRepository.findById(db, current.parentStreamId)
+    current = await findStream(db, current.parentStreamId)
   }
   return false
 }
@@ -42,6 +62,7 @@ export interface PrivacyBoundaryResult {
  */
 export async function crossesPrivacyBoundary(
   db: Querier,
+  findStream: FindStreamForSharing,
   sourceStreamId: string,
   targetStreamId: string
 ): Promise<PrivacyBoundaryResult> {
@@ -49,11 +70,11 @@ export async function crossesPrivacyBoundary(
     return { triggered: false, exposedUserCount: 0 }
   }
 
-  if (await isAncestorStream(db, targetStreamId, sourceStreamId)) {
+  if (await isAncestorStream(db, findStream, targetStreamId, sourceStreamId)) {
     return { triggered: false, exposedUserCount: 0 }
   }
 
-  const source = await StreamRepository.findById(db, sourceStreamId)
+  const source = await findStream(db, sourceStreamId)
   if (!source || source.visibility !== "private") {
     return { triggered: false, exposedUserCount: 0 }
   }
