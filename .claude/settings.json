@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" = \"true\" ] && { [ -f .env.remote-dev ] || { echo \"Missing .env.remote-dev\" >&2; exit 1; }; cp -n .env.remote-dev .env; docker compose up -d --wait; rm -rf node_modules apps/*/node_modules packages/*/node_modules; bun install; }; exit 0",
+            "command": "bash scripts/claude-code-web-session-start.sh",
             "timeout": 300
           }
         ]
