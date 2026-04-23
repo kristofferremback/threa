@@ -24,13 +24,14 @@ check() {
   fi
 }
 
+info() {
+  echo "[info] $1"
+}
+
 check "bun installed" command -v bun
-check "docker installed" command -v docker
-check "docker daemon reachable" docker info
 check ".env present" test -f .env
 check "dependencies installed" test -d node_modules
-check "postgres container running" bash -c "docker compose ps --status running --services postgres | grep -qx postgres"
-check "minio container running" bash -c "docker compose ps --status running --services minio | grep -qx minio"
+info "Docker-backed services are not bootstrapped in Codex Cloud; run those tests in CI."
 
 echo
 
@@ -39,4 +40,4 @@ if [ "$failures" -gt 0 ]; then
   exit 1
 fi
 
-echo "Suggested next step: bun run dev"
+echo "Suggested next step: run the checks relevant to your task; use CI for Docker-backed flows."
