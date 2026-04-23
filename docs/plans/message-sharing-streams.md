@@ -104,17 +104,18 @@ Triggered by the **"Share as quote"** context-menu entry (see F2). The modal beh
 
 ### D1: Pointer share grants durable read on the single shared message
 
-When a pointer share is posted to a target stream, target members gain implicit read access to that **one message** — not to the source stream. This is the whole point of the privacy prompt: once the sharer confirms, they are transferring visibility of that message to the target audience.
+When a pointer share is posted to a target stream, target members gain implicit read access to that **one message** — not to the source stream, not to any messages the shared message itself references. This is the whole point of the privacy prompt: once the sharer confirms, they are transferring visibility of that single message to the target audience.
 
 Implications:
 
 - A target member who is not in the source stream sees the live content of the shared message whenever they view the target stream.
 - If the source message is later edited, target members see the edit.
-- If the source message is deleted, target members see a tombstone.
+- If the source message is deleted, target members see a tombstone (kept; admin hard-delete also leaves tombstones — see Resolved Questions).
 - If the **sharer** later loses access to the source (booted from the private channel), the share does **not** retroactively disappear from the target. The share is a durable grant on the single message, orthogonal to the sharer's later membership.
 - If the **source stream's visibility** changes later (private → public, public → private), the share still renders. We do not retroactively redact.
+- Grants do **not** transit. If the shared message itself contains a pointer to a deeper message, viewers in the target stream do not automatically gain access to that deeper message — they need their own grant on it. See D8 for how this plays out with re-shares.
 
-Rationale: retroactive redaction creates confusing UX ("why did the shared message suddenly vanish?") and requires expensive recomputation. At share time the sharer made a deliberate decision with a clear prompt; that's the consent boundary.
+Rationale: retroactive redaction creates confusing UX ("why did the shared message suddenly vanish?") and requires expensive recomputation. At share time the sharer made a deliberate decision with a clear prompt; that's the consent boundary. Non-transitivity protects against grant-chaining attacks where a transitive model could leak deeply private content via two hops.
 
 ### D2: Privacy-warning trigger
 
@@ -191,6 +192,30 @@ Quote flavor rows are written too (for analytics + symmetry), but the render pat
 When a source message is edited or deleted, the existing `message:updated` outbox event already fires (see `event-service.ts:343–349`). We add a small handler that, on `message:updated`, looks up `shared_messages WHERE source_message_id = ?` and emits a **render-hint event** (`pointer:invalidated`) to every `target_stream_id` so connected clients re-fetch the affected pointer.
 
 This avoids mutating the share-message row itself — the pointer is hydrated at read time, so the source edit is picked up automatically on the next fetch. The invalidation event exists only to trigger frontend cache refresh in real time.
+
+### D8: Re-shares allowed; grants are scoped per-share, not transitive
+
+A "re-share" is when user B shares a share-message they're seeing (M_T1, which itself contains a pointer to M1) into a new target stream T2. We allow this for now (revisit if usage shows excessive depth).
+
+**The grant pattern is one-hop:**
+
+- Re-sharing M_T1 into T2 grants T2 members read on **M_T1** (the immediate referenced message), not on M1 (the deeper message that M_T1 references).
+- A T2 viewer who isn't independently in T1 (or in M1's source stream, or a beneficiary of any other share grant on M1) sees the outer pointer's content (M_T1's text + commentary) but a **private-content placeholder** in place of M_T1's inner pointer.
+
+**Private-content placeholder** — what it reveals and what it doesn't:
+
+- Reveals: that a referenced message exists, the source stream's **kind** (channel / DM / scratchpad), and its **visibility** (private / public).
+- Withholds: the referenced message's content, author, source stream name, and source stream membership.
+
+Example placeholder copy: _"This message references content in a private channel you don't have access to."_ (DM/scratchpad variants substitute the kind.)
+
+**Why one-hop, not transitive:**
+
+A transitive model would mean B re-sharing M_T1 implicitly grants T2 members read on M1. That defeats the original sharer's privacy decision: when A first shared M1, A consented to expose it to T1 members, not to "T1 members plus anyone any of them might re-share onward to". The non-transitive rule keeps the consent boundary at exactly one hop, matching D1.
+
+**Implication for backend hydration:**
+
+Pointer hydration becomes recursive (with a depth limit — see Backend Design) and per-viewer access-checked. For each pointer at every depth, the backend decides per viewer whether to return content or a placeholder.
 
 ## Data Model Changes
 
@@ -319,13 +344,27 @@ Single-query helpers use `pool` directly (INV-30). All the above runs inside the
 
 ### Pointer hydration on message fetch
 
-When the frontend fetches messages for a stream, the backend needs to resolve any `ThreaSharedMessage` nodes in `contentJson` into current source-message content.
+When the frontend fetches messages for a stream, the backend resolves any `ThreaSharedMessage` nodes in `contentJson` into current source-message content. Hydration is **recursive** (chains supported per D8) with a hard depth cap, and **per-viewer access-checked** at every level.
 
-Implementation: in the existing message read projection, after fetching the batch of messages, collect all `messageIds` referenced by `ThreaSharedMessage` nodes and issue a single batched read (INV-56) against `messages` joined with `users`/`bots` for author info. Inject the hydrated payload as a sibling field on the response (e.g. `message.sharedMessages: { [sourceMessageId]: HydratedMessage }`), not by mutating the `contentJson`. The node stays canonical (INV-58); the renderer overlays the hydrated data.
+**Algorithm** — for a stream-read request by viewer V:
 
-Tombstone: if `messages.deleted_at IS NOT NULL`, the hydrated entry carries `{ deleted: true, deletedAt }`. If the source message doesn't exist (shouldn't normally happen but defend for it), return `{ missing: true }`.
+1. Compute V's access set once at the start of the request:
+   - `viewerStreams` — stream ids V is a member of (single query: `SELECT stream_id FROM stream_members WHERE user_id = $V AND workspace_id = $ws`).
+2. Collect the set of pointer-referenced message ids from the top-level batch (`level = 0`).
+3. For the current level's id set:
+   - Batch-read `messages` and join the share-grant lookup: `SELECT m.id, m.stream_id, m.deleted_at, ..., array_agg(s.target_stream_id) AS share_targets FROM messages m LEFT JOIN shared_messages s ON s.source_message_id = m.id WHERE m.id IN (...) GROUP BY m.id` — single query (INV-56).
+   - For each result row: viewer has access iff `m.stream_id ∈ viewerStreams` OR `share_targets ∩ viewerStreams ≠ ∅`.
+   - If access: return full hydrated payload (`{ id, content, author, streamId, deletedAt? }`).
+   - If no access: return placeholder (`{ private: true, sourceStreamKind: 'channel'|'dm'|'scratchpad', sourceVisibility: 'private'|'public' }`) — see D8.
+4. For accessible payloads at this level, scan their `content` for nested `ThreaSharedMessage` nodes; collect their referenced message ids into the next level's set.
+5. Increment level. If `level < MAX_HYDRATION_DEPTH` (default 3) and the set is non-empty, loop to step 3.
+6. Beyond `MAX_HYDRATION_DEPTH`, render the unresolved pointer as a placeholder labelled `{ truncated: true }` so the renderer can show a "see in source stream" link. Cycles are impossible in practice (a message can't reference one created after itself), but the depth cap also protects against pathological data.
 
-Performance: the hydration is a single `WHERE id IN (...)` query per stream read. Index on `messages.id` (primary key) handles it. No N+1.
+**Response shape**: a sibling map on the response keyed by source message id, e.g. `message.sharedMessages: Record<MessageId, HydratedShare | PlaceholderShare>`. The map is shared across the whole stream-read response (deduped — if the same source message is referenced from multiple places, it's resolved once). The node `contentJson` stays canonical (INV-58); the renderer overlays from the map.
+
+**Tombstones**: if the message exists but `deleted_at IS NOT NULL` AND the viewer has access, return `{ deleted: true, deletedAt }`. If the source message row doesn't exist at all (shouldn't normally happen, defend for it), return `{ missing: true }`.
+
+**Performance**: per request, hydration is `MAX_HYDRATION_DEPTH` rounds of one batched query each. With realistic usage (chains rarely exceed 1–2 hops) this is 1–2 SQL round-trips. Indexes on `messages(id)` (PK) and `shared_messages(source_message_id)` cover the join. No N+1.
 
 ### Outbox handler for propagating updates
 
@@ -415,9 +454,11 @@ States:
 - Normal: author + live content (truncated with "See more" beyond 3 lines / 200 chars, matching the quote view's convention).
 - Deleted: "[Message deleted by author]" with muted styling.
 - Missing (edge case): "[Message no longer available]".
+- **Private (no access)** — viewer hit a pointer they don't have a grant on (per D8 nested re-share rule). Render a muted, content-less stub showing only the source stream **kind** + **visibility**, e.g. _"This message references content in a private channel you don't have access to."_ Variants for DM and scratchpad. No author, no source stream name, no body. Not navigable (the stream link would also be inaccessible).
+- **Truncated (depth cap reached)**: viewer has access but hydration stopped at `MAX_HYDRATION_DEPTH`. Render a "Open in source stream" link (which the viewer _can_ follow, since they have access). Same visual treatment as a normal pointer, minus the inline body.
 - Not yet hydrated (first paint): skeleton placeholder with author name/avatar from the node's cached attrs so the user sees _something_ on first paint.
 
-Clicking the body navigates to the source stream + message (same URL pattern used elsewhere: `/w/{ws}/s/{sourceStreamId}?m={sourceMessageId}`). Buttons for actions; links for navigation (INV-40).
+For accessible states, clicking the body navigates to the source stream + message (same URL pattern used elsewhere: `/w/{ws}/s/{sourceStreamId}?m={sourceMessageId}`). For the Private state, the body is non-interactive. Buttons for actions; links for navigation (INV-40).
 
 ### Composer pre-fill is the chosen send path
 
@@ -438,7 +479,7 @@ This pairs with a bootstrap-on-resubscribe refetch of pointers (INV-53) so we do
 
 Extend `stripMarkdownToInline()` and `truncateContent()` to recognize:
 
-- `ThreaSharedMessage` node → "Shared a message from #{sourceStreamName}" (or `@{authorName}` for DM sources).
+- `ThreaSharedMessage` node → "Shared a message from #{sourceStreamName}" (or `@{authorName}` for DM sources). Source stream name is read from the node's cached attrs, which the sharer always has access to (the sharer was a member at share time). For sidebar previews of share-messages the **viewer** doesn't have access to the inner pointer's source — fall back to the type-only label "Shared a private message" without naming the source stream. Source-name leak avoidance matches D8.
 - `ThreaQuoteReply` — already handled.
 
 Sidebar and activity-feed previews must route through these helpers (already the case per INV-60; we extend the helpers, not the call sites).
@@ -465,7 +506,12 @@ In `apps/backend/src/features/messaging/sharing/__tests__/`:
 - `handlers.test.ts`:
   - `GET share-preview` returns warning state correctly for public/private/subset/outsider cases. Zod validation on query params (INV-55).
   - `POST messages` passes through the new `confirmedPrivacyWarning` field to the service.
-- Pointer hydration: in `event-service` or a new `message-read.test.ts`, assert that a stream read containing a pointer returns a `sharedMessages` map keyed by `sourceMessageId`. Test deleted source → tombstone payload. Test missing source → `{ missing: true }`.
+- Pointer hydration: in `event-service` or a new `message-read.test.ts`:
+  - Stream read containing a pointer returns a `sharedMessages` map keyed by `sourceMessageId`. Deleted source → `{ deleted: true, deletedAt }`. Missing source → `{ missing: true }`.
+  - Two-hop chain (re-share): viewer who is in T2 only (not T1, not S1) gets full payload for M_T1 and a `{ private: true, sourceStreamKind, sourceVisibility }` placeholder for the inner pointer to M1 (D8). Author and stream name absent from the placeholder.
+  - Two-hop chain where viewer is in S1 directly: full payload at every level.
+  - Hydration depth cap: a fabricated chain longer than `MAX_HYDRATION_DEPTH` returns `{ truncated: true }` at the cut-off level for accessible viewers.
+  - Per-viewer access derives correctly from `stream_members` ∪ `shared_messages.target_stream_id`; a viewer who has neither gets the placeholder.
 - Outbox handler: `message:updated` on a message referenced by two pointers in two different target streams emits exactly one `pointer:invalidated` per distinct target stream. Assert specific events, not counts of side effects beyond that (INV-23).
 
 Do not use `mock.module()`; use scoped `spyOn` against namespace imports (INV-48).
@@ -481,6 +527,7 @@ In `tests/` (cross-app Playwright):
 - **E2E-share-quote-partial**: A selects text in a message, clicks Share in the selection toolbar, picks a target. Asserts the quote node renders with the selected snippet only (no pointer hydration).
 - **E2E-share-to-new-scratchpad**: A opens Share, picks "+ New scratchpad" in the picker. Asserts a new scratchpad is created, A is navigated to it, composer contains the pointer node, send posts the message in the new scratchpad.
 - **E2E-share-to-same-stream**: A shares a message from channel X while already viewing channel X. Modal closes, current composer receives the pointer node. A adds commentary and sends. Asserts the share appears in channel X as a normal message.
+- **E2E-share-rechain-private-placeholder**: Three users A/B/C, three streams: private channel S1 (A only), public channel T1 (A+B), public channel T2 (B+C). A shares M1 from S1 to T1. B re-shares the resulting share-message from T1 to T2. C views T2: sees the outer pointer (M_T1) hydrated normally; sees the inner pointer to M1 as a "this references content in a private channel" placeholder (no author, no stream name). B re-fetches T2: sees full content at every level (B has access via T1 + the original share grant on M1).
 - **E2E-share-pointer-edit-propagation**: A shares a pointer from channel 1 to channel 2. A edits the source. B in channel 2 sees the updated content without reloading.
 - **E2E-share-pointer-delete-tombstone**: A shares a pointer, then deletes the source. B in target sees the tombstone.
 - **E2E-share-navigation**: after confirm, the user lands on `/w/{ws}/s/{target}?m={newShareMessageId}` and the new message is in view.
@@ -517,13 +564,14 @@ Smallest end-to-end vertical: thread → parent, pointer flavor, no modal, no pr
 
 This slice proves the data model, hydration, outbox invalidation, and the composer hand-off pattern end-to-end with the simplest UX. Everything after extends surface, not substrate.
 
-### Slice 2 — Share to another stream, pointer only
+### Slice 2 — Share to another stream, pointer only (incl. chain support)
 
 - `ShareMessageModal` with step 1 picker only (no flavor toggle — flavor is a modal prop).
 - `'share'` context-menu entry; opens modal with `flavor='pointer'`.
 - Backend: scanner accepts arbitrary cross-stream targets; cross-workspace guard fires.
 - Access-check helpers (`crossesPrivacyBoundary`, `isSubsetMembership`) but not yet surfaced in the UI — backend still returns `privacy_confirmation_required` and the frontend surfaces it as a blocking toast (temporary) for shares across privacy boundaries.
-- E2E: `E2E-share-cross-stream-public`, `E2E-share-to-same-stream`.
+- **Recursive hydration with per-viewer access checks (D8)**. Pointer-NodeView gains the `Private` and `Truncated` states. This must land in Slice 2 because re-shares become possible the moment cross-stream pointers exist.
+- E2E: `E2E-share-cross-stream-public`, `E2E-share-to-same-stream`, `E2E-share-rechain-private-placeholder`.
 
 ### Slice 3 — Privacy confirmation + "+ New scratchpad" + quote flavor
 
@@ -573,14 +621,13 @@ We could skip `shared_messages` entirely and let the node be the sole record. Re
 
 INV-57 already says: don't stash transient workflow state on core domain entities; use tracking tables. This is the same rule applied to durable share grants.
 
-## Open Questions (need user steer before implementation)
+## Open Questions
 
-1. **Bot / agent messages as source.** Can a user share a bot's reply? Default: yes, same rules (sharer needs read on source, write on target). Confirm nothing special happens — bots don't have "privacy" different from the stream's visibility.
-2. **Re-sharing a shared message.** User B sees a pointer in target stream T1 that points to source S1. Can B share the _pointer message_ itself to T2, producing a chain (pointer to pointer)? Default: yes, and we flatten at hydration time — T2 stores a pointer to S1 directly, not to T1's share-message. Simple, avoids chains. Confirm.
-3. **Admin removal of shared messages.** If a workspace admin hard-deletes the source, do we want a privileged path to also purge the share rows + share-message rows in targets, vs. leaving tombstones everywhere? Default: tombstones, matching normal delete behavior.
-4. **Attribution in target timeline.** Do we want a subtle "shared by @sharer" chip above the share message in the target stream, or is the normal author metadata (the sharer's name as message author, with the pointer/quote node below) enough? Default: normal author metadata only; the node itself visually attributes the original author.
+None outstanding. Re-open by adding entries here if review surfaces new ambiguities.
 
-## Resolved Questions (from first-round review)
+## Resolved Questions
+
+**First-round review:**
 
 - **Pointer access semantics** — pointer share grants implicit read on the single shared message to target members (D1).
 - **Flavor UX** — two context-menu entries (`Share` / `Share as quote`), mirroring the Copy-\* pattern. Flavor is a modal prop, not a user-chosen toggle inside the modal (D4).
@@ -589,6 +636,13 @@ INV-57 already says: don't stash transient workflow state on core domain entitie
 - **Scratchpad targets** — sharer's own scratchpads + a "+ New scratchpad" option that creates a fresh one on selection (D5).
 - **Same-stream share** — allowed, same composer hand-off as any other target. Not blocked.
 - **Send path** — modal is a picker + privacy confirm only; share node is pre-inserted into the target stream's normal composer. One editor surface per stream.
+
+**Second-round review:**
+
+- **Bot / agent messages as source** — same rules as user messages. No special handling.
+- **Re-sharing a shared message** — chains allowed; grants are scoped per-share (one-hop). Viewers without independent access to a deeply-referenced message see a private-content placeholder revealing only stream kind and visibility, not author or stream name (D8).
+- **Admin hard-delete of source** — tombstones in the target. No privileged purge path for now.
+- **Attribution in target timeline** — normal message-author header (the sharer) plus the embedded share node which visually attributes the original author. No additional "shared by" chip; both attributions are already visible by construction.
 
 ## Invariant References
 
