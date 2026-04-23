@@ -21,3 +21,21 @@ export function hasCommandNode(content: JSONContent): boolean {
   }
   return false
 }
+
+/**
+ * Extract the command name from the first `slashCommand` node in the content,
+ * or null if none is present. Used by the composer to route command messages
+ * — client-action commands (e.g. `discuss-with-ariadne`) are handled locally,
+ * server commands are dispatched through `commandsApi.dispatch`.
+ */
+export function extractCommandName(content: JSONContent): string | null {
+  if (content.type === "slashCommand") {
+    const name = content.attrs?.name
+    return typeof name === "string" ? name : null
+  }
+  for (const child of content.content ?? []) {
+    const name = extractCommandName(child)
+    if (name !== null) return name
+  }
+  return null
+}

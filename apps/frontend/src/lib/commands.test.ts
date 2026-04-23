@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { JSONContent } from "@threa/types"
-import { hasCommandNode } from "./commands"
+import { hasCommandNode, extractCommandName } from "./commands"
 
 describe("hasCommandNode", () => {
   it("returns true when content contains a slashCommand node", () => {
@@ -73,5 +73,36 @@ describe("hasCommandNode", () => {
       ],
     }
     expect(hasCommandNode(doc)).toBe(true)
+  })
+})
+
+describe("extractCommandName", () => {
+  it("returns the command name from the first slashCommand node", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "slashCommand", attrs: { name: "discuss-with-ariadne" } }],
+        },
+      ],
+    }
+    expect(extractCommandName(doc)).toBe("discuss-with-ariadne")
+  })
+
+  it("returns null when no slashCommand node is present", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "hello" }] }],
+    }
+    expect(extractCommandName(doc)).toBeNull()
+  })
+
+  it("returns null when the attrs name is missing", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "slashCommand", attrs: {} }] }],
+    }
+    expect(extractCommandName(doc)).toBeNull()
   })
 })

@@ -5,7 +5,6 @@ import type { CommandItem } from "./types"
 import { CommandList } from "./command-list"
 import { useWorkspaceMetadata, useWorkspaceStreams } from "@/stores/workspace-store"
 import { useSuggestion } from "./use-suggestion"
-import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
 
 /**
  * Filter commands by query string.
@@ -35,16 +34,17 @@ function isInviteAllowed(streamId: string | undefined, streams: import("@/db").C
 /**
  * Hook that manages the command suggestion state and provides render callbacks.
  * Returns configuration for the CommandExtension and a render function for the popup.
+ *
+ * Client-action commands (e.g. `/discuss-with-ariadne`) still insert a chip
+ * into the composer via the normal suggestion flow; routing to the client
+ * handler happens at composer-send time (`message-input.tsx`) so the user
+ * gets the familiar "type command, press send" UX rather than an action
+ * firing the moment they pick from the autocomplete.
  */
 export function useCommandSuggestion() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const metadata = useWorkspaceMetadata(workspaceId)
   const streams = useWorkspaceStreams(workspaceId)
-
-  // Client-action handlers. Each clientActionId maps to a function that takes
-  // the current stream context. Declared here so the dispatch path in the
-  // render callback stays synchronous + simple.
-  const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId ?? "")
 
   const commands = useMemo<CommandItem[]>(() => {
     if (!metadata?.commands) return []
@@ -69,22 +69,8 @@ export function useCommandSuggestion() {
       items: CommandItem[]
       clientRect: (() => DOMRect | null) | null
       command: (item: CommandItem) => void
-    }) => {
-      // Wrap the TipTap `command` callback so client-action commands take a
-      // local-only path (fire the handler, don't insert a `/command` node
-      // that'd otherwise be sent to the backend command endpoint).
-      const onPick = (item: CommandItem) => {
-        if (item.clientActionId === DISCUSS_WITH_ARIADNE_COMMAND) {
-          if (streamId && workspaceId) {
-            void startDiscussWithAriadne({ sourceStreamId: streamId })
-          }
-          return
-        }
-        props.command(item)
-      }
-      return <CommandList ref={props.ref} items={props.items} clientRect={props.clientRect} command={onPick} />
-    },
-    [startDiscussWithAriadne, streamId, workspaceId]
+    }) => <CommandList ref={props.ref} items={props.items} clientRect={props.clientRect} command={props.command} />,
+    []
   )
 
   const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<CommandItem>({

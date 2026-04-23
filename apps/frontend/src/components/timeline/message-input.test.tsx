@@ -10,6 +10,7 @@ import * as workspaceStoreModule from "@/stores/workspace-store"
 import * as authModule from "@/auth"
 import * as quoteReplyModule from "./quote-reply-context"
 import * as composerModule from "@/components/composer"
+import * as discussModule from "@/hooks/use-discuss-with-ariadne"
 import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
 import type { JSONContent } from "@threa/types"
 
@@ -158,6 +159,11 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useStreamOrDraft").mockReturnValue({
     sendMessage: mockSendMessage,
   } as unknown as ReturnType<typeof hooksModule.useStreamOrDraft>)
+  // `useDiscussWithAriadne` internally pulls in `useCreateStream` → services
+  // context + query client, none of which the test wrapper provides. Stub it
+  // out; the command-routing branch is exercised by its own dedicated tests
+  // further down (rather than via render()-level assertions).
+  vi.spyOn(discussModule, "useDiscussWithAriadne").mockImplementation(() => vi.fn() as any)
   vi.spyOn(hooksModule, "getDraftMessageKey").mockImplementation(() => "test-draft-key")
   vi.spyOn(hooksModule, "useDraftComposer").mockImplementation(
     () =>

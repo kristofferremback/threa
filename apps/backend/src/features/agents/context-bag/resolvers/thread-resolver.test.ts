@@ -203,6 +203,56 @@ describe("ThreadResolver.fetch", () => {
     ).rejects.toMatchObject({ code: "CONTEXT_ANCHOR_NOT_FOUND" })
   })
 
+  it("prepends the parent (root) message when the source is a thread", async () => {
+    // Regression: threads without the root message are unintelligible.
+    // `buildThreadContext` has always done this for the persona-agent path;
+    // the bag resolver must match.
+    const thread = makeStream({
+      id: "stream_thread",
+      type: "thread",
+      parentStreamId: "stream_root",
+      parentMessageId: "msg_root",
+    })
+    spyOn(StreamRepository, "findById").mockResolvedValue(thread)
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "list").mockResolvedValue([
+      makeMessage({ id: "msg_reply_1", streamId: "stream_thread" }),
+      makeMessage({ id: "msg_reply_2", streamId: "stream_thread" }),
+    ])
+    spyOn(MessageRepository, "findById").mockResolvedValue(
+      makeMessage({
+        id: "msg_root",
+        streamId: "stream_root",
+        contentMarkdown: "the originating message",
+      })
+    )
+
+    const result = await ThreadResolver.fetch({} as any, {
+      kind: ContextRefKinds.THREAD,
+      streamId: "stream_thread",
+    })
+
+    expect(result.items.map((i) => i.messageId)).toEqual(["msg_root", "msg_reply_1", "msg_reply_2"])
+    expect(result.items[0].contentMarkdown).toBe("the originating message")
+  })
+
+  it("skips the root prepend when the source stream has no parentMessageId (scratchpad/channel)", async () => {
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream({ parentMessageId: null }))
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "list").mockResolvedValue([makeMessage({ id: "msg_a" })])
+    const findById = spyOn(MessageRepository, "findById").mockResolvedValue(null)
+
+    const result = await ThreadResolver.fetch({} as any, {
+      kind: ContextRefKinds.THREAD,
+      streamId: "stream_source",
+    })
+
+    expect(result.items.map((i) => i.messageId)).toEqual(["msg_a"])
+    expect(findById).not.toHaveBeenCalled()
+  })
+
   it("returns the anchored slice when both endpoints resolve", async () => {
     spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
     spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
