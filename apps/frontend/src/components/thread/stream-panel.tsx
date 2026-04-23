@@ -1,6 +1,7 @@
 import { useSearchParams, useParams } from "react-router-dom"
 import { useMemo, useCallback, useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
+import { toast } from "sonner"
 import { MessageSquare, ChevronLeft } from "lucide-react"
 import {
   SidePanel,
@@ -17,6 +18,7 @@ import {
   useThreadAncestors,
   useQueueDraftMessage,
   useComposerHeightPublish,
+  useStashedDrafts,
 } from "@/hooks"
 import { useCoordinatedLoading, usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
 import { useUser } from "@/auth"
@@ -33,7 +35,7 @@ import {
 } from "@/components/timeline"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
-import { FloatingComposerShell, MessageComposer } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
 import { SidebarToggle } from "@/components/layout"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
@@ -142,6 +144,86 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     draftKey,
     scopeId: draftInfo?.parentMessageId ?? "",
   })
+
+  // Stashed drafts for this thread. `draftKey` is "" until the panel resolves
+  // a draft, so we pass `undefined` as the scope in that case — the hook
+  // returns an empty list and silently no-ops.
+  const stashScope = draftKey || undefined
+  const stashedDrafts = useStashedDrafts(workspaceId, stashScope)
+  const emptyDoc = useMemo<JSONContent>(() => ({ type: "doc", content: [{ type: "paragraph" }] }), [])
+
+  const handleStashDraft = useCallback(async () => {
+    const current = composer.content
+    const attachments = composer.pendingAttachments
+      .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+      .map((a) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType, sizeBytes: a.sizeBytes }))
+
+    const row = await stashedDrafts.stashDraft({
+      contentJson: current,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    })
+    if (!row) return
+
+    composer.setContent(emptyDoc)
+    await composer.clearDraft()
+    composer.clearAttachments()
+    toast.success("Saved as draft")
+  }, [composer, stashedDrafts, emptyDoc])
+
+  const handleRestoreStashed = useCallback(
+    async (id: string) => {
+      const currentContent = composer.content
+      const currentAttachments = composer.pendingAttachments
+        .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+        .map((a) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType, sizeBytes: a.sizeBytes }))
+      await stashedDrafts.stashDraft({
+        contentJson: currentContent,
+        attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+      })
+
+      const row = await stashedDrafts.restoreStashedDraft(id)
+      if (!row) return
+
+      composer.clearAttachments()
+      composer.setContent(row.contentJson)
+      composer.handleContentChange(row.contentJson)
+      if (row.attachments && row.attachments.length > 0) {
+        composer.restoreAttachments(row.attachments)
+      }
+      toast.success("Draft restored")
+    },
+    [composer, stashedDrafts]
+  )
+
+  const handleDeleteStashed = useCallback(
+    async (id: string) => {
+      await stashedDrafts.deleteStashedDraft(id)
+    },
+    [stashedDrafts]
+  )
+
+  const stashedDraftsTrigger = stashScope ? (
+    <StashedDraftsPicker
+      drafts={stashedDrafts.drafts}
+      canStashCurrent={composer.canSend}
+      onStashCurrent={handleStashDraft}
+      onRestore={handleRestoreStashed}
+      onDelete={handleDeleteStashed}
+      controlsDisabled={composer.isSending}
+    />
+  ) : undefined
+
+  const stashedDraftsTriggerFab = stashScope ? (
+    <StashedDraftsPicker
+      drafts={stashedDrafts.drafts}
+      canStashCurrent={composer.canSend}
+      onStashCurrent={handleStashDraft}
+      onRestore={handleRestoreStashed}
+      onDelete={handleDeleteStashed}
+      controlsDisabled={composer.isSending}
+      size="fab"
+    />
+  ) : undefined
 
   // Draft thread expand state
   const [draftExpanded, setDraftExpanded] = useState(false)
@@ -364,6 +446,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                     onCollapse={handleDraftCollapse}
                     autoFocus
                     streamContext={draftStreamContext}
+                    onStashDraft={handleStashDraft}
+                    stashedDraftsTrigger={stashedDraftsTrigger}
+                    stashedDraftsTriggerFab={stashedDraftsTriggerFab}
                   />
                 </div>,
                 draftPortalTargetRef.current
@@ -425,6 +510,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   scopeId={panelId}
                   onExpandClick={handleDraftExpand}
                   streamContext={draftStreamContext}
+                  onStashDraft={handleStashDraft}
+                  stashedDraftsTrigger={stashedDraftsTrigger}
+                  stashedDraftsTriggerFab={stashedDraftsTriggerFab}
                 />
               )}
             </FloatingComposerShell>

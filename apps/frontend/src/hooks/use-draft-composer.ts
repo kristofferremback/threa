@@ -55,6 +55,15 @@ export interface DraftComposerState {
   clearDraft: () => Promise<void>
   clearAttachments: () => void
 
+  /**
+   * Hydrate attachments from a snapshot (e.g. when restoring a stashed draft).
+   * Pushes them into the pending-attachments list; the persistence effect
+   * then writes them into the active DraftMessage on next flush.
+   */
+  restoreAttachments: (
+    attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>
+  ) => void
+
   // Loading
   isLoaded: boolean
 }
@@ -241,6 +250,7 @@ export function useDraftComposer({
     // Clear helpers
     clearDraft,
     clearAttachments,
+    restoreAttachments,
 
     // Loading
     isLoaded: isDraftLoaded,

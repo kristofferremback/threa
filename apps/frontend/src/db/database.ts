@@ -227,6 +227,23 @@ export interface DraftMessage {
   updatedAt: number
 }
 
+/**
+ * An explicitly-stashed draft, created by the user pressing Cmd+S or the save
+ * button in the composer. Unlike `DraftMessage` (one per scope, auto-saved as
+ * the user types), any number of stashed drafts can coexist for the same scope
+ * — they're a sidelined pile the user can restore later. Scope mirrors the
+ * `DraftMessage` key format: "stream:{streamId}" or "thread:{parentMessageId}".
+ */
+export interface StashedDraft {
+  /** ULID with "stash_" prefix. Distinct from "draft_" which is claimed by DraftScratchpad. */
+  id: string
+  workspaceId: string
+  scope: string
+  contentJson: JSONContent
+  attachments?: DraftAttachment[]
+  createdAt: number
+}
+
 export interface CachedUnreadState {
   id: string // workspaceId
   workspaceId: string
@@ -346,6 +363,7 @@ class ThreaDatabase extends Dexie {
   syncCursors!: EntityTable<SyncCursor, "key">
   draftScratchpads!: EntityTable<DraftScratchpad, "id">
   draftMessages!: EntityTable<DraftMessage, "id">
+  stashedDrafts!: EntityTable<StashedDraft, "id">
   unreadState!: EntityTable<CachedUnreadState, "id">
   userPreferences!: EntityTable<CachedUserPreferences, "id">
   workspaceMetadata!: EntityTable<CachedWorkspaceMetadata, "id">
@@ -579,6 +597,15 @@ class ThreaDatabase extends Dexie {
           })
       })
 
+    // v26: Stashed drafts — multiple explicitly-saved drafts per scope,
+    // browsable via the composer picker. The compound [workspaceId+scope]
+    // index lets the picker list drafts for the current stream/thread
+    // without scanning the workspace. Keyed by ULID so the same scope can
+    // hold many stashed snapshots.
+    this.version(26).stores({
+      stashedDrafts: "id, workspaceId, scope, [workspaceId+scope], createdAt",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -606,6 +633,7 @@ export async function clearAllCachedData(): Promise<void> {
       db.markdownBlockCollapse.clear(),
       db.linkPreviewCollapse.clear(),
       db.savedMessages.clear(),
+      db.stashedDrafts.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])
   } finally {

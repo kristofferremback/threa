@@ -1,6 +1,7 @@
 import {
   type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type RefObject,
   useMemo,
   useCallback,
@@ -144,6 +145,31 @@ export interface MessageComposerProps {
   streamContext?: MentionStreamContext
   /** Imperative handle ref for programmatic focus from parent */
   composerRef?: React.MutableRefObject<{ focus: () => void; focusAfterQuoteReply: () => void } | null>
+
+  /**
+   * Triggered when the user presses Cmd/Ctrl+S with focus inside the composer,
+   * or when they click "Save current" in the stashed-drafts picker. The host
+   * is responsible for snapshotting the current content/attachments, adding a
+   * row to the stash, clearing the active draft, and showing a toast. An
+   * empty composer should no-op; the picker disables its own button when
+   * `canStashCurrent` is false.
+   */
+  onStashDraft?: () => void
+
+  /**
+   * Slot for the stashed-drafts picker trigger used in the desktop inline
+   * toolbar and the mobile action bar (compact size). Omit to hide the
+   * affordance entirely (used by edit forms and other non-draft consumers).
+   */
+  stashedDraftsTrigger?: ReactNode
+
+  /**
+   * Separate slot for the expanded-mode FAB drawer, where the trigger needs
+   * to match the 30x30 outline-shadow style of the other drawer buttons.
+   * Hosts pass both slots because the picker is rendered fresh in each
+   * context rather than shared by reference.
+   */
+  stashedDraftsTriggerFab?: ReactNode
 }
 
 export function MessageComposer({
@@ -173,6 +199,9 @@ export function MessageComposer({
   onCollapse,
   streamContext,
   composerRef,
+  onStashDraft,
+  stashedDraftsTrigger,
+  stashedDraftsTriggerFab,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -326,6 +355,25 @@ export function MessageComposer({
     [onCollapse]
   )
 
+  // Cmd/Ctrl+S stashes the current draft. Attached in the capture phase on
+  // the composer root so it runs before TipTap's contentEditable sees the
+  // event, and before the browser's default "save page" behavior. The
+  // browser default is always suppressed inside a mounted composer — even
+  // when `onStashDraft` is absent, Cmd+S saving a blank HTML page of the
+  // app has no useful outcome.
+  const handleStashKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "s" && event.key !== "S") return
+      if (!(event.metaKey || event.ctrlKey)) return
+      if (event.altKey || event.shiftKey) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      onStashDraft?.()
+    },
+    [onStashDraft]
+  )
+
   const sharedEditor = (
     <RichEditor
       ref={setRichEditorHandle}
@@ -412,6 +460,7 @@ export function MessageComposer({
           className={cn("relative flex flex-col h-full bg-background", className)}
           tabIndex={-1}
           onKeyDown={handleExpandedShellKeyDown}
+          onKeyDownCapture={handleStashKeyDown}
         >
           <p id={instructionsId} className="sr-only">
             {screenReaderInstructions}
@@ -470,7 +519,8 @@ export function MessageComposer({
           {/* Floating action drawer + send button — bottom-right corner */}
           <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1.5 group/fab">
             {/* Action drawer — slides out from behind the + button on hover or focus-within */}
-            <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[200px] group-hover/fab:opacity-100 group-focus-within/fab:max-w-[200px] group-focus-within/fab:opacity-100 transition-all duration-200 ease-out">
+            <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[240px] group-hover/fab:opacity-100 group-focus-within/fab:max-w-[240px] group-focus-within/fab:opacity-100 transition-all duration-200 ease-out">
+              {stashedDraftsTriggerFab}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -619,6 +669,7 @@ export function MessageComposer({
         )}
         onFocusCapture={isMobile ? handleFocusCapture : undefined}
         onBlurCapture={isMobile ? handleBlurCapture : undefined}
+        onKeyDownCapture={handleStashKeyDown}
       >
         <p id={instructionsId} className="sr-only">
           {screenReaderInstructions}
@@ -690,7 +741,16 @@ export function MessageComposer({
                     onMobileExpandedChange={setMobileExpanded}
                     showAttach
                     onAttachClick={handleAttachClick}
-                    trailingContent={sendButton}
+                    trailingContent={
+                      stashedDraftsTrigger ? (
+                        <div className="flex items-center gap-1">
+                          {stashedDraftsTrigger}
+                          {sendButton}
+                        </div>
+                      ) : (
+                        sendButton
+                      )
+                    }
                   />
                 ) : (
                   <div className="flex items-center gap-1">
@@ -808,6 +868,7 @@ export function MessageComposer({
                         Attach files
                       </TooltipContent>
                     </Tooltip>
+                    {stashedDraftsTrigger}
                     {sendButton}
                   </div>
                 )}

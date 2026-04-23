@@ -1,19 +1,21 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 import {
   useDraftComposer,
   getDraftMessageKey,
   useStreamOrDraft,
   useComposerHeightPublish,
   useStreamBootstrap,
+  useStashedDrafts,
 } from "@/hooks"
 import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { FloatingComposerShell, MessageComposer } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
 import { commandsApi } from "@/api"
 import { hasCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
@@ -236,6 +238,66 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()
+
+  // Stashed drafts — explicit "Save for later" pile scoped to this stream.
+  // Active DraftMessage stays one-per-scope; this hook manages the sibling
+  // many-per-scope stash so the user can swap drafts via the picker.
+  const stashedDrafts = useStashedDrafts(workspaceId, draftKey)
+  const emptyDoc = useMemo<JSONContent>(() => ({ type: "doc", content: [{ type: "paragraph" }] }), [])
+
+  const handleStashDraft = useCallback(async () => {
+    const current = composer.content
+    const attachments = composer.pendingAttachments
+      .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+      .map((a) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType, sizeBytes: a.sizeBytes }))
+
+    const row = await stashedDrafts.stashDraft({
+      contentJson: current,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    })
+    if (!row) return // Empty composer: silent no-op per product brief.
+
+    composer.setContent(emptyDoc)
+    await composer.clearDraft()
+    composer.clearAttachments()
+    toast.success("Saved as draft")
+  }, [composer, stashedDrafts, emptyDoc])
+
+  const handleRestoreStashed = useCallback(
+    async (id: string) => {
+      // If the composer already has content, stash it first so nothing is lost
+      // silently. The user clicking a stashed row is a swap, not a destroy.
+      const currentContent = composer.content
+      const currentAttachments = composer.pendingAttachments
+        .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+        .map((a) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType, sizeBytes: a.sizeBytes }))
+      await stashedDrafts.stashDraft({
+        contentJson: currentContent,
+        attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+      })
+
+      const row = await stashedDrafts.restoreStashedDraft(id)
+      if (!row) return
+
+      composer.clearAttachments()
+      composer.setContent(row.contentJson)
+      // The handleContentChange path will debounce-persist into DraftMessage
+      // once the editor picks up the new content.
+      composer.handleContentChange(row.contentJson)
+      if (row.attachments && row.attachments.length > 0) {
+        composer.restoreAttachments(row.attachments)
+      }
+      toast.success("Draft restored")
+    },
+    [composer, stashedDrafts]
+  )
+
+  const handleDeleteStashed = useCallback(
+    async (id: string) => {
+      await stashedDrafts.deleteStashedDraft(id)
+    },
+    [stashedDrafts]
+  )
 
   // Use a ref so the handler always reads fresh composer state without
   // re-registering on every render (composer object is not memoized).
@@ -484,6 +546,28 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       : undefined,
     streamContext,
     composerRef: composerFocusRef,
+    onStashDraft: handleStashDraft,
+    stashedDraftsTrigger: (
+      <StashedDraftsPicker
+        drafts={stashedDrafts.drafts}
+        canStashCurrent={composer.canSend}
+        onStashCurrent={handleStashDraft}
+        onRestore={handleRestoreStashed}
+        onDelete={handleDeleteStashed}
+        controlsDisabled={composer.isSending}
+      />
+    ),
+    stashedDraftsTriggerFab: (
+      <StashedDraftsPicker
+        drafts={stashedDrafts.drafts}
+        canStashCurrent={composer.canSend}
+        onStashCurrent={handleStashDraft}
+        onRestore={handleRestoreStashed}
+        onDelete={handleDeleteStashed}
+        controlsDisabled={composer.isSending}
+        size="fab"
+      />
+    ),
   } as const
 
   return (
