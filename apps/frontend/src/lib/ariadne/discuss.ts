@@ -21,11 +21,3 @@ export function buildDiscussWithAriadneBag(args: { sourceStreamId: string }): Co
     ],
   }
 }
-
-/**
- * Display name for the generated scratchpad. Kept centralized so every entry
- * point (menu, slash command, future surfaces) produces the same label.
- */
-export function discussWithAriadneScratchpadName(): string {
-  return "Discuss with Ariadne"
-}

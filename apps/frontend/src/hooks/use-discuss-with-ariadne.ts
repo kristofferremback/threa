@@ -2,11 +2,18 @@ import { useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useCreateStream } from "./use-streams"
-import { buildDiscussWithAriadneBag, discussWithAriadneScratchpadName } from "@/lib/ariadne/discuss"
+import { buildDiscussWithAriadneBag } from "@/lib/ariadne/discuss"
 
 /**
  * Hook that triggers "Discuss with Ariadne": creates a private scratchpad
  * with the given source stream attached as context, then navigates to it.
+ *
+ * We deliberately do NOT pass a `displayName` — leaving it null lets the
+ * backend `NamingHandler` auto-generate a per-thread title from Ariadne's
+ * orientation message (triggered by the `message:created` outbox event for
+ * that message). Setting a display name here would suppress naming because
+ * `needsAutoNaming` gates on `displayName === null`, and every scratchpad
+ * would show up as the same generic label in the sidebar.
  *
  * Surfacing both entry points (context menu + slash command) through one
  * hook keeps cache updates + navigation consistent — the underlying
@@ -23,7 +30,6 @@ export function useDiscussWithAriadne(workspaceId: string) {
       try {
         const stream = await createStream.mutateAsync({
           type: "scratchpad",
-          displayName: discussWithAriadneScratchpadName(),
           companionMode: "on",
           contextBag: buildDiscussWithAriadneBag({ sourceStreamId: args.sourceStreamId }),
         })
