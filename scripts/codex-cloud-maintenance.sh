@@ -5,6 +5,7 @@ echo "==> Codex cloud maintenance"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+ENV_TEMPLATE=".env.remote-dev"
 
 require_bun() {
   if ! command -v bun >/dev/null 2>&1; then
@@ -22,10 +23,13 @@ compose_up() {
 }
 
 # Refresh the dev env on resumed cached containers.
-if [ -f .env.codex-cloud ]; then
-  cp .env.codex-cloud .env
-  echo "==> Refreshed .env from .env.codex-cloud"
+if [ ! -f "$ENV_TEMPLATE" ]; then
+  echo "Missing $ENV_TEMPLATE. Restore the shared remote-dev env template, then rerun maintenance." >&2
+  exit 1
 fi
+
+cp "$ENV_TEMPLATE" .env
+echo "==> Refreshed .env from $ENV_TEMPLATE"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is required to start the local Postgres and MinIO services." >&2

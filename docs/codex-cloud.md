@@ -18,14 +18,14 @@ bash scripts/codex-cloud-maintenance.sh
 
 The setup script will:
 
-1. copy `.env.codex-cloud` into `.env`
+1. copy `.env.remote-dev` into `.env`
 2. start Docker with the sandbox proxy env when the sandbox exposes `dockerd`
 3. start the local compose services and wait for them to become healthy
 4. reinstall workspace dependencies with Bun
 
 The maintenance script will:
 
-1. refresh `.env` from `.env.codex-cloud`
+1. refresh `.env` from `.env.remote-dev`
 2. ensure local compose services are running after cache resume or branch checkout
 3. resync dependencies with Bun without doing the full fresh-container bootstrap
 
@@ -48,4 +48,4 @@ bun run dev
 - The scripts are intentionally idempotent enough for disposable environments.
 - Docker startup is best-effort because some hosted sandboxes do not expose a daemon.
 - This repo is Bun-first, so the Codex scripts require `bun` instead of falling back to other package managers.
-- `.env.codex-cloud` mirrors the same local-development values used by the Claude web setup so Codex and Claude can target the same stack.
+- `.env.remote-dev` is the single shared env template used by both the Codex and Claude remote-dev flows.
