@@ -15,10 +15,10 @@ set -u
 cp -n .env.remote-dev .env
 docker compose up -d --wait
 
-LOCK_HASH=$(sha256sum bun.lock | awk '{print $1}')
+LOCK_HASH=$(sha256sum bun.lock 2>/dev/null | awk '{print $1}')
 STAMP=node_modules/.install-stamp
 
-if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$LOCK_HASH" ]; then
+if [ -n "$LOCK_HASH" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$LOCK_HASH" ]; then
   exit 0
 fi
 
