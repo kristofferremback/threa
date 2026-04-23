@@ -62,29 +62,37 @@ Entry only renders when:
 
 ### F2: Share any message to any other stream (picker path)
 
-1. User opens the message context menu (desktop ellipsis / mobile long-press). Entry: **"Share to…"** (with trailing ellipsis to signal modal).
-2. Modal opens: stream picker, scoped to top-level streams the user has access to in the current workspace. Reuses `use-stream-items.tsx` (from quick-switcher) as the data source. Ordering: recently visited first, then alphabetical. Scratchpad(s) the user owns are pinned at the top under a "Your scratchpads" group.
+The context menu has **two separate entries** — mirroring the existing copy pattern (`Copy message` / `Copy as markdown` / `Copy as text`):
+
+- **"Share"** — pointer flavor.
+- **"Share as quote"** — quote flavor (full message).
+
+Both open the same modal; the only difference is which node gets pre-inserted into the target composer.
+
+1. User opens the message context menu (desktop ellipsis / mobile long-press) and clicks **Share** or **Share as quote**.
+2. Modal opens: stream picker, scoped to top-level streams the user has access to in the current workspace. Reuses `use-stream-items.tsx` (from quick-switcher) as the data source. Ordering: recently visited first, then alphabetical. The sharer's own scratchpads are pinned at the top under a **"Your scratchpads"** group, followed by a **"+ New scratchpad"** option that creates a fresh scratchpad on selection (see D5).
 3. Search box filters live.
-4. User selects a target. Secondary toggle: **"As pointer (live)"** vs **"As quote"**. Default = pointer.
+4. User selects a target. No flavor toggle in the modal — flavor was already chosen by the context-menu entry.
 5. If the share would cross a privacy boundary (see D2 below), a confirmation step appears: "This message is in a private stream. Members of #target-name who aren't in #source-name will be able to see it." with **Cancel** / **Share anyway** buttons.
-6. On confirm: navigate to the target stream, pre-insert the chosen node (pointer or quote) into the target's composer, focus the editor. User optionally adds commentary and sends via normal send.
-7. If the user picks the stream they're already viewing: block with an inline toast ("You're already in this stream — use Quote instead"). Doesn't open composer pre-fill.
+6. On confirm: navigate to the target stream, pre-insert the chosen share node into the target's **normal composer** (the same editor the user always types in — no editor inside the modal). Focus goes to a new paragraph below the node. User optionally adds commentary and sends via the normal send button.
+7. If the user picks the stream they're already viewing: **don't block**. Same pre-fill UX applies — the node is inserted into the current composer and the user can add commentary and send. Skipping the navigation step is a minor UX tweak, not a separate flow.
 
 ### F3: Share a partial selection from a message
 
 1. User selects text in a message. The existing floating toolbar (`text-selection-quote.tsx`) today shows **Quote**. We add a second button: **Share**.
-2. Clicking Share opens the same modal as F2, but the flavor is **forced to Quote** with the selected snippet (not togglable — a partial selection is intrinsically a quote). The toggle in the modal is hidden or disabled for this entry point.
-3. Picker, privacy step, navigation, and composer pre-fill proceed as in F2.
+2. Clicking Share opens the same modal as F2. The flavor is **implicitly quote-with-snippet** — partial selections are intrinsically frozen excerpts; there is no pointer variant of a partial selection.
+3. Picker and privacy step proceed as in F2. After confirm, the target composer receives a `ThreaQuoteReply` node carrying the selected snippet.
 
 ### F4: Share from the context menu as a full quote
 
-Same as F2 but the user toggles to "As quote" in the modal. The quote block is pre-inserted as a full-message quote (no partial snippet).
+Triggered by the **"Share as quote"** context-menu entry (see F2). The modal behaves identically to the pointer case; only the node type pre-inserted into the target composer differs (`ThreaQuoteReply` with the full message as the snippet, vs `ThreaSharedMessage`).
 
 ### After-share behavior in target stream
 
-- Target stream composer opens with the pointer/quote node as the first block, cursor placed on a new line below so the sharer can add commentary above or below naturally.
-- Sending is a normal `createMessage` call — the share is a regular message that happens to contain a share-node in its `contentJson`. No special send path.
-- The message appears in the target stream's timeline via the normal outbox event (INV-4, INV-7). Sidebar preview strips the share node to something like "Shared a message from #source-name" (see F-Preview below).
+- After the modal closes, the user lands on the target stream with the share node already in the composer. Cursor is placed on a new paragraph below the node so commentary reads naturally above or below.
+- Sending is a **normal** `createMessage` call from the existing composer — no special client-side send path. The share is just a regular message whose `contentJson` happens to contain a `ThreaSharedMessage` or `ThreaQuoteReply` node plus any commentary paragraphs.
+- Backend detects the share node during `createMessage` and writes the `shared_messages` tracking row in the same transaction as the message (see Backend Design). The existing outbox emission (`message:created` / `stream:activity`) carries the new message to the target timeline — INV-4, INV-7.
+- Sidebar preview strips the share node to something like "Shared a message from #source-name" (see F-Preview below).
 
 ### F-Preview: sidebar / activity preview
 
@@ -134,15 +142,26 @@ Both nodes carry `messageId` and `streamId` (source). Quote additionally carries
 
 Pointers require a hydration step (backend join at read time); quotes do not. See the backend section for the hydration path.
 
-### D4: Share-to-parent defaults to pointer, modal defaults to pointer
+### D4: Flavor is chosen at the context menu, not in the modal
 
-Pointer is the stronger semantic (updates propagate, less work to keep in sync) and matches how most Slack-like tools model "share to channel". The modal exposes the Quote toggle for users who specifically want a frozen snippet.
+The context menu has two entries — **Share** (pointer) and **Share as quote** — matching the existing "Copy message / Copy as markdown / Copy as text" pattern. The modal is flavor-agnostic; it only needs a destination.
 
-Partial-selection share (F3) forces Quote because a partial snippet is intrinsically a frozen excerpt — a pointer to "just these two words" doesn't make sense.
+- Share-to-parent (F1): pointer (one-click, no menu choice).
+- Partial-selection share (F3): implicitly quote-with-snippet (no pointer variant makes sense for "just these two words").
+- Full-message share from the context menu: user picks by entry.
 
-### D5: Scratchpad targets are own-scratchpad only
+This keeps the modal narrow (picker + privacy confirm only) and mirrors the established pattern for multi-flavor actions in the codebase.
 
-The picker filters scratchpads to those owned by the sharer. Cross-user scratchpad sharing is not supported in this plan. Scratchpad sharing is positioned as a "save this to my brain dump" gesture.
+### D5: Scratchpad targets — own existing scratchpads + "New scratchpad"
+
+The picker's scratchpad section includes:
+
+- The sharer's existing scratchpads (never someone else's).
+- A **"+ New scratchpad"** affordance at the bottom of the scratchpad group.
+
+Selecting "+ New scratchpad" calls the existing scratchpad-creation path (it creates a regular empty scratchpad whose name can be edited later, or is auto-named e.g. `Saved from #channel-name · Apr 23`), receives the new stream ID, and proceeds through the share flow against that new stream as the target. Net effect: the user gets a fresh scratchpad seeded with the shared message and any commentary they add.
+
+Rationale: the "save to scratchpad" gesture should work even when the user hasn't pre-created a target. Scratchpads are cheap to create (single-user, no membership overhead) and this pattern mirrors "new file" affordances elsewhere.
 
 ### D6: No new access tables for pointers — use source_message lookup + grant table
 
@@ -242,7 +261,7 @@ export const SHARE_FLAVORS = ["pointer", "quote"] as const
 export type ShareFlavor = (typeof SHARE_FLAVORS)[number]
 ```
 
-Zod schema in the backend handler (`createShareSchema`) infers from this constant. No drift between runtime validation and types.
+The `flavor` value is persisted on the `shared_messages` row. It's derived from the node type during scanning (`'pointer'` for `ThreaSharedMessage`, `'quote'` for cross-stream `ThreaQuoteReply`), not sent as a separate field in the request body. Zod validates the node payloads as part of the existing `createMessage` content validation; no separate share schema is needed.
 
 ## Backend Design
 
@@ -252,8 +271,8 @@ New sub-feature inside the existing `messaging` feature folder, rather than a to
 
 ```
 apps/backend/src/features/messaging/sharing/
-  handlers.ts              # POST /streams/:streamId/messages/share, GET preview
-  service.ts               # ShareService — access checks, tx, share-row write
+  handlers.ts              # GET share-preview
+  service.ts               # ShareService — validate share-nodes, record tracking rows
   repository.ts            # shared_messages CRUD + hydration queries
   access-check.ts          # Pure functions for "crosses privacy?" / "subset?" checks
   outbox-handler.ts        # Handle message:updated → emit pointer:invalidated
@@ -264,45 +283,39 @@ apps/backend/src/features/messaging/sharing/
     handlers.test.ts
 ```
 
-The share service calls into the existing `messaging` event service to actually create the message row — it doesn't re-implement message creation (INV-35, INV-37).
+The share service is **called from inside** the existing `MessageEventService.createMessage` transaction — it does not create messages itself. The existing create-message path stays the single write path for messages (INV-35, INV-37).
 
 ### API surface
 
-New handler on the regional backend:
+Since the share flow reuses the normal composer + send path, there is **no new `POST messages/share` endpoint**. The existing `createMessage` handler becomes share-aware. One new read endpoint is added for the privacy-preview step:
 
-- `POST /api/streams/:streamId/messages/share` — creates a share from the source to the target. Body validated with Zod (INV-55):
+- `GET /api/streams/:sourceStreamId/messages/:messageId/share-preview?targetStreamId=...` — returns `{ privacyWarning: { triggered: boolean, exposedUserCount: number, targetName: string } }`. Called by the modal before it navigates the user to the target composer. Pure read; no side effects.
 
-```ts
-const createShareSchema = z.object({
-  sourceMessageId: z.string(),
-  targetStreamId: z.string(),
-  flavor: z.enum(SHARE_FLAVORS),
-  snippet: z.string().max(1000).optional(),     // required when flavor === 'quote' with partial
-  commentary: z.object({ ... }).optional(),     // ProseMirror JSONContent prepended/appended
-  confirmedPrivacyWarning: z.boolean().optional(), // must be true if warning triggered
-})
-```
+- `POST /api/streams/:streamId/messages` (existing, extended) — the body's `contentJson` may now contain `ThreaSharedMessage` or `ThreaQuoteReply` nodes whose `streamId` differs from the current stream. Backend detects these nodes during create, runs the share validations, and writes the `shared_messages` row in the same transaction. The request body gains one optional field:
 
-- `GET /api/streams/:sourceStreamId/messages/:messageId/share-preview?targetStreamId=...` — returns `{ privacyWarning: { triggered: boolean, exposedUserCount: number, targetName: string } }` so the frontend can render the warning step before POSTing.
+  ```ts
+  confirmedPrivacyWarning: z.boolean().optional()
+  ```
 
-Handlers are thin (INV-34): validate input → auth check → delegate to `ShareService` → format response. Errors throw `HttpError` (INV-32).
+  The frontend sets this to `true` when the user clicked "Share anyway" in the modal. Backend requires it when the share-node crosses a privacy boundary; otherwise rejects with `HttpError(409, 'privacy_confirmation_required')` — which in normal flow never reaches the user because the modal already asked.
 
-### `ShareService.createShare`
+Handlers stay thin (INV-34): `createMessage` delegates to its existing service, which calls the new `ShareService.validateAndRecordShares` helper as a step in the transaction. Errors throw `HttpError` (INV-32).
 
-Flow (in one transaction — INV-6):
+### `ShareService.validateAndRecordShares`
 
-1. Load source message + source stream, verify sharer has read access (`stream_members` or public visibility).
-2. Load target stream, verify sharer has write access.
-3. If source and target streams are in different workspaces → `HttpError(400, 'cross_workspace_share_forbidden')` (INV-8).
-4. If `flavor === 'pointer'` and target === source → `HttpError(400, 'same_stream_share_forbidden')`.
-5. Compute privacy-warning state via `access-check.ts::crossesPrivacyBoundary(sourceStreamId, targetStreamId, tx)`.
-6. If warning would trigger and `confirmedPrivacyWarning !== true` → `HttpError(409, 'privacy_confirmation_required')`.
-7. Assemble `contentJson`: `[...commentary.before, shareNode, ...commentary.after]`. The `shareNode` is either a `ThreaSharedMessage` (pointer) or `ThreaQuoteReply` (quote).
-8. Call `eventService.createMessage({ streamId: targetStreamId, authorId, contentJson, ... })` — this handles the existing outbox emission for `message:created` and `stream:activity` (INV-4, INV-7). Reuses existing infra, no parallel code path (INV-35).
-9. Insert `shared_messages` row in the **same transaction** as the message's event row. This preserves INV-7 (event-source + projection committed together) — the share-grant row is the access-projection for pointer renders.
-10. Return the created message + share metadata.
+Called from inside the existing `MessageEventService.createMessage` transaction, before the outbox event is written. Flow:
 
-Single-query helpers use `pool` directly (INV-30). The transactional path goes through `withTransaction`.
+1. Scan `contentJson` for `ThreaSharedMessage` and `ThreaQuoteReply` nodes whose `streamId` is different from the target stream. (Same-stream `ThreaQuoteReply` is the existing in-stream quote-reply behavior — not a share.)
+2. For each share-node:
+   - Load source message + source stream (single batched read per `createMessage` call — INV-56). Verify the sharer has read access (`stream_members` or public visibility).
+   - If source and target streams are in different workspaces → `HttpError(400, 'cross_workspace_share_forbidden')` (INV-8).
+   - Compute privacy-warning state via `access-check.ts::crossesPrivacyBoundary(sourceStreamId, targetStreamId, tx)`.
+   - If warning would trigger and `confirmedPrivacyWarning !== true` → `HttpError(409, 'privacy_confirmation_required')`.
+3. Insert one `shared_messages` row per share-node in the same transaction as the message's event row. This preserves INV-7 (event-source + projection committed together) — the share-grant row is the access-projection for pointer renders.
+
+Same-stream shares (user picks the stream they're already in) are **allowed** — no guard. Cross-workspace is blocked. Write-access to the target is already enforced by the existing `createMessage` auth check (the sharer is posting into the target as themselves), so no extra check is needed here.
+
+Single-query helpers use `pool` directly (INV-30). All the above runs inside the existing `withTransaction` scope opened by `MessageEventService.createMessage`.
 
 ### Pointer hydration on message fetch
 
@@ -347,40 +360,49 @@ Subset check is the single SQL count described in D2. Privacy check combines sou
 
 ### Action plumbing
 
-Extend `apps/frontend/src/components/timeline/message-actions.ts`:
+Extend `apps/frontend/src/components/timeline/message-actions.ts` with three new actions, mirroring the multi-entry copy pattern already established in that file:
 
-- Add `'share-to-parent'` action. `when()` returns true iff current stream has `parentStreamId` AND parent type ∈ {channel, dm, scratchpad}. Label derived from parent type (`"Share to #{parentName}"`, `"Share to DM"`, `"Share to scratchpad"`). Callback fires a fast-path share (pointer flavor, no modal).
-- Add `'share'` action. Always visible except on one's own scratchpad single-view where F1 doesn't apply. Opens `ShareMessageModal`.
+- `'share-to-parent'` — fast path. `when()` returns true iff current stream has `parentStreamId` AND parent type ∈ {channel, dm, scratchpad}. Label derived from parent type (`"Share to #{parentName}"`, `"Share to DM"`, `"Share to scratchpad"`). Callback inserts a `ThreaSharedMessage` pointer into the parent stream's composer (no modal, no privacy prompt — parent ⊇ thread by construction) and navigates there.
+- `'share'` — pointer flavor. Always visible. Opens `ShareMessageModal` with `flavor='pointer'`.
+- `'share-as-quote'` — quote flavor (full message). Always visible. Opens `ShareMessageModal` with `flavor='quote'`.
 
-Extend `MessageActionContext` with the new callbacks (`onShare`, `onShareToParent`) — same pattern as existing `onQuoteReply` (INV-37, reuse the established context shape).
+Extend `MessageActionContext` with `onShare`, `onShareAsQuote`, and `onShareToParent` callbacks — same shape as existing `onQuoteReply` (INV-37, reuse the established context shape).
 
 ### Text-selection toolbar
 
 Edit `apps/frontend/src/components/timeline/text-selection-quote.tsx`:
 
 - Add a second button "Share" next to the existing "Quote" button.
-- Same selection-extraction logic is reused (snippet + author metadata). The Share button calls a new callback on the quote-reply context (`onShareWithSnippet`) and opens `ShareMessageModal` with `flavor='quote'` forced, `snippet` pre-populated, and the quote toggle hidden.
+- Same selection-extraction logic is reused (snippet + author metadata). The Share button calls a new callback on the quote-reply context (`onShareWithSnippet`) which opens `ShareMessageModal` with `flavor='quote'` and the `snippet` pre-populated. No flavor toggle exists in the modal so there is nothing to hide — the flavor was already pinned by the calling affordance.
 
-Mobile: the existing file already guards with `select-none` on mobile (line 54). Mobile path uses the message context menu's long-press flow — the "Share" entry in the context menu, plus a future follow-up for a mobile selection affordance (tracked as an open question below, but the context-menu path is enough for this ship).
+Mobile: the existing file already guards with `select-none` on mobile (line 54). Mobile path uses the message context menu's long-press flow — the "Share" / "Share as quote" entries in the context menu. A mobile selection affordance is an out-of-slice follow-up; context menu is enough for this ship.
 
 ### `ShareMessageModal`
 
-New component: `apps/frontend/src/components/share/share-message-modal.tsx`.
+New component: `apps/frontend/src/components/share/share-message-modal.tsx`. Flavor is a prop on open, never chosen inside the modal.
 
 Structure:
 
-- **Step 1 — Picker**. Search input + grouped list (Channels / DMs / Your scratchpads). Data from the existing `use-stream-items` hook, filtered to top-level streams the user belongs to. Reuse Shadcn `Command` primitives (same as quick-switcher) — INV-14.
-- **Step 2 — Flavor toggle** (only for context-menu entry; hidden for partial-selection entry). Radio with "As live pointer" (default) / "As quote". Inline explainer text: "Pointer stays in sync when the original is edited. Quote is a frozen snippet."
-- **Step 3 — Privacy confirm** (only if backend `share-preview` says warning triggered). Text: `"{n} {people|person} in #{targetName} can't see the source message. Share anyway?"`. Cancel / Share anyway.
+- **Step 1 — Picker**. Search input + grouped list. Data from the existing `use-stream-items` hook, filtered to top-level streams the user belongs to (channels + DMs) plus the sharer's own scratchpads. Groups:
+  - **Channels** — channels the sharer is a member of.
+  - **Direct messages** — existing DMs.
+  - **Your scratchpads** — own scratchpads + a sticky `+ New scratchpad` row at the bottom (D5). Selecting the new-scratchpad row calls the existing scratchpad-creation API, receives the new stream ID, then proceeds as if the user had picked that stream.
+  - Reuse Shadcn `Command` primitives (same as quick-switcher) — INV-14.
+- **Step 2 — Privacy confirm** (only if backend `share-preview` says warning triggered for the chosen target). Text: `"{n} {people|person} in #{targetName} can't see the source message. Share anyway?"`. Cancel / Share anyway.
 
-State machine is linear: step 1 → optional step 2 → optional step 3 → submit. Steps that don't apply auto-advance.
+State machine: step 1 → optional step 2 → hand-off. Steps that don't apply auto-advance.
 
-On submit:
+**Hand-off to target composer** (instead of send-from-modal):
 
-1. Call `POST /api/streams/.../messages/share` with the chosen flavor and, if step 3 was shown, `confirmedPrivacyWarning: true`.
-2. On success, navigate to target stream via `navigate('/w/{ws}/s/{targetStreamId}?m={newMessageId}')` (INV-40: navigation is a link-style action). The shared message is already posted — user lands on the sent message.
+1. Modal resolves the target stream ID (creating a new scratchpad first if needed).
+2. Modal fetches `share-preview` for the chosen target. If the warning triggers and the user has not yet confirmed, show step 2. If the user clicks Cancel, close the modal and stay put.
+3. On confirm (or if no warning was needed), modal closes and the frontend:
+   - Stores a one-shot draft in a small Zustand/React-Query cache keyed by `targetStreamId`: `{ shareNode, confirmedPrivacyWarning, expiresAt }`.
+   - Calls `navigate('/w/{ws}/s/{targetStreamId}')` (INV-40 — navigation is a link-style intent).
+4. The target stream page's composer reads the one-shot draft on mount, inserts the share node as the first block, places the cursor on a new paragraph below, and clears the cache. If a draft already exists for that composer, merge by prepending (share node + blank line + existing draft content).
+5. The user types optional commentary and sends via the normal send button. The send request includes `confirmedPrivacyWarning: true` if the modal set it. Backend runs `ShareService.validateAndRecordShares` as part of the normal create path.
 
-Optional commentary is **post-send**: if the user wants to add commentary, they can reply in the target stream. This keeps the modal narrow and matches "avoid unnecessarily large text editors". See D-Alt below if we revisit.
+The one-shot draft is scoped to a single navigation hop; a short TTL (e.g. 5 minutes) guards against stale cache if the user bails mid-flow. If the hand-off cache is empty on mount (e.g. user refreshed before sending), the composer just behaves normally — no ghost shares.
 
 ### Pointer NodeView
 
@@ -397,15 +419,11 @@ States:
 
 Clicking the body navigates to the source stream + message (same URL pattern used elsewhere: `/w/{ws}/s/{sourceStreamId}?m={sourceMessageId}`). Buttons for actions; links for navigation (INV-40).
 
-### Composer pre-fill — not used in this design
+### Composer pre-fill is the chosen send path
 
-An earlier sketch had the modal navigate to the target and pre-insert the node into the composer. We dropped this in favor of "send immediately from the modal" because:
+The modal is a picker + privacy-confirm only. Once the user confirms, the share node is inserted into the **target stream's normal composer** via the one-shot hand-off cache described above. The user sends via the same editor and same send button they always use — no second "editor inside a modal" is introduced. This matches the user-stated goal of "avoid many editors" and keeps the number of text-entry surfaces at exactly one per stream.
 
-- Simpler state (no transient composer-injection channel between modal and target page).
-- Matches "avoid large text editors" more literally.
-- Commentary is still possible as a reply right after landing on the shared message.
-
-Keeping this decision captured here so a reviewer sees we considered it (see D-Alt).
+Alternative considered and rejected: send immediately from the modal, navigate to the already-posted message. See `D-Alt-1` below.
 
 ### Realtime: handling `pointer:invalidated`
 
@@ -435,15 +453,18 @@ In `apps/backend/src/features/messaging/sharing/__tests__/`:
   - Public source + any target → not triggered.
   - Private source, target members ⊆ source members → not triggered.
   - Private source, target has outsiders → triggered with correct `exposedUserCount`.
-  - Source = target → flagged by the same-stream guard in `service.test.ts`, not here.
-- `service.test.ts`:
-  - Creates a pointer share; verifies `messages` row + `shared_messages` row + outbox `message:created` event all written in one transaction (INV-7). Use a dropped-connection failure injection in the middle to assert rollback leaves nothing behind.
-  - Cross-workspace share rejected with `HttpError(400, 'cross_workspace_share_forbidden')`.
-  - Same-stream share rejected with `HttpError(400, 'same_stream_share_forbidden')`.
-  - Missing privacy confirmation when required → `HttpError(409, 'privacy_confirmation_required')`.
-  - Confirmed privacy → success.
-  - Quote flavor with partial snippet: snippet lands in the `ThreaQuoteReply.attrs.snippet`, no pointer row hydration required.
-- `handlers.test.ts` — thin Zod validation coverage (INV-55) + auth gating. Stubs the service.
+  - Source = target → no warning (same stream never crosses a boundary).
+- `service.test.ts` (exercises `ShareService.validateAndRecordShares` via the real `MessageEventService.createMessage` transaction path):
+  - `createMessage` with a `ThreaSharedMessage` node writes `messages` row + `shared_messages` row + outbox `message:created` event in one transaction (INV-7). Drop-connection failure injection mid-transaction asserts rollback leaves nothing behind.
+  - Cross-workspace share node → `HttpError(400, 'cross_workspace_share_forbidden')`; nothing written.
+  - Same-stream share node → success; `shared_messages` row written, no guard fires.
+  - Missing privacy confirmation when required → `HttpError(409, 'privacy_confirmation_required')`; nothing written.
+  - `confirmedPrivacyWarning: true` → success.
+  - Quote flavor with partial snippet: snippet lands in `ThreaQuoteReply.attrs.snippet`; `shared_messages` row is still written for symmetry/analytics, but render path doesn't need it.
+  - Same-stream in-stream `ThreaQuoteReply` (existing quote-reply behavior) does **not** write a `shared_messages` row — the scanner only fires on cross-stream share-nodes.
+- `handlers.test.ts`:
+  - `GET share-preview` returns warning state correctly for public/private/subset/outsider cases. Zod validation on query params (INV-55).
+  - `POST messages` passes through the new `confirmedPrivacyWarning` field to the service.
 - Pointer hydration: in `event-service` or a new `message-read.test.ts`, assert that a stream read containing a pointer returns a `sharedMessages` map keyed by `sourceMessageId`. Test deleted source → tombstone payload. Test missing source → `{ missing: true }`.
 - Outbox handler: `message:updated` on a message referenced by two pointers in two different target streams emits exactly one `pointer:invalidated` per distinct target stream. Assert specific events, not counts of side effects beyond that (INV-23).
 
@@ -454,10 +475,12 @@ Do not use `mock.module()`; use scoped `spyOn` against namespace imports (INV-48
 In `tests/` (cross-app Playwright):
 
 - **E2E-share-to-parent**: two users in a channel + its thread. User A opens a thread message, clicks "Share to #channel". Asserts the message appears in the channel for user B within the realtime window, and the pointer renders live content.
-- **E2E-share-cross-stream-public**: public channel → DM. No privacy prompt appears. Asserts pointer renders for the DM recipient.
-- **E2E-share-cross-stream-private-warning**: private channel (A+B) → DM (A+C). Modal shows privacy warning naming C. A confirms. C sees the pointer in the DM.
-- **E2E-share-cross-stream-private-subset**: private channel (A+B+C) → DM (A+C). No warning (C ⊆ source members). A confirms. C sees the pointer.
-- **E2E-share-quote-partial**: A selects text in a message, clicks Share in the selection toolbar, picks a target. Toggle is hidden. Asserts the quote node renders with the selected snippet only.
+- **E2E-share-cross-stream-public**: public channel → DM. No privacy prompt appears. Target composer receives the pointer node; A adds commentary and sends; asserts the shared message appears for the DM recipient with both commentary and live pointer content.
+- **E2E-share-cross-stream-private-warning**: private channel (A+B) → DM (A+C). Modal shows privacy warning naming C. A confirms, adds commentary in the DM composer, sends. C sees the pointer in the DM.
+- **E2E-share-cross-stream-private-subset**: private channel (A+B+C) → DM (A+C). No warning (C ⊆ source members). A sends. C sees the pointer.
+- **E2E-share-quote-partial**: A selects text in a message, clicks Share in the selection toolbar, picks a target. Asserts the quote node renders with the selected snippet only (no pointer hydration).
+- **E2E-share-to-new-scratchpad**: A opens Share, picks "+ New scratchpad" in the picker. Asserts a new scratchpad is created, A is navigated to it, composer contains the pointer node, send posts the message in the new scratchpad.
+- **E2E-share-to-same-stream**: A shares a message from channel X while already viewing channel X. Modal closes, current composer receives the pointer node. A adds commentary and sends. Asserts the share appears in channel X as a normal message.
 - **E2E-share-pointer-edit-propagation**: A shares a pointer from channel 1 to channel 2. A edits the source. B in channel 2 sees the updated content without reloading.
 - **E2E-share-pointer-delete-tombstone**: A shares a pointer, then deletes the source. B in target sees the tombstone.
 - **E2E-share-navigation**: after confirm, the user lands on `/w/{ws}/s/{target}?m={newShareMessageId}` and the new message is in view.
@@ -482,60 +505,60 @@ Ship in four reviewable slices. Each slice ends with green tests (INV-22) and is
 
 ### Slice 1 — Foundations + share-to-parent (pointer)
 
-Smallest end-to-end vertical: thread → parent, pointer flavor, no modal, no privacy check.
+Smallest end-to-end vertical: thread → parent, pointer flavor, no modal, no privacy check (parent ⊇ thread by construction).
 
 - Migration: `shared_messages` table.
 - `packages/types`: `ThreaSharedMessage` node spec, `SHARE_FLAVORS` constant.
-- Backend feature folder scaffold: `service.ts` with `createShare` that only supports `targetStreamId = source.parentStreamId`.
-- Handler: `POST /api/streams/:streamId/messages/share` accepts `sourceMessageId` + `flavor: 'pointer'` only.
+- Backend `ShareService.validateAndRecordShares` called from `MessageEventService.createMessage`. Supports only `ThreaSharedMessage` nodes whose `streamId` is an ancestor stream (parent/root) for this slice — no arbitrary targets yet.
 - Pointer hydration on message read.
-- Frontend: `share-to-parent` action in `message-actions.ts`, pointer NodeView, preview-strip extension.
-- E2E: `E2E-share-to-parent`, `E2E-share-pointer-edit-propagation`.
+- Outbox subscriber for `message:updated` → `pointer:invalidated`.
+- Frontend: `share-to-parent` action in `message-actions.ts`, one-shot hand-off cache, pointer NodeView, preview-strip extension (INV-60).
+- E2E: `E2E-share-to-parent`, `E2E-share-pointer-edit-propagation`, `E2E-share-pointer-delete-tombstone`.
 
-This slice proves the data model, hydration, and outbox invalidation work end-to-end with the simplest UX. Everything after extends surface, not substrate.
+This slice proves the data model, hydration, outbox invalidation, and the composer hand-off pattern end-to-end with the simplest UX. Everything after extends surface, not substrate.
 
 ### Slice 2 — Share to another stream, pointer only
 
-Adds the picker modal but only supports pointer flavor, and only public-source or already-satisfied privacy (backend still returns `privacy_confirmation_required` but frontend treats it as a hard block for now — no UI yet).
+- `ShareMessageModal` with step 1 picker only (no flavor toggle — flavor is a modal prop).
+- `'share'` context-menu entry; opens modal with `flavor='pointer'`.
+- Backend: scanner accepts arbitrary cross-stream targets; cross-workspace guard fires.
+- Access-check helpers (`crossesPrivacyBoundary`, `isSubsetMembership`) but not yet surfaced in the UI — backend still returns `privacy_confirmation_required` and the frontend surfaces it as a blocking toast (temporary) for shares across privacy boundaries.
+- E2E: `E2E-share-cross-stream-public`, `E2E-share-to-same-stream`.
 
-- `ShareMessageModal` step 1 (picker) + step 2 (flavor toggle hidden, pointer-only).
-- Handler extended to accept arbitrary targets.
-- Access-check functions in backend; same-stream and cross-workspace guards.
-- E2E: `E2E-share-cross-stream-public`, `E2E-share-navigation`.
-
-### Slice 3 — Privacy confirmation + quote flavor
+### Slice 3 — Privacy confirmation + "+ New scratchpad" + quote flavor
 
 - `GET /api/.../share-preview` endpoint.
-- Modal step 3 (privacy warning).
-- Flavor toggle enabled in modal.
-- `ThreaQuoteReply` reused for full-message quote shares.
-- E2E: `E2E-share-cross-stream-private-warning`, `E2E-share-cross-stream-private-subset`.
+- Modal step 2 (privacy warning) replaces the blocking toast from slice 2.
+- `'share-as-quote'` context-menu entry; opens modal with `flavor='quote'`.
+- Picker gains "+ New scratchpad" row (D5).
+- `ThreaQuoteReply` reused for full-message cross-stream quote shares (no node-spec change).
+- E2E: `E2E-share-cross-stream-private-warning`, `E2E-share-cross-stream-private-subset`, `E2E-share-to-new-scratchpad`.
 
 ### Slice 4 — Partial-selection share from toolbar
 
-- `text-selection-quote.tsx` gets Share button.
-- Modal in forced-quote-with-snippet mode.
+- `text-selection-quote.tsx` gets Share button next to Quote.
+- Opens modal with `flavor='quote'` and `snippet` pre-populated.
 - E2E: `E2E-share-quote-partial`.
 
 ### Out of slice (follow-ups)
 
 - Mobile text-selection affordance for Share (currently context-menu-only on mobile).
 - Thread-as-target support.
-- Sharer-provided commentary in-modal (vs. post-send reply) — revisit only if users ask.
+- Sharer-provided commentary in-modal (explicitly rejected in this plan; revisit only if users ask).
 
 ## Alternatives Considered
 
-### D-Alt-1: Pre-fill composer on target page instead of send-from-modal
+### D-Alt-1: Send immediately from the modal
 
-Sketched earlier: modal picks a target, navigates to it, pre-inserts the node into the normal composer. User adds commentary and sends via existing send button.
+Sketched earlier: the modal would submit the share directly (posting the message in the target stream), then navigate the user to the already-sent message. Commentary would happen as a follow-up reply.
 
-Rejected in favor of send-from-modal because:
+Rejected in favor of composer pre-fill because:
 
-- Requires a transient channel (in-memory store or URL state) to pass the chosen node from modal → target composer.
-- Back-button / tab-close during composer edit produces a half-finished share that never lands — confusing UX.
-- Target composer may already have a draft; we'd need merge semantics.
+- Introduces a second text-entry surface (the modal would need an inline commentary field to be competitive with the composer-pre-fill flow), violating the user-stated goal of "avoid many editors".
+- Commentary-as-a-reply produces two messages in the target timeline where one was intended.
+- The one-shot hand-off cache needed for the pre-fill flow is cheap (a single Zustand key with a TTL) and the half-finished-share risk is mitigated by the TTL.
 
-If usage data shows users want commentary at share time, revisit by adding an inline commentary textarea inside the modal (below the picker) rather than navigating.
+Adopted design: the modal is a picker + privacy-confirm step, and the target stream's normal composer receives the share node on mount.
 
 ### D-Alt-2: Store a snapshot for pointers instead of live hydration
 
@@ -554,9 +577,18 @@ INV-57 already says: don't stash transient workflow state on core domain entitie
 
 1. **Bot / agent messages as source.** Can a user share a bot's reply? Default: yes, same rules (sharer needs read on source, write on target). Confirm nothing special happens — bots don't have "privacy" different from the stream's visibility.
 2. **Re-sharing a shared message.** User B sees a pointer in target stream T1 that points to source S1. Can B share the _pointer message_ itself to T2, producing a chain (pointer to pointer)? Default: yes, and we flatten at hydration time — T2 stores a pointer to S1 directly, not to T1's share-message. Simple, avoids chains. Confirm.
-3. **Self-scratchpad-only for scratchpad targets (D5) — are there shared scratchpads?** If scratchpads are always 1-owner today, D5 is automatic. If a scratchpad can ever be multi-owner, D5 needs refinement.
-4. **Admin removal of shared messages.** If a workspace admin hard-deletes the source, do we want a privileged path to also purge the share rows + share-message rows in targets, vs. leaving tombstones everywhere? Default: tombstones, matching normal delete behavior.
-5. **Attribution in target timeline.** Do we want a subtle "shared by @sharer" chip above the share message in the target stream, or is the normal author metadata (the sharer's name as message author, with the pointer/quote node below) enough? Default: normal author metadata only; the node itself visually attributes the original author.
+3. **Admin removal of shared messages.** If a workspace admin hard-deletes the source, do we want a privileged path to also purge the share rows + share-message rows in targets, vs. leaving tombstones everywhere? Default: tombstones, matching normal delete behavior.
+4. **Attribution in target timeline.** Do we want a subtle "shared by @sharer" chip above the share message in the target stream, or is the normal author metadata (the sharer's name as message author, with the pointer/quote node below) enough? Default: normal author metadata only; the node itself visually attributes the original author.
+
+## Resolved Questions (from first-round review)
+
+- **Pointer access semantics** — pointer share grants implicit read on the single shared message to target members (D1).
+- **Flavor UX** — two context-menu entries (`Share` / `Share as quote`), mirroring the Copy-\* pattern. Flavor is a modal prop, not a user-chosen toggle inside the modal (D4).
+- **Share-to-parent placement** — dedicated action in the context menu, separate from the Share / Share as quote entries.
+- **Tombstone policy** — live edits and deletes propagate.
+- **Scratchpad targets** — sharer's own scratchpads + a "+ New scratchpad" option that creates a fresh one on selection (D5).
+- **Same-stream share** — allowed, same composer hand-off as any other target. Not blocked.
+- **Send path** — modal is a picker + privacy confirm only; share node is pre-inserted into the target stream's normal composer. One editor surface per stream.
 
 ## Invariant References
 
