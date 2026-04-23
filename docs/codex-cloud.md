@@ -19,14 +19,13 @@ bash scripts/codex-cloud-maintenance.sh
 The setup script will:
 
 1. copy `.env.remote-dev` into `.env`
-2. start Docker with the sandbox proxy env when the sandbox exposes `dockerd`
-3. start the local compose services and wait for them to become healthy
-4. reinstall workspace dependencies with Bun
+2. skip local Docker startup in Codex Cloud
+3. reinstall workspace dependencies with Bun
 
 The maintenance script will:
 
 1. refresh `.env` from `.env.remote-dev`
-2. ensure local compose services are running after cache resume or branch checkout
+2. keep Docker-backed services out of scope for Codex Cloud
 3. resync dependencies with Bun without doing the full fresh-container bootstrap
 
 Then verify the environment:
@@ -35,17 +34,18 @@ Then verify the environment:
 bash scripts/codex-cloud-doctor.sh
 ```
 
-The doctor exits non-zero when a required check fails and prints the failing command output so the broken dependency is visible.
+The doctor exits non-zero when the Codex Cloud prerequisites fail and reminds you that Docker-backed flows stay in CI for now.
 
-When the checks look good, start development as usual:
+When the checks look good, run the commands relevant to your task:
 
 ```bash
-bun run dev
+bun run lint
+bun run typecheck
 ```
 
 ## Notes for cloud sandboxes
 
 - The scripts are intentionally idempotent enough for disposable environments.
-- Docker startup is best-effort because some hosted sandboxes do not expose a daemon.
+- Codex Cloud does not try to start Docker for local Postgres/MinIO. Use CI for Docker-backed tests and flows.
 - This repo is Bun-first, so the Codex scripts require `bun` instead of falling back to other package managers.
 - `.env.remote-dev` is the single shared env template used by both the Codex and Claude remote-dev flows.

@@ -14,14 +14,6 @@ require_bun() {
   fi
 }
 
-compose_up() {
-  if docker compose up --help | grep -q -- '--wait'; then
-    docker compose up -d --wait
-  else
-    docker compose up -d
-  fi
-}
-
 # Refresh the dev env on resumed cached containers.
 if [ ! -f "$ENV_TEMPLATE" ]; then
   echo "Missing $ENV_TEMPLATE. Restore the shared remote-dev env template, then rerun maintenance." >&2
@@ -31,16 +23,7 @@ fi
 cp "$ENV_TEMPLATE" .env
 echo "==> Refreshed .env from $ENV_TEMPLATE"
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker is required to start the local Postgres and MinIO services." >&2
-  exit 1
-fi
-
-# Ensure local services are up after branch checkout or cache resume.
-if [ -f docker-compose.yml ]; then
-  echo "==> Ensuring docker compose services are running"
-  compose_up
-fi
+echo "==> Skipping Docker startup in Codex Cloud; Docker-backed tests should run in CI"
 
 require_bun
 
