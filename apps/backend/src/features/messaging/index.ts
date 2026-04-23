@@ -36,3 +36,22 @@ export {
   MESSAGE_METADATA_MAX_SERIALIZED_BYTES,
   MESSAGE_METADATA_RESERVED_PREFIX,
 } from "./metadata-schema"
+
+// Sharing sub-feature
+export {
+  ShareService,
+  SharedMessageRepository,
+  collectShareReferences,
+  crossesPrivacyBoundary,
+  isAncestorStream,
+  invalidatePointersForEvent,
+  hydrateSharedMessages,
+  hydrateSharedMessageIds,
+  collectSharedMessageIds,
+  POINTER_INVALIDATED_EVENT,
+  type SharedMessage,
+  type InsertSharedMessageParams,
+  type PrivacyBoundaryResult,
+  type ValidateAndRecordSharesParams,
+  type HydratedSharedMessage,
+} from "./sharing"

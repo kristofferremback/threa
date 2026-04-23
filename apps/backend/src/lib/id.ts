@@ -45,4 +45,5 @@ export {
   videoTranscodeJobId,
   savedMessageId,
   reminderQueueId,
+  sharedMessageId,
 } from "@threa/backend-common"

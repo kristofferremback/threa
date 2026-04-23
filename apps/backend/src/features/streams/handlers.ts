@@ -2,10 +2,12 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { StreamService } from "./service"
 import type { EventService } from "../messaging"
+import { collectSharedMessageIds, hydrateSharedMessageIds, type HydratedSharedMessage } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { LinkPreviewService } from "../link-previews"
 import type { StreamEvent } from "./event-repository"
-import type { EventType, LinkPreviewSummary, StreamType } from "@threa/types"
+import type { EventType, JSONContent, LinkPreviewSummary, StreamType } from "@threa/types"
+import type { Pool } from "pg"
 import { StreamTypes, SLUG_PATTERN } from "@threa/types"
 import { serializeBigInt } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
@@ -159,6 +161,28 @@ interface Dependencies {
   eventService: EventService
   activityService?: ActivityService
   linkPreviewService: LinkPreviewService
+  pool: Pool
+}
+
+/**
+ * Scan event payloads for `sharedMessage` node references and fetch the
+ * hydrated content + metadata for each source message. Returned as a
+ * `sourceMessageId → payload` map that the frontend overlays onto pointer
+ * node renders.
+ */
+async function hydrateSharedMessagesForEvents(
+  pool: Pool,
+  events: StreamEvent[]
+): Promise<Record<string, HydratedSharedMessage>> {
+  const ids = new Set<string>()
+  for (const event of events) {
+    if (event.eventType === "message_created" || event.eventType === "message_edited") {
+      const payload = event.payload as { contentJson?: JSONContent }
+      if (payload.contentJson) collectSharedMessageIds(payload.contentJson, ids)
+    }
+  }
+  if (ids.size === 0) return {}
+  return hydrateSharedMessageIds(pool, ids)
 }
 
 function serializeEvent(event: StreamEvent) {
@@ -246,6 +270,7 @@ export function createStreamHandlers({
   eventService,
   activityService,
   linkPreviewService,
+  pool,
 }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
@@ -370,8 +395,9 @@ export function createStreamHandlers({
       })
 
       const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(linkPreviewService, workspaceId, userId, events)
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, eventsWithLinkPreviews)
 
-      res.json({ events: eventsWithLinkPreviews.map(serializeEvent) })
+      res.json({ events: eventsWithLinkPreviews.map(serializeEvent), sharedMessages })
     },
 
     async listEventsAround(req: Request, res: Response) {
@@ -404,9 +430,11 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, eventsWithLinkPreviews)
 
       res.json({
         events: eventsWithLinkPreviews.map(serializeEvent),
+        sharedMessages,
         hasOlder: result.hasOlder,
         hasNewer: result.hasNewer,
       })
@@ -601,11 +629,13 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, eventsWithLinkPreviews)
 
       res.json({
         data: {
           stream,
           events: eventsWithLinkPreviews.map(serializeEvent),
+          sharedMessages,
           members,
           botMemberIds,
           membership,

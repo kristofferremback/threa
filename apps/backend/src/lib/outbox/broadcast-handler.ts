@@ -18,6 +18,7 @@ import {
 import { logger } from "../logger"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
 import type { OutboxHandler } from "@threa/backend-common"
+import { invalidatePointersForEvent } from "../../features/messaging/sharing"
 
 export interface BroadcastHandlerConfig {
   batchSize?: number
@@ -106,6 +107,10 @@ export class BroadcastHandler implements OutboxHandler {
       try {
         for (const event of events) {
           this.broadcastEvent(event)
+          // After the normal per-event emit, fan out any pointer-invalidated
+          // hints so clients subscribed to target streams refresh their
+          // hydrated pointer content (see features/messaging/sharing, D7).
+          await invalidatePointersForEvent(event, this.db, this.io)
           seen.push(event.id)
         }
 
