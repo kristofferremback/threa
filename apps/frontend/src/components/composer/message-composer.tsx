@@ -12,6 +12,8 @@ import {
 } from "react"
 import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2 } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { usePreferencesOptional } from "@/contexts"
+import { getEffectiveKeyBinding, matchesKeyBinding } from "@/lib/keyboard-shortcuts"
 import { RichEditor, EditorToolbar, EditorActionBar } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { Button } from "@/components/ui/button"
@@ -355,23 +357,25 @@ export function MessageComposer({
     [onCollapse]
   )
 
-  // Cmd/Ctrl+S stashes the current draft. Attached in the capture phase on
+  // `draftStash` stashes the current draft. Attached in the capture phase on
   // the composer root so it runs before TipTap's contentEditable sees the
-  // event, and before the browser's default "save page" behavior. The
-  // browser default is always suppressed inside a mounted composer — even
-  // when `onStashDraft` is absent, Cmd+S saving a blank HTML page of the
-  // app has no useful outcome.
+  // event, and before the browser's default "save page" behavior. Capture
+  // scopes the shortcut to whichever composer actually received focus — if
+  // main + thread are both mounted, only the focused one fires. Registered
+  // via `SHORTCUT_ACTIONS`, so the user can remap it in settings.
+  const preferencesCtx = usePreferencesOptional()
+  const stashBinding = getEffectiveKeyBinding("draftStash", preferencesCtx?.preferences?.keyboardShortcuts ?? {})
+
   const handleStashKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== "s" && event.key !== "S") return
-      if (!(event.metaKey || event.ctrlKey)) return
-      if (event.altKey || event.shiftKey) return
+      if (!stashBinding) return
+      if (!matchesKeyBinding(event.nativeEvent, stashBinding)) return
 
       event.preventDefault()
       event.stopPropagation()
       onStashDraft?.()
     },
-    [onStashDraft]
+    [onStashDraft, stashBinding]
   )
 
   const sharedEditor = (

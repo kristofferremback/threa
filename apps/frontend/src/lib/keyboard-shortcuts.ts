@@ -104,6 +104,13 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     defaultKey: "mod+shift+c",
     category: "editing",
   },
+  {
+    id: "draftStash",
+    label: "Save Draft",
+    description: "Stash the current composer content into the saved-drafts pile and clear the editor",
+    defaultKey: "mod+s",
+    category: "editing",
+  },
 ]
 
 /**
