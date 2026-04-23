@@ -13,6 +13,7 @@ import {
   Bookmark,
   BookmarkX,
   Bell,
+  Share2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { stripMarkdown } from "@/lib/markdown"
@@ -59,6 +60,14 @@ export interface MessageActionContext {
   onQuoteReply?: () => void
   /** Callback to insert a partial quote reply with a user-selected snippet */
   onQuoteReplyWithSnippet?: (snippet: string) => void
+  /**
+   * Share-to-parent fast path: queue a pointer share into the parent stream's
+   * composer and navigate there. Only present when the message is in a thread
+   * whose parent is a top-level stream.
+   */
+  onShareToParent?: () => void
+  /** Label text for the share-to-parent entry, e.g. "Share to #general" or "Share to DM" */
+  shareToParentLabel?: string
   /** Callback to save or unsave the message */
   onToggleSave?: () => void
   /** Callback to open the reminder picker (mobile: bottom sheet) */
@@ -78,7 +87,12 @@ export interface MessageSubAction {
 /** A top-level action in the message context menu. */
 export interface MessageAction {
   id: string
-  label: string
+  /**
+   * Visible menu label. Plain string for static entries; for actions whose
+   * label depends on the message (e.g. "Share to #parent-name"), pass a
+   * function that derives it from the context.
+   */
+  label: string | ((context: MessageActionContext) => string)
   icon: ComponentType<{ className?: string }>
   /** Sub-actions turn this item into a sub-menu with variants */
   subActions?: MessageSubAction[]
@@ -92,6 +106,11 @@ export interface MessageAction {
   getHref?: (context: MessageActionContext) => string | undefined
   /** Handler for mutation actions — rendered as <button> */
   action?: (context: MessageActionContext) => void | Promise<void>
+}
+
+/** Resolve the visible label for an action, handling the string/function variants. */
+export function resolveActionLabel(action: MessageAction, context: MessageActionContext): string {
+  return typeof action.label === "function" ? action.label(context) : action.label
 }
 
 // --- Helpers ---
@@ -123,6 +142,13 @@ export const messageActions: MessageAction[] = [
     icon: Quote,
     when: (ctx) => !!ctx.onQuoteReply,
     action: (ctx) => ctx.onQuoteReply?.(),
+  },
+  {
+    id: "share-to-parent",
+    label: (ctx) => ctx.shareToParentLabel ?? "Share to parent",
+    icon: Share2,
+    when: (ctx) => !!ctx.onShareToParent,
+    action: (ctx) => ctx.onShareToParent?.(),
   },
   {
     // Split into two rows (save / unsave) so the menu entry always matches

@@ -54,6 +54,7 @@ import { JoinChannelBar } from "./join-channel-bar"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
 import { EditLastMessageContext } from "./edit-last-message-context"
 import { QuoteReplyProvider } from "./quote-reply-context"
+import { SharedMessagesProvider } from "@/components/shared-messages/context"
 import { TextSelectionQuote } from "./text-selection-quote"
 import { StreamSearchBar } from "./stream-search-bar"
 import { useStreamSearch } from "@/hooks/use-stream-search"
@@ -607,176 +608,181 @@ export function StreamContent({
   return (
     <EditLastMessageContext.Provider value={editLastMessageCtxWithScroll}>
       <QuoteReplyProvider>
-        <TextSelectionQuote streamId={streamId} />
-        <div className="relative h-full">
-          <div className="absolute inset-0 overflow-hidden">
-            {isSearchOpen && (
-              <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
-            )}
-            {isDraft && (
-              <div
-                className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain"
-                style={{ paddingBottom: "var(--composer-height, 0px)" }}
-              >
-                {hasDraftPendingEvents ? (
-                  <EventList
-                    timelineItems={draftTimelineItems}
-                    isLoading={false}
+        <SharedMessagesProvider map={bootstrap?.sharedMessages ?? null}>
+          <TextSelectionQuote streamId={streamId} />
+          <div className="relative h-full">
+            <div className="absolute inset-0 overflow-hidden">
+              {isSearchOpen && (
+                <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
+              )}
+              {isDraft && (
+                <div
+                  className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain"
+                  style={{ paddingBottom: "var(--composer-height, 0px)" }}
+                >
+                  {hasDraftPendingEvents ? (
+                    <EventList
+                      timelineItems={draftTimelineItems}
+                      isLoading={false}
+                      workspaceId={workspaceId}
+                      streamId={streamId}
+                    />
+                  ) : (
+                    <Empty className="h-full border-0">
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <MessageSquare />
+                        </EmptyMedia>
+                        <EmptyTitle>Start a conversation</EmptyTitle>
+                        <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  )}
+                </div>
+              )}
+              {!isDraft && useVirtualized && (
+                <>
+                  <VirtuosoMessageList
+                    visibleItems={visibleItems}
+                    isLoading={isLoading}
+                    isConfirmedEmpty={isConfirmedEmpty}
+                    virtuosoRef={virtuosoRef}
+                    virtuosoScrollerRef={virtuosoScrollerRef}
+                    handleScrollerRef={handleScrollerRef}
+                    firstItemIndex={firstItemIndex}
+                    initialTopMostItemIndex={initialTopMostItemIndex}
+                    shouldFollowOutput={shouldFollowOutput}
+                    handleAtBottomChange={handleAtBottomChange}
+                    handleRangeChanged={handleRangeChanged}
+                    hasOlderEvents={hasOlderEvents}
+                    hasNewerEvents={hasNewerEvents}
+                    fetchOlderEvents={fetchOlderEvents}
+                    fetchNewerEvents={fetchNewerEvents}
+                    isFetchingOlder={isFetchingOlder}
+                    isFetchingNewer={isFetchingNewer}
                     workspaceId={workspaceId}
                     streamId={streamId}
+                    highlightMessageId={streamSearch.activeMessageId ?? highlightMessageId}
+                    firstUnreadEventId={dividerEventId}
+                    isDividerFading={isDividerFading}
+                    agentActivity={agentActivity}
+                    hideSessionCards={isChannel}
+                    newMessageIds={newMessageIds}
+                    isSearchOpen={isSearchOpen}
                   />
-                ) : (
-                  <Empty className="h-full border-0">
-                    <EmptyHeader>
-                      <EmptyMedia variant="icon">
-                        <MessageSquare />
-                      </EmptyMedia>
-                      <EmptyTitle>Start a conversation</EmptyTitle>
-                      <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                )}
-              </div>
-            )}
-            {!isDraft && useVirtualized && (
-              <>
-                <VirtuosoMessageList
-                  visibleItems={visibleItems}
-                  isLoading={isLoading}
-                  isConfirmedEmpty={isConfirmedEmpty}
-                  virtuosoRef={virtuosoRef}
-                  virtuosoScrollerRef={virtuosoScrollerRef}
-                  handleScrollerRef={handleScrollerRef}
-                  firstItemIndex={firstItemIndex}
-                  initialTopMostItemIndex={initialTopMostItemIndex}
-                  shouldFollowOutput={shouldFollowOutput}
-                  handleAtBottomChange={handleAtBottomChange}
-                  handleRangeChanged={handleRangeChanged}
-                  hasOlderEvents={hasOlderEvents}
-                  hasNewerEvents={hasNewerEvents}
-                  fetchOlderEvents={fetchOlderEvents}
-                  fetchNewerEvents={fetchNewerEvents}
-                  isFetchingOlder={isFetchingOlder}
-                  isFetchingNewer={isFetchingNewer}
-                  workspaceId={workspaceId}
-                  streamId={streamId}
-                  highlightMessageId={streamSearch.activeMessageId ?? highlightMessageId}
-                  firstUnreadEventId={dividerEventId}
-                  isDividerFading={isDividerFading}
-                  agentActivity={agentActivity}
-                  hideSessionCards={isChannel}
-                  newMessageIds={newMessageIds}
-                  isSearchOpen={isSearchOpen}
-                />
-                {/* Overlay loading indicators — absolutely positioned so they
+                  {/* Overlay loading indicators — absolutely positioned so they
                     don't cause layout shift when prepending older messages. */}
+                  <div
+                    aria-hidden={!isFetchingOlder}
+                    className={cn(
+                      "pointer-events-none absolute left-1/2 -translate-x-1/2 z-10 rounded-full bg-background/90 px-3 py-1 shadow-sm border text-xs text-muted-foreground transition-opacity",
+                      isSearchOpen ? "top-14" : "top-2",
+                      isFetchingOlder ? "opacity-100" : "opacity-0"
+                    )}
+                  >
+                    Loading older messages...
+                  </div>
+                  <div
+                    aria-hidden={!isFetchingNewer}
+                    className={cn(
+                      "pointer-events-none absolute left-1/2 -translate-x-1/2 z-20 rounded-full bg-background/90 px-3 py-1 shadow-sm border text-xs text-muted-foreground transition-opacity",
+                      isFetchingNewer ? "opacity-100" : "opacity-0"
+                    )}
+                    style={{
+                      // Sit above the Jump to latest button (when visible) which itself sits above the floating composer.
+                      bottom:
+                        isJumpMode || isScrolledFarFromBottom
+                          ? "calc(var(--composer-height, 0px) + 3.5rem)"
+                          : "calc(var(--composer-height, 0px) + 0.5rem)",
+                    }}
+                  >
+                    Loading newer messages...
+                  </div>
+                </>
+              )}
+              {!isDraft && !useVirtualized && (
                 <div
-                  aria-hidden={!isFetchingOlder}
+                  ref={plainScrollRef}
                   className={cn(
-                    "pointer-events-none absolute left-1/2 -translate-x-1/2 z-10 rounded-full bg-background/90 px-3 py-1 shadow-sm border text-xs text-muted-foreground transition-opacity",
-                    isSearchOpen ? "top-14" : "top-2",
-                    isFetchingOlder ? "opacity-100" : "opacity-0"
+                    "h-full overflow-y-auto overflow-x-hidden overscroll-y-contain",
+                    isSearchOpen && "pt-11"
                   )}
+                  style={{ paddingBottom: "var(--composer-height, 0px)" }}
+                  data-suppress-pull-refresh="true"
+                  onScroll={plainHandleScroll}
                 >
-                  Loading older messages...
-                </div>
-                <div
-                  aria-hidden={!isFetchingNewer}
-                  className={cn(
-                    "pointer-events-none absolute left-1/2 -translate-x-1/2 z-20 rounded-full bg-background/90 px-3 py-1 shadow-sm border text-xs text-muted-foreground transition-opacity",
-                    isFetchingNewer ? "opacity-100" : "opacity-0"
+                  {isThread && parentMessage && parentStreamId && (
+                    <ThreadParentMessage
+                      event={parentMessage}
+                      workspaceId={workspaceId}
+                      streamId={parentStreamId}
+                      replyCount={events.length}
+                    />
                   )}
-                  style={{
-                    // Sit above the Jump to latest button (when visible) which itself sits above the floating composer.
-                    bottom:
-                      isJumpMode || isScrolledFarFromBottom
-                        ? "calc(var(--composer-height, 0px) + 3.5rem)"
-                        : "calc(var(--composer-height, 0px) + 0.5rem)",
-                  }}
-                >
-                  Loading newer messages...
-                </div>
-              </>
-            )}
-            {!isDraft && !useVirtualized && (
-              <div
-                ref={plainScrollRef}
-                className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
-                style={{ paddingBottom: "var(--composer-height, 0px)" }}
-                data-suppress-pull-refresh="true"
-                onScroll={plainHandleScroll}
-              >
-                {isThread && parentMessage && parentStreamId && (
-                  <ThreadParentMessage
-                    event={parentMessage}
+                  {isFetchingOlder && (
+                    <div className="flex justify-center py-2">
+                      <p className="text-sm text-muted-foreground">Loading older messages...</p>
+                    </div>
+                  )}
+                  <EventList
+                    timelineItems={timelineItems}
+                    isLoading={isLoading}
                     workspaceId={workspaceId}
-                    streamId={parentStreamId}
-                    replyCount={events.length}
+                    streamId={streamId}
+                    highlightMessageId={streamSearch.activeMessageId ?? highlightMessageId}
+                    firstUnreadEventId={dividerEventId}
+                    isDividerFading={isDividerFading}
+                    agentActivity={agentActivity}
+                    hideSessionCards={isChannel}
+                    newMessageIds={newMessageIds}
                   />
-                )}
-                {isFetchingOlder && (
-                  <div className="flex justify-center py-2">
-                    <p className="text-sm text-muted-foreground">Loading older messages...</p>
-                  </div>
-                )}
-                <EventList
-                  timelineItems={timelineItems}
-                  isLoading={isLoading}
-                  workspaceId={workspaceId}
-                  streamId={streamId}
-                  highlightMessageId={streamSearch.activeMessageId ?? highlightMessageId}
-                  firstUnreadEventId={dividerEventId}
-                  isDividerFading={isDividerFading}
-                  agentActivity={agentActivity}
-                  hideSessionCards={isChannel}
-                  newMessageIds={newMessageIds}
-                />
-                {isFetchingNewer && (
-                  <div className="flex justify-center py-2">
-                    <p className="text-sm text-muted-foreground">Loading newer messages...</p>
-                  </div>
-                )}
+                  {isFetchingNewer && (
+                    <div className="flex justify-center py-2">
+                      <p className="text-sm text-muted-foreground">Loading newer messages...</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Jump to latest button — shown when scrolled far from bottom or in jump mode.
+              Positioned above the floating composer pill. */}
+            {(isJumpMode || isScrolledFarFromBottom) && (
+              <div
+                className="pointer-events-none absolute left-1/2 -translate-x-1/2 z-10"
+                style={{ bottom: "calc(var(--composer-height, 0px) + 0.5rem)" }}
+              >
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="pointer-events-auto shadow-lg gap-1.5"
+                  onClick={handleJumpToLatest}
+                >
+                  <ArrowDown className="h-3.5 w-3.5" />
+                  Jump to latest
+                </Button>
               </div>
             )}
-          </div>
-          {/* Jump to latest button — shown when scrolled far from bottom or in jump mode.
-              Positioned above the floating composer pill. */}
-          {(isJumpMode || isScrolledFarFromBottom) && (
-            <div
-              className="pointer-events-none absolute left-1/2 -translate-x-1/2 z-10"
-              style={{ bottom: "calc(var(--composer-height, 0px) + 0.5rem)" }}
-            >
-              <Button
-                variant="secondary"
-                size="sm"
-                className="pointer-events-auto shadow-lg gap-1.5"
-                onClick={handleJumpToLatest}
-              >
-                <ArrowDown className="h-3.5 w-3.5" />
-                Jump to latest
-              </Button>
-            </div>
-          )}
-          {membershipResolved && !isMember && isPublicChannel && (
-            <div className="absolute inset-x-0 z-10" style={{ bottom: "var(--composer-height, 0px)" }}>
-              <JoinChannelBar
+            {membershipResolved && !isMember && isPublicChannel && (
+              <div className="absolute inset-x-0 z-10" style={{ bottom: "var(--composer-height, 0px)" }}>
+                <JoinChannelBar
+                  workspaceId={workspaceId}
+                  streamId={streamId}
+                  channelName={stream?.slug ?? stream?.displayName ?? ""}
+                  onJoined={handleJoined}
+                />
+              </div>
+            )}
+            {(isMember || !isPublicChannel || !membershipResolved) && (
+              <MessageInput
                 workspaceId={workspaceId}
                 streamId={streamId}
-                channelName={stream?.slug ?? stream?.displayName ?? ""}
-                onJoined={handleJoined}
+                disabled={isArchived || isSystem}
+                disabledReason={disabledReason}
+                autoFocus={autoFocus}
               />
-            </div>
-          )}
-          {(isMember || !isPublicChannel || !membershipResolved) && (
-            <MessageInput
-              workspaceId={workspaceId}
-              streamId={streamId}
-              disabled={isArchived || isSystem}
-              disabledReason={disabledReason}
-              autoFocus={autoFocus}
-            />
-          )}
-        </div>
+            )}
+          </div>
+        </SharedMessagesProvider>
       </QuoteReplyProvider>
     </EditLastMessageContext.Provider>
   )

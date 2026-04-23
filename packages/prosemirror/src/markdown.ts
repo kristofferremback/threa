@@ -98,6 +98,22 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
       return `${quotedLines}\n>\n> — [${escapedAuthor}](quote:${streamId}/${messageId}/${authorId}/${actorType})`
     }
 
+    case "sharedMessage": {
+      const { messageId, streamId, authorName } = node.attrs as {
+        messageId: string
+        streamId: string
+        authorName?: string
+      }
+      // Wire-format serialization only — the frontend hydrates live content
+      // on render, so this fallback is what external API consumers see and
+      // what sidebar/activity previews strip through INV-60 helpers. We use
+      // markdown link syntax (not bare parens) so `stripMarkdown` reduces
+      // the line to a clean sentence: "Shared a message from Alice".
+      const rawName = authorName && authorName.length > 0 ? authorName : "another stream"
+      const escapedName = rawName.replace(/\\/g, "\\\\").replace(/\]/g, "\\]")
+      return `Shared a message from [${escapedName}](shared-message:${streamId}/${messageId})`
+    }
+
     case "bulletList":
       return (
         node.content

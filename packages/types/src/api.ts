@@ -63,12 +63,41 @@ export interface StreamBootstrap {
   unreadCount: number
   mentionCount: number
   activityCount: number
+  /**
+   * Hydrated payload for cross-stream share-message pointers, keyed by source
+   * message id. Overlaid onto `ThreaSharedMessage` nodes at render time so
+   * clients never have to read other streams' messages directly. See
+   * docs/plans/message-sharing-streams.md D8.
+   */
+  sharedMessages?: Record<string, SharedMessageHydration>
 }
+
+/**
+ * Wire-format variants for an individual pointer's hydrated content. `ok`
+ * includes the source's current content; `deleted` and `missing` surface
+ * tombstone states. Slice 2 will add `private` / `truncated` variants for
+ * the recursive chain case.
+ */
+export type SharedMessageHydration =
+  | {
+      state: "ok"
+      messageId: string
+      streamId: string
+      authorId: string
+      authorType: string
+      contentJson: unknown
+      contentMarkdown: string
+      editedAt: string | null
+      createdAt: string
+    }
+  | { state: "deleted"; messageId: string; deletedAt: string }
+  | { state: "missing"; messageId: string }
 
 export interface EventsAroundResponse {
   events: StreamEvent[]
   hasOlder: boolean
   hasNewer: boolean
+  sharedMessages?: Record<string, SharedMessageHydration>
 }
 
 // ============================================================================

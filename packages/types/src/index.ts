@@ -249,6 +249,7 @@ export type {
   UpdateCompanionModeInput,
   StreamBootstrap,
   EventsAroundResponse,
+  SharedMessageHydration,
   // Messages
   CreateMessageInput,
   CreateMessageInputJson,

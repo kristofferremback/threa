@@ -11,7 +11,7 @@ import { useMessageReactions, stripColons, reactionShortcodes } from "@/hooks/us
 import { getInitials } from "@/lib/initials"
 import { cn } from "@/lib/utils"
 import { buildQuickEmojis } from "@/lib/emoji-picker"
-import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
+import { type MessageActionContext, type MessageAction, getVisibleActions, resolveActionLabel } from "./message-actions"
 import { EmojiQuickBar } from "./emoji-quick-bar"
 
 interface MessageActionDrawerProps {
@@ -252,12 +252,12 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
                     {href ? (
                       <Link to={href} className={rowClassName} onClick={() => handleOpenChange(false)}>
                         {iconEl}
-                        <span>{action.label}</span>
+                        <span>{resolveActionLabel(action, context)}</span>
                       </Link>
                     ) : (
                       <button type="button" className={rowClassName} onClick={() => handleAction(action)}>
                         {iconEl}
-                        <span>{action.label}</span>
+                        <span>{resolveActionLabel(action, context)}</span>
                       </button>
                     )}
                   </div>

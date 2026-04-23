@@ -538,6 +538,19 @@ export function registerStreamSocketHandlers(
     }))
   }
 
+  /**
+   * Invalidate any TanStack Query cache holding this stream's messages when
+   * a pointer-referenced source message in another stream is edited or
+   * deleted. Triggers a refetch so the hydrated share-map on the next
+   * response reflects the new content. The payload's targetStreamId is the
+   * room this emit was scoped to, so we just invalidate bootstrap/events.
+   */
+  const handlePointerInvalidated = async (payload: { targetStreamId: string; sourceMessageId: string }) => {
+    if (payload.targetStreamId !== streamId) return
+    await queryClient.invalidateQueries({ queryKey: ["streams", "bootstrap", workspaceId, streamId] })
+    await queryClient.invalidateQueries({ queryKey: ["streams", "events", workspaceId, streamId] })
+  }
+
   socket.on("message:created", handleMessageCreated)
   socket.on("message:edited", handleMessageEdited)
   socket.on("message:deleted", handleMessageDeleted)
@@ -556,6 +569,7 @@ export function registerStreamSocketHandlers(
   socket.on("agent_session:failed", handleAppendEvent)
   socket.on("agent_session:deleted", handleAppendEvent)
   socket.on("link_preview:ready", handleLinkPreviewReady)
+  socket.on("pointer:invalidated", handlePointerInvalidated)
 
   return () => {
     socket.off("message:created", handleMessageCreated)
@@ -576,5 +590,6 @@ export function registerStreamSocketHandlers(
     socket.off("agent_session:failed", handleAppendEvent)
     socket.off("agent_session:deleted", handleAppendEvent)
     socket.off("link_preview:ready", handleLinkPreviewReady)
+    socket.off("pointer:invalidated", handlePointerInvalidated)
   }
 }

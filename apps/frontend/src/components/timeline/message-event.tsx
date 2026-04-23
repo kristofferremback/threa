@@ -52,6 +52,9 @@ import { MessageReactions } from "./message-reactions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 import { useQuoteReply } from "./quote-reply-context"
 import { useSwipeAction } from "@/hooks/use-swipe-action"
+import { useNavigate } from "react-router-dom"
+import { useStreamFromStore } from "@/stores/stream-store"
+import { queueShareHandoff } from "@/stores/share-handoff-store"
 
 interface MessagePayload {
   messageId: string
@@ -444,6 +447,22 @@ interface MessageEventInnerProps {
   groupContinuation?: boolean
 }
 
+/**
+ * Produce a user-facing label for the share-to-parent menu entry based on
+ * the parent stream's type. Channels read naturally as "#slug"; DMs and
+ * scratchpads get a generic label to avoid awkward display-name phrasing
+ * ("Share to Untitled scratchpad" etc.) in slice 1.
+ */
+function buildShareToParentLabel(parent: { type: string; displayName: string | null; slug: string | null }): string {
+  if (parent.type === "channel") {
+    const tag = parent.slug ? `#${parent.slug}` : (parent.displayName ?? "channel")
+    return `Share to ${tag}`
+  }
+  if (parent.type === "dm") return "Share to DM"
+  if (parent.type === "scratchpad") return "Share to scratchpad"
+  return "Share to parent"
+}
+
 function SentMessageEvent({
   event,
   payload,
@@ -462,6 +481,9 @@ function SentMessageEvent({
   const currentUserId = useWorkspaceUserId(workspaceId)
   const { getTraceUrl } = useTrace()
   const quoteReplyCtx = useQuoteReply()
+  const navigate = useNavigate()
+  const currentStream = useStreamFromStore(streamId)
+  const parentStream = useStreamFromStore(currentStream?.parentStreamId ?? undefined)
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -683,6 +705,19 @@ function SentMessageEvent({
               snippet,
             })
         : undefined,
+      onShareToParent: parentStream
+        ? () => {
+            queueShareHandoff(parentStream.id, {
+              messageId: payload.messageId,
+              streamId,
+              authorName: actorName,
+              authorId: event.actorId ?? "",
+              actorType: event.actorType ?? "user",
+            })
+            navigate(`/w/${workspaceId}/s/${parentStream.id}`)
+          }
+        : undefined,
+      shareToParentLabel: parentStream ? buildShareToParentLabel(parentStream) : undefined,
     }),
     [
       payload.contentMarkdown,
@@ -709,6 +744,8 @@ function SentMessageEvent({
       isSaved,
       handleToggleSave,
       handleRequestReminder,
+      parentStream,
+      navigate,
     ]
   )
 

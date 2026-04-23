@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { getVisibleActions, messageActions, type MessageActionContext } from "./message-actions"
+import { getVisibleActions, messageActions, resolveActionLabel, type MessageActionContext } from "./message-actions"
 
 function createContext(overrides: Partial<MessageActionContext> = {}): MessageActionContext {
   return {
@@ -244,5 +244,54 @@ describe("message action behaviors", () => {
     deleteAction.action!(ctx)
 
     expect(onDelete).toHaveBeenCalledOnce()
+  })
+})
+
+describe("share-to-parent action", () => {
+  it("is hidden when onShareToParent is not supplied", () => {
+    const actions = getVisibleActions(createContext())
+    expect(actions.find((a) => a.id === "share-to-parent")).toBeUndefined()
+  })
+
+  it("is visible when onShareToParent is supplied", () => {
+    const actions = getVisibleActions(createContext({ onShareToParent: () => {} }))
+    expect(actions.find((a) => a.id === "share-to-parent")).toBeDefined()
+  })
+
+  it("invokes the onShareToParent callback when run", () => {
+    const onShareToParent = vi.fn()
+    const ctx = createContext({ onShareToParent })
+    const action = getVisibleActions(ctx).find((a) => a.id === "share-to-parent")!
+    action.action!(ctx)
+    expect(onShareToParent).toHaveBeenCalledOnce()
+  })
+
+  it("uses the provided shareToParentLabel when set", () => {
+    const ctx = createContext({
+      onShareToParent: () => {},
+      shareToParentLabel: "Share to #general",
+    })
+    const action = getVisibleActions(ctx).find((a) => a.id === "share-to-parent")!
+    expect(resolveActionLabel(action, ctx)).toBe("Share to #general")
+  })
+
+  it("falls back to a generic label when shareToParentLabel is absent", () => {
+    const ctx = createContext({ onShareToParent: () => {} })
+    const action = getVisibleActions(ctx).find((a) => a.id === "share-to-parent")!
+    expect(resolveActionLabel(action, ctx)).toBe("Share to parent")
+  })
+})
+
+describe("resolveActionLabel", () => {
+  it("returns a string label directly for static entries", () => {
+    const ctx = createContext()
+    const copy = messageActions.find((a) => a.id === "copy")!
+    expect(resolveActionLabel(copy, ctx)).toBe(copy.label as string)
+  })
+
+  it("invokes the label function for dynamic entries", () => {
+    const action = { ...messageActions.find((a) => a.id === "share-to-parent")! }
+    const ctx = createContext({ shareToParentLabel: "Share to DM" })
+    expect(resolveActionLabel(action, ctx)).toBe("Share to DM")
   })
 })

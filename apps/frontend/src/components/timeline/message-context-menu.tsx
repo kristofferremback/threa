@@ -12,7 +12,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { type MessageAction, type MessageActionContext, getVisibleActions } from "./message-actions"
+import { type MessageAction, type MessageActionContext, getVisibleActions, resolveActionLabel } from "./message-actions"
 
 interface MessageContextMenuProps {
   context: MessageActionContext
@@ -81,7 +81,7 @@ function ActionItem({
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className="gap-2 cursor-pointer">
             <Icon className="h-4 w-4 text-muted-foreground" />
-            {action.label}
+            {resolveActionLabel(action, context)}
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             {action.subActions.map((sub) => {
@@ -113,7 +113,7 @@ function ActionItem({
         <DropdownMenuItem asChild className="gap-2 cursor-pointer">
           <Link to={href} onClick={onClose}>
             <Icon className="h-4 w-4 text-muted-foreground" />
-            {action.label}
+            {resolveActionLabel(action, context)}
           </Link>
         </DropdownMenuItem>
       </>
@@ -135,7 +135,7 @@ function ActionItem({
         }}
       >
         <Icon className={isDestructive ? "h-4 w-4" : "h-4 w-4 text-muted-foreground"} />
-        {action.label}
+        {resolveActionLabel(action, context)}
       </DropdownMenuItem>
     </>
   )

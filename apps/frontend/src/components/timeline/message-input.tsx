@@ -19,6 +19,7 @@ import { hasCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
+import { consumeShareHandoff } from "@/stores/share-handoff-store"
 import { StreamTypes, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
@@ -286,6 +287,40 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       composerFocusRef.current?.focusAfterQuoteReply()
     })
   }, [quoteReplyCtx])
+
+  // Consume any pending share handoff for this stream, pre-inserting the
+  // shared-message pointer into the composer. Runs on mount and when the
+  // stream changes so navigating into a stream after clicking "Share to …"
+  // reliably injects the pointer. The handoff is one-shot (consume clears it)
+  // and TTL'd; re-renders here are safe — the second read returns null.
+  useEffect(() => {
+    const pending = consumeShareHandoff(streamId)
+    if (!pending) return
+
+    const shareNode: JSONContent = {
+      type: "sharedMessage",
+      attrs: pending as unknown as Record<string, unknown>,
+    }
+
+    const currentContent = composerRef.current.content
+    const existingBlocks = currentContent.content ?? []
+    const trimmedBlocks = [...existingBlocks]
+    while (
+      trimmedBlocks.length > 0 &&
+      trimmedBlocks[trimmedBlocks.length - 1].type === "paragraph" &&
+      (trimmedBlocks[trimmedBlocks.length - 1].content?.length ?? 0) === 0
+    ) {
+      trimmedBlocks.pop()
+    }
+
+    // Leading paragraph (if any commentary) + share node + trailing empty
+    // paragraph so the cursor lands on a fresh line below the pointer.
+    composerRef.current.setContent({
+      type: "doc",
+      content: [...trimmedBlocks, shareNode, { type: "paragraph" }],
+    })
+    composerFocusRef.current?.focusAfterQuoteReply()
+  }, [streamId])
 
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
