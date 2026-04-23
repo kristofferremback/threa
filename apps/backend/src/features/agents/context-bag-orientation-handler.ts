@@ -4,12 +4,14 @@ import { OutboxRepository, isOneOfOutboxEventType } from "../../lib/outbox"
 import type { QueueManager, ContextBagOrientJobData } from "../../lib/queue"
 import { JobQueues, type JobHandler } from "../../lib/queue"
 import type { AI } from "../../lib/ai/ai"
-import { CompanionModes, StreamTypes, AuthorTypes } from "@threa/types"
+import { AgentStepTypes, AuthorTypes, CompanionModes, StreamTypes, type AuthorType } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { StreamRepository } from "../streams"
 import { PersonaRepository } from "./persona-repository"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
 import { ContextBagRepository, persistSnapshot, resolveBagForStream, getIntentConfig } from "./context-bag"
+import { withCompanionSession } from "./companion"
+import type { TraceEmitter } from "./trace-emitter"
 
 export interface ContextBagOrientationHandlerConfig {
   batchSize?: number
@@ -146,59 +148,64 @@ export class ContextBagOrientationHandler implements OutboxHandler {
 export interface ContextBagOrientationWorkerDeps {
   pool: Pool
   ai: AI
+  /**
+   * Same TraceEmitter used by the persona-agent; we reuse it so the orientation
+   * turn shows up in the activity indicator, emits `agent_session:started`/
+   * `:completed` on the socket, and produces a real trace UI entry. INV-35:
+   * reuse existing helpers.
+   */
+  traceEmitter: TraceEmitter
+  /** Server id persisted on the session row for heartbeat / orphan recovery. */
+  serverId: string
   createMessage: (params: {
     workspaceId: string
     streamId: string
     authorId: string
-    authorType: "user" | "persona" | "system" | "bot"
+    authorType: AuthorType
     content: string
     sessionId?: string
     /**
-     * Idempotency key forwarded to `event-service.createMessage`. Retries
-     * of the orientation job pass the same key, hit ON CONFLICT DO NOTHING
-     * inside the messages insert, and return the already-posted row.
+     * Idempotency key forwarded to `event-service.createMessage`. If a retry
+     * lands in the crash-window (message written, snapshot not), the ON
+     * CONFLICT DO NOTHING path on `(stream_id, client_message_id)` returns
+     * the existing row rather than posting a duplicate.
      */
     clientMessageId?: string
   }) => Promise<{ id: string }>
 }
 
 /**
- * Orientation worker: runs the actual AI kickoff turn out of the outbox hot
- * path. Resolves the bag (summarizing if needed), calls the AI once, posts
- * Ariadne's first message, then persists the render snapshot.
+ * Orientation worker: runs Ariadne's kickoff turn for a newly-created,
+ * bag-attached scratchpad. The work is wrapped in `withCompanionSession` so
+ * the UI shows an activity indicator, the trace dialog populates in
+ * real-time, and session idempotency is handled by the existing
+ * (trigger_message_id → session) partial unique index — retries with the
+ * same synthetic trigger id (`orient:<bagId>`) see the completed session
+ * and bail without re-running the AI call.
  *
- * The AI call runs without holding any DB connection (INV-41): resolveBag
- * pulls the data in a short-lived connection, releases it, does the summary
- * call if needed, then releases again. We then acquire a new connection for
- * the message insert + snapshot update.
+ * Crash-window safety:
+ * - `withCompanionSession` is the primary idempotency mechanism. A retry
+ *   after a fully-completed session finds a COMPLETED row and returns
+ *   `skipped` without re-running `work`.
+ * - `clientMessageId: orient:<bagId>` is a belt-and-braces guard for the
+ *   narrow window where `work` posted the message but the session-
+ *   completion transaction failed. The retry re-runs `work` but the
+ *   message insert hits ON CONFLICT DO NOTHING on `(stream_id,
+ *   client_message_id)` and returns the existing row; `persistSnapshot` is
+ *   an idempotent UPDATE so it re-runs safely.
+ *
+ * Connection lifecycle (INV-41): the AI call runs with no held connection.
+ * Resolution, trace step writes, and the final snapshot update each open a
+ * short single-query connection.
  */
 export function createContextBagOrientationWorker(
   deps: ContextBagOrientationWorkerDeps
 ): JobHandler<ContextBagOrientJobData> {
-  const { pool, ai, createMessage } = deps
+  const { pool, ai, createMessage, traceEmitter, serverId } = deps
 
   return async (job) => {
     const { workspaceId, streamId, bagId, personaId } = job.data
     logger.info({ jobId: job.id, streamId, bagId }, "Processing context-bag orientation job")
-
-    // Idempotency guard: once the first turn renders, `lastRendered` flips to
-    // non-null. Queue retries (up to maxRetries=5) that land on an already-run
-    // orientation bail here. Note that even without this guard the message
-    // insert is deduped by `clientMessageId` below — this guard just avoids
-    // spending a second orientation AI call. (INV-7 coordination concern.)
-    const bag = await ContextBagRepository.findByStream(pool, streamId)
-    if (!bag) {
-      logger.warn({ streamId, bagId }, "context-bag orientation: bag missing, skipping")
-      return
-    }
-    if (bag.id !== bagId) {
-      logger.warn({ streamId, bagId, currentBagId: bag.id }, "context-bag orientation: bag id mismatch, skipping")
-      return
-    }
-    if (bag.lastRendered !== null) {
-      logger.info({ streamId, bagId }, "context-bag orientation: already rendered, skipping retry")
-      return
-    }
 
     const persona = await PersonaRepository.findById(pool, personaId)
     if (!persona || persona.status !== "active") {
@@ -212,68 +219,135 @@ export function createContextBagOrientationWorker(
       return
     }
 
-    const resolved = await resolveBagForStream({ pool, ai, costContext: { workspaceId, origin: "system" } }, streamId)
-    if (!resolved) {
-      logger.warn({ streamId, bagId }, "context-bag orientation: bag resolution returned null, skipping")
-      return
-    }
+    // Synthetic trigger id keys the session against this bag. Retries share
+    // the same id so `findByTriggerMessage` returns the already-running/
+    // completed session and `withCompanionSession` handles all the skip/
+    // resume/fail transitions for us.
+    const triggerMessageId = `orient:${bagId}`
 
-    const intentConfig = getIntentConfig(resolved.intent)
-
-    // One generateText call — no tools, no multi-turn. Uses the persona's
-    // configured model so the orientation voice matches subsequent replies.
-    const parsed = ai.parseModel(persona.model)
-    const systemPrompt = resolved.stable
-    const userPrompt = resolved.delta
-      ? `${intentConfig.orientationUserPrompt}\n\n${resolved.delta}`
-      : intentConfig.orientationUserPrompt
-
-    const aiResult = await ai.generateText({
-      model: persona.model,
-      telemetry: {
-        functionId: "context-bag.orient",
-        metadata: {
-          intent: resolved.intent,
-          model_id: parsed.modelId,
-          model_provider: parsed.modelProvider,
-          model_name: parsed.modelName,
-        },
+    const result = await withCompanionSession(
+      {
+        pool,
+        triggerMessageId,
+        streamId,
+        personaId: persona.id,
+        personaName: persona.name,
+        workspaceId,
+        serverId,
+        initialSequence: 0n,
       },
-      context: { workspaceId, origin: "system" },
-      temperature: persona.temperature ?? 0.4,
-      maxTokens: persona.maxTokens ?? 800,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    })
+      async (session) => {
+        const trace = traceEmitter.forSession({
+          sessionId: session.id,
+          workspaceId,
+          streamId,
+          triggerMessageId,
+          personaName: persona.name,
+        })
 
-    const orientText = aiResult.value.trim()
-    if (!orientText) {
-      logger.warn({ streamId, bagId }, "context-bag orientation: empty AI response, skipping post")
-      return
+        // Step 1: context_received — resolve the bag + narrate what was loaded
+        // so the trace UI shows the model's input before the AI call starts.
+        // `skipIfAlreadyRendered` turns the bag load inside resolveBagForStream
+        // into the only full-bag lookup, dropping the prior double-load.
+        const contextStep = await trace.startStep({ stepType: AgentStepTypes.CONTEXT_RECEIVED })
+        const resolved = await resolveBagForStream(
+          { pool, ai, costContext: { workspaceId, origin: "system" } },
+          streamId,
+          { skipIfAlreadyRendered: true }
+        )
+        if (!resolved) {
+          await contextStep.complete({ content: "Context already rendered or bag missing — skipping orientation." })
+          return { messagesSent: 0, sentMessageIds: [], lastSeenSequence: 0n }
+        }
+        await contextStep.complete({
+          content: JSON.stringify({
+            intent: resolved.intent,
+            stableChars: resolved.stable.length,
+            deltaChars: resolved.delta.length,
+          }),
+        })
+
+        const intentConfig = getIntentConfig(resolved.intent)
+        const systemPrompt = resolved.stable
+        const userPrompt = resolved.delta
+          ? `${intentConfig.orientationUserPrompt}\n\n${resolved.delta}`
+          : intentConfig.orientationUserPrompt
+
+        // Step 2: thinking — the one AI call. Emits a live "thinking" card in
+        // the trace UI from start to finish so the user sees progress.
+        const parsed = ai.parseModel(persona.model)
+        const thinkingStep = await trace.startStep({ stepType: AgentStepTypes.THINKING })
+        const aiResult = await ai.generateText({
+          model: persona.model,
+          telemetry: {
+            functionId: "context-bag.orient",
+            metadata: {
+              intent: resolved.intent,
+              model_id: parsed.modelId,
+              model_provider: parsed.modelProvider,
+              model_name: parsed.modelName,
+            },
+          },
+          context: { workspaceId, origin: "system" },
+          temperature: persona.temperature ?? 0.4,
+          maxTokens: persona.maxTokens ?? 800,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+        })
+
+        const orientText = aiResult.value.trim()
+        await thinkingStep.complete({ content: orientText })
+
+        if (!orientText) {
+          logger.warn({ streamId, bagId }, "context-bag orientation: empty AI response, skipping post")
+          return { messagesSent: 0, sentMessageIds: [], lastSeenSequence: 0n }
+        }
+
+        // Step 3: message_sent — post Ariadne's reply. The `clientMessageId`
+        // is the crash-window belt-and-braces guard (see class-level comment).
+        const message = await createMessage({
+          workspaceId,
+          streamId,
+          authorId: persona.id,
+          authorType: AuthorTypes.PERSONA,
+          content: orientText,
+          sessionId: session.id,
+          clientMessageId: `orient:${bagId}`,
+        })
+        const sentStep = await trace.startStep({ stepType: AgentStepTypes.MESSAGE_SENT })
+        await sentStep.complete({ messageId: message.id })
+
+        // Persist the render snapshot so subsequent turns see this state as
+        // the baseline when computing the "since last turn" delta. Idempotent
+        // UPDATE, safe if a retry runs work twice.
+        await persistSnapshot(pool, bagId, resolved.nextSnapshot)
+
+        logger.info({ streamId, bagId, sessionId: session.id }, "context-bag orientation message posted")
+
+        return { messagesSent: 1, sentMessageIds: [message.id], lastSeenSequence: 0n }
+      }
+    )
+
+    // Fire-and-forget socket notifications; mirrors the persona-agent path.
+    if (result.sessionId) {
+      const trace = traceEmitter.forSession({
+        sessionId: result.sessionId,
+        workspaceId,
+        streamId,
+        triggerMessageId,
+        personaName: persona.name,
+      })
+      if (result.status === "completed") trace.notifyCompleted()
+      else if (result.status === "failed") trace.notifyFailed()
     }
 
-    // `clientMessageId` makes the message write idempotent across retries
-    // (INV-20: messages.insert uses ON CONFLICT DO NOTHING on the pair
-    // `(stream_id, client_message_id)`). Combined with the `lastRendered`
-    // guard above this gives us end-to-end safety: if a crash lands between
-    // the message write and the snapshot write, the retry's guard fires only
-    // once snapshot succeeds, and the message insert is a no-op either way.
-    await createMessage({
-      workspaceId,
-      streamId,
-      authorId: persona.id,
-      authorType: AuthorTypes.PERSONA,
-      content: orientText,
-      clientMessageId: `orient:${bagId}`,
-    })
-
-    // Persist the render snapshot so subsequent turns see this state as the
-    // baseline when computing the "since last turn" delta. Idempotent UPDATE,
-    // safe to re-run after a retry.
-    await persistSnapshot(pool, bagId, resolved.nextSnapshot)
-
-    logger.info({ streamId, bagId }, "context-bag orientation message posted")
+    if (result.status === "failed") {
+      // Surface to the queue so the retry machinery sees it. The session row
+      // is already FAILED so the next retry of the same job can transition it
+      // back to RUNNING via withCompanionSession.
+      throw new Error(`context-bag orientation session failed for bag ${bagId}`)
+    }
   }
 }

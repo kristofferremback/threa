@@ -29,22 +29,43 @@ export interface ResolveBagDeps {
   costContext: CostContext
 }
 
+export interface ResolveBagOptions {
+  /**
+   * When true, return null if the bag's `lastRendered` is already non-null
+   * (i.e. orientation already ran). Used by the orientation worker to avoid
+   * a second resolver + summarization pass on retry; the caller then
+   * short-circuits without touching the AI.
+   */
+  skipIfAlreadyRendered?: boolean
+}
+
 /**
  * Resolve the bag attached to a stream (if any), producing a cache-friendly
  * prompt region pair (stable + delta) plus the `nextSnapshot` the caller
- * should persist in the same transaction as the agent's reply.
+ * should persist after the AI turn.
  *
  * INV-41: we acquire and release the DB connection before kicking off the
  * (potentially slow) summarization AI call. If summarization is needed, we
  * write the resulting summary back through a fresh short-lived connection.
  */
-export async function resolveBagForStream(deps: ResolveBagDeps, streamId: string): Promise<ResolvedBag | null> {
+export async function resolveBagForStream(
+  deps: ResolveBagDeps,
+  streamId: string,
+  options?: ResolveBagOptions
+): Promise<ResolvedBag | null> {
   const { pool, ai, costContext } = deps
 
   // Phase 1 (DB): load the bag, resolve its refs, compute diff + inputs.
   const phase1 = await withClient(pool, async (db) => {
     const bag = await ContextBagRepository.findByStream(db, streamId)
     if (!bag) return null
+
+    // Short-circuit for idempotent callers (orientation worker): if the bag
+    // has already been rendered once, don't waste a resolver pass or a
+    // summarization AI call — the caller will skip its downstream work.
+    if (options?.skipIfAlreadyRendered && bag.lastRendered !== null) {
+      return "already-rendered" as const
+    }
 
     const config = getIntentConfig(bag.intent)
     const resolveds: ResolvedRef[] = []
@@ -61,7 +82,7 @@ export async function resolveBagForStream(deps: ResolveBagDeps, streamId: string
     return { bag, config, resolveds }
   })
 
-  if (!phase1) return null
+  if (!phase1 || phase1 === "already-rendered") return null
 
   const { bag, config, resolveds } = phase1
 
@@ -154,8 +175,15 @@ async function loadOrCreateSummary(params: {
 }
 
 /**
- * Persist the snapshot from a successful render. Callers should invoke this
- * in the same transaction as the agent's reply write (INV-7).
+ * Persist the snapshot from a successful render.
+ *
+ * Written as an idempotent standalone UPDATE — the caller should treat it as
+ * the final step of an orientation / agent turn. Atomicity with the message
+ * insert is not attempted (INV-41 rules out holding a connection across the
+ * AI call); crash-window safety is provided by the agent-session machinery
+ * (retry sees a COMPLETED session and bails) plus the `clientMessageId`
+ * dedup on the message insert itself. See `context-bag-orientation-handler.ts`
+ * for the full chain.
  */
 export async function persistSnapshot(db: Querier, bagId: string, snapshot: LastRenderedSnapshot): Promise<void> {
   await ContextBagRepository.updateLastRendered(db, bagId, snapshot)

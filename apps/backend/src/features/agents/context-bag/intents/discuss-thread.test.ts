@@ -32,9 +32,16 @@ describe("DiscussThreadIntent config", () => {
     expect(DiscussThreadIntent.systemPreamble.toLowerCase()).toContain("authoritative")
   })
 
-  test("orientation prompt asks for citations and explicit neutral framing", () => {
-    expect(DiscussThreadIntent.orientationUserPrompt).toContain("citations")
+  test("system preamble forbids leaking internal ids to the user", () => {
+    // Regression for early behaviour where Ariadne copied `[msg_xyz]` into her
+    // user-facing output. The preamble must frame ids as internal-only.
+    expect(DiscussThreadIntent.systemPreamble.toLowerCase()).toContain("never include them")
+  })
+
+  test("orientation prompt asks for a neutral, conversational first turn and bans ids / headers", () => {
     expect(DiscussThreadIntent.orientationUserPrompt.toLowerCase()).toContain("neutral")
+    expect(DiscussThreadIntent.orientationUserPrompt.toLowerCase()).toContain("conversational")
+    expect(DiscussThreadIntent.orientationUserPrompt).toContain("Do NOT paste message ids")
   })
 })
 

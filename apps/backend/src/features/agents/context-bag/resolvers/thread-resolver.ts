@@ -59,7 +59,7 @@ export const ThreadResolver: Resolver<ThreadRef> = {
 
     // Apply optional anchoring. `fromMessageId`/`toMessageId` bound the slice
     // by sequence so the bag can pin down a specific range of the thread.
-    const anchored = applyAnchors(messages, ref)
+    const anchored = await applyAnchors(db, messages, ref)
 
     const authorIds = new Set(anchored.map((m) => m.authorId))
     const authorNames = await resolveAuthorNames(db, stream.workspaceId, authorIds)
@@ -93,7 +93,11 @@ export const ThreadResolver: Resolver<ThreadRef> = {
   },
 }
 
-function applyAnchors<T extends { id: string; sequence: bigint }>(messages: T[], ref: ThreadRef): T[] {
+async function applyAnchors<T extends { id: string; sequence: bigint; streamId?: string }>(
+  db: Querier,
+  messages: T[],
+  ref: ThreadRef
+): Promise<T[]> {
   if (!ref.fromMessageId && !ref.toMessageId) return messages
 
   const fromIdx = ref.fromMessageId ? messages.findIndex((m) => m.id === ref.fromMessageId) : 0
@@ -102,22 +106,39 @@ function applyAnchors<T extends { id: string; sequence: bigint }>(messages: T[],
   // Fail loudly when an anchor can't be located in the fetched window — the
   // caller asked for a narrowed slice and we'd rather surface the mismatch
   // than silently widen to the full (already possibly truncated) window.
-  // This usually means the anchor predates the `MAX_FETCH` tail.
+  // Distinguish two cases so the frontend can either surface a crisp error
+  // (unknown anchor) or propose a workaround (widen the fetch window):
+  //   - CONTEXT_ANCHOR_NOT_FOUND — the id doesn't exist in this stream at all
+  //   - CONTEXT_ANCHOR_OUT_OF_WINDOW — the id exists but predates MAX_FETCH
   if (ref.fromMessageId && fromIdx < 0) {
-    throw new HttpError("fromMessageId anchor not found in the fetched window", {
-      status: 422,
-      code: "CONTEXT_ANCHOR_NOT_FOUND",
-    })
+    await assertAnchorExists(db, ref.streamId, ref.fromMessageId, "fromMessageId")
   }
   if (ref.toMessageId && toIdx < 0) {
-    throw new HttpError("toMessageId anchor not found in the fetched window", {
-      status: 422,
-      code: "CONTEXT_ANCHOR_NOT_FOUND",
-    })
+    await assertAnchorExists(db, ref.streamId, ref.toMessageId, "toMessageId")
   }
 
   const [lo, hi] = fromIdx <= toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx]
   return messages.slice(lo, hi + 1)
+}
+
+async function assertAnchorExists(
+  db: Querier,
+  streamId: string,
+  anchorId: string,
+  label: "fromMessageId" | "toMessageId"
+): Promise<never> {
+  const anchor = await MessageRepository.findById(db, anchorId)
+  const existsInStream = anchor !== null && anchor.streamId === streamId
+  if (!existsInStream) {
+    throw new HttpError(`${label} anchor not found in this stream`, {
+      status: 422,
+      code: "CONTEXT_ANCHOR_NOT_FOUND",
+    })
+  }
+  throw new HttpError(`${label} anchor exists but predates the fetched window (MAX_FETCH=${MAX_FETCH})`, {
+    status: 422,
+    code: "CONTEXT_ANCHOR_OUT_OF_WINDOW",
+  })
 }
 
 async function resolveAuthorNames(

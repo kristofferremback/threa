@@ -149,17 +149,56 @@ describe("ThreadResolver.fetch", () => {
     expect(a.fingerprint).toBe(b.fingerprint)
   })
 
-  it("throws CONTEXT_ANCHOR_NOT_FOUND when fromMessageId is absent from the fetched window", async () => {
+  it("throws CONTEXT_ANCHOR_NOT_FOUND when the anchor id doesn't exist in the stream at all", async () => {
     spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
     spyOn(UserRepository, "findByIds").mockResolvedValue([])
     spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
     spyOn(MessageRepository, "list").mockResolvedValue([makeMessage({ id: "msg_recent" })])
+    // Anchor lookup returns null → unknown id.
+    spyOn(MessageRepository, "findById").mockResolvedValue(null)
 
     await expect(
       ThreadResolver.fetch({} as any, {
         kind: ContextRefKinds.THREAD,
         streamId: "stream_source",
         fromMessageId: "msg_gone",
+      })
+    ).rejects.toMatchObject({ code: "CONTEXT_ANCHOR_NOT_FOUND" })
+  })
+
+  it("throws CONTEXT_ANCHOR_OUT_OF_WINDOW when the anchor exists but predates the fetch window", async () => {
+    // The anchor is a real message in the same stream — it just isn't in the
+    // most-recent MAX_FETCH slice. Caller should get a different code so the
+    // frontend can render an actionable error (e.g. "widen context").
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([])
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "list").mockResolvedValue([makeMessage({ id: "msg_recent" })])
+    spyOn(MessageRepository, "findById").mockResolvedValue(makeMessage({ id: "msg_old", streamId: "stream_source" }))
+
+    await expect(
+      ThreadResolver.fetch({} as any, {
+        kind: ContextRefKinds.THREAD,
+        streamId: "stream_source",
+        fromMessageId: "msg_old",
+      })
+    ).rejects.toMatchObject({ code: "CONTEXT_ANCHOR_OUT_OF_WINDOW" })
+  })
+
+  it("throws CONTEXT_ANCHOR_NOT_FOUND when the anchor exists but is in a different stream", async () => {
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([])
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "list").mockResolvedValue([makeMessage({ id: "msg_recent" })])
+    spyOn(MessageRepository, "findById").mockResolvedValue(
+      makeMessage({ id: "msg_elsewhere", streamId: "stream_other" })
+    )
+
+    await expect(
+      ThreadResolver.fetch({} as any, {
+        kind: ContextRefKinds.THREAD,
+        streamId: "stream_source",
+        fromMessageId: "msg_elsewhere",
       })
     ).rejects.toMatchObject({ code: "CONTEXT_ANCHOR_NOT_FOUND" })
   })

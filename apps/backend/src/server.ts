@@ -512,7 +512,13 @@ export async function startServer(): Promise<ServerInstance> {
   // Context-bag orientation worker — runs Ariadne's kickoff turn on
   // scratchpads created with a context bag. Same tier as persona agent since
   // the user is sitting on the new scratchpad waiting for her first message.
-  const contextBagOrientationWorker = createContextBagOrientationWorker({ pool, ai, createMessage })
+  const contextBagOrientationWorker = createContextBagOrientationWorker({
+    pool,
+    ai,
+    createMessage,
+    traceEmitter,
+    serverId,
+  })
   jobQueue.registerHandler(JobQueues.CONTEXT_BAG_ORIENT, contextBagOrientationWorker, {
     tier: QueueTiers.INTERACTIVE,
     fairness: QueueFairness.NONE,
