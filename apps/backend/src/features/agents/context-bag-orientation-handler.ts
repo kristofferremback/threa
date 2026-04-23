@@ -6,11 +6,13 @@ import { JobQueues, type JobHandler } from "../../lib/queue"
 import type { AI } from "../../lib/ai/ai"
 import { AgentStepTypes, AuthorTypes, CompanionModes, StreamTypes, type AuthorType } from "@threa/types"
 import { logger } from "../../lib/logger"
-import { StreamRepository } from "../streams"
+import { StreamRepository, StreamEventRepository } from "../streams"
+import { MessageRepository } from "../messaging"
 import { PersonaRepository } from "./persona-repository"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
 import { ContextBagRepository, persistSnapshot, resolveBagForStream, getIntentConfig } from "./context-bag"
 import { withCompanionSession } from "./companion"
+import { checkForUnseenMessages } from "./persona-agent-worker"
 import type { TraceEmitter } from "./trace-emitter"
 
 export interface ContextBagOrientationHandlerConfig {
@@ -157,6 +159,13 @@ export interface ContextBagOrientationWorkerDeps {
   traceEmitter: TraceEmitter
   /** Server id persisted on the session row for heartbeat / orphan recovery. */
   serverId: string
+  /**
+   * Needed at the tail of the worker so any user message that landed during
+   * orientation (and was suppressed by `CompanionHandler` because the session
+   * slot was held) gets a catch-up `PERSONA_AGENT` job dispatched. Without
+   * this the user's first typed message is silently dropped.
+   */
+  jobQueue: QueueManager
   createMessage: (params: {
     workspaceId: string
     streamId: string
@@ -201,7 +210,7 @@ export interface ContextBagOrientationWorkerDeps {
 export function createContextBagOrientationWorker(
   deps: ContextBagOrientationWorkerDeps
 ): JobHandler<ContextBagOrientJobData> {
-  const { pool, ai, createMessage, traceEmitter, serverId } = deps
+  const { pool, ai, createMessage, traceEmitter, serverId, jobQueue } = deps
 
   return async (job) => {
     const { workspaceId, streamId, bagId, personaId } = job.data
@@ -225,6 +234,12 @@ export function createContextBagOrientationWorker(
     // resume/fail transitions for us.
     const triggerMessageId = `orient:${bagId}`
 
+    // Capture the stream's current sequence *before* the session takes the
+    // running-slot lock. We pass this to the session + return it as the final
+    // `lastSeenSequence` so `checkForUnseenMessages` below only dispatches
+    // follow-ups for user messages that land *after* this point.
+    const preOrientationSequence = (await StreamEventRepository.getLatestSequence(pool, streamId)) ?? 0n
+
     const result = await withCompanionSession(
       {
         pool,
@@ -234,7 +249,7 @@ export function createContextBagOrientationWorker(
         personaName: persona.name,
         workspaceId,
         serverId,
-        initialSequence: 0n,
+        initialSequence: preOrientationSequence,
       },
       async (session) => {
         const trace = traceEmitter.forSession({
@@ -245,10 +260,11 @@ export function createContextBagOrientationWorker(
           personaName: persona.name,
         })
 
-        // Step 1: context_received — resolve the bag + narrate what was loaded
-        // so the trace UI shows the model's input before the AI call starts.
-        // `skipIfAlreadyRendered` turns the bag load inside resolveBagForStream
-        // into the only full-bag lookup, dropping the prior double-load.
+        // Step 1: context_received — show what the model was loaded with so
+        // the trace dialog populates before the AI call runs. Content shape
+        // matches persona-agent's equivalent step (`{ messages: [...] }`)
+        // so the frontend renderer's `"messages" in structured` branch picks
+        // it up; otherwise it falls through to the generic placeholder.
         const contextStep = await trace.startStep({ stepType: AgentStepTypes.CONTEXT_RECEIVED })
         const resolved = await resolveBagForStream(
           { pool, ai, costContext: { workspaceId, origin: "system" } },
@@ -256,14 +272,40 @@ export function createContextBagOrientationWorker(
           { skipIfAlreadyRendered: true }
         )
         if (!resolved) {
-          await contextStep.complete({ content: "Context already rendered or bag missing — skipping orientation." })
-          return { messagesSent: 0, sentMessageIds: [], lastSeenSequence: 0n }
+          // Crash-window recovery: `persistSnapshot` succeeded on a prior run
+          // but the session-completion txn failed. The message was posted then
+          // and ON CONFLICT dedup preserves it. Look it up via the deterministic
+          // `clientMessageId` so the replayed session row still records the
+          // real message id rather than `sent_message_ids = []`.
+          await contextStep.complete({
+            content: JSON.stringify({
+              messages: [],
+              note: "Orientation already rendered — replaying session completion only.",
+            }),
+          })
+          const existing = await MessageRepository.findByClientMessageId(pool, streamId, `orient:${bagId}`)
+          return {
+            messagesSent: existing ? 1 : 0,
+            sentMessageIds: existing ? [existing.id] : [],
+            lastSeenSequence: preOrientationSequence,
+          }
         }
+
+        // Cap the preview at the most recent N items so big threads don't
+        // bloat the trace row. Matches the persona-agent's slicing behavior.
+        const TRACE_PREVIEW_MAX = 15
+        const previewItems = resolved.items.slice(-TRACE_PREVIEW_MAX)
         await contextStep.complete({
           content: JSON.stringify({
             intent: resolved.intent,
-            stableChars: resolved.stable.length,
-            deltaChars: resolved.delta.length,
+            messages: previewItems.map((m) => ({
+              messageId: m.messageId,
+              authorName: m.authorName,
+              createdAt: m.createdAt,
+              content: m.contentMarkdown.slice(0, 300),
+            })),
+            totalMessageCount: resolved.items.length,
+            truncated: resolved.items.length > previewItems.length,
           }),
         })
 
@@ -302,7 +344,7 @@ export function createContextBagOrientationWorker(
 
         if (!orientText) {
           logger.warn({ streamId, bagId }, "context-bag orientation: empty AI response, skipping post")
-          return { messagesSent: 0, sentMessageIds: [], lastSeenSequence: 0n }
+          return { messagesSent: 0, sentMessageIds: [], lastSeenSequence: preOrientationSequence }
         }
 
         // Step 3: message_sent — post Ariadne's reply. The `clientMessageId`
@@ -326,7 +368,7 @@ export function createContextBagOrientationWorker(
 
         logger.info({ streamId, bagId, sessionId: session.id }, "context-bag orientation message posted")
 
-        return { messagesSent: 1, sentMessageIds: [message.id], lastSeenSequence: 0n }
+        return { messagesSent: 1, sentMessageIds: [message.id], lastSeenSequence: preOrientationSequence }
       }
     )
 
@@ -348,6 +390,24 @@ export function createContextBagOrientationWorker(
       // is already FAILED so the next retry of the same job can transition it
       // back to RUNNING via withCompanionSession.
       throw new Error(`context-bag orientation session failed for bag ${bagId}`)
+    }
+
+    // Catch-up dispatch. `CompanionHandler` suppresses PERSONA_AGENT dispatches
+    // for any user message that arrives while our session holds the
+    // `(stream_id) WHERE status='running'` partial unique slot. Without this
+    // call the user's first typed message during orientation would be
+    // silently dropped. Uses the same helper the persona-agent uses on its
+    // own completion path.
+    if (result.status === "completed" && result.lastSeenSequence !== undefined) {
+      await checkForUnseenMessages({
+        pool,
+        jobQueue,
+        workspaceId,
+        streamId,
+        personaId: persona.id,
+        lastSeenSequence: result.lastSeenSequence,
+        previousJobId: job.id,
+      })
     }
   }
 }

@@ -84,7 +84,7 @@ export type {
 } from "./context-bag"
 
 // Workers
-export { createPersonaAgentWorker } from "./persona-agent-worker"
+export { createPersonaAgentWorker, checkForUnseenMessages } from "./persona-agent-worker"
 export type { PersonaAgentLike, PersonaAgentWorkerDeps } from "./persona-agent-worker"
 export { createOrphanSessionCleanup } from "./orphan-session-cleanup"
 export type { OrphanSessionCleanup } from "./orphan-session-cleanup"

@@ -518,6 +518,7 @@ export async function startServer(): Promise<ServerInstance> {
     createMessage,
     traceEmitter,
     serverId,
+    jobQueue,
   })
   jobQueue.registerHandler(JobQueues.CONTEXT_BAG_ORIENT, contextBagOrientationWorker, {
     tier: QueueTiers.INTERACTIVE,

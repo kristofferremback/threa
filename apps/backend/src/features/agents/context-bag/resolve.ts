@@ -19,7 +19,19 @@ export interface ResolvedBag {
   stable: string
   /** Rendered "since last turn" region. Empty string when there's no drift. */
   delta: string
-  /** Snapshot the caller must persist in the SAME transaction as the agent reply (INV-7). */
+  /**
+   * Renderable items from every resolved ref, concatenated in ref order. Used
+   * by callers that want to surface the raw messages behind the bag (e.g. the
+   * agent-session trace `context_received` step) regardless of whether the
+   * stable region inlined them or collapsed them into a summary.
+   */
+  items: RenderableMessage[]
+  /**
+   * Snapshot the caller should persist after the agent turn completes. This
+   * is NOT co-committed with the message insert — see `persistSnapshot` for
+   * the crash-window safety model (session COMPLETED guard + `clientMessageId`
+   * dedup + idempotent UPDATE).
+   */
   nextSnapshot: LastRenderedSnapshot
 }
 
@@ -90,6 +102,7 @@ export async function resolveBagForStream(
   // the shared cache keyed by (workspace, refKind, refKey, fingerprint).
   const stableParts: string[] = []
   const deltaParts: string[] = []
+  const allItems: RenderableMessage[] = []
   const nextItems: SummaryInput[] = []
   let nextTail: string | null = null
 
@@ -126,6 +139,7 @@ export async function resolveBagForStream(
     const delta = renderDelta({ diff, currentByMessageId })
     if (delta) deltaParts.push(delta)
 
+    allItems.push(...resolved.items)
     nextItems.push(...resolved.inputs)
     if (resolved.tailMessageId) nextTail = resolved.tailMessageId
   }
@@ -135,6 +149,7 @@ export async function resolveBagForStream(
     intent: bag.intent,
     stable: stableParts.join("\n\n"),
     delta: deltaParts.join("\n\n"),
+    items: allItems,
     nextSnapshot: buildSnapshot(nextItems, nextTail),
   }
 }
