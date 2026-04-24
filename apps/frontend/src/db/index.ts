@@ -18,6 +18,7 @@ export type {
   DraftScratchpad,
   DraftMessage,
   DraftAttachment,
+  StashedDraft,
   CachedSavedMessage,
 } from "./database"
 // Re-export EventType from the shared types package

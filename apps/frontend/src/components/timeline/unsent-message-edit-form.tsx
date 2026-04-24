@@ -10,8 +10,8 @@ import { usePendingMessages } from "@/contexts"
 import { serializeToMarkdown, parseMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 import type { Editor } from "@tiptap/react"
+import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 
-const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 const MOD_KEY_NAME = navigator.platform?.toLowerCase().includes("mac") ? "Command" : "Control"
 
 interface UnsentMessageEditFormProps {

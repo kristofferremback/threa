@@ -17,6 +17,7 @@ import {
   useThreadAncestors,
   useQueueDraftMessage,
   useComposerHeightPublish,
+  useStashComposer,
 } from "@/hooks"
 import { useCoordinatedLoading, usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
 import { useUser } from "@/auth"
@@ -33,12 +34,13 @@ import {
 } from "@/components/timeline"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
-import { FloatingComposerShell, MessageComposer } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
 import { SidebarToggle } from "@/components/layout"
+import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
 import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
-import { StreamTypes, type JSONContent, type StreamType } from "@threa/types"
+import { StreamTypes, type StreamType } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 
@@ -143,6 +145,35 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     scopeId: draftInfo?.parentMessageId ?? "",
   })
 
+  // Stashed drafts for this thread. `draftKey` is "" until the panel resolves
+  // a draft, so we pass `undefined` as the scope in that case — the hook
+  // returns an empty list and silently no-ops.
+  const stashScope = draftKey || undefined
+  const stash = useStashComposer(composer, workspaceId, stashScope)
+
+  const stashedDraftsTrigger = stashScope ? (
+    <StashedDraftsPicker
+      drafts={stash.drafts}
+      canStashCurrent={composer.canSend}
+      onStashCurrent={stash.handleStashDraft}
+      onRestore={stash.handleRestoreStashed}
+      onDelete={stash.handleDeleteStashed}
+      controlsDisabled={composer.isSending}
+    />
+  ) : undefined
+
+  const stashedDraftsTriggerFab = stashScope ? (
+    <StashedDraftsPicker
+      drafts={stash.drafts}
+      canStashCurrent={composer.canSend}
+      onStashCurrent={stash.handleStashDraft}
+      onRestore={stash.handleRestoreStashed}
+      onDelete={stash.handleDeleteStashed}
+      controlsDisabled={composer.isSending}
+      size="fab"
+    />
+  ) : undefined
+
   // Draft thread expand state
   const [draftExpanded, setDraftExpanded] = useState(false)
   const draftExpandedRef = useRef<HTMLDivElement>(null)
@@ -235,13 +266,11 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     const attachments = extractUploadedAttachments(contentJson)
     const attachmentIds = attachments.map((a) => a.id)
 
-    // Capture content before clearing so we can restore on failure
-    const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
     setDraftExpanded(false)
 
     try {
       // Clear input optimistically inside try so we can restore on failure
-      composer.setContent(emptyDoc)
+      composer.setContent(EMPTY_DOC)
       composer.clearDraft()
       composer.clearAttachments()
 
@@ -364,6 +393,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                     onCollapse={handleDraftCollapse}
                     autoFocus
                     streamContext={draftStreamContext}
+                    onStashDraft={stash.handleStashDraft}
+                    stashedDraftsTrigger={stashedDraftsTrigger}
+                    stashedDraftsTriggerFab={stashedDraftsTriggerFab}
                   />
                 </div>,
                 draftPortalTargetRef.current
@@ -425,6 +457,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   scopeId={panelId}
                   onExpandClick={handleDraftExpand}
                   streamContext={draftStreamContext}
+                  onStashDraft={stash.handleStashDraft}
+                  stashedDraftsTrigger={stashedDraftsTrigger}
+                  stashedDraftsTriggerFab={stashedDraftsTriggerFab}
                 />
               )}
             </FloatingComposerShell>

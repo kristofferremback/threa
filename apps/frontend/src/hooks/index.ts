@@ -44,6 +44,16 @@ export {
 
 export { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
 
+export {
+  useStashedDrafts,
+  generateStashId,
+  type UseStashedDraftsResult,
+  type StashDraftInput,
+  type StashedDraft,
+} from "./use-stashed-drafts"
+
+export { useStashComposer, type UseStashComposerResult } from "./use-stash-composer"
+
 export { useStreamSocket } from "./use-stream-socket"
 
 export { useMessageQueue } from "./use-message-queue"

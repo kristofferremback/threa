@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, type ChangeEvent, type RefObj
 import { useDraftMessage } from "./use-draft-message"
 import { useAttachments, type PendingAttachment, type UploadResult } from "./use-attachments"
 import type { JSONContent } from "@threa/types"
+import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 
 export interface UseDraftComposerOptions {
   workspaceId: string
@@ -11,9 +12,6 @@ export interface UseDraftComposerOptions {
   /** Initial content (optional, for pre-filled content as JSON) */
   initialContent?: JSONContent
 }
-
-/** Default empty ProseMirror document */
-const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
 /** Check if a document is empty (no actual text content) */
 function hasDocContent(doc: JSONContent | undefined): boolean {
@@ -54,6 +52,15 @@ export interface DraftComposerState {
   // Clear helpers
   clearDraft: () => Promise<void>
   clearAttachments: () => void
+
+  /**
+   * Hydrate attachments from a snapshot (e.g. when restoring a stashed draft).
+   * Pushes them into the pending-attachments list; the persistence effect
+   * then writes them into the active DraftMessage on next flush.
+   */
+  restoreAttachments: (
+    attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>
+  ) => void
 
   // Loading
   isLoaded: boolean
@@ -241,6 +248,7 @@ export function useDraftComposer({
     // Clear helpers
     clearDraft,
     clearAttachments,
+    restoreAttachments,
 
     // Loading
     isLoaded: isDraftLoaded,
