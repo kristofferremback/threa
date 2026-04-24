@@ -24,9 +24,9 @@ export interface ExtractedCommand {
 
 /**
  * Walk the content tree and return the first `slashCommand` node's attrs as
- * `{ name, clientActionId }`, or null when no command node is present. Single
- * traversal — callers that previously did `hasCommandNode(c) && extractCommandName(c)`
- * should use this and null-check the result.
+ * `{ name, clientActionId }`, or null when no command node is present.
+ * Single traversal — a null result is the complete "no command here"
+ * signal, so there's no need for a separate presence check.
  */
 export function extractCommandNode(content: JSONContent): ExtractedCommand | null {
   if (content.type === "slashCommand") {
