@@ -205,9 +205,9 @@ describe("Public API v1 — CRUD Endpoints", () => {
       expect(pub!.slug).toBe(ctx.publicChannelSlug)
     })
 
-    test("should return 404 without streams:read scope", async () => {
+    test("should return 403 without streams:read scope", async () => {
       const res = await apiGet(`/api/v1/workspaces/${ctx.workspaceId}/streams`, ctx.noScopeKey)
-      expect(res.status).toBe(404)
+      expect(res.status).toBe(403)
     })
   })
 
@@ -261,12 +261,12 @@ describe("Public API v1 — CRUD Endpoints", () => {
       expect(res.status).toBe(403)
     })
 
-    test("should return 404 without messages:read scope", async () => {
+    test("should return 403 without messages:read scope", async () => {
       const res = await apiGet(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
         ctx.noScopeKey
       )
-      expect(res.status).toBe(404)
+      expect(res.status).toBe(403)
     })
   })
 
@@ -329,13 +329,13 @@ describe("Public API v1 — CRUD Endpoints", () => {
       expect(res.status).toBe(403)
     })
 
-    test("should return 404 without messages:write scope", async () => {
+    test("should return 403 without messages:write scope", async () => {
       const res = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.publicChannelId}/messages`,
         { content: "test" },
         ctx.noScopeKey
       )
-      expect(res.status).toBe(404)
+      expect(res.status).toBe(403)
     })
 
     test("should return 400 for empty content", async () => {
@@ -484,13 +484,13 @@ describe("Public API v1 — CRUD Endpoints", () => {
       expect(findRes.status).toBe(400)
     })
 
-    test("should return 404 without messages:read scope", async () => {
+    test("should return 403 without messages:read scope", async () => {
       const findRes = await apiPost(
         `/api/v1/workspaces/${ctx.workspaceId}/messages/find-by-metadata`,
         { metadata: { "github.pr.id": runTag } },
         ctx.messagesWriteKey
       )
-      expect(findRes.status).toBe(404)
+      expect(findRes.status).toBe(403)
     })
   })
 
@@ -663,9 +663,9 @@ describe("Public API v1 — CRUD Endpoints", () => {
       expect(body.data.length).toBeGreaterThanOrEqual(1)
     })
 
-    test("should return 404 without users:read scope", async () => {
+    test("should return 403 without users:read scope", async () => {
       const res = await apiGet(`/api/v1/workspaces/${ctx.workspaceId}/users`, ctx.noScopeKey)
-      expect(res.status).toBe(404)
+      expect(res.status).toBe(403)
     })
   })
 

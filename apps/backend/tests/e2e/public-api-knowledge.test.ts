@@ -268,7 +268,7 @@ describe("Public API v1 — Knowledge Retrieval", () => {
 
   test("requires memos:read scope", async () => {
     const res = await apiPost(`/api/v1/workspaces/${ctx.workspaceId}/memos/search`, { query: "public" }, ctx.noScopeKey)
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(403)
   })
 
   test("searches accessible attachments and hides private attachment results", async () => {
@@ -344,6 +344,6 @@ describe("Public API v1 — Knowledge Retrieval", () => {
       { query: "public" },
       ctx.noScopeKey
     )
-    expect(forbiddenRes.status).toBe(404)
+    expect(forbiddenRes.status).toBe(403)
   })
 })
