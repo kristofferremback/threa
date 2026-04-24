@@ -47,12 +47,13 @@ function renderBody(
   _workspaceId: string | undefined
 ) {
   if (!hydrated || hydrated.state === "pending") {
-    // Pre-hydration: show the author name cached on the node so the row
-    // never renders completely blank on first paint.
+    // Pre-hydration (composer preview, or brief window before bootstrap
+    // refetch lands after message:created). Show the author name cached on
+    // the node so the row never renders blank or flashes a spinner.
     return (
       <>
-        <AuthorLabel name={attrs.authorName || "…"} />
-        <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground/60">Loading shared message…</p>
+        <AuthorLabel name={attrs.authorName || "—"} />
+        <p className="mt-0.5 italic text-muted-foreground/70">Shared message</p>
       </>
     )
   }

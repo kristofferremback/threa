@@ -360,6 +360,18 @@ export async function setParentThreadId(
  * lastMessagePreview on message:created — this is a transitional coupling
  * that will be removed in Phase 3 when workspace data moves to IDB.
  */
+function contentHasSharedMessage(contentJson: unknown): boolean {
+  if (!contentJson || typeof contentJson !== "object") return false
+  const node = contentJson as { type?: unknown; content?: unknown[] }
+  if (node.type === "sharedMessage") return true
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) {
+      if (contentHasSharedMessage(child)) return true
+    }
+  }
+  return false
+}
+
 export function registerStreamSocketHandlers(
   socket: Socket,
   workspaceId: string,
@@ -431,6 +443,15 @@ export function registerStreamSocketHandlers(
         }),
       }
     })
+
+    // If the new event includes a sharedMessage pointer, the cached bootstrap's
+    // sharedMessages hydration map won't contain an entry for the source yet —
+    // without a refetch the pointer renders with no content. Invalidate so the
+    // next response populates the hydration map.
+    if (contentHasSharedMessage(newPayload.contentJson)) {
+      await queryClient.invalidateQueries({ queryKey: ["streams", "bootstrap", workspaceId, streamId] })
+      await queryClient.invalidateQueries({ queryKey: ["streams", "events", workspaceId, streamId] })
+    }
   }
 
   const handleMessageEdited = async (payload: MessageEventPayload) => {
@@ -448,6 +469,11 @@ export function registerStreamSocketHandlers(
       contentMarkdown: editPayload.contentMarkdown,
       editedAt: editEvent.createdAt,
     }))
+
+    if (contentHasSharedMessage(editPayload.contentJson)) {
+      await queryClient.invalidateQueries({ queryKey: ["streams", "bootstrap", workspaceId, streamId] })
+      await queryClient.invalidateQueries({ queryKey: ["streams", "events", workspaceId, streamId] })
+    }
   }
 
   const handleMessageDeleted = async (payload: MessageDeletedPayload) => {

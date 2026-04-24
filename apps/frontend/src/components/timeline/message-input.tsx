@@ -319,7 +319,14 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       type: "doc",
       content: [...trimmedBlocks, shareNode, { type: "paragraph" }],
     })
-    composerFocusRef.current?.focusAfterQuoteReply()
+    // Defer focus: composer.setContent goes through React state, so the TipTap
+    // doc doesn't receive the new content until the next commit. Focusing in
+    // the same tick targets the stale doc and TipTap then resets the cursor
+    // to position 0 when the new content lands. rAF runs after commit.
+    const frame = requestAnimationFrame(() => {
+      composerFocusRef.current?.focusAfterQuoteReply()
+    })
+    return () => cancelAnimationFrame(frame)
   }, [streamId])
 
   const [error, setError] = useState<string | null>(null)
