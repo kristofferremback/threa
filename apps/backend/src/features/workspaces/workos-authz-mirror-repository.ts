@@ -161,7 +161,7 @@ export const WorkosAuthzMirrorRepository = {
 
     if (roleSlugs.length > 0) {
       const roleRows = roleSlugs.map((roleSlug, position) => ({
-        roleSlug,
+        role_slug: roleSlug,
         position,
       }))
       await db.query(sql`
@@ -285,6 +285,11 @@ export const WorkosAuthzMirrorRepository = {
     }
 
     if (snapshot.memberships.length > 0) {
+      const membershipRows = snapshot.memberships.map((membership) => ({
+        organization_membership_id: membership.organizationMembershipId,
+        workos_user_id: membership.workosUserId,
+        role_slugs: membership.roleSlugs,
+      }))
       await db.query(sql`
         INSERT INTO workos_workspace_memberships (
           workspace_id,
@@ -295,7 +300,7 @@ export const WorkosAuthzMirrorRepository = {
           ${snapshot.workspaceId},
           rows.organization_membership_id,
           rows.workos_user_id
-        FROM jsonb_to_recordset(${JSON.stringify(snapshot.memberships)}::jsonb) AS rows(
+        FROM jsonb_to_recordset(${JSON.stringify(membershipRows)}::jsonb) AS rows(
           organization_membership_id text,
           workos_user_id text,
           role_slugs text[]
@@ -304,8 +309,8 @@ export const WorkosAuthzMirrorRepository = {
 
       const membershipRoleRows = snapshot.memberships.flatMap((membership) =>
         membership.roleSlugs.map((roleSlug, position) => ({
-          organizationMembershipId: membership.organizationMembershipId,
-          roleSlug,
+          organization_membership_id: membership.organizationMembershipId,
+          role_slug: roleSlug,
           position,
         }))
       )
