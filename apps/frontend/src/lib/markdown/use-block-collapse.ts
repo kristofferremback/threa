@@ -4,6 +4,7 @@ import { db } from "@/db"
 import {
   composeBlockCollapseKey,
   hashMarkdownBlock,
+  useIsInsideCollapsibleBlock,
   useMarkdownBlockContext,
   type MarkdownBlockKind,
 } from "./markdown-block-context"
@@ -40,11 +41,12 @@ export function useBlockCollapse({
   defaultCollapsed,
 }: UseBlockCollapseOptions): BlockCollapseState {
   const messageContext = useMarkdownBlockContext()
+  const nested = useIsInsideCollapsibleBlock()
 
   const collapseKey = useMemo(() => {
-    if (!messageContext) return null
+    if (!messageContext || nested) return null
     return composeBlockCollapseKey(messageContext.messageId, kind, hashMarkdownBlock(content, hashNamespace))
-  }, [messageContext, kind, hashNamespace, content])
+  }, [messageContext, nested, kind, hashNamespace, content])
 
   const persistedOverride = useLiveQuery(async () => {
     if (!collapseKey) return undefined
@@ -52,7 +54,9 @@ export function useBlockCollapse({
     return row?.collapsed
   }, [collapseKey])
 
-  const collapsed = persistedOverride ?? defaultCollapsed
+  // Nested blocks render plain (always expanded, no toggle) so only the
+  // outermost foldable block folds.
+  const collapsed = nested ? false : (persistedOverride ?? defaultCollapsed)
 
   const toggle = useCallback(() => {
     if (!collapseKey || !messageContext) return

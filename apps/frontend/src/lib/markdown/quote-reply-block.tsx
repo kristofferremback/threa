@@ -9,6 +9,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { usePreferencesOptional } from "@/contexts/preferences-context"
 import { useBlockCollapse } from "./use-block-collapse"
+import { InsideCollapsibleBlockProvider } from "./markdown-block-context"
 import { extractBlockText, estimateBlockLines } from "./extract-block-text"
 
 interface QuoteReplyBlockProps {
@@ -61,49 +62,51 @@ export function QuoteReplyBlock({
   const collapseLabel = collapsed ? `Expand ${lineCount} line${lineCount === 1 ? "" : "s"}` : "Collapse quote reply"
 
   return (
-    <div className="my-2 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-sm">
-      <Quote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <QuoteAuthor
-            workspaceId={workspaceId}
-            authorName={authorName}
-            authorId={authorId}
-            actorType={actorType as AuthorType}
-          />
-          {canToggle && (
-            <button
-              type="button"
-              onClick={toggle}
-              aria-expanded={!collapsed}
-              aria-label={collapseLabel}
-              title={collapseLabel}
-              className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-primary/10 hover:text-foreground"
-            >
-              {collapsed ? (
-                <ChevronRight className="h-3 w-3" aria-hidden="true" />
-              ) : (
-                <ChevronDown className="h-3 w-3" aria-hidden="true" />
-              )}
-            </button>
-          )}
+    <InsideCollapsibleBlockProvider>
+      <div className="my-2 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-sm">
+        <Quote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <QuoteAuthor
+              workspaceId={workspaceId}
+              authorName={authorName}
+              authorId={authorId}
+              actorType={actorType as AuthorType}
+            />
+            {canToggle && (
+              <button
+                type="button"
+                onClick={toggle}
+                aria-expanded={!collapsed}
+                aria-label={collapseLabel}
+                title={collapseLabel}
+                className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+              >
+                {collapsed ? (
+                  <ChevronRight className="h-3 w-3" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" aria-hidden="true" />
+                )}
+              </button>
+            )}
+          </div>
+          <Link
+            to={url}
+            className="mt-0.5 block text-muted-foreground no-underline transition-colors hover:text-foreground"
+          >
+            {collapsed ? (
+              <div className="truncate text-xs italic text-muted-foreground/80">
+                {lineCount > 0
+                  ? `${lineCount} line${lineCount === 1 ? "" : "s"} — click chevron to expand`
+                  : "Quoted message"}
+              </div>
+            ) : (
+              <div className="[&_p]:mb-0">{children}</div>
+            )}
+          </Link>
         </div>
-        <Link
-          to={url}
-          className="mt-0.5 block text-muted-foreground no-underline transition-colors hover:text-foreground"
-        >
-          {collapsed ? (
-            <div className="truncate text-xs italic text-muted-foreground/80">
-              {lineCount > 0
-                ? `${lineCount} line${lineCount === 1 ? "" : "s"} — click chevron to expand`
-                : "Quoted message"}
-            </div>
-          ) : (
-            <div className="[&_p]:mb-0">{children}</div>
-          )}
-        </Link>
       </div>
-    </div>
+    </InsideCollapsibleBlockProvider>
   )
 }
 
