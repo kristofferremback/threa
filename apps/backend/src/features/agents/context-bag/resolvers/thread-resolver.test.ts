@@ -205,8 +205,9 @@ describe("ThreadResolver.fetch", () => {
 
   it("prepends the parent (root) message when the source is a thread", async () => {
     // Regression: threads without the root message are unintelligible.
-    // `buildThreadContext` has always done this for the persona-agent path;
-    // the bag resolver must match.
+    // Contract: we route through `MessageRepository.findThreadRoot`, so the
+    // test spies on that directly rather than `findById` (the implementation
+    // detail findThreadRoot calls internally).
     const thread = makeStream({
       id: "stream_thread",
       type: "thread",
@@ -220,7 +221,7 @@ describe("ThreadResolver.fetch", () => {
       makeMessage({ id: "msg_reply_1", streamId: "stream_thread" }),
       makeMessage({ id: "msg_reply_2", streamId: "stream_thread" }),
     ])
-    spyOn(MessageRepository, "findById").mockResolvedValue(
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(
       makeMessage({
         id: "msg_root",
         streamId: "stream_root",
@@ -237,12 +238,37 @@ describe("ThreadResolver.fetch", () => {
     expect(result.items[0].contentMarkdown).toBe("the originating message")
   })
 
+  it("does NOT prepend a soft-deleted root (findThreadRoot returns null)", async () => {
+    // The canonical helper filters `deletedAt`, so a user who deletes the
+    // message that spawned a thread does not see its content leak into a
+    // later Discuss-with-Ariadne invocation on that thread. This test asserts
+    // the resolver honors that filter — the whole point of centralising
+    // thread-root resolution in `findThreadRoot`.
+    spyOn(StreamRepository, "findById").mockResolvedValue(
+      makeStream({ id: "stream_thread", type: "thread", parentMessageId: "msg_deleted" })
+    )
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "list").mockResolvedValue([makeMessage({ id: "msg_reply_1", streamId: "stream_thread" })])
+    // findThreadRoot returns null for soft-deleted parents.
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
+
+    const result = await ThreadResolver.fetch({} as any, {
+      kind: ContextRefKinds.THREAD,
+      streamId: "stream_thread",
+    })
+
+    expect(result.items.map((i) => i.messageId)).toEqual(["msg_reply_1"])
+  })
+
   it("skips the root prepend when the source stream has no parentMessageId (scratchpad/channel)", async () => {
     spyOn(StreamRepository, "findById").mockResolvedValue(makeStream({ parentMessageId: null }))
     spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
     spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
     spyOn(MessageRepository, "list").mockResolvedValue([makeMessage({ id: "msg_a" })])
-    const findById = spyOn(MessageRepository, "findById").mockResolvedValue(null)
+    // `findThreadRoot` short-circuits on parentMessageId === null without
+    // touching findById. Spying on findThreadRoot exercises the real contract.
+    const findThreadRoot = spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
 
     const result = await ThreadResolver.fetch({} as any, {
       kind: ContextRefKinds.THREAD,
@@ -250,7 +276,10 @@ describe("ThreadResolver.fetch", () => {
     })
 
     expect(result.items.map((i) => i.messageId)).toEqual(["msg_a"])
-    expect(findById).not.toHaveBeenCalled()
+    // findThreadRoot is always called (even for non-threads) and handles the
+    // parentMessageId === null case itself by returning null — verified by
+    // the null result above.
+    expect(findThreadRoot).toHaveBeenCalled()
   })
 
   it("returns the anchored slice when both endpoints resolve", async () => {

@@ -352,16 +352,18 @@ async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathE
   while (current) {
     let anchorMessage: AnchorMessage | null = null
 
-    // If this is a thread spawned from a message, get that message
-    if (current.parentMessageId) {
-      const message = await MessageRepository.findById(db, current.parentMessageId)
-      if (message) {
-        const authorName = await resolveAuthorName(db, current.workspaceId, message.authorId, message.authorType)
-        anchorMessage = {
-          id: message.id,
-          content: message.contentMarkdown.slice(0, 200), // Truncate for context
-          authorName,
-        }
+    // If this is a thread spawned from a message, get that message. Use the
+    // canonical `findThreadRoot` helper so the same soft-delete filter that
+    // protects `conversationHistory` also scrubs `threadPath[*].anchorMessage`
+    // — otherwise a user-deleted root would be absent from the AI's
+    // conversation but still reach the prompt via the breadcrumb path.
+    const message = await MessageRepository.findThreadRoot(db, current)
+    if (message) {
+      const authorName = await resolveAuthorName(db, current.workspaceId, message.authorId, message.authorType)
+      anchorMessage = {
+        id: message.id,
+        content: message.contentMarkdown.slice(0, 200), // Truncate for context
+        authorName,
       }
     }
 
