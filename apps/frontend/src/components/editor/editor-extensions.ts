@@ -24,6 +24,7 @@ import { ChannelExtension, type ChannelOptions } from "./triggers/channel-extens
 import { CommandExtension, type CommandOptions } from "./triggers/command-extension"
 import { EmojiExtension, type EmojiExtensionOptions } from "./triggers/emoji-extension"
 import { AttachmentReferenceExtension } from "./attachment-reference-extension"
+import { ContextRefChipExtension } from "./context-ref-chip-extension"
 import { QuoteReplyExtension } from "./quote-reply-extension"
 
 // Create lowlight instance with common languages
@@ -97,6 +98,9 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
 
     // Inline attachments (images, files)
     AttachmentReferenceExtension,
+
+    // Inline context-ref chips (e.g. "Discuss with Ariadne" source-thread bag)
+    ContextRefChipExtension,
 
     // Quote reply blocks
     QuoteReplyExtension,
