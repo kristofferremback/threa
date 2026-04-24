@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express"
-import type { WorkspacePermissionScope } from "@threa/types"
+import type { WorkspacePermissionScope, WorkspaceRole } from "@threa/types"
 
 export type WorkspaceAuthzSource = "session" | "user_api_key" | "bot_api_key"
 
@@ -9,6 +9,7 @@ export interface WorkspaceAuthorizationContext {
   organizationMembershipId: string | null
   permissions: Set<WorkspacePermissionScope>
   assignedRoles: Array<{ slug: string; name: string }>
+  roles?: WorkspaceRole[]
   canEditRole: boolean
 }
 

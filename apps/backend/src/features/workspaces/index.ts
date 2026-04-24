@@ -1,5 +1,6 @@
 export { createWorkspaceHandlers, createWorkspaceSchema } from "./handlers"
 export { WorkspaceService } from "./service"
+export { assertRoleAssignableByActor } from "./service"
 export type { CreateWorkspaceParams } from "./service"
 export { WorkspaceRepository } from "./repository"
 export type { Workspace, InsertWorkspaceParams } from "./repository"

@@ -240,6 +240,8 @@ describe("WorkspaceService.updateUserRole", () => {
   const mockFindMirrorMembership = spyOn(WorkosAuthzMirrorRepository, "findMembershipAssignment")
   const mockListMirrorMembershipAssignments = spyOn(WorkosAuthzMirrorRepository, "listMembershipAssignments")
   const mockHasOtherRoleManager = spyOn(WorkosAuthzMirrorRepository, "hasOtherRoleManager")
+  const mockClaimRoleMutationLease = spyOn(WorkosAuthzMirrorRepository, "claimRoleMutationLease")
+  const mockReleaseRoleMutationLease = spyOn(WorkosAuthzMirrorRepository, "releaseRoleMutationLease")
   const mockUpsertMembershipRoles = spyOn(WorkosAuthzMirrorRepository, "upsertMembershipRoles")
   const mockSyncCompatibilityRoles = spyOn(WorkosAuthzMirrorRepository, "syncCompatibilityRoles")
   const mockInsertOutbox = spyOn(OutboxRepository, "insert")
@@ -252,6 +254,8 @@ describe("WorkspaceService.updateUserRole", () => {
     mockFindMirrorMembership.mockReset()
     mockListMirrorMembershipAssignments.mockReset()
     mockHasOtherRoleManager.mockReset()
+    mockClaimRoleMutationLease.mockReset()
+    mockReleaseRoleMutationLease.mockReset()
     mockUpsertMembershipRoles.mockReset()
     mockSyncCompatibilityRoles.mockReset()
     mockInsertOutbox.mockReset()
@@ -293,6 +297,8 @@ describe("WorkspaceService.updateUserRole", () => {
     } as never)
     mockListMirrorMembershipAssignments.mockResolvedValue([] as never)
     mockHasOtherRoleManager.mockResolvedValue(true as never)
+    mockClaimRoleMutationLease.mockResolvedValue(true as never)
+    mockReleaseRoleMutationLease.mockResolvedValue(undefined as never)
     mockUpsertMembershipRoles.mockResolvedValue(undefined as never)
     mockSyncCompatibilityRoles.mockResolvedValue(undefined as never)
     mockWithTransaction.mockImplementation((async (...args: Parameters<typeof db.withTransaction>) => {
@@ -415,7 +421,9 @@ describe("WorkspaceService.updateUserRole", () => {
     } as never)
 
     const service = createWorkspaceService(false, workosOrgService)
-    const user = await service.updateUserRole("ws_1", "user_1", "support-admin")
+    const user = await service.updateUserRole("ws_1", "user_1", "support-admin", {
+      actorPermissions: ["messages:read", "members:write"],
+    })
 
     expect(workosOrgService.updateOrganizationMembership).toHaveBeenCalledWith({
       organizationMembershipId: "om_1",
@@ -482,7 +490,11 @@ describe("WorkspaceService.updateUserRole", () => {
 
     const service = createWorkspaceService(false, workosOrgService)
 
-    await expect(service.updateUserRole("ws_1", "user_1", "member")).rejects.toMatchObject({
+    await expect(
+      service.updateUserRole("ws_1", "user_1", "member", {
+        actorPermissions: ["messages:read", "members:write"],
+      })
+    ).rejects.toMatchObject({
       name: "HttpError",
       status: 409,
       code: "LAST_ADMIN_NOT_ALLOWED",
@@ -491,7 +503,38 @@ describe("WorkspaceService.updateUserRole", () => {
     expect(mockUpsertMembershipRoles).not.toHaveBeenCalled()
   })
 
-  test("serializes role mutations per workspace with an advisory lock and re-checks inside the lock", async () => {
+  test("blocks assigning roles with permissions the actor lacks", async () => {
+    const workosOrgService: MockWorkosOrgService = {
+      hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(true)),
+      updateOrganizationMembership: mock<(params: any) => Promise<any>>(() => Promise.resolve({})),
+    }
+    mockListMirrorRoles.mockResolvedValue([
+      { slug: "member", name: "Member", permissions: ["messages:read"], description: null, type: "system" },
+      {
+        slug: "admin",
+        name: "Admin",
+        permissions: ["messages:read", "members:write", "workspace:admin"],
+        description: null,
+        type: "system",
+      },
+    ] as never)
+
+    const service = createWorkspaceService(false, workosOrgService)
+
+    await expect(
+      service.updateUserRole("ws_1", "user_1", "admin", {
+        actorPermissions: ["members:write"],
+      })
+    ).rejects.toMatchObject({
+      name: "HttpError",
+      status: 403,
+      code: "ROLE_ASSIGNMENT_PERMISSION_DENIED",
+    })
+    expect(workosOrgService.updateOrganizationMembership).not.toHaveBeenCalled()
+    expect(mockClaimRoleMutationLease).not.toHaveBeenCalled()
+  })
+
+  test("serializes role mutations per workspace with a persistent lease and re-checks inside the lease", async () => {
     const workosOrgService: MockWorkosOrgService = {
       hasAcceptedWorkspaceCreationInvitation: mock<(email: string) => Promise<boolean>>(() => Promise.resolve(true)),
       updateOrganizationMembership: mock<(params: any) => Promise<any>>(() => Promise.resolve({})),
@@ -511,25 +554,28 @@ describe("WorkspaceService.updateUserRole", () => {
       workosUserId: "wos_1",
       roleSlugs: ["admin"],
     } as never)
-    // hasOtherRoleManager returns true when called outside the lock context (not used any more)
-    // but returns false inside the lock — simulating a concurrent demotion that already committed.
     mockHasOtherRoleManager.mockResolvedValue(false as never)
-    const clientQuery = mock(() => Promise.resolve({ rows: [] }))
     mockWithTransaction.mockImplementation((async (...args: Parameters<typeof db.withTransaction>) => {
       const callback = args[1]
-      return callback({ query: clientQuery } as never)
+      return callback({ query: mock(() => Promise.resolve({ rows: [] })) } as never)
     }) as typeof db.withTransaction)
 
     const service = createWorkspaceService(false, workosOrgService)
 
-    await expect(service.updateUserRole("ws_1", "user_1", "member")).rejects.toMatchObject({
+    await expect(
+      service.updateUserRole("ws_1", "user_1", "member", {
+        actorPermissions: ["messages:read", "members:write"],
+      })
+    ).rejects.toMatchObject({
       name: "HttpError",
       code: "LAST_ADMIN_NOT_ALLOWED",
     })
-    expect(clientQuery).toHaveBeenCalledWith("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [
-      "workspace_role_mutation",
-      "ws_1",
-    ])
+    expect(mockClaimRoleMutationLease).toHaveBeenCalledWith({
+      db: expect.anything(),
+      workspaceId: "ws_1",
+      leaseId: expect.any(String),
+      lockedUntil: expect.any(Date),
+    })
     expect(mockHasOtherRoleManager).toHaveBeenCalledWith(expect.anything(), "ws_1", "om_1")
     expect(workosOrgService.updateOrganizationMembership).not.toHaveBeenCalled()
   })

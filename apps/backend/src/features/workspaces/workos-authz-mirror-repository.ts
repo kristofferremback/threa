@@ -84,6 +84,33 @@ export async function upsertMembershipRoles(params: {
 }
 
 export const WorkosAuthzMirrorRepository = {
+  async claimRoleMutationLease(params: {
+    db: Querier
+    workspaceId: string
+    leaseId: string
+    lockedUntil: Date
+  }): Promise<boolean> {
+    const result = await params.db.query(sql`
+      INSERT INTO workspace_role_mutation_locks (workspace_id, lock_run_id, locked_until)
+      VALUES (${params.workspaceId}, ${params.leaseId}, ${params.lockedUntil})
+      ON CONFLICT (workspace_id) DO UPDATE
+      SET lock_run_id = EXCLUDED.lock_run_id,
+          locked_until = EXCLUDED.locked_until,
+          updated_at = NOW()
+      WHERE workspace_role_mutation_locks.locked_until <= NOW()
+      RETURNING workspace_id
+    `)
+    return result.rows.length > 0
+  },
+
+  async releaseRoleMutationLease(db: Querier, workspaceId: string, leaseId: string): Promise<void> {
+    await db.query(sql`
+      DELETE FROM workspace_role_mutation_locks
+      WHERE workspace_id = ${workspaceId}
+        AND lock_run_id = ${leaseId}
+    `)
+  },
+
   async getState(db: Querier, workspaceId: string): Promise<WorkspaceAuthzStateRow | null> {
     const result = await db.query<WorkspaceAuthzStateRow>(sql`
       SELECT workspace_id, workos_organization_id, revision::text AS revision

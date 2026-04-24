@@ -128,7 +128,7 @@ export function createWorkspaceHandlers({
       const [workspace, roles, rawUsers, streams, personas, bots, emojiWeights, userPreferences, dmPeers] =
         await Promise.all([
           workspaceService.getWorkspaceById(workspaceId),
-          workspaceService.listAssignableRoles(workspaceId),
+          req.authz?.roles ?? workspaceService.listAssignableRoles(workspaceId),
           workspaceService.getUsers(workspaceId),
           streamService.listWithPreviews(workspaceId, userId),
           workspaceService.getPersonasForWorkspace(workspaceId),
@@ -302,7 +302,7 @@ export function createWorkspaceHandlers({
 
     async listRoles(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const roles = await workspaceService.listAssignableRoles(workspaceId)
+      const roles = req.authz?.roles ?? (await workspaceService.listAssignableRoles(workspaceId))
       res.json({ roles })
     },
 
@@ -318,7 +318,10 @@ export function createWorkspaceHandlers({
         })
       }
 
-      const user = await workspaceService.updateUserRole(workspaceId, userId, result.data.roleSlug)
+      const user = await workspaceService.updateUserRole(workspaceId, userId, result.data.roleSlug, {
+        actorPermissions: req.authz!.permissions,
+        roles: req.authz?.roles,
+      })
       res.json({ user })
     },
 

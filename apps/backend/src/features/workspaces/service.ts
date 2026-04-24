@@ -1,4 +1,5 @@
 import { Pool } from "pg"
+import { randomUUID } from "node:crypto"
 import { withTransaction, withClient, type Querier } from "../../db"
 import { WorkspaceRepository, Workspace } from "./repository"
 import { UserRepository, type User } from "./user-repository"
@@ -14,7 +15,7 @@ import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import type { WorkosOrgService } from "@threa/backend-common"
-import type { WorkspaceAuthzSnapshot, WorkspaceRole } from "@threa/types"
+import type { WorkspaceAuthzSnapshot, WorkspacePermissionScope, WorkspaceRole } from "@threa/types"
 import { UserApiKeyRepository } from "../user-api-keys"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
@@ -36,6 +37,35 @@ export interface CreateWorkspaceParams {
 
 interface WorkspaceServiceOptions {
   requireWorkspaceCreationInvite?: boolean
+}
+
+const ROLE_MUTATION_LEASE_MS = 5 * 60 * 1000
+
+interface RoleAssignmentOptions {
+  actorPermissions: Iterable<WorkspacePermissionScope>
+  roles?: WorkspaceRole[]
+}
+
+export function assertRoleAssignableByActor(
+  roles: WorkspaceRole[],
+  roleSlug: string,
+  actorPermissions: Iterable<WorkspacePermissionScope>
+): WorkspaceRole {
+  const nextRole = roles.find((role) => role.slug === roleSlug)
+  if (!nextRole) {
+    throw new HttpError("Role not found", { status: 404, code: "ROLE_NOT_FOUND" })
+  }
+
+  const granted = actorPermissions instanceof Set ? actorPermissions : new Set(actorPermissions)
+  const missingPermission = nextRole.permissions.find((permission) => !granted.has(permission))
+  if (missingPermission) {
+    throw new HttpError(`Cannot assign role requiring permission: ${missingPermission}`, {
+      status: 403,
+      code: "ROLE_ASSIGNMENT_PERMISSION_DENIED",
+    })
+  }
+
+  return nextRole
 }
 
 export class WorkspaceService {
@@ -282,7 +312,12 @@ export class WorkspaceService {
     return WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId)
   }
 
-  async updateUserRole(workspaceId: string, userId: string, roleSlug: string): Promise<User> {
+  async updateUserRole(
+    workspaceId: string,
+    userId: string,
+    roleSlug: string,
+    options: RoleAssignmentOptions
+  ): Promise<User> {
     if (!this.workosOrgService) {
       throw new HttpError("WorkOS role management is not configured", {
         status: 500,
@@ -298,14 +333,11 @@ export class WorkspaceService {
       throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
     }
     const [roles, assignment] = await Promise.all([
-      WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId),
+      options.roles ? Promise.resolve(options.roles) : WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId),
       WorkosAuthzMirrorRepository.findMembershipAssignment(this.pool, workspaceId, localUser.workosUserId),
     ])
     const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
-    const nextRole = rolesBySlug.get(roleSlug)
-    if (!nextRole) {
-      throw new HttpError("Role not found", { status: 404, code: "ROLE_NOT_FOUND" })
-    }
+    const nextRole = assertRoleAssignableByActor(roles, roleSlug, options.actorPermissions)
 
     if (!assignment) {
       throw new HttpError("WorkOS organization membership not found", {
@@ -322,68 +354,108 @@ export class WorkspaceService {
       })
     }
 
-    const targetCurrentlyAdmin = currentRoleSlugs.some((slug) =>
-      (rolesBySlug.get(slug)?.permissions ?? []).some((permission) => ADMIN_COMPATIBILITY_PERMISSIONS.has(permission))
-    )
     const targetWillBeAdmin = nextRole.permissions.some((permission) => ADMIN_COMPATIBILITY_PERMISSIONS.has(permission))
 
     const workosOrgService = this.workosOrgService
-    const decoratedUpdatedUser = await withTransaction(this.pool, async (client) => {
-      // Serialize role mutations per-workspace so the last-admin guard cannot be
-      // bypassed by two concurrent demotions both reading the pre-mutation state.
-      // This deliberately keeps the transaction open across the WorkOS call below:
-      // rare admin-role changes are worth the invariant exception because the lock
-      // must cover the guard, the external mutation, and the local mirror update.
-      // The advisory lock is released when the transaction ends.
-      await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [
-        "workspace_role_mutation",
-        workspaceId,
-      ])
+    const leaseId = randomUUID()
+    let releaseLease = true
 
-      if (targetCurrentlyAdmin && !targetWillBeAdmin) {
-        const otherAdminExists = await WorkosAuthzMirrorRepository.hasOtherRoleManager(
-          client,
+    try {
+      await withTransaction(this.pool, async (client) => {
+        const claimed = await WorkosAuthzMirrorRepository.claimRoleMutationLease({
+          db: client,
           workspaceId,
-          assignment.organizationMembershipId
-        )
-        if (!otherAdminExists) {
-          throw new HttpError("Workspace must retain at least one member who can manage roles", {
+          leaseId,
+          lockedUntil: new Date(Date.now() + ROLE_MUTATION_LEASE_MS),
+        })
+        if (!claimed) {
+          throw new HttpError("A role mutation is already in progress for this workspace", {
             status: 409,
-            code: "LAST_ADMIN_NOT_ALLOWED",
+            code: "ROLE_MUTATION_IN_PROGRESS",
           })
         }
-      }
+
+        const lockedAssignment = await WorkosAuthzMirrorRepository.findMembershipAssignment(
+          client,
+          workspaceId,
+          localUser.workosUserId
+        )
+        if (!lockedAssignment) {
+          throw new HttpError("WorkOS organization membership not found", {
+            status: 404,
+            code: "WORKOS_MEMBERSHIP_NOT_FOUND",
+          })
+        }
+        if (lockedAssignment.roleSlugs.length > 1) {
+          throw new HttpError("This user has multiple roles and cannot be edited in-app yet", {
+            status: 409,
+            code: "MULTIPLE_ROLES_NOT_EDITABLE",
+          })
+        }
+
+        const lockedTargetCurrentlyAdmin = lockedAssignment.roleSlugs.some((slug) =>
+          (rolesBySlug.get(slug)?.permissions ?? []).some((permission) =>
+            ADMIN_COMPATIBILITY_PERMISSIONS.has(permission)
+          )
+        )
+        if (lockedTargetCurrentlyAdmin && !targetWillBeAdmin) {
+          const otherAdminExists = await WorkosAuthzMirrorRepository.hasOtherRoleManager(
+            client,
+            workspaceId,
+            lockedAssignment.organizationMembershipId
+          )
+          if (!otherAdminExists) {
+            throw new HttpError("Workspace must retain at least one member who can manage roles", {
+              status: 409,
+              code: "LAST_ADMIN_NOT_ALLOWED",
+            })
+          }
+        }
+      })
 
       await workosOrgService.updateOrganizationMembership({
         organizationMembershipId: assignment.organizationMembershipId,
         roleSlug,
       })
 
-      await WorkosAuthzMirrorRepository.upsertMembershipRoles({
-        db: client,
-        workspaceId,
-        organizationMembershipId: assignment.organizationMembershipId,
-        workosUserId: localUser.workosUserId,
-        roleSlugs: [roleSlug],
-      })
-      await WorkosAuthzMirrorRepository.syncCompatibilityRoles(client, workspaceId)
+      const decoratedUpdatedUser = await withTransaction(this.pool, async (client) => {
+        await WorkosAuthzMirrorRepository.upsertMembershipRoles({
+          db: client,
+          workspaceId,
+          organizationMembershipId: assignment.organizationMembershipId,
+          workosUserId: localUser.workosUserId,
+          roleSlugs: [roleSlug],
+        })
+        await WorkosAuthzMirrorRepository.syncCompatibilityRoles(client, workspaceId)
 
-      const updatedUser = await UserRepository.findById(client, workspaceId, userId)
-      if (!updatedUser) {
-        throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+        const updatedUser = await UserRepository.findById(client, workspaceId, userId)
+        if (!updatedUser) {
+          throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+        }
+
+        const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updatedUser, { workspace, roles })
+
+        await OutboxRepository.insert(client, "workspace_user:updated", {
+          workspaceId,
+          user: serializeBigInt(decoratedUser),
+        })
+
+        await WorkosAuthzMirrorRepository.releaseRoleMutationLease(client, workspaceId, leaseId)
+        releaseLease = false
+
+        return decoratedUser
+      })
+
+      return decoratedUpdatedUser
+    } finally {
+      if (releaseLease) {
+        try {
+          await WorkosAuthzMirrorRepository.releaseRoleMutationLease(this.pool, workspaceId, leaseId)
+        } catch (error) {
+          logger.warn({ err: error, workspaceId }, "Failed to release workspace role mutation lease")
+        }
       }
-
-      const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updatedUser, { workspace })
-
-      await OutboxRepository.insert(client, "workspace_user:updated", {
-        workspaceId,
-        user: serializeBigInt(decoratedUser),
-      })
-
-      return decoratedUser
-    })
-
-    return decoratedUpdatedUser
+    }
   }
 
   async applyWorkosAuthzSnapshot(snapshot: WorkspaceAuthzSnapshot): Promise<boolean> {

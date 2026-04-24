@@ -1,11 +1,11 @@
 import { Pool } from "pg"
 import { withTransaction, type Querier } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
-import { UserRepository, type WorkspaceService } from "../workspaces"
+import { assertRoleAssignableByActor, UserRepository, type WorkspaceService } from "../workspaces"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
-import type { InvitationSkipReason, InvitationStatus, WorkspaceRole } from "@threa/types"
+import type { InvitationSkipReason, InvitationStatus, WorkspacePermissionScope, WorkspaceRole } from "@threa/types"
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
@@ -15,6 +15,8 @@ interface SendInvitationsParams {
   emails: string[]
   role: "admin" | "user"
   roleSlug: string
+  actorPermissions: Iterable<WorkspacePermissionScope>
+  roles?: WorkspaceRole[]
 }
 
 interface SendResult {
@@ -42,6 +44,8 @@ export class InvitationService {
   async sendInvitations(params: SendInvitationsParams): Promise<SendResult> {
     const { workspaceId, invitedBy, role, roleSlug } = params
     const emails = params.emails.map((e) => e.toLowerCase().trim())
+    const roles = params.roles ?? (await this.workspaceService.listAssignableRoles(workspaceId))
+    assertRoleAssignableByActor(roles, roleSlug, params.actorPermissions)
 
     const skipped: SendResult["skipped"] = []
 
@@ -106,7 +110,7 @@ export class InvitationService {
       return invitations
     })
 
-    return { sent: await this.decorateInvitations(workspaceId, sent), skipped }
+    return { sent: await this.decorateInvitations(workspaceId, sent, roles), skipped }
   }
 
   async acceptInvitation(invitationId: string, identity: WorkosIdentity): Promise<string | null> {
@@ -224,11 +228,17 @@ export class InvitationService {
     return revoked
   }
 
-  async resendInvitation(invitationId: string, workspaceId: string): Promise<Invitation | null> {
+  async resendInvitation(
+    invitationId: string,
+    workspaceId: string,
+    options: { actorPermissions: Iterable<WorkspacePermissionScope>; roles?: WorkspaceRole[] }
+  ): Promise<Invitation | null> {
     const invitation = await InvitationRepository.findById(this.pool, invitationId)
     if (!invitation || invitation.workspaceId !== workspaceId || invitation.status !== "pending") {
       return null
     }
+    const roles = options.roles ?? (await this.workspaceService.listAssignableRoles(workspaceId))
+    assertRoleAssignableByActor(roles, invitation.roleSlug, options.actorPermissions)
 
     // Revoke old and create new
     await this.revokeInvitation(invitationId, workspaceId)
@@ -239,6 +249,8 @@ export class InvitationService {
       emails: [invitation.email],
       role: invitation.role,
       roleSlug: invitation.roleSlug,
+      actorPermissions: options.actorPermissions,
+      roles,
     })
 
     return result.sent[0] ?? null

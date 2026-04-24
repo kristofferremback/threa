@@ -38,6 +38,8 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
         emails,
         role,
         roleSlug,
+        actorPermissions: req.authz!.permissions,
+        roles: req.authz?.roles,
       })
 
       res.status(201).json(sendResult)
@@ -68,7 +70,10 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
       const workspaceId = req.workspaceId!
       const { invitationId } = req.params
 
-      const invitation = await invitationService.resendInvitation(invitationId, workspaceId)
+      const invitation = await invitationService.resendInvitation(invitationId, workspaceId, {
+        actorPermissions: req.authz!.permissions,
+        roles: req.authz?.roles,
+      })
 
       if (!invitation) {
         return res.status(404).json({ error: "Invitation not found or not pending" })

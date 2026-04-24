@@ -94,7 +94,7 @@ export class InvitationShadowSyncHandler implements OutboxHandler {
               email: invitation.email,
               region: this.region,
               expiresAt: invitation.expiresAt,
-              roleSlug,
+              roleSlug: roleSlug ?? invitation.roleSlug,
               inviterWorkosUserId,
             })
           } else if (event.eventType === "invitation:revoked") {

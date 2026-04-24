@@ -181,6 +181,7 @@ describe("InvitationService.sendInvitations", () => {
       emails: ["test@example.com"],
       role: "user",
       roleSlug: "member",
+      actorPermissions: ["messages:read"],
     })
 
     const sentCall = mockInsertOutbox.mock.calls.find((call) => call[1] === "invitation:sent")
@@ -203,6 +204,7 @@ describe("InvitationService.sendInvitations", () => {
       emails: ["existing@example.com", "new@example.com"],
       role: "user",
       roleSlug: "member",
+      actorPermissions: ["messages:read"],
     })
 
     expect(result.skipped).toEqual([{ email: "existing@example.com", reason: "already_user" }])
@@ -219,6 +221,7 @@ describe("InvitationService.sendInvitations", () => {
       emails: ["pending@example.com"],
       role: "user",
       roleSlug: "member",
+      actorPermissions: ["messages:read"],
     })
 
     expect(result.skipped).toEqual([{ email: "pending@example.com", reason: "pending_invitation" }])
@@ -232,6 +235,7 @@ describe("InvitationService.sendInvitations", () => {
       emails: ["test@example.com"],
       role: "user",
       roleSlug: "member",
+      actorPermissions: ["messages:read"],
     })
 
     expect(result.sent).toEqual([
@@ -240,6 +244,24 @@ describe("InvitationService.sendInvitations", () => {
         assignedRole: { slug: "member", name: "Member" },
       }),
     ])
+  })
+
+  test("blocks inviting a role with permissions the actor lacks", async () => {
+    await expect(
+      service.sendInvitations({
+        workspaceId: "ws_1",
+        invitedBy: "usr_1",
+        emails: ["admin@example.com"],
+        role: "admin",
+        roleSlug: "admin",
+        actorPermissions: ["members:write"],
+      })
+    ).rejects.toMatchObject({
+      name: "HttpError",
+      status: 403,
+      code: "ROLE_ASSIGNMENT_PERMISSION_DENIED",
+    })
+    expect(mockInsertInvitation).not.toHaveBeenCalled()
   })
 })
 

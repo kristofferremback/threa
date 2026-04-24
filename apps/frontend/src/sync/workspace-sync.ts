@@ -664,8 +664,6 @@ export function registerWorkspaceSocketHandlers(
       ...toWorkspaceUser(user),
       _cachedAt: now,
     })
-
-    queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId), type: "active" })
   }
 
   // Handle workspace user removed
