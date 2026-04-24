@@ -3,6 +3,8 @@ import type { WorkspacePermissionScope } from "@threa/types"
 import { logger } from "../logger"
 import type { WorkosConfig } from "./types"
 
+const WORKOS_REQUEST_TIMEOUT_MS = 10_000
+
 type WidgetScope =
   | "widgets:api-keys:manage"
   | "widgets:users-table:manage"
@@ -152,6 +154,7 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
         "Content-Type": "application/json",
       },
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(WORKOS_REQUEST_TIMEOUT_MS),
     })
 
     if (!response.ok) {
@@ -378,25 +381,18 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
         if (!params.roleSlug && !params.roleSlugs) {
           return
         }
-        try {
-          const existing = await this.getOrganizationMembership({
-            organizationId: params.organizationId,
-            userId: params.userId,
-          })
-          if (!existing) {
-            return
-          }
-          await this.updateOrganizationMembership({
-            organizationMembershipId: existing.id,
-            ...(params.roleSlug ? { roleSlug: params.roleSlug } : {}),
-            ...(params.roleSlugs ? { roleSlugs: params.roleSlugs } : {}),
-          })
-        } catch (upgradeError) {
-          logger.warn(
-            { err: upgradeError, organizationId: params.organizationId, userId: params.userId },
-            "Failed to sync WorkOS org membership role (best-effort)"
-          )
+        const existing = await this.getOrganizationMembership({
+          organizationId: params.organizationId,
+          userId: params.userId,
+        })
+        if (!existing) {
+          return
         }
+        await this.updateOrganizationMembership({
+          organizationMembershipId: existing.id,
+          ...(params.roleSlug ? { roleSlug: params.roleSlug } : {}),
+          ...(params.roleSlugs ? { roleSlugs: params.roleSlugs } : {}),
+        })
         return
       }
       throw error

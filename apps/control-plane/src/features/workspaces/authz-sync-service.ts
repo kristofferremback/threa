@@ -36,24 +36,12 @@ const AUTHZ_EVENT_TYPES = [
   "organization_membership.created",
   "organization_membership.updated",
   "organization_membership.deleted",
-  "organization_membership.added",
-  "organization_membership.removed",
   "role.created",
   "role.updated",
   "role.deleted",
-  "organization_role.created",
-  "organization_role.updated",
-  "organization_role.deleted",
 ]
 
-const GLOBAL_ROLE_EVENT_TYPES = new Set([
-  "role.created",
-  "role.updated",
-  "role.deleted",
-  "organization_role.created",
-  "organization_role.updated",
-  "organization_role.deleted",
-])
+const GLOBAL_ROLE_EVENT_TYPES = new Set(["role.created", "role.updated", "role.deleted"])
 
 function extractOrganizationId(event: WorkosEventSummary): string | null {
   const data = event.data as Record<string, unknown>
