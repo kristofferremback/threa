@@ -1,2 +1,2 @@
-export { MessageComposer, type MessageComposerProps } from "./message-composer"
+export { MessageComposer, type MessageComposerProps, type ComposerControlHandle } from "./message-composer"
 export { FloatingComposerShell } from "./floating-composer-shell"

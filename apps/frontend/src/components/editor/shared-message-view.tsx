@@ -2,21 +2,20 @@ import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react"
 import { X, Share2 } from "lucide-react"
 import { useParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
-import { useSharedMessageHydration } from "@/components/shared-messages/context"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useSharedMessageSource, type SharedMessageSource } from "@/hooks/use-shared-message-source"
 import type { SharedMessageAttrs } from "./shared-message-extension"
 
 /**
- * Live pointer to a message in another stream. Displays hydrated content
- * from the shared-messages map provided by the timeline's context; falls
- * back to a skeleton with the cached author name when hydration hasn't
- * landed yet.
+ * Live pointer to a message in another stream. Resolves the preview content
+ * from the server-provided hydration map first, falls back to the viewer's
+ * local IndexedDB cache, and shows a staggered skeleton only if neither has
+ * landed within the usual 300ms loading threshold.
  */
 export function SharedMessageView({ node, deleteNode, selected }: NodeViewProps) {
   const attrs = node.attrs as SharedMessageAttrs
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const hydrated = useSharedMessageHydration(attrs.messageId)
-
-  const body = renderBody(attrs, hydrated, workspaceId)
+  const source = useSharedMessageSource(attrs.messageId, attrs.streamId)
 
   return (
     <NodeViewWrapper
@@ -28,7 +27,7 @@ export function SharedMessageView({ node, deleteNode, selected }: NodeViewProps)
       data-type="shared-message"
     >
       <Share2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <div className="min-w-0 flex-1">{body}</div>
+      <div className="min-w-0 flex-1">{renderBody(attrs, source, workspaceId)}</div>
       <button
         type="button"
         onClick={deleteNode}
@@ -41,24 +40,8 @@ export function SharedMessageView({ node, deleteNode, selected }: NodeViewProps)
   )
 }
 
-function renderBody(
-  attrs: SharedMessageAttrs,
-  hydrated: ReturnType<typeof useSharedMessageHydration>,
-  _workspaceId: string | undefined
-) {
-  if (!hydrated || hydrated.state === "pending") {
-    // Pre-hydration (composer preview, or brief window before bootstrap
-    // refetch lands after message:created). Show the author name cached on
-    // the node so the row never renders blank or flashes a spinner.
-    return (
-      <>
-        <AuthorLabel name={attrs.authorName || "—"} />
-        <p className="mt-0.5 italic text-muted-foreground/70">Shared message</p>
-      </>
-    )
-  }
-
-  if (hydrated.state === "deleted") {
+function renderBody(attrs: SharedMessageAttrs, source: SharedMessageSource, _workspaceId: string | undefined) {
+  if (source.status === "deleted") {
     return (
       <>
         <AuthorLabel name={attrs.authorName || "—"} />
@@ -67,7 +50,7 @@ function renderBody(
     )
   }
 
-  if (hydrated.state === "missing") {
+  if (source.status === "missing") {
     return (
       <>
         <AuthorLabel name={attrs.authorName || "—"} />
@@ -76,14 +59,30 @@ function renderBody(
     )
   }
 
-  const snippet = hydrated.contentMarkdown
+  if (source.status === "pending") {
+    return (
+      <>
+        <AuthorLabel name={attrs.authorName || "—"} />
+        {source.showSkeleton ? (
+          <Skeleton className="mt-1 h-3 w-48" />
+        ) : (
+          // Before the staggered-skeleton threshold, leave the body blank so
+          // the common fast-path (content resolves within 300ms) doesn't flash
+          // a loading state. The row still shows the author for layout stability.
+          <p className="mt-0.5 h-3" aria-hidden="true" />
+        )}
+      </>
+    )
+  }
+
+  const snippet = source.contentMarkdown
   const lines = snippet.split("\n")
   const isLong = lines.length > 3 || snippet.length > 200
   const display = isLong ? lines.slice(0, 3).join("\n").slice(0, 200) + "…" : snippet
 
   return (
     <>
-      <AuthorLabel name={hydrated.authorName || attrs.authorName} />
+      <AuthorLabel name={source.authorName || attrs.authorName || "—"} />
       <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{display}</p>
     </>
   )

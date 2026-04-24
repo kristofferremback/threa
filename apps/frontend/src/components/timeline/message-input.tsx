@@ -14,6 +14,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
 import { FloatingComposerShell, MessageComposer } from "@/components/composer"
+import type { ComposerControlHandle } from "@/components/composer"
 import { commandsApi } from "@/api"
 import { hasCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
@@ -244,7 +245,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   composerRef.current = composer
 
   // Imperative handle for programmatic focus from outside (e.g. quote reply insertion)
-  const composerFocusRef = useRef<{ focus: () => void; focusAfterQuoteReply: () => void } | null>(null)
+  const composerFocusRef = useRef<ComposerControlHandle | null>(null)
 
   // Register with QuoteReplyContext to insert quote reply nodes into the composer.
   // Stable deps: quoteReplyCtx is from context, composerRef is a ref.
@@ -289,10 +290,11 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   }, [quoteReplyCtx])
 
   // Consume any pending share handoff for this stream, pre-inserting the
-  // shared-message pointer into the composer. Runs on mount and when the
-  // stream changes so navigating into a stream after clicking "Share to …"
-  // reliably injects the pointer. The handoff is one-shot (consume clears it)
-  // and TTL'd; re-renders here are safe — the second read returns null.
+  // shared-message pointer into the composer and leaving the cursor after it.
+  // We drive this through the editor directly (not React state) so the cursor
+  // positioning lands atomically with the content change — going through the
+  // useState path meant setContent committed one frame after the focus call,
+  // and TipTap would reset the selection to 0 in the process.
   useEffect(() => {
     const pending = consumeShareHandoff(streamId)
     if (!pending) return
@@ -302,31 +304,40 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       attrs: pending as unknown as Record<string, unknown>,
     }
 
-    const currentContent = composerRef.current.content
-    const existingBlocks = currentContent.content ?? []
-    const trimmedBlocks = [...existingBlocks]
-    while (
-      trimmedBlocks.length > 0 &&
-      trimmedBlocks[trimmedBlocks.length - 1].type === "paragraph" &&
-      (trimmedBlocks[trimmedBlocks.length - 1].content?.length ?? 0) === 0
-    ) {
-      trimmedBlocks.pop()
+    const insert = (): boolean => {
+      const editor = composerFocusRef.current?.getEditor?.()
+      if (!editor || editor.isDestroyed) return false
+
+      const currentDoc = editor.getJSON() as JSONContent
+      const existingBlocks = currentDoc.content ?? []
+      const trimmedBlocks = [...existingBlocks]
+      while (
+        trimmedBlocks.length > 0 &&
+        trimmedBlocks[trimmedBlocks.length - 1].type === "paragraph" &&
+        (trimmedBlocks[trimmedBlocks.length - 1].content?.length ?? 0) === 0
+      ) {
+        trimmedBlocks.pop()
+      }
+
+      editor
+        .chain()
+        .setContent({
+          type: "doc",
+          content: [...trimmedBlocks, shareNode, { type: "paragraph" }],
+        })
+        .focus("end")
+        .run()
+      return true
     }
 
-    // Leading paragraph (if any commentary) + share node + trailing empty
-    // paragraph so the cursor lands on a fresh line below the pointer.
-    composerRef.current.setContent({
-      type: "doc",
-      content: [...trimmedBlocks, shareNode, { type: "paragraph" }],
+    if (insert()) return
+
+    // Editor not mounted yet on the first tick after a route change — retry
+    // on the next frame until it's ready. One-shot handoff; second read is null.
+    let raf = requestAnimationFrame(function retry() {
+      if (!insert()) raf = requestAnimationFrame(retry)
     })
-    // Defer focus: composer.setContent goes through React state, so the TipTap
-    // doc doesn't receive the new content until the next commit. Focusing in
-    // the same tick targets the stale doc and TipTap then resets the cursor
-    // to position 0 when the new content lands. rAF runs after commit.
-    const frame = requestAnimationFrame(() => {
-      composerFocusRef.current?.focusAfterQuoteReply()
-    })
-    return () => cancelAnimationFrame(frame)
+    return () => cancelAnimationFrame(raf)
   }, [streamId])
 
   const [error, setError] = useState<string | null>(null)
