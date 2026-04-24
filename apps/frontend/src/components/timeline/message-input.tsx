@@ -265,9 +265,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       const currentContent = composerRef.current.content
       const existingBlocks = currentContent.content ?? []
 
-      // Strip trailing empty paragraphs so the quote appends cleanly.
-      // The cursor should land on the quote-side gapcursor, not in a synthetic
-      // empty paragraph rendered on the next line.
+      // Strip trailing empty paragraphs so the quote appends cleanly and we
+      // re-add exactly one trailing paragraph for post-quote typing.
       const trimmedBlocks = [...existingBlocks]
       while (
         trimmedBlocks.length > 0 &&
@@ -279,7 +278,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
       composerRef.current.setContent({
         type: "doc",
-        content: [...trimmedBlocks, quoteNode],
+        content: [...trimmedBlocks, quoteNode, { type: "paragraph" }],
       })
 
       // Focus the composer so the user can start typing immediately
