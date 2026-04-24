@@ -72,7 +72,7 @@ export interface Resolver<TRef extends ContextRef = ContextRef> {
 
 /**
  * Per-intent config: prompt fragments + per-kind sizing. The intent drives the
- * inline-vs-summarize decision and the orientation template.
+ * inline-vs-summarize decision and the system preamble.
  */
 export interface IntentConfig {
   intent: ContextIntent
@@ -80,8 +80,6 @@ export interface IntentConfig {
   inlineCharThreshold: number
   /** Instruction preamble prepended to the stable region. */
   systemPreamble: string
-  /** Short orientation prompt appended on first turn when no user message exists. */
-  orientationUserPrompt: string
   /** Supported ref kinds for this intent. */
   supportedKinds: readonly ContextRefKind[]
 }

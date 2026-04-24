@@ -43,10 +43,9 @@ export interface ResolveBagDeps {
 
 export interface ResolveBagOptions {
   /**
-   * When true, return null if the bag's `lastRendered` is already non-null
-   * (i.e. orientation already ran). Used by the orientation worker to avoid
-   * a second resolver + summarization pass on retry; the caller then
-   * short-circuits without touching the AI.
+   * When true, return null if the bag's `lastRendered` is already non-null.
+   * Used by the pre-compute worker so a retried job skips the resolver +
+   * summarization pass once the initial snapshot has been written.
    */
   skipIfAlreadyRendered?: boolean
 }
@@ -72,7 +71,7 @@ export async function resolveBagForStream(
     const bag = await ContextBagRepository.findByStream(db, streamId)
     if (!bag) return null
 
-    // Short-circuit for idempotent callers (orientation worker): if the bag
+    // Short-circuit for idempotent callers (pre-compute worker): if the bag
     // has already been rendered once, don't waste a resolver pass or a
     // summarization AI call — the caller will skip its downstream work.
     if (options?.skipIfAlreadyRendered && bag.lastRendered !== null) {
@@ -192,13 +191,10 @@ async function loadOrCreateSummary(params: {
 /**
  * Persist the snapshot from a successful render.
  *
- * Written as an idempotent standalone UPDATE — the caller should treat it as
- * the final step of an orientation / agent turn. Atomicity with the message
- * insert is not attempted (INV-41 rules out holding a connection across the
- * AI call); crash-window safety is provided by the agent-session machinery
- * (retry sees a COMPLETED session and bails) plus the `clientMessageId`
- * dedup on the message insert itself. See `context-bag-orientation-handler.ts`
- * for the full chain.
+ * Idempotent standalone UPDATE — callers run it as the final step of a render
+ * pass. The pre-compute worker writes this after `resolveBagForStream`
+ * finishes; retries short-circuit via `skipIfAlreadyRendered` rather than
+ * re-writing the same snapshot. See `context-bag-precompute-handler.ts`.
  */
 export async function persistSnapshot(db: Querier, bagId: string, snapshot: LastRenderedSnapshot): Promise<void> {
   await ContextBagRepository.updateLastRendered(db, bagId, snapshot)

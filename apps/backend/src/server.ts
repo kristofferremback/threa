@@ -69,8 +69,8 @@ import {
   CompanionHandler,
   MentionInvokeHandler,
   AgentMessageMutationHandler,
-  ContextBagOrientationHandler,
-  createContextBagOrientationWorker,
+  ContextBagPrecomputeHandler,
+  createContextBagPrecomputeWorker,
   createOrphanSessionCleanup,
   createPersonaAgentWorker,
   WorkspaceAgent,
@@ -509,18 +509,12 @@ export async function startServer(): Promise<ServerInstance> {
     fairness: QueueFairness.NONE,
   })
 
-  // Context-bag orientation worker — runs Ariadne's kickoff turn on
-  // scratchpads created with a context bag. Same tier as persona agent since
-  // the user is sitting on the new scratchpad waiting for her first message.
-  const contextBagOrientationWorker = createContextBagOrientationWorker({
-    pool,
-    ai,
-    createMessage,
-    traceEmitter,
-    serverId,
-    jobQueue,
-  })
-  jobQueue.registerHandler(JobQueues.CONTEXT_BAG_ORIENT, contextBagOrientationWorker, {
+  // Context-bag pre-compute worker — warms the shared summary cache and
+  // persists the initial render snapshot for newly-created bag-attached
+  // scratchpads so the first real user turn hits the cache. Posts no
+  // messages and runs without a persona or session.
+  const contextBagPrecomputeWorker = createContextBagPrecomputeWorker({ pool, ai })
+  jobQueue.registerHandler(JobQueues.CONTEXT_BAG_PRECOMPUTE, contextBagPrecomputeWorker, {
     tier: QueueTiers.INTERACTIVE,
     fairness: QueueFairness.NONE,
   })
@@ -770,7 +764,7 @@ export async function startServer(): Promise<ServerInstance> {
   // use the main pool — they enqueue jobs and can tolerate back-pressure.
   const broadcastHandler = new BroadcastHandler(pools.realtime, io)
   const companionHandler = new CompanionHandler(pool, jobQueue)
-  const contextBagOrientationHandler = new ContextBagOrientationHandler(pool, jobQueue)
+  const contextBagPrecomputeHandler = new ContextBagPrecomputeHandler(pool, jobQueue)
   const namingHandler = new NamingHandler(pool, jobQueue)
   const emojiUsageHandler = new EmojiUsageHandler(pool)
   const embeddingHandler = new EmbeddingHandler(pool, jobQueue)
@@ -793,7 +787,7 @@ export async function startServer(): Promise<ServerInstance> {
   const outboxHandlers: (OutboxHandler & { ensureListener(): Promise<void> })[] = [
     broadcastHandler,
     companionHandler,
-    contextBagOrientationHandler,
+    contextBagPrecomputeHandler,
     namingHandler,
     emojiUsageHandler,
     embeddingHandler,

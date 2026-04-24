@@ -35,7 +35,7 @@ export interface CreateStreamInput {
   parentStreamId?: string
   parentMessageId?: string
   memberIds?: string[]
-  /** Context bag attached to a new scratchpad (triggers orientation). */
+  /** Context bag attached to a new scratchpad (triggers summary pre-compute). */
   contextBag?: ContextBag
 }
 

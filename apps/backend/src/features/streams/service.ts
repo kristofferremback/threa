@@ -390,7 +390,7 @@ export class StreamService {
       await StreamMemberRepository.insert(client, id, params.createdBy)
 
       // Attach optional context bag in the same transaction as the stream +
-      // outbox event so the orientation handler (which fires on stream:created)
+      // outbox event so the pre-compute handler (which fires on stream:created)
       // always sees a fully-wired bag by the time it processes the event. INV-7.
       if (params.contextBag) {
         await ContextBagRepository.insert(client, {

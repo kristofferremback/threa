@@ -32,7 +32,7 @@ export {
   type VideoTranscodeSubmitJobData,
   type VideoTranscodeCheckJobData,
   type SavedReminderFireJobData,
-  type ContextBagOrientJobData,
+  type ContextBagPrecomputeJobData,
 } from "./job-queue"
 export { ScheduleManager, type ScheduleManagerConfig } from "./schedule-manager"
 export { CleanupWorker, type CleanupWorkerConfig } from "./cleanup-worker"

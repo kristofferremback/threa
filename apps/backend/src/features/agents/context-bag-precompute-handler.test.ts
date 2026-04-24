@@ -3,7 +3,7 @@ import { CompanionModes, StreamTypes } from "@threa/types"
 import type { ProcessResult } from "@threa/backend-common"
 import * as cursorLockModule from "@threa/backend-common"
 import { OutboxRepository } from "../../lib/outbox"
-import { ContextBagOrientationHandler } from "./context-bag-orientation-handler"
+import { ContextBagPrecomputeHandler } from "./context-bag-precompute-handler"
 import { ContextBagRepository } from "./context-bag"
 
 function makeFakeCursorLock(onRun?: (result: ProcessResult) => void) {
@@ -48,7 +48,7 @@ function mockStreamCreatedEvent(stream: any) {
 function createHandler() {
   mockCursorLock()
   const jobQueue = { send: mock(async () => "queue_1") } as any
-  const handler = new ContextBagOrientationHandler({} as any, jobQueue)
+  const handler = new ContextBagPrecomputeHandler({} as any, jobQueue)
   return { handler, jobQueue }
 }
 
@@ -56,12 +56,12 @@ async function waitForDebounce(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 300))
 }
 
-describe("ContextBagOrientationHandler", () => {
+describe("ContextBagPrecomputeHandler", () => {
   afterEach(() => {
     mock.restore()
   })
 
-  it("dispatches a CONTEXT_BAG_ORIENT job when a scratchpad has a bag attached", async () => {
+  it("dispatches a CONTEXT_BAG_PRECOMPUTE job when a scratchpad has a bag attached", async () => {
     const stream = makeScratchpad()
     mockStreamCreatedEvent(stream)
     spyOn(ContextBagRepository, "findByStream").mockResolvedValue({
@@ -81,11 +81,10 @@ describe("ContextBagOrientationHandler", () => {
     await waitForDebounce()
 
     expect(jobQueue.send).toHaveBeenCalledTimes(1)
-    expect(jobQueue.send).toHaveBeenCalledWith("context_bag.orient", {
+    expect(jobQueue.send).toHaveBeenCalledWith("context_bag.precompute", {
       workspaceId: "ws_1",
       streamId: "stream_scratch",
       bagId: "sca_1",
-      personaId: "persona_ariadne",
     })
   })
 
@@ -118,7 +117,7 @@ describe("ContextBagOrientationHandler", () => {
 
   it("skips dispatch when companion mode is off", async () => {
     // Bag-free scratchpads with companion off stay silent — the
-    // orientation handler only fires for companion-on + bag-present.
+    // pre-compute handler only fires for companion-on + bag-present.
     const stream = makeScratchpad({ companionMode: CompanionModes.OFF })
     mockStreamCreatedEvent(stream)
     const findByStream = spyOn(ContextBagRepository, "findByStream").mockResolvedValue(null)
@@ -129,30 +128,6 @@ describe("ContextBagOrientationHandler", () => {
 
     expect(jobQueue.send).not.toHaveBeenCalled()
     expect(findByStream).not.toHaveBeenCalled()
-  })
-
-  it("skips dispatch when the scratchpad has a bag but no companion persona set", async () => {
-    // Defensive guard: a bag without a companion persona cannot orient since
-    // there is no persona to post the kickoff message as.
-    const stream = makeScratchpad({ companionPersonaId: null })
-    mockStreamCreatedEvent(stream)
-    spyOn(ContextBagRepository, "findByStream").mockResolvedValue({
-      id: "sca_2",
-      workspaceId: "ws_1",
-      streamId: stream.id,
-      intent: "discuss-thread",
-      refs: [{ kind: "thread", streamId: "stream_source" }],
-      lastRendered: null,
-      createdBy: "usr_1",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
-
-    const { handler, jobQueue } = createHandler()
-    handler.handle()
-    await waitForDebounce()
-
-    expect(jobQueue.send).not.toHaveBeenCalled()
   })
 
   it("ignores unrelated event types", async () => {

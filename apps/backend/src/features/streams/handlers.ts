@@ -53,8 +53,8 @@ const createStreamSchema = z
     memberIds: z.array(z.string().min(1)).max(50).optional(),
     /**
      * Optional context-bag attached at creation time. Powers "Discuss with
-     * Ariadne": when present on a scratchpad, the orientation handler fires
-     * a kickoff message that has the referenced context pre-loaded.
+     * Ariadne": when present on a scratchpad, the pre-compute handler warms
+     * the shared summary cache so the first real user turn is fast.
      */
     contextBag: contextBagSchema.optional(),
   })
@@ -327,10 +327,11 @@ export function createStreamHandlers({
       } = result.data
 
       // When a contextBag is attached, the stream must be a companion-mode
-      // scratchpad with Ariadne as the persona — otherwise the orientation
-      // handler has no persona to respond as. The client never sends Ariadne's
-      // id directly; we resolve it server-side so the persona id stays an
-      // implementation detail. INV-33: persona slug is the source of truth.
+      // scratchpad with Ariadne as the persona — otherwise subsequent user
+      // turns against the bag have no persona to respond as. The client never
+      // sends Ariadne's id directly; we resolve it server-side so the persona
+      // id stays an implementation detail. INV-33: persona slug is the source
+      // of truth.
       let resolvedCompanionMode = companionMode
       let resolvedPersonaId = companionPersonaId
       if (contextBag) {

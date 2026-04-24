@@ -121,8 +121,8 @@ export const messageActions: MessageAction[] = [
   },
   {
     // Seed a private scratchpad that has this message's thread pre-loaded as
-    // context and Ariadne already oriented — lets the user poke at a thread
-    // without polluting it with @mentions.
+    // context — lets the user poke at a thread without polluting it with
+    // @mentions.
     id: "discuss-with-ariadne",
     label: "Discuss with Ariadne",
     icon: Sparkles,

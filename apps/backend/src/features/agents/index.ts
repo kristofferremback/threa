@@ -47,14 +47,14 @@ export type { MentionInvokeHandlerConfig } from "./mention-invoke-outbox-handler
 export { AgentMessageMutationHandler } from "./message-mutation-outbox-handler"
 export type { AgentMessageMutationHandlerConfig } from "./message-mutation-outbox-handler"
 export {
-  ContextBagOrientationHandler,
-  createContextBagOrientationWorker,
-  CONTEXT_BAG_ORIENT_QUEUE,
-} from "./context-bag-orientation-handler"
+  ContextBagPrecomputeHandler,
+  createContextBagPrecomputeWorker,
+  CONTEXT_BAG_PRECOMPUTE_QUEUE,
+} from "./context-bag-precompute-handler"
 export type {
-  ContextBagOrientationHandlerConfig,
-  ContextBagOrientationWorkerDeps,
-} from "./context-bag-orientation-handler"
+  ContextBagPrecomputeHandlerConfig,
+  ContextBagPrecomputeWorkerDeps,
+} from "./context-bag-precompute-handler"
 
 // Context-bag primitive
 export {

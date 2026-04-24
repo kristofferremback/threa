@@ -88,8 +88,7 @@ export function createPersonaAgentWorker(deps: PersonaAgentWorkerDeps): JobHandl
  * Exported because any worker that holds the `(stream_id) WHERE status='running'`
  * session slot during its AI call must call this on completion — `CompanionHandler`
  * suppresses duplicate dispatches while a session is active, so without a follow-up
- * nudge any user message that lands during the AI call gets stranded. Used by both
- * the persona-agent worker and the context-bag orientation worker.
+ * nudge any user message that lands during the AI call gets stranded.
  */
 export async function checkForUnseenMessages(params: {
   pool: Pool

@@ -37,12 +37,6 @@ describe("DiscussThreadIntent config", () => {
     // user-facing output. The preamble must frame ids as internal-only.
     expect(DiscussThreadIntent.systemPreamble.toLowerCase()).toContain("never include them")
   })
-
-  test("orientation prompt asks for a neutral, conversational first turn and bans ids / headers", () => {
-    expect(DiscussThreadIntent.orientationUserPrompt.toLowerCase()).toContain("neutral")
-    expect(DiscussThreadIntent.orientationUserPrompt.toLowerCase()).toContain("conversational")
-    expect(DiscussThreadIntent.orientationUserPrompt).toContain("Do NOT paste message ids")
-  })
 })
 
 describe("inline-vs-summarize strategy (via renderStable)", () => {
