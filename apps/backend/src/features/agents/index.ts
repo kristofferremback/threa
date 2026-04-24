@@ -65,6 +65,7 @@ export {
   loadOrCreateSummary,
   precomputeRefSummaries,
   createContextBagHandlers,
+  appendBagToSystemPrompt,
   getIntentConfig,
   getResolver,
   DiscussThreadIntent,
