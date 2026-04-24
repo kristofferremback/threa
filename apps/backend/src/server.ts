@@ -433,6 +433,7 @@ export async function startServer(): Promise<ServerInstance> {
     userApiKeyService,
     botApiKeyService,
     storage,
+    ai,
   })
 
   app.use(errorHandler)

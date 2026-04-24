@@ -153,7 +153,13 @@ export async function resolveBagForStream(
   }
 }
 
-async function loadOrCreateSummary(params: {
+/**
+ * Look up a cached summary for a resolved ref, or produce one and upsert.
+ * Exported so the standalone precompute service can reuse the exact same
+ * cache logic as the stream-attached resolver path (INV-35). INV-41: the AI
+ * call runs without holding a DB connection.
+ */
+export async function loadOrCreateSummary(params: {
   pool: Pool
   ai: AI
   costContext: CostContext
@@ -166,16 +172,12 @@ async function loadOrCreateSummary(params: {
 }): Promise<string> {
   const { pool, ai, costContext, workspaceId, refKind, refKey, fingerprint, inputs, items } = params
 
-  // Access check happens at the assertAccess boundary in the caller. Here we
-  // only care about cache lookup + write, so a short single-query connection
-  // is fine (INV-30). The AI call runs without holding any DB connection
-  // (INV-41), then we write the result back through a fresh connection.
   const cached = await SummaryRepository.find(pool, { workspaceId, refKind, refKey, fingerprint })
   if (cached) return cached.summaryText
 
   const { text, model } = await summarizeThread({ ai, costContext }, { refKey, items })
 
-  await SummaryRepository.upsert(pool, {
+  const stored = await SummaryRepository.upsert(pool, {
     workspaceId,
     refKind,
     refKey,
@@ -184,8 +186,7 @@ async function loadOrCreateSummary(params: {
     summaryText: text,
     model,
   })
-
-  return text
+  return stored.summaryText
 }
 
 /**

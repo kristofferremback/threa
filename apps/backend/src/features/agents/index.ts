@@ -62,6 +62,9 @@ export {
   SummaryRepository,
   resolveBagForStream,
   persistSnapshot,
+  loadOrCreateSummary,
+  precomputeRefSummaries,
+  createContextBagHandlers,
   getIntentConfig,
   getResolver,
   DiscussThreadIntent,
@@ -81,6 +84,9 @@ export type {
   ResolvedBag,
   DiffResult,
   IntentConfig,
+  PrecomputeRefsDeps,
+  PrecomputeRefsParams,
+  PrecomputedRefResult,
 } from "./context-bag"
 
 // Workers

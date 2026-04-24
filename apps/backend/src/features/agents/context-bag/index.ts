@@ -12,8 +12,11 @@ export type { DiffResult } from "./diff"
 export { renderStable, renderDelta, buildSnapshot } from "./render"
 export { fingerprintContent, fingerprintManifest } from "./fingerprint"
 export { summarizeThread } from "./summarizer"
-export { resolveBagForStream, persistSnapshot } from "./resolve"
+export { resolveBagForStream, persistSnapshot, loadOrCreateSummary } from "./resolve"
 export type { ResolvedBag, ResolveBagDeps } from "./resolve"
+export { precomputeRefSummaries } from "./precompute-service"
+export type { PrecomputeRefsDeps, PrecomputeRefsParams, PrecomputedRefResult } from "./precompute-service"
+export { createContextBagHandlers } from "./handlers"
 export type {
   StoredContextBag,
   SummaryInput,
