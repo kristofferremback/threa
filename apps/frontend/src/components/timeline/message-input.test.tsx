@@ -441,7 +441,7 @@ describe("MessageInput", () => {
   })
 
   describe("quote replies", () => {
-    it("inserts a quote block without appending a synthetic trailing paragraph", () => {
+    it("inserts a quote block with one trailing paragraph so typing starts on the next line", () => {
       mockComposerState.content = {
         type: "doc",
         content: [{ type: "paragraph", content: [{ type: "text", text: "Before" }] }, { type: "paragraph" }],
@@ -475,6 +475,7 @@ describe("MessageInput", () => {
               snippet: "The vibes are immaculate",
             },
           },
+          { type: "paragraph" },
         ],
       })
       expect(mockComposerFocusAfterQuoteReply).toHaveBeenCalledTimes(1)
