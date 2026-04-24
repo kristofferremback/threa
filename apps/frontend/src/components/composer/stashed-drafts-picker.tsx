@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react"
-import { Bookmark, BookmarkPlus, Trash2 } from "lucide-react"
+import { FileEdit, FilePlus, Trash2 } from "lucide-react"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -7,9 +7,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatRelativeTime } from "@/lib/dates"
 import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/use-mobile"
 import type { StashedDraft } from "@/hooks"
 
-/** Keystroke hint shown next to the "Save current" action. */
+/** Keystroke hint for the "Save current" action. Rendered only on non-mobile (no hardware keyboard). */
 const MOD_SYMBOL = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "⌘" : "Ctrl+"
 
 interface StashedDraftsPickerProps {
@@ -56,6 +57,7 @@ export function StashedDraftsPicker({
   size = "compact",
 }: StashedDraftsPickerProps) {
   const [open, setOpen] = useState(false)
+  const isMobile = useIsMobile()
   const count = drafts.length
   const now = useMemo(() => new Date(), [open])
 
@@ -93,31 +95,35 @@ export function StashedDraftsPicker({
               type="button"
               variant={size === "fab" ? "outline" : "ghost"}
               size="icon"
-              aria-label={count > 0 ? `Saved drafts (${count})` : "Saved drafts"}
+              aria-label={count > 0 ? `Drafts (${count} saved)` : "Drafts"}
               className={cn("relative shrink-0 p-0", triggerSizeClass)}
               disabled={controlsDisabled}
               onPointerDown={size === "fab" ? (e) => e.preventDefault() : undefined}
             >
-              <Bookmark className={triggerIconClass} />
+              <FileEdit className={triggerIconClass} />
               {count > 0 && (
+                // Subtle presence dot — signals "there's something here" without
+                // demanding attention the way a colored number badge does. The
+                // actual count lives inside the popover header.
                 <span
-                  className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-semibold leading-[14px] text-center pointer-events-none"
+                  className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/60 pointer-events-none"
                   aria-hidden
-                >
-                  {count > 9 ? "9+" : count}
-                </span>
+                />
               )}
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
-          Saved drafts
+          Drafts
         </TooltipContent>
       </Tooltip>
 
       <PopoverContent align="end" side="top" className="w-80 p-0">
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b">
-          <p className="text-sm font-medium">Saved drafts</p>
+          <p className="text-sm font-medium">
+            Drafts
+            {count > 0 && <span className="text-muted-foreground font-normal ml-1.5">({count})</span>}
+          </p>
           <Button
             type="button"
             variant="ghost"
@@ -126,16 +132,22 @@ export function StashedDraftsPicker({
             onClick={handleStashCurrent}
             disabled={!canStashCurrent}
           >
-            <BookmarkPlus className="h-3.5 w-3.5" />
+            <FilePlus className="h-3.5 w-3.5" />
             <span>Save current</span>
-            <span className="text-muted-foreground ml-1">{MOD_SYMBOL}S</span>
+            {!isMobile && <span className="text-muted-foreground ml-1">{MOD_SYMBOL}S</span>}
           </Button>
         </div>
 
         {drafts.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            No saved drafts yet. Press <span className="font-medium text-foreground">{MOD_SYMBOL}S</span> to stash what
-            you're typing and start fresh.
+            {isMobile ? (
+              <>No saved drafts yet. Tap "Save current" to stash what you're typing and start fresh.</>
+            ) : (
+              <>
+                No saved drafts yet. Press <span className="font-medium text-foreground">{MOD_SYMBOL}S</span> to stash
+                what you're typing and start fresh.
+              </>
+            )}
           </div>
         ) : (
           <ul className="max-h-64 overflow-y-auto py-1" role="list">
@@ -161,7 +173,7 @@ export function StashedDraftsPicker({
                       variant="ghost"
                       size="icon"
                       aria-label="Delete saved draft"
-                      className="h-7 w-7 shrink-0 opacity-0 group-hover/row:opacity-100 focus:opacity-100"
+                      className="h-7 w-7 shrink-0 opacity-0 group-hover/row:opacity-100 focus:opacity-100 max-sm:opacity-100"
                       onClick={(e) => {
                         e.stopPropagation()
                         handleDelete(draft.id)

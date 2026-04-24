@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 import {
   useDraftComposer,
@@ -298,6 +298,29 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     },
     [stashedDrafts]
   )
+
+  // Auto-restore a stashed draft when the URL carries `?stash=<id>` — that's
+  // how the /drafts explorer deep-links to a specific snapshot. We run this
+  // once per (streamId, stashId) pair and strip the param from the URL so a
+  // refresh doesn't re-trigger it. Composer must be loaded first (otherwise
+  // the restore would race with the initial draft hydration).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const pendingStashRestoreRef = useRef<string | null>(null)
+  useEffect(() => {
+    const stashId = searchParams.get("stash")
+    if (!stashId || !composer.isLoaded) return
+    if (pendingStashRestoreRef.current === stashId) return
+
+    pendingStashRestoreRef.current = stashId
+
+    // Strip the param immediately so a refresh or re-render doesn't replay
+    // the restore. `replace: true` keeps history clean.
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete("stash")
+    setSearchParams(nextParams, { replace: true })
+
+    void handleRestoreStashed(stashId)
+  }, [searchParams, setSearchParams, composer.isLoaded, handleRestoreStashed])
 
   // Use a ref so the handler always reads fresh composer state without
   // re-registering on every render (composer object is not memoized).

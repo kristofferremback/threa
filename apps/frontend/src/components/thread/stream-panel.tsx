@@ -52,7 +52,7 @@ interface StreamPanelProps {
 export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const { isMobile } = useSidebar()
   const { getStreamState } = useCoordinatedLoading()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
   const { panelId, openPanel, getPanelUrl, closePanel } = usePanel()
   const user = useUser()
@@ -224,6 +224,24 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
       size="fab"
     />
   ) : undefined
+
+  // Auto-restore a stashed thread draft when the URL carries `?stash=<id>`.
+  // Mirrors the MessageInput behavior so deep-linking from /drafts works
+  // whether the target is a stream composer or a draft-thread composer.
+  const pendingStashRestoreRef = useRef<string | null>(null)
+  useEffect(() => {
+    const stashId = searchParams.get("stash")
+    if (!stashId || !stashScope || !composer.isLoaded) return
+    if (pendingStashRestoreRef.current === stashId) return
+
+    pendingStashRestoreRef.current = stashId
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete("stash")
+    setSearchParams(nextParams, { replace: true })
+
+    void handleRestoreStashed(stashId)
+  }, [searchParams, setSearchParams, stashScope, composer.isLoaded, handleRestoreStashed])
 
   // Draft thread expand state
   const [draftExpanded, setDraftExpanded] = useState(false)
