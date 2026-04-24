@@ -5,6 +5,7 @@
  */
 
 import { AgentTriggers, type AgentSessionRerunContext } from "@threa/types"
+import type { WorkspaceAuthzSource } from "../../middleware/authorization"
 
 /**
  * Job object passed to handlers.
@@ -86,6 +87,7 @@ export interface CommandExecuteJobData {
   workspaceId: string
   streamId: string
   userId: string
+  source?: WorkspaceAuthzSource
 }
 
 export interface ImageCaptionJobData {

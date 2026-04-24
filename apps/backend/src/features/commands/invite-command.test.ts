@@ -62,6 +62,7 @@ describe("InviteCommand", () => {
       workspaceId: "ws_1",
       streamId: "stream_1",
       userId: "user_1",
+      source: "session",
       args: "@helper",
     })
 
@@ -73,7 +74,7 @@ describe("InviteCommand", () => {
       pool,
       workspaceId: "ws_1",
       userId: "user_1",
-      source: "user_api_key",
+      source: "session",
       workosUserId: "wos_1",
     })
     expect(streamService.addBotToStream).not.toHaveBeenCalled()
@@ -120,6 +121,7 @@ describe("InviteCommand", () => {
       workspaceId: "ws_1",
       streamId: "stream_1",
       userId: "user_1",
+      source: "user_api_key",
       args: "@helper",
     })
 

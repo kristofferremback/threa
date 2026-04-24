@@ -199,6 +199,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
             streamId,
             event: serializeBigInt(evt),
             authorId: userId,
+            source: req.authz!.source,
           })
 
           return evt

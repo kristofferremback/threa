@@ -96,7 +96,7 @@ export class CommandHandler implements OutboxHandler {
           }
 
           const payload = event.payload as CommandDispatchedOutboxPayload
-          const { event: commandEvent, workspaceId, streamId, authorId } = payload
+          const { event: commandEvent, workspaceId, streamId, authorId, source = "user_api_key" } = payload
           const eventPayload = commandEvent.payload as CommandDispatchedEventPayload
 
           logger.info(
@@ -111,6 +111,7 @@ export class CommandHandler implements OutboxHandler {
             workspaceId,
             streamId,
             userId: authorId,
+            source,
           })
 
           seen.push(event.id)

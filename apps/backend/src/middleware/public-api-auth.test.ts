@@ -132,6 +132,32 @@ describe("createPublicApiAuthMiddleware", () => {
               rowCount: 1,
             }
           }
+          if (text.includes("FROM workos_workspace_roles")) {
+            return {
+              rows: [
+                {
+                  slug: "admin",
+                  name: "Admin",
+                  description: null,
+                  permissions: ["messages:read"],
+                  role_type: "environment_role",
+                },
+              ],
+              rowCount: 1,
+            }
+          }
+          if (text.includes("FROM workos_workspace_memberships")) {
+            return {
+              rows: [
+                {
+                  organization_membership_id: "om_1",
+                  workos_user_id: "wos_1",
+                  role_slugs: ["admin"],
+                },
+              ],
+              rowCount: 1,
+            }
+          }
           return { rows: [], rowCount: 0 }
         },
       } as any,
@@ -295,7 +321,7 @@ describe("requireApiKeyScope", () => {
     expect(error).toBeUndefined()
   })
 
-  test("should return 404 when scope is missing from user key", () => {
+  test("should return 403 when scope is missing from user key", () => {
     const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
     req.userApiKey = {
@@ -321,10 +347,10 @@ describe("requireApiKeyScope", () => {
     middleware(req, {} as Response, next)
 
     expect(error).not.toBeNull()
-    expect(error.status).toBe(404)
+    expect(error.status).toBe(403)
   })
 
-  test("should return 404 when scope is missing from bot key", () => {
+  test("should return 403 when scope is missing from bot key", () => {
     const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE)
     const req = createReq()
     req.botApiKey = {
@@ -350,7 +376,7 @@ describe("requireApiKeyScope", () => {
     middleware(req, {} as Response, next)
 
     expect(error).not.toBeNull()
-    expect(error.status).toBe(404)
+    expect(error.status).toBe(403)
   })
 
   test("should return 401 when no key context on request", () => {

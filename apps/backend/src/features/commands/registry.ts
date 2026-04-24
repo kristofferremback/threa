@@ -6,6 +6,7 @@
  */
 
 import { logger } from "../../lib/logger"
+import type { WorkspaceAuthzSource } from "../../middleware/authorization"
 
 export interface CommandContext {
   /** Unique ID for this command execution */
@@ -18,6 +19,8 @@ export interface CommandContext {
   streamId: string
   /** User who dispatched the command */
   userId: string
+  /** Authentication source used when the command was dispatched */
+  source: WorkspaceAuthzSource
   /** Arguments after the command name */
   args: string
 }

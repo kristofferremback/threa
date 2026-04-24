@@ -148,7 +148,7 @@ export function requireApiKeyScope(...scopes: ApiKeyScope[]) {
 
     for (const scope of scopes) {
       if (!req.authz?.permissions.has(scope)) {
-        next(new HttpError(`Missing required permission: ${scope}`, { status: 404, code: "NOT_FOUND" }))
+        next(new HttpError(`Missing required permission: ${scope}`, { status: 403, code: "FORBIDDEN" }))
         return
       }
     }

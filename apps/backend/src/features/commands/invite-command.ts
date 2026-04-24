@@ -64,7 +64,7 @@ export class InviteCommand implements Command {
         pool: this.deps.pool,
         workspaceId: ctx.workspaceId,
         userId: ctx.userId,
-        source: "user_api_key",
+        source: ctx.source,
         workosUserId: actor.workosUserId,
       }))
 

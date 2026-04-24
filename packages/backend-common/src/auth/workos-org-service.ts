@@ -72,6 +72,24 @@ export interface WorkosOrganizationMembership {
   roles: WorkosMembershipRoleRef[]
 }
 
+function mapOrganizationMembership(membership: {
+  id: string
+  userId: string
+  organizationId: string
+  status: "active" | "inactive" | "pending"
+  role?: { slug: string } | null
+  roles?: Array<{ slug: string }> | null
+}): WorkosOrganizationMembership {
+  return {
+    id: membership.id,
+    userId: membership.userId,
+    organizationId: membership.organizationId,
+    status: membership.status,
+    role: membership.role ? { slug: membership.role.slug } : null,
+    roles: membership.roles?.map((role) => ({ slug: role.slug })) ?? [],
+  }
+}
+
 export interface WorkosOrgService {
   createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }>
   getOrganizationByExternalId(externalId: string): Promise<{ id: string } | null>
@@ -297,33 +315,39 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
   }
 
   async listOrganizationMemberships(organizationId: string): Promise<WorkosOrganizationMembership[]> {
-    const memberships = await this.workos.userManagement.listOrganizationMemberships({
-      organizationId,
-      statuses: ["active", "inactive", "pending"],
-      limit: 100,
-    })
+    const results: WorkosOrganizationMembership[] = []
+    let after: string | undefined
 
-    return memberships.data.map((membership) => ({
-      id: membership.id,
-      userId: membership.userId,
-      organizationId: membership.organizationId,
-      status: membership.status,
-      role: membership.role ? { slug: membership.role.slug } : null,
-      roles: membership.roles?.map((role) => ({ slug: role.slug })) ?? [],
-    }))
+    for (;;) {
+      const page = await this.workos.userManagement.listOrganizationMemberships({
+        organizationId,
+        statuses: ["active", "inactive", "pending"],
+        limit: 100,
+        ...(after ? { after } : {}),
+      })
+
+      results.push(...page.data.map(mapOrganizationMembership))
+      after = page.listMetadata.after ?? undefined
+      if (!after) return results
+    }
   }
 
   async getOrganizationMembership(params: {
     organizationId: string
     userId: string
   }): Promise<WorkosOrganizationMembership | null> {
-    const memberships = await this.listOrganizationMemberships(params.organizationId)
-    const membership = memberships.find((value) => value.userId === params.userId) ?? null
+    const memberships = await this.workos.userManagement.listOrganizationMemberships({
+      organizationId: params.organizationId,
+      userId: params.userId,
+      statuses: ["active", "inactive", "pending"],
+      limit: 1,
+    })
+    const membership = memberships.data[0]
     if (!membership) {
       return null
     }
 
-    return membership
+    return mapOrganizationMembership(membership)
   }
 
   async ensureOrganizationMembership(params: {

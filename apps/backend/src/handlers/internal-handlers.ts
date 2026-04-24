@@ -1,6 +1,11 @@
 import type { Request, Response } from "express"
 import { z } from "zod"
-import type { WorkspaceAuthzSnapshot } from "@threa/types"
+import {
+  WORKSPACE_PERMISSION_SCOPES,
+  type WorkspaceAuthzSnapshot,
+  type WorkspacePermissionScope,
+  type WorkspaceRole,
+} from "@threa/types"
 import { HttpError } from "../lib/errors"
 import type { WorkspaceService } from "../features/workspaces"
 import type { InvitationService } from "../features/invitations"
@@ -20,20 +25,24 @@ const acceptInvitationSchema = z.object({
   name: z.string().min(1),
 })
 
-const workspaceAuthzSnapshotSchema = z.object({
+const workspacePermissionScopeSchema = z.enum(
+  Object.values(WORKSPACE_PERMISSION_SCOPES) as [WorkspacePermissionScope, ...WorkspacePermissionScope[]]
+)
+
+const workspaceRoleSchema: z.ZodType<WorkspaceRole> = z.object({
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().nullable(),
+  permissions: z.array(workspacePermissionScopeSchema),
+  type: z.string().min(1),
+})
+
+const workspaceAuthzSnapshotSchema: z.ZodType<WorkspaceAuthzSnapshot> = z.object({
   workspaceId: z.string().min(1),
   workosOrganizationId: z.string().min(1),
   revision: z.string().min(1),
   generatedAt: z.string().datetime(),
-  roles: z.array(
-    z.object({
-      slug: z.string().min(1),
-      name: z.string().min(1),
-      description: z.string().nullable(),
-      permissions: z.array(z.string().min(1)),
-      type: z.string().min(1),
-    })
-  ),
+  roles: z.array(workspaceRoleSchema),
   memberships: z.array(
     z.object({
       organizationMembershipId: z.string().min(1),
@@ -119,7 +128,7 @@ export function createInternalHandlers(deps: InternalHandlersDeps) {
         throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
       }
 
-      const applied = await workspaceService.applyWorkosAuthzSnapshot(result.data as WorkspaceAuthzSnapshot)
+      const applied = await workspaceService.applyWorkosAuthzSnapshot(result.data)
       res.status(200).json({ applied })
     },
   }

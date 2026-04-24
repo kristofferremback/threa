@@ -1,8 +1,10 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express"
 import type { WorkspacePermissionScope } from "@threa/types"
 
+export type WorkspaceAuthzSource = "session" | "user_api_key" | "bot_api_key"
+
 export interface WorkspaceAuthorizationContext {
-  source: "session" | "user_api_key" | "bot_api_key"
+  source: WorkspaceAuthzSource
   organizationId: string | null
   organizationMembershipId: string | null
   permissions: Set<WorkspacePermissionScope>

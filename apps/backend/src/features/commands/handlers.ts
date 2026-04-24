@@ -119,6 +119,7 @@ export function createCommandHandlers({ pool, commandRegistry, streamService }: 
           streamId,
           event: serializeBigInt(evt),
           authorId: userId,
+          source: req.authz!.source,
         })
 
         return evt

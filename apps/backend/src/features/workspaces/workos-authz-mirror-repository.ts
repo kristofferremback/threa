@@ -2,6 +2,7 @@ import type { WorkspaceRole, WorkspacePermissionScope } from "@threa/types"
 import type { WorkspaceAuthzSnapshot } from "@threa/types"
 import type { Querier } from "../../db"
 import { sql } from "../../db"
+import { ADMIN_COMPATIBILITY_PERMISSIONS } from "../../middleware/authorization"
 
 export interface WorkspaceAuthzStateRow {
   workspace_id: string
@@ -22,6 +23,8 @@ interface WorkspaceRoleRow {
   permissions: string[]
   role_type: string
 }
+
+const ADMIN_PERMISSIONS = Array.from(ADMIN_COMPATIBILITY_PERMISSIONS)
 
 function mapRole(row: WorkspaceRoleRow): WorkspaceRole {
   return {
@@ -177,7 +180,7 @@ export const WorkosAuthzMirrorRepository = {
            AND r.slug = mr.role_slug
           WHERE mr.workspace_id = m.workspace_id
             AND mr.organization_membership_id = m.organization_membership_id
-            AND r.permissions && ARRAY['members:write', 'workspace:admin']::text[]
+            AND r.permissions && ${ADMIN_PERMISSIONS}::text[]
         )
       LIMIT 1
     `)
@@ -204,7 +207,7 @@ export const WorkosAuthzMirrorRepository = {
                AND r.slug = mr.role_slug
               WHERE m.workspace_id = u.workspace_id
                 AND m.workos_user_id = u.workos_user_id
-                AND r.permissions && ARRAY['members:write', 'workspace:admin']::text[]
+                AND r.permissions && ${ADMIN_PERMISSIONS}::text[]
             ) THEN 'admin'
             ELSE 'user'
           END AS role
