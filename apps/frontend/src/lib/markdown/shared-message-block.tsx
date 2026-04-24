@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSharedMessageSource, type SharedMessageSource } from "@/hooks/use-shared-message-source"
+import { stripMarkdownToInline } from "@/lib/markdown"
 
 interface SharedMessagePointerBlockProps {
   streamId: string
@@ -72,15 +73,16 @@ function renderBody(fallbackAuthor: string, source: SharedMessageSource) {
     )
   }
 
-  const snippet = source.contentMarkdown
-  const lines = snippet.split("\n")
-  const isLong = lines.length > 3 || snippet.length > 200
-  const display = isLong ? lines.slice(0, 3).join("\n").slice(0, 200) + "…" : snippet
+  // INV-60: preview surfaces must render stripped markdown, never raw
+  // syntax. Collapse the source to a single inline string and truncate
+  // with a character cap (line-based slicing gets eaten by the strip).
+  const snippet = stripMarkdownToInline(source.contentMarkdown)
+  const display = snippet.length > 200 ? snippet.slice(0, 200) + "…" : snippet
 
   return (
     <>
       <AuthorLabel name={source.authorName || fallbackAuthor || "—"} />
-      <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{display}</p>
+      <p className="mt-0.5 text-muted-foreground">{display}</p>
     </>
   )
 }

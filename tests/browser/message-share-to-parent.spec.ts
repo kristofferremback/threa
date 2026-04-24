@@ -93,10 +93,15 @@ test.describe("Message share-to-parent", () => {
     await composer.focus()
     await page.keyboard.press("Enter")
 
-    // The new message appears in the channel with the SharedMessageView
-    await expect(page.locator("[data-type='shared-message']", { hasText: /loading|thread-reply-/i })).toBeVisible({
-      timeout: 5000,
-    })
+    // The new message appears in the channel with the SharedMessageView, and
+    // hydration completes — the pointer body renders the real source text, not
+    // a stuck skeleton. Asserting on the hydrated text guards against a
+    // regression where hydration never lands (missing socket invalidation,
+    // broken SharedMessagesProvider lookup) that a `/loading/` match would
+    // silently pass.
+    await expect(
+      page.locator("[data-type='shared-message']").filter({ hasText: new RegExp(`thread-reply-${testId}`) })
+    ).toBeVisible({ timeout: 5000 })
   })
 
   test("propagates source edits to the pointer", async ({ page }) => {

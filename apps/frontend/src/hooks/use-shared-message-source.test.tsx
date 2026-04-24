@@ -117,4 +117,19 @@ describe("useSharedMessageSource", () => {
     })
     expect(result.current).toEqual({ status: "pending", showSkeleton: true })
   })
+
+  it("resets the skeleton state when the pointer identity changes", () => {
+    const { result, rerender } = renderHook(({ id }) => useSharedMessageSource(id, "stream_src"), {
+      initialProps: { id: "msg_a" },
+    })
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    expect(result.current).toEqual({ status: "pending", showSkeleton: true })
+
+    rerender({ id: "msg_b" })
+    // New pointer must re-enter the pre-threshold blank state rather than
+    // inheriting the previous skeleton.
+    expect(result.current).toEqual({ status: "pending", showSkeleton: false })
+  })
 })

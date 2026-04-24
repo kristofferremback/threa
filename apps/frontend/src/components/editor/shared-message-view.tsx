@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSharedMessageSource, type SharedMessageSource } from "@/hooks/use-shared-message-source"
+import { stripMarkdownToInline } from "@/lib/markdown"
 import type { SharedMessageAttrs } from "./shared-message-extension"
 
 /**
@@ -75,15 +76,14 @@ function renderBody(attrs: SharedMessageAttrs, source: SharedMessageSource, _wor
     )
   }
 
-  const snippet = source.contentMarkdown
-  const lines = snippet.split("\n")
-  const isLong = lines.length > 3 || snippet.length > 200
-  const display = isLong ? lines.slice(0, 3).join("\n").slice(0, 200) + "…" : snippet
+  // INV-60: preview surfaces must strip markdown before rendering.
+  const snippet = stripMarkdownToInline(source.contentMarkdown)
+  const display = snippet.length > 200 ? snippet.slice(0, 200) + "…" : snippet
 
   return (
     <>
       <AuthorLabel name={source.authorName || attrs.authorName || "—"} />
-      <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{display}</p>
+      <p className="mt-0.5 text-muted-foreground">{display}</p>
     </>
   )
 }

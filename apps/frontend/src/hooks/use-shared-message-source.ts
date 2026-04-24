@@ -93,19 +93,35 @@ export function useSharedMessageSource(messageId: string, sourceStreamId: string
 
     if (cachedEvent) {
       const payload = cachedEvent.payload as { contentMarkdown?: string } | null
-      return {
-        status: "resolved",
-        contentMarkdown: payload?.contentMarkdown ?? "",
-        authorId: cachedEvent.actorId ?? "",
-        actorType: cachedEvent.actorType ?? "user",
-        editedAt: null,
+      // Only surface a resolved record when the cached event actually has the
+      // fields we need. Fabricating `authorId = ""` / `actorType = "user"` when
+      // the schema guarantees them would silently misattribute any event that
+      // somehow lacked an actor (corrupt cache, future payload shape); prefer
+      // `missing` so the UI falls through to the server-provided attr fallback.
+      if (payload?.contentMarkdown && cachedEvent.actorId && cachedEvent.actorType) {
+        return {
+          status: "resolved",
+          contentMarkdown: payload.contentMarkdown,
+          authorId: cachedEvent.actorId,
+          actorType: cachedEvent.actorType,
+          editedAt: null,
+        }
       }
+      return { status: "missing" }
     }
 
     return null
   }, [hydrated, cachedEvent])
 
   const [showSkeleton, setShowSkeleton] = useState(false)
+
+  // Reset the staggered-skeleton state when the identity of the pointer
+  // changes. Otherwise a second pointer that mounts with the hook already
+  // in `showSkeleton: true` would skip the 300ms anti-flicker delay and
+  // flash a loading state that the rest of the app smooths over.
+  useEffect(() => {
+    setShowSkeleton(false)
+  }, [messageId, sourceStreamId])
 
   useEffect(() => {
     if (resolved) {

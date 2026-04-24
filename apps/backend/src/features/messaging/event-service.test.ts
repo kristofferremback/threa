@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:te
 import { AttachmentSafetyStatuses } from "@threa/types"
 import { EventService } from "./event-service"
 import { MessageRepository } from "./repository"
+import { SharedMessageRepository } from "./sharing/repository"
 import { MessageVersionRepository } from "./version-repository"
 import { StreamEventRepository, StreamMemberRepository, StreamRepository } from "../streams"
 import { AttachmentRepository } from "../attachments"
@@ -110,6 +111,8 @@ describe("EventService.editMessage version capture", () => {
       editedAt: new Date(),
     } as any)
     spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
+    spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
+    spyOn(SharedMessageRepository, "insert").mockResolvedValue({} as any)
   })
 
   afterEach(() => {
@@ -272,6 +275,8 @@ describe("EventService.createMessage metadata propagation", () => {
     spyOn(MessageRepository, "findById").mockResolvedValue(null)
     spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
     spyOn(messagesTotal, "inc").mockImplementation(() => undefined)
+    spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
+    spyOn(SharedMessageRepository, "insert").mockResolvedValue({} as any)
   })
 
   afterEach(() => {

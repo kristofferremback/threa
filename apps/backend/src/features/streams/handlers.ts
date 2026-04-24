@@ -172,6 +172,7 @@ interface Dependencies {
  */
 async function hydrateSharedMessagesForEvents(
   pool: Pool,
+  workspaceId: string,
   events: StreamEvent[]
 ): Promise<Record<string, HydratedSharedMessage>> {
   const ids = new Set<string>()
@@ -182,7 +183,7 @@ async function hydrateSharedMessagesForEvents(
     }
   }
   if (ids.size === 0) return {}
-  return hydrateSharedMessageIds(pool, ids)
+  return hydrateSharedMessageIds(pool, workspaceId, ids)
 }
 
 function serializeEvent(event: StreamEvent) {
@@ -395,7 +396,7 @@ export function createStreamHandlers({
       })
 
       const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(linkPreviewService, workspaceId, userId, events)
-      const sharedMessages = await hydrateSharedMessagesForEvents(pool, eventsWithLinkPreviews)
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
 
       res.json({ events: eventsWithLinkPreviews.map(serializeEvent), sharedMessages })
     },
@@ -430,7 +431,7 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
-      const sharedMessages = await hydrateSharedMessagesForEvents(pool, eventsWithLinkPreviews)
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
 
       res.json({
         events: eventsWithLinkPreviews.map(serializeEvent),
@@ -629,7 +630,7 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
-      const sharedMessages = await hydrateSharedMessagesForEvents(pool, eventsWithLinkPreviews)
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
 
       res.json({
         data: {

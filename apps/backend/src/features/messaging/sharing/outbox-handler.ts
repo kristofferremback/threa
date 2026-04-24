@@ -42,10 +42,10 @@ export async function invalidatePointersForEvent(event: OutboxEvent, db: Pool, i
   const sourceMessageId = extractMessageIdForInvalidation(event)
   if (!sourceMessageId) return
 
-  const shares = await SharedMessageRepository.listBySourceMessageIds(db, [sourceMessageId])
+  const { workspaceId } = event.payload as { workspaceId: string }
+  const shares = await SharedMessageRepository.listBySourceMessageIds(db, workspaceId, [sourceMessageId])
   if (shares.length === 0) return
 
-  const { workspaceId } = event.payload as { workspaceId: string }
   const targetStreamIds = new Set(shares.map((s) => s.targetStreamId))
   for (const targetStreamId of targetStreamIds) {
     io.to(`ws:${workspaceId}:stream:${targetStreamId}`).emit(POINTER_INVALIDATED_EVENT, {

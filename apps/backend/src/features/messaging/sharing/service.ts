@@ -5,6 +5,7 @@ import { type JSONContent, ShareFlavors, type ShareFlavor } from "@threa/types"
 import { MessageRepository } from "../repository"
 import {
   crossesPrivacyBoundary,
+  type CanReadStream,
   type CountExposedMembers,
   type FindStreamForSharing,
   type IsAncestorStream,
@@ -87,6 +88,12 @@ export interface ValidateAndRecordSharesParams {
    */
   countExposedMembers: CountExposedMembers
   /**
+   * Source-stream read-access check for the sharer. Required to prevent a
+   * user from guessing a message id in a private stream they cannot read
+   * and laundering its content through a share into a stream they can.
+   */
+  canReadStream: CanReadStream
+  /**
    * Set when the sharer has acknowledged the privacy warning in the modal.
    * Backend re-runs the check to prevent spoofed confirmations — the flag is
    * only consulted AFTER the cross-boundary condition is independently
@@ -98,12 +105,23 @@ export interface ValidateAndRecordSharesParams {
 /**
  * Validates any cross-stream share-nodes in a message's contentJson and
  * writes the corresponding shared_messages rows. Invoked from inside
- * MessageEventService.createMessage's transaction so the share grant is
- * committed atomically with the event-source + projection (INV-7).
+ * MessageEventService.createMessage and editMessage transactions so the
+ * share grant is committed atomically with the event-source + projection
+ * (INV-7).
+ *
+ * Idempotent by design: deletes any existing rows for `shareMessageId`
+ * before re-inserting, so the row set always reflects the current message
+ * body. This keeps the create and edit paths on one code path — edits that
+ * add, remove, or swap share nodes produce the correct final row set.
  */
 export const ShareService = {
   async validateAndRecordShares(params: ValidateAndRecordSharesParams): Promise<void> {
     const references = collectShareReferences(params.contentJson, params.targetStreamId)
+
+    // Reset the share rows for this message before recording. Covers edits
+    // that removed or swapped share nodes, and is a no-op on create.
+    await SharedMessageRepository.deleteByShareMessageId(params.client, params.workspaceId, params.shareMessageId)
+
     if (references.length === 0) return
 
     for (const ref of references) {
@@ -132,6 +150,23 @@ export const ShareService = {
         throw new HttpError("Cannot share across workspaces", {
           status: 400,
           code: "SHARE_CROSS_WORKSPACE_FORBIDDEN",
+        })
+      }
+
+      // Authz: the sharer must themselves have read access to the source.
+      // Prevents enumeration of message ids in streams the sharer can't
+      // read. The target-exposure check below is orthogonal — it defends
+      // target viewers; this one defends the source stream.
+      const sharerCanRead = await params.canReadStream(
+        params.client,
+        params.workspaceId,
+        ref.sourceStreamId,
+        params.sharerId
+      )
+      if (!sharerCanRead) {
+        throw new HttpError("You don't have access to the source message", {
+          status: 403,
+          code: "SHARE_SOURCE_FORBIDDEN",
         })
       }
 

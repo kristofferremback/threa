@@ -11,6 +11,7 @@ import {
 } from "@threa/types"
 import type { Socket } from "socket.io-client"
 import { workspaceKeys } from "@/hooks/use-workspaces"
+import { streamKeys } from "@/hooks/use-streams"
 import type { QueryClient } from "@tanstack/react-query"
 
 // ============================================================================
@@ -449,8 +450,8 @@ export function registerStreamSocketHandlers(
     // without a refetch the pointer renders with no content. Invalidate so the
     // next response populates the hydration map.
     if (contentHasSharedMessage(newPayload.contentJson)) {
-      await queryClient.invalidateQueries({ queryKey: ["streams", "bootstrap", workspaceId, streamId] })
-      await queryClient.invalidateQueries({ queryKey: ["streams", "events", workspaceId, streamId] })
+      await queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+      await queryClient.invalidateQueries({ queryKey: streamKeys.events(workspaceId, streamId) })
     }
   }
 
@@ -471,8 +472,8 @@ export function registerStreamSocketHandlers(
     }))
 
     if (contentHasSharedMessage(editPayload.contentJson)) {
-      await queryClient.invalidateQueries({ queryKey: ["streams", "bootstrap", workspaceId, streamId] })
-      await queryClient.invalidateQueries({ queryKey: ["streams", "events", workspaceId, streamId] })
+      await queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+      await queryClient.invalidateQueries({ queryKey: streamKeys.events(workspaceId, streamId) })
     }
   }
 
@@ -573,8 +574,8 @@ export function registerStreamSocketHandlers(
    */
   const handlePointerInvalidated = async (payload: { targetStreamId: string; sourceMessageId: string }) => {
     if (payload.targetStreamId !== streamId) return
-    await queryClient.invalidateQueries({ queryKey: ["streams", "bootstrap", workspaceId, streamId] })
-    await queryClient.invalidateQueries({ queryKey: ["streams", "events", workspaceId, streamId] })
+    await queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+    await queryClient.invalidateQueries({ queryKey: streamKeys.events(workspaceId, streamId) })
   }
 
   socket.on("message:created", handleMessageCreated)

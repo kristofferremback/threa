@@ -75,18 +75,33 @@ export const SharedMessageRepository = {
   },
 
   /**
-   * Returns every share-row whose source is one of the given message ids.
-   * Used by the outbox handler to find target streams to invalidate when a
-   * source message is edited or deleted, and by hydration to resolve
-   * per-viewer access grants on pointer renders.
+   * Returns every share-row whose source is one of the given message ids,
+   * scoped to `workspaceId` (INV-8). Used by the outbox handler to find
+   * target streams to invalidate when a source message is edited or deleted,
+   * and by hydration to resolve per-viewer access grants on pointer renders.
    */
-  async listBySourceMessageIds(db: Querier, sourceMessageIds: string[]): Promise<SharedMessage[]> {
+  async listBySourceMessageIds(db: Querier, workspaceId: string, sourceMessageIds: string[]): Promise<SharedMessage[]> {
     if (sourceMessageIds.length === 0) return []
     const result = await db.query<SharedMessageRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}
       FROM shared_messages
-      WHERE source_message_id = ANY(${sourceMessageIds})
+      WHERE workspace_id = ${workspaceId}
+        AND source_message_id = ANY(${sourceMessageIds})
     `)
     return result.rows.map(mapRow)
+  },
+
+  /**
+   * Remove every share-row created by a given share-message. Used on edit
+   * to make share-recording idempotent: the service deletes existing rows
+   * for a `share_message_id` and re-inserts from the new content, so the
+   * row set always reflects the current message body.
+   */
+  async deleteByShareMessageId(db: Querier, workspaceId: string, shareMessageId: string): Promise<void> {
+    await db.query(sql`
+      DELETE FROM shared_messages
+      WHERE workspace_id = ${workspaceId}
+        AND share_message_id = ${shareMessageId}
+    `)
   },
 }

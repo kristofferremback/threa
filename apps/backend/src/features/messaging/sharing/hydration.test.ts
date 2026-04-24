@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { collectSharedMessageIds, hydrateSharedMessageIds, hydrateSharedMessages } from "./hydration"
 import { MessageRepository } from "../repository"
+import { UserRepository } from "../../workspaces"
+import { PersonaRepository } from "../../agents"
 
 afterEach(() => {
   mock.restore()
 })
+
+function stubAuthorLookups() {
+  spyOn(UserRepository, "findByIds").mockResolvedValue([])
+  spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+}
 
 describe("collectSharedMessageIds", () => {
   it("collects messageIds from nested sharedMessage nodes", () => {
@@ -49,13 +56,13 @@ describe("collectSharedMessageIds", () => {
 
 describe("hydrateSharedMessageIds", () => {
   it("returns an empty map when given no ids", async () => {
-    spyOn(MessageRepository, "findByIds").mockResolvedValue(new Map())
-    const result = await hydrateSharedMessageIds({} as any, [])
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(new Map())
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", [])
     expect(result).toEqual({})
   })
 
-  it("returns ok-state payloads for live source messages", async () => {
-    spyOn(MessageRepository, "findByIds").mockResolvedValue(
+  it("returns ok-state payloads for live source messages (with authorName joined from users)", async () => {
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(
       new Map([
         [
           "msg_a",
@@ -73,14 +80,21 @@ describe("hydrateSharedMessageIds", () => {
         ],
       ])
     )
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_1", name: "Ada" } as any])
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
 
-    const result = await hydrateSharedMessageIds({} as any, ["msg_a"])
-    expect(result.msg_a).toMatchObject({ state: "ok", messageId: "msg_a", streamId: "stream_source" })
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", ["msg_a"])
+    expect(result.msg_a).toMatchObject({
+      state: "ok",
+      messageId: "msg_a",
+      streamId: "stream_source",
+      authorName: "Ada",
+    })
   })
 
   it("returns deleted payloads for soft-deleted sources", async () => {
     const deletedAt = new Date("2026-02-01")
-    spyOn(MessageRepository, "findByIds").mockResolvedValue(
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(
       new Map([
         [
           "msg_a",
@@ -98,21 +112,24 @@ describe("hydrateSharedMessageIds", () => {
         ],
       ])
     )
-    const result = await hydrateSharedMessageIds({} as any, ["msg_a"])
+    stubAuthorLookups()
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", ["msg_a"])
     expect(result.msg_a).toEqual({ state: "deleted", messageId: "msg_a", deletedAt })
   })
 
   it("returns missing payloads for ids that resolve to no row", async () => {
-    spyOn(MessageRepository, "findByIds").mockResolvedValue(new Map())
-    const result = await hydrateSharedMessageIds({} as any, ["msg_missing"])
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(new Map())
+    stubAuthorLookups()
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", ["msg_missing"])
     expect(result.msg_missing).toEqual({ state: "missing", messageId: "msg_missing" })
   })
 })
 
 describe("hydrateSharedMessages", () => {
   it("scans input messages' contentJson and hydrates referenced ids in one pass", async () => {
-    const findByIds = spyOn(MessageRepository, "findByIds").mockResolvedValue(new Map())
-    await hydrateSharedMessages({} as any, [
+    const findByIds = spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(new Map())
+    stubAuthorLookups()
+    await hydrateSharedMessages({} as any, "ws_1", [
       {
         id: "msg_1",
         contentJson: {
@@ -133,7 +150,7 @@ describe("hydrateSharedMessages", () => {
     ])
 
     expect(findByIds).toHaveBeenCalledTimes(1)
-    const ids = (findByIds as any).mock.calls[0][1].sort()
+    const ids = (findByIds as any).mock.calls[0][2].sort()
     expect(ids).toEqual(["msg_a", "msg_b"])
   })
 })

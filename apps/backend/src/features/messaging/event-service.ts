@@ -3,6 +3,7 @@ import { withTransaction, withClient } from "../../db"
 import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
+import { canReadStream } from "../streams"
 import { MessageRepository, Message } from "./repository"
 import { ShareService } from "./sharing"
 import { AttachmentRepository, isVideoAttachment } from "../attachments"
@@ -106,6 +107,8 @@ export interface EditMessageParams {
   contentMarkdown: string
   actorId: string
   actorType?: AuthorType
+  /** Same semantics as `CreateMessageParams.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 export interface DeleteMessageParams {
@@ -339,6 +342,7 @@ export class EventService {
         isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
         countExposedMembers: (db, targetStreamId, sourceStreamId) =>
           StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
+        canReadStream: (db, workspaceId, streamId, userId) => canReadStream(db, workspaceId, streamId, userId),
         confirmedPrivacyWarning: params.confirmedPrivacyWarning,
       })
 
@@ -421,7 +425,27 @@ export class EventService {
       )
 
       if (message) {
-        // 4. Publish to outbox
+        // 4. Re-validate share nodes. Same call as createMessage — edits that
+        //    add, remove, or swap share references rewrite the shared_messages
+        //    row set so hydration/authorization reflects the new content.
+        //    Without this, an author could edit in a sharedMessage pointing
+        //    at an arbitrary id and leak its content past the create-time check.
+        await ShareService.validateAndRecordShares({
+          client,
+          workspaceId: params.workspaceId,
+          targetStreamId: params.streamId,
+          shareMessageId: params.messageId,
+          sharerId: params.actorId,
+          contentJson: params.contentJson,
+          findStream: (db, id) => StreamRepository.findById(db, id),
+          isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
+          countExposedMembers: (db, targetStreamId, sourceStreamId) =>
+            StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
+          canReadStream: (db, workspaceId, streamId, userId) => canReadStream(db, workspaceId, streamId, userId),
+          confirmedPrivacyWarning: params.confirmedPrivacyWarning,
+        })
+
+        // 5. Publish to outbox
         await OutboxRepository.insert(client, "message:edited", {
           workspaceId: params.workspaceId,
           streamId: params.streamId,

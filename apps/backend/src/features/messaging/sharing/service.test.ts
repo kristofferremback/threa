@@ -100,6 +100,7 @@ describe("ShareService.validateAndRecordShares", () => {
 
   const isAncestorStub = async () => false
   const countExposedMembersStub = async () => 0
+  const canReadStreamStub = async () => true
 
   function baseParams(extras: Partial<Parameters<typeof ShareService.validateAndRecordShares>[0]> = {}) {
     return {
@@ -111,6 +112,7 @@ describe("ShareService.validateAndRecordShares", () => {
       findStream: findStreamStub(),
       isAncestor: isAncestorStub,
       countExposedMembers: countExposedMembersStub,
+      canReadStream: canReadStreamStub,
       contentJson: {
         type: "doc",
         content: [{ type: "sharedMessage", attrs: { messageId: "msg_source", streamId: "stream_source" } }],
@@ -122,6 +124,7 @@ describe("ShareService.validateAndRecordShares", () => {
   beforeEach(() => {
     spyOn(MessageRepository, "findById").mockResolvedValue(sourceMessage)
     spyOn(SharedMessageRepository, "insert").mockResolvedValue({} as any)
+    spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -198,5 +201,22 @@ describe("ShareService.validateAndRecordShares", () => {
       status: 400,
       code: "SHARE_SOURCE_STREAM_MISMATCH",
     })
+  })
+
+  it("rejects shares when the sharer cannot read the source stream", async () => {
+    await expect(
+      ShareService.validateAndRecordShares(baseParams({ canReadStream: async () => false }))
+    ).rejects.toMatchObject({
+      status: 403,
+      code: "SHARE_SOURCE_FORBIDDEN",
+    })
+    expect(SharedMessageRepository.insert).not.toHaveBeenCalled()
+  })
+
+  it("deletes previously recorded shares before re-inserting (idempotent for edits)", async () => {
+    spyOn(accessCheck, "crossesPrivacyBoundary").mockResolvedValue({ triggered: false, exposedUserCount: 0 })
+    await ShareService.validateAndRecordShares(baseParams())
+    expect(SharedMessageRepository.deleteByShareMessageId).toHaveBeenCalledTimes(1)
+    expect(SharedMessageRepository.deleteByShareMessageId).toHaveBeenCalledWith({}, "ws_1", "msg_share")
   })
 })

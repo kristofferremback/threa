@@ -84,6 +84,6 @@ describe("invalidatePointersForEvent", () => {
       {} as any,
       io
     )
-    expect(list).toHaveBeenCalledWith({}, ["msg_edited"])
+    expect(list).toHaveBeenCalledWith({}, "ws_1", ["msg_edited"])
   })
 })

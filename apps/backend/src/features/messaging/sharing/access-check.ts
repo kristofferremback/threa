@@ -1,18 +1,19 @@
 import type { Querier } from "../../../db"
+import { Visibilities, type Visibility } from "@threa/types"
 
 /**
  * Minimal structural shape needed to answer the source-visibility check.
  * Defined here so the sharing sub-feature does not import from the streams
  * feature — satisfies INV-52 and breaks the barrel cycle that arises
  * because streams/handlers.ts imports hydration helpers from the messaging
- * barrel. Ancestry and member-counting live in the DB and are answered by
- * the injected {@link IsAncestorStream} / {@link CountExposedMembers}
- * callbacks, not by walking or querying app-side (INV-5).
+ * barrel. Ancestry, member-counting, and read-access live in the DB and are
+ * answered by the injected callbacks, not by walking or querying app-side
+ * (INV-5).
  */
 export interface SharingStream {
   id: string
   workspaceId: string
-  visibility: string
+  visibility: Visibility
 }
 
 export type FindStreamForSharing = (db: Querier, id: string) => Promise<SharingStream | null>
@@ -33,6 +34,14 @@ export type IsAncestorStream = (db: Querier, ancestorCandidateId: string, stream
  * the streams feature (INV-52).
  */
 export type CountExposedMembers = (db: Querier, targetStreamId: string, sourceStreamId: string) => Promise<number>
+
+/**
+ * Returns true when `userId` has read access to `streamId` in `workspaceId`
+ * (direct or inherited via root stream, or the stream is public). Injected
+ * so the sharing service can gate shares on the sharer's read access without
+ * importing the streams feature directly (INV-52).
+ */
+export type CanReadStream = (db: Querier, workspaceId: string, streamId: string, userId: string) => Promise<boolean>
 
 export interface PrivacyBoundaryResult {
   /** True when target members exist who cannot already see the source stream. */
@@ -68,7 +77,7 @@ export async function crossesPrivacyBoundary(
   }
 
   const source = await findStream(db, sourceStreamId)
-  if (!source || source.visibility !== "private") {
+  if (!source || source.visibility !== Visibilities.PRIVATE) {
     return { triggered: false, exposedUserCount: 0 }
   }
 

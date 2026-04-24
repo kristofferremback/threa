@@ -55,3 +55,6 @@ export type { MemoStreamState, StreamReadyToProcess } from "./state-repository"
 // Display name utilities
 export { getEffectiveDisplayName, formatParticipantNames, needsAutoNaming } from "./display-name"
 export type { DisplayNameSource, DisplayNameContext, EffectiveDisplayName } from "./display-name"
+
+// Read-access helper (Querier-based permission check for use inside transactions)
+export { canReadStream } from "./read-access"

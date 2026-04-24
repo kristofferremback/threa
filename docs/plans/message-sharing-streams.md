@@ -557,7 +557,7 @@ Smallest end-to-end vertical: thread → parent, pointer flavor, no modal, no pr
 - Migration: `shared_messages` table.
 - `packages/types`: `ThreaSharedMessage` node spec, `SHARE_FLAVORS` constant.
 - Backend `ShareService.validateAndRecordShares` called from `MessageEventService.createMessage`. Supports only `ThreaSharedMessage` nodes whose `streamId` is an ancestor stream (parent/root) for this slice — no arbitrary targets yet.
-- Pointer hydration on message read.
+- Single-level pointer hydration on message read: the backend emits one `HydratedSharedMessage` per referenced `messageId` (ok / deleted / missing). The recursive / per-viewer / truncated / placeholder flows described in the "Pointer hydration on message fetch" section above (with `MAX_HYDRATION_DEPTH`, re-share placeholders, etc.) **are deferred to Slice 2**; a Slice 1 viewer who can't read the source sees the source-side snippet stored on the node's attrs rather than a server-computed placeholder.
 - Outbox subscriber for `message:updated` → `pointer:invalidated`.
 - Frontend: `share-to-parent` action in `message-actions.ts`, one-shot hand-off cache, pointer NodeView, preview-strip extension (INV-60).
 - E2E: `E2E-share-to-parent`, `E2E-share-pointer-edit-propagation`, `E2E-share-pointer-delete-tombstone`.
