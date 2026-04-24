@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useCreateStream } from "./use-streams"
 import { buildDiscussWithAriadneBag } from "@/lib/ariadne/discuss"
+import { seedDraftWithContextRefChip } from "@/lib/context-bag/seed-draft"
+import { ContextRefKinds } from "@threa/types"
 
 /**
  * Hook that triggers "Discuss with Ariadne": creates a private scratchpad
@@ -26,13 +28,37 @@ export function useDiscussWithAriadne(workspaceId: string) {
   const navigate = useNavigate()
 
   return useCallback(
-    async (args: { sourceStreamId: string }) => {
+    async (args: { sourceStreamId: string; sourceLabel?: string }) => {
       try {
         const stream = await createStream.mutateAsync({
           type: "scratchpad",
           companionMode: "on",
           contextBag: buildDiscussWithAriadneBag({ sourceStreamId: args.sourceStreamId }),
         })
+
+        // Seed the new scratchpad's draft with a context-ref chip so the
+        // composer renders the attached thread reference as soon as the user
+        // lands. "Attachment-style" UX: visible chip without a nav-state
+        // round-trip (seed goes through IDB + in-memory draft cache, which
+        // the stream page's `useDraftComposer` picks up on first render).
+        // Status is optimistic `"ready"` — the backend's precompute handler
+        // is warming `context_summaries` on the `stream:created` outbox
+        // event in parallel, so by the time the user sends the cache hits.
+        await seedDraftWithContextRefChip({
+          workspaceId,
+          streamId: stream.id,
+          chip: {
+            refKind: ContextRefKinds.THREAD,
+            streamId: args.sourceStreamId,
+            fromMessageId: null,
+            toMessageId: null,
+            label: args.sourceLabel ?? "Thread",
+            status: "ready",
+            fingerprint: null,
+            errorMessage: null,
+          },
+        })
+
         navigate(`/w/${workspaceId}/s/${stream.id}`)
       } catch (err) {
         toast.error("Couldn't start a discussion. Please try again.")
