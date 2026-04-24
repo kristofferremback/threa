@@ -316,17 +316,14 @@ async function buildThreadContext(db: Querier, stream: Stream, temporal?: Tempor
   // Build thread path from current thread up to root
   const threadPath = await buildThreadPath(db, stream)
 
-  // Include the parent message that spawned this thread as context.
-  // This is critical because the parent message may contain attachments (images, files)
-  // and context that the thread discussion is about.
-  let conversationHistory = messages
-  if (stream.parentMessageId) {
-    const parentMessage = await MessageRepository.findById(db, stream.parentMessageId)
-    if (parentMessage) {
-      // Prepend parent message to conversation history
-      conversationHistory = [parentMessage, ...messages]
-    }
-  }
+  // Include the parent (root) message that spawned this thread — the reply
+  // chain is unintelligible without it, and the parent often carries
+  // attachments / context the thread is about. `findThreadRoot` is the
+  // canonical helper: filters soft-deleted roots + returns null for
+  // non-threads. Every new thread-context code path MUST use this helper
+  // rather than hand-rolling a `findById` + prepend (recurring bug class).
+  const parentMessage = await MessageRepository.findThreadRoot(db, stream)
+  const conversationHistory = parentMessage ? [parentMessage, ...messages] : messages
 
   return {
     streamType: stream.type,

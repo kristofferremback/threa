@@ -210,6 +210,28 @@ export const MessageRepository = {
     return map
   },
 
+  /**
+   * Return the parent ("root") message of a stream — the message that spawned
+   * the thread — or null when the stream has no parent (channel / scratchpad /
+   * DM / hard-deleted root / soft-deleted root).
+   *
+   * Canonical helper for the recurring "thread root forgotten" bug class:
+   * every context-building path that fetches a thread's messages must also
+   * include the root so the reply chain stays intelligible. Callers that use
+   * `MessageRepository.list(streamId)` on a thread stream miss the root by
+   * default (it lives in the parent stream). This helper centralises:
+   *   1. The `parentMessageId` presence check
+   *   2. The `findById` lookup
+   *   3. The soft-delete filter — `findById` doesn't filter `deletedAt IS NULL`,
+   *      so without this guard a user's deleted root would still reach the AI.
+   */
+  async findThreadRoot(db: Querier, stream: { parentMessageId: string | null }): Promise<Message | null> {
+    if (!stream.parentMessageId) return null
+    const parent = await MessageRepository.findById(db, stream.parentMessageId)
+    if (!parent || parent.deletedAt) return null
+    return parent
+  },
+
   async list(
     db: Querier,
     streamId: string,

@@ -61,13 +61,14 @@ export const ThreadResolver: Resolver<ThreadRef> = {
     // by sequence so the bag can pin down a specific range of the thread.
     const anchored = await applyAnchors(db, messages, ref)
 
-    // Include the parent (root) message when resolving a thread — the reply
-    // chain is almost always unintelligible without the message that spawned
-    // it, and we've historically missed this on other context pipelines.
-    // Matches `buildThreadContext` (context-builder.ts). Anchors intentionally
-    // don't exclude the root: a user asking to narrow to a range of replies
-    // still expects the thread's parent to anchor the conversation.
-    const withRoot = await prependParentMessage(db, stream, anchored)
+    // Always prepend the thread's root message when the source is a thread —
+    // the reply chain is unintelligible without the message that spawned it.
+    // Anchors intentionally don't exclude the root: a user narrowing to a
+    // range of replies still expects the parent to anchor the conversation.
+    // `findThreadRoot` is the canonical helper for this — it filters
+    // soft-deleted roots and returns null for non-threads.
+    const root = await MessageRepository.findThreadRoot(db, stream)
+    const withRoot = root && !anchored.some((m) => m.id === root.id) ? [root, ...anchored] : anchored
 
     const authorIds = new Set(withRoot.map((m) => m.authorId))
     const authorNames = await resolveAuthorNames(db, stream.workspaceId, authorIds)
@@ -147,33 +148,6 @@ async function assertAnchorExists(
     status: 422,
     code: "CONTEXT_ANCHOR_OUT_OF_WINDOW",
   })
-}
-
-/**
- * If the source is a thread, load its parent message and prepend it to the
- * fetched replies. Returns the input unchanged when the stream is not a
- * thread, has no parent link, or the parent has been hard-deleted. De-dups
- * in case the fetched window already contains it (shouldn't happen since the
- * parent lives in a different stream, but defensive).
- */
-async function prependParentMessage<
-  T extends {
-    id: string
-    authorId: string
-    contentMarkdown: string
-    sequence: bigint
-    createdAt: Date
-    editedAt: Date | null
-  },
->(db: Querier, stream: { parentMessageId: string | null }, items: T[]): Promise<T[]> {
-  if (!stream.parentMessageId) return items
-  const parent = await MessageRepository.findById(db, stream.parentMessageId)
-  if (!parent) return items
-  if (items.some((m) => m.id === parent.id)) return items
-  // Parent's sequence is from a different stream, so we can't compare it to
-  // our fetched items' sequences directly. That's fine for rendering — the
-  // renderer uses the array order we produce here, not the sequence field.
-  return [parent as unknown as T, ...items]
 }
 
 async function resolveAuthorNames(

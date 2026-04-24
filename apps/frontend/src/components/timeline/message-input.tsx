@@ -17,7 +17,7 @@ import { useConnectionState } from "@/components/layout/connection-status"
 import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
-import { hasCommandNode, extractCommandName } from "@/lib/commands"
+import { extractCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
@@ -371,8 +371,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
       // Dispatch as a command only when the editor produced a slashCommand node.
       // Plain text starting with "/" (e.g. "/s") should send as a regular message.
-      if (hasCommandNode(normalizedContent)) {
-        const commandName = extractCommandName(normalizedContent)
+      const commandNode = extractCommandNode(normalizedContent)
+      if (commandNode !== null) {
+        const { clientActionId } = commandNode
 
         // Clear input immediately for responsiveness — same reset the server
         // path does. Either branch below consumes the command, so the user
@@ -385,11 +386,14 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         // creates a scratchpad + navigates; no backend dispatch. Matches the
         // "type the command, press send" UX of server commands so the user
         // isn't surprised by an action firing as they pick from autocomplete.
-        if (commandName === DISCUSS_WITH_ARIADNE_COMMAND) {
+        // The hook surfaces failure via a toast (shared with the context-menu
+        // entry point), so we intentionally don't set an inline composer
+        // error here — that would render the same failure twice.
+        if (clientActionId === DISCUSS_WITH_ARIADNE_COMMAND) {
           try {
             await startDiscussWithAriadne({ sourceStreamId: streamId })
           } catch {
-            setError("Couldn't start a discussion. Please try again.")
+            /* hook already toasted; composer stays clean */
           } finally {
             composer.setIsSending(false)
           }
