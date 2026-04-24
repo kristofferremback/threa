@@ -33,6 +33,53 @@ function mapRole(row: WorkspaceRoleRow): WorkspaceRole {
   }
 }
 
+export async function upsertMembershipRoles(params: {
+  db: Querier
+  workspaceId: string
+  organizationMembershipId: string
+  workosUserId: string
+  roleSlugs: string[]
+}): Promise<void> {
+  const { db, workspaceId, organizationMembershipId, workosUserId, roleSlugs } = params
+
+  await db.query(sql`
+    INSERT INTO workos_workspace_memberships (workspace_id, organization_membership_id, workos_user_id)
+    VALUES (${workspaceId}, ${organizationMembershipId}, ${workosUserId})
+    ON CONFLICT (workspace_id, organization_membership_id)
+    DO UPDATE SET workos_user_id = EXCLUDED.workos_user_id, updated_at = NOW()
+  `)
+
+  await db.query(sql`
+    DELETE FROM workos_workspace_membership_roles
+    WHERE workspace_id = ${workspaceId}
+      AND organization_membership_id = ${organizationMembershipId}
+  `)
+
+  if (roleSlugs.length > 0) {
+    const roleRows = roleSlugs.map((roleSlug, position) => ({
+      role_slug: roleSlug,
+      position,
+    }))
+    await db.query(sql`
+      INSERT INTO workos_workspace_membership_roles (
+        workspace_id,
+        organization_membership_id,
+        role_slug,
+        position
+      )
+      SELECT
+        ${workspaceId},
+        ${organizationMembershipId},
+        rows.role_slug,
+        rows.position
+      FROM jsonb_to_recordset(${JSON.stringify(roleRows)}::jsonb) AS rows(
+        role_slug text,
+        position integer
+      )
+    `)
+  }
+}
+
 export const WorkosAuthzMirrorRepository = {
   async getState(db: Querier, workspaceId: string): Promise<WorkspaceAuthzStateRow | null> {
     const result = await db.query<WorkspaceAuthzStateRow>(sql`
@@ -137,52 +184,7 @@ export const WorkosAuthzMirrorRepository = {
     return result.rows.length > 0
   },
 
-  async upsertMembershipRoles(params: {
-    db: Querier
-    workspaceId: string
-    organizationMembershipId: string
-    workosUserId: string
-    roleSlugs: string[]
-  }): Promise<void> {
-    const { db, workspaceId, organizationMembershipId, workosUserId, roleSlugs } = params
-
-    await db.query(sql`
-      INSERT INTO workos_workspace_memberships (workspace_id, organization_membership_id, workos_user_id)
-      VALUES (${workspaceId}, ${organizationMembershipId}, ${workosUserId})
-      ON CONFLICT (workspace_id, organization_membership_id)
-      DO UPDATE SET workos_user_id = EXCLUDED.workos_user_id, updated_at = NOW()
-    `)
-
-    await db.query(sql`
-      DELETE FROM workos_workspace_membership_roles
-      WHERE workspace_id = ${workspaceId}
-        AND organization_membership_id = ${organizationMembershipId}
-    `)
-
-    if (roleSlugs.length > 0) {
-      const roleRows = roleSlugs.map((roleSlug, position) => ({
-        role_slug: roleSlug,
-        position,
-      }))
-      await db.query(sql`
-        INSERT INTO workos_workspace_membership_roles (
-          workspace_id,
-          organization_membership_id,
-          role_slug,
-          position
-        )
-        SELECT
-          ${workspaceId},
-          ${organizationMembershipId},
-          rows.role_slug,
-          rows.position
-        FROM jsonb_to_recordset(${JSON.stringify(roleRows)}::jsonb) AS rows(
-          role_slug text,
-          position integer
-        )
-      `)
-    }
-  },
+  upsertMembershipRoles,
 
   async syncCompatibilityRoles(db: Querier, workspaceId: string): Promise<void> {
     await db.query(sql`
