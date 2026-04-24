@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, type ChangeEvent, type RefObj
 import { useDraftMessage } from "./use-draft-message"
 import { useAttachments, type PendingAttachment, type UploadResult } from "./use-attachments"
 import type { JSONContent } from "@threa/types"
+import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 
 export interface UseDraftComposerOptions {
   workspaceId: string
@@ -11,9 +12,6 @@ export interface UseDraftComposerOptions {
   /** Initial content (optional, for pre-filled content as JSON) */
   initialContent?: JSONContent
 }
-
-/** Default empty ProseMirror document */
-const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
 /** Check if a document is empty (no actual text content) */
 function hasDocContent(doc: JSONContent | undefined): boolean {

@@ -185,14 +185,22 @@ export function useAllDrafts(workspaceId: string) {
 
   // Stashed drafts live in a sibling pile (see `useStashedDrafts`). The
   // workspace-wide query powers the /drafts explorer — the per-scope picker
-  // in the composer uses its own scoped query. `.limit` caps the worst-case
-  // row count so a user with a huge stash pile doesn't re-materialise every
-  // row on every write.
+  // in the composer uses its own scoped query. `.reverse().limit(…)` takes
+  // the newest rows in the (ULID-based) primary-key order: ULIDs sort
+  // chronologically, so reversing the index iteration and taking N
+  // truncates from the old end, not the new one. Without `.reverse()` a
+  // power user past the cap would silently lose recently-stashed drafts
+  // from /drafts.
   const stashedDrafts =
     useLiveQuery(
       () => {
         if (!workspaceId) return []
-        return db.stashedDrafts.where("workspaceId").equals(workspaceId).limit(WORKSPACE_STASH_SCAN_LIMIT).toArray()
+        return db.stashedDrafts
+          .where("workspaceId")
+          .equals(workspaceId)
+          .reverse()
+          .limit(WORKSPACE_STASH_SCAN_LIMIT)
+          .toArray()
       },
       [workspaceId],
       []
@@ -213,8 +221,14 @@ export function useAllDrafts(workspaceId: string) {
   // Check if we have any thread drafts that need parent message resolution.
   // Includes stashed drafts because a thread's parent-message resolution path
   // is identical regardless of whether the row is auto-saved or stashed.
+  // Splitting on `|` and prefix-checking each segment avoids false positives
+  // on any scope that contained the literal substring `thread:` in a
+  // non-prefix position — cheap since the signature is capped by the scan
+  // limit above.
   const hasThreadDrafts = useMemo(
-    () => (draftMessages ?? []).some((m) => m.id.startsWith("thread:")) || stashedScopesSignature.includes("thread:"),
+    () =>
+      (draftMessages ?? []).some((m) => m.id.startsWith("thread:")) ||
+      stashedScopesSignature.split("|").some((scope) => scope.startsWith("thread:")),
     [draftMessages, stashedScopesSignature]
   )
 
