@@ -3,6 +3,7 @@ import { useDraftMessage } from "./use-draft-message"
 import { useAttachments, type PendingAttachment, type UploadResult } from "./use-attachments"
 import type { JSONContent } from "@threa/types"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
+import { canSendContextBag } from "@/lib/context-bag/extract"
 
 export interface UseDraftComposerOptions {
   workspaceId: string
@@ -220,7 +221,12 @@ export function useDraftComposer({
   // Sending while uploads are still in flight is not safe: the message would
   // be created before attachment IDs exist, leaving uploaded files unattached.
   // Failed uploads still don't block send; the user can send with whatever succeeded.
-  const canSend = (hasContent || uploadedIds.length > 0) && !isSending && !isUploading
+  //
+  // Context-ref chips follow the same model as uploads: `pending` must block
+  // send (precompute hasn't landed) and `error` must block send (we'd submit
+  // a ref the server can't resolve). `ready` and `inline` are safe.
+  const contextBagReady = canSendContextBag(content)
+  const canSend = (hasContent || uploadedIds.length > 0) && !isSending && !isUploading && contextBagReady
 
   return {
     // Content
