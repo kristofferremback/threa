@@ -19,6 +19,8 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import { attachmentsApi } from "@/api"
 import { triggerDownload } from "@/lib/image-utils"
+import { ZoomableImage, type ZoomableImageHandle } from "@/components/gallery/zoomable-image"
+import { ZoomControls } from "@/components/gallery/zoom-controls"
 
 export type GalleryItem =
   | { type: "image"; url: string; filename: string; attachmentId: string }
@@ -60,42 +62,86 @@ function GalleryVideo({ current }: { current: Extract<GalleryItem, { type: "vide
   )
 }
 
-function GalleryMediaContent({ current, isActive = true }: { current: GalleryItem; isActive?: boolean }) {
+interface GalleryMediaContentProps {
+  current: GalleryItem
+  isActive?: boolean
+  /** Non-null only for the currently-displayed slide. When present with an image,
+   *  the image is rendered via ZoomableImage so it can be zoomed/panned. */
+  zoomableRef?: React.Ref<ZoomableImageHandle>
+  onZoomChange?: (zoomed: boolean) => void
+  onScaleChange?: (scale: number) => void
+}
+
+function GalleryMediaContent({
+  current,
+  isActive = true,
+  zoomableRef,
+  onZoomChange,
+  onScaleChange,
+}: GalleryMediaContentProps) {
   if (current.type === "video") {
     // Non-active video slides show poster so the <video> element doesn't load
     if (!isActive) {
-      return current.thumbnailUrl ? (
-        <img
-          src={current.thumbnailUrl}
-          alt={current.filename}
-          className="max-w-full max-h-full object-contain select-none"
-          draggable={false}
-        />
-      ) : (
-        <div className="h-16 w-16 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-          <Play className="h-7 w-7 text-white/60 ml-0.5" fill="currentColor" />
+      return (
+        <div className="absolute inset-0 flex items-center justify-center">
+          {current.thumbnailUrl ? (
+            <img
+              src={current.thumbnailUrl}
+              alt={current.filename}
+              className="max-w-full max-h-full object-contain select-none"
+              draggable={false}
+            />
+          ) : (
+            <div className="h-16 w-16 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+              <Play className="h-7 w-7 text-white/60 ml-0.5" fill="currentColor" />
+            </div>
+          )}
         </div>
       )
     }
     if (!current.url)
       return (
-        <div className="flex flex-col items-center gap-3">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
           <div className="h-16 w-16 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
             <Play className="h-7 w-7 text-white/60 ml-0.5" fill="currentColor" />
           </div>
           <Loader2 className="h-4 w-4 animate-spin text-white/40" />
         </div>
       )
-    return <GalleryVideo current={current} />
+    return (
+      <div className="absolute inset-0 flex items-center justify-center">
+        <GalleryVideo current={current} />
+      </div>
+    )
   }
-  if (!current.url) return <Loader2 className="h-8 w-8 animate-spin text-white/50" />
+  if (!current.url)
+    return (
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-white/50" />
+      </div>
+    )
+  // Active image slide gets the zoomable viewport. Inactive slides stay as plain
+  // <img> so we don't wire up gesture listeners for images the user isn't viewing.
+  if (zoomableRef) {
+    return (
+      <ZoomableImage
+        ref={zoomableRef}
+        src={current.url}
+        alt={current.filename}
+        onZoomChange={onZoomChange}
+        onScaleChange={onScaleChange}
+      />
+    )
+  }
   return (
-    <img
-      src={current.url}
-      alt={current.filename}
-      className="max-w-full max-h-full object-contain select-none"
-      draggable={false}
-    />
+    <div className="absolute inset-0 flex items-center justify-center">
+      <img
+        src={current.url}
+        alt={current.filename}
+        className="max-w-full max-h-full object-contain select-none"
+        draggable={false}
+      />
+    </div>
   )
 }
 
@@ -149,6 +195,15 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
   const containerRef = useRef<HTMLDivElement>(null)
   const stripRef = useRef<HTMLDivElement>(null)
   const dismissWrapperRef = useRef<HTMLDivElement>(null)
+
+  // Zoom/pan state for the current slide. Only reflects the active image.
+  const zoomableRef = useRef<ZoomableImageHandle>(null)
+  const [isZoomed, setIsZoomed] = useState(false)
+  const [zoomScale, setZoomScale] = useState(1)
+  // Ref mirror so touch handlers (which avoid re-rendering during gestures) can
+  // read the current zoom state without stale closures.
+  const isZoomedRef = useRef(false)
+  isZoomedRef.current = isZoomed
 
   // Touch gesture state (all refs — no setState during active gesture)
   const touchStartX = useRef(0)
@@ -243,6 +298,10 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
   const goTo = useCallback(
     (index: number) => {
       if (index < 0 || index >= items.length) return
+      // Reset zoom on the outgoing slide so we never navigate with a stale transform;
+      // the outgoing slide's hook will also reset when enabled flips to false, but
+      // calling here lets the zoom-out animate in sync with the strip slide.
+      zoomableRef.current?.reset()
       // On mobile, animate the strip directly before updating state so the
       // user sees a smooth slide rather than a hard cut.
       if (isMobile && stripRef.current && containerWidth > 0) {
@@ -315,6 +374,10 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
   // at 60fps without React rendering in the hot path.
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    // When zoomed or pinching, the zoomable viewport owns the gesture — don't
+    // start a carousel swipe in parallel (would cause the strip to drift while
+    // the user is panning inside an image).
+    if (isZoomedRef.current || e.touches.length > 1) return
     e.stopPropagation()
     // Read where the strip actually is right now (could be mid-animation)
     // so we can continue from that exact position rather than jumping.
@@ -339,6 +402,7 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
+      if (isZoomedRef.current || e.touches.length > 1) return
       e.stopPropagation()
       const dx = e.touches[0].clientX - touchStartX.current
       const dy = e.touches[0].clientY - touchStartY.current
@@ -378,6 +442,7 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
 
   const handleTouchEnd = useCallback(
     (e: React.TouchEvent) => {
+      if (isZoomedRef.current) return
       e.stopPropagation()
       const dx = touchDeltaX.current
       const dy = touchDeltaY.current
@@ -436,10 +501,12 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
     [currentIndex, hasNext, hasPrev, items, onItemChange, onClose]
   )
 
-  // Mobile: tap left/right zones to navigate (suppressed after a committed swipe)
+  // Mobile: tap left/right zones to navigate (suppressed after a committed swipe
+  // and disabled while zoomed so taps inside a zoomed image don't navigate away).
   const handleMobileTap = useCallback(
     (e: React.MouseEvent) => {
       if (!isMobile || !isMultiple) return
+      if (isZoomedRef.current) return
       if (didSwipe.current) {
         didSwipe.current = false
         return
@@ -452,9 +519,22 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
     [isMobile, isMultiple, hasPrev, hasNext, goPrev, goNext]
   )
 
+  const handleZoomIn = useCallback(() => zoomableRef.current?.zoomIn(), [])
+  const handleZoomOut = useCallback(() => zoomableRef.current?.zoomOut(), [])
+  const handleZoomReset = useCallback(() => zoomableRef.current?.reset(), [])
+
   // ─── Action bar (shared between mobile/desktop) ─────────────────────────────
   const actionBar = (
     <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+      {!isMobile && current?.type === "image" && (
+        <ZoomControls
+          scale={zoomScale}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onReset={handleZoomReset}
+          className="mr-1"
+        />
+      )}
       {isMultiple && (
         <span className="text-xs text-white/70 mr-1 tabular-nums">
           {currentIndex + 1} / {items.length}
@@ -558,10 +638,16 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
                     {items.map((item, i) => (
                       <div
                         key={item.attachmentId}
-                        className="shrink-0 flex items-center justify-center p-8"
+                        className="shrink-0 relative"
                         style={{ width: containerWidth || "100%", height: "100%" }}
                       >
-                        <GalleryMediaContent current={item} isActive={Math.abs(i - currentIndex) <= 1} />
+                        <GalleryMediaContent
+                          current={item}
+                          isActive={Math.abs(i - currentIndex) <= 1}
+                          zoomableRef={i === currentIndex && item.type === "image" ? zoomableRef : undefined}
+                          onZoomChange={i === currentIndex && item.type === "image" ? setIsZoomed : undefined}
+                          onScaleChange={i === currentIndex && item.type === "image" ? setZoomScale : undefined}
+                        />
                       </div>
                     ))}
                   </div>
@@ -581,8 +667,13 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
               >
                 {actionBar}
 
-                <div className="absolute inset-0 flex items-center justify-center p-10">
-                  <GalleryMediaContent current={current} />
+                <div className="absolute inset-0">
+                  <GalleryMediaContent
+                    current={current}
+                    zoomableRef={current.type === "image" ? zoomableRef : undefined}
+                    onZoomChange={current.type === "image" ? setIsZoomed : undefined}
+                    onScaleChange={current.type === "image" ? setZoomScale : undefined}
+                  />
                 </div>
 
                 {isMultiple && (
