@@ -13,7 +13,18 @@ import { deleteStashedDraftById } from "./use-stashed-drafts"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent, StreamType } from "@threa/types"
 import { isEmptyContent } from "@/lib/prosemirror-utils"
+import { stripMarkdownToInline } from "@/lib/markdown"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
+
+/**
+ * Defensive ceiling on the workspace-wide stash scan that powers the /drafts
+ * explorer. `useLiveQuery` re-fires on every Dexie change in the table, so we
+ * want to avoid re-materialising an unbounded number of rows into React state
+ * on each write. 500 is well above any realistic user's stash pile; if the
+ * explorer ever needs more, switch to cursor-based pagination instead of
+ * raising this number.
+ */
+const WORKSPACE_STASH_SCAN_LIMIT = 500
 
 export type DraftType = "scratchpad" | "channel" | "dm" | "thread"
 
@@ -87,11 +98,14 @@ function truncatePreview(content: string, maxLength: number = 80): string {
 }
 
 /**
- * Get markdown preview from JSONContent.
+ * Get a display-safe inline preview from JSONContent. Markdown is stripped
+ * here (not at the render site) because every current consumer renders the
+ * value as plain inline text — keeping that guarantee at the source
+ * satisfies INV-60 without requiring every caller to remember the strip.
  */
 function getContentPreview(contentJson: JSONContent | undefined): string {
   if (!contentJson || isEmptyContent(contentJson)) return ""
-  return serializeToMarkdown(contentJson)
+  return stripMarkdownToInline(serializeToMarkdown(contentJson))
 }
 
 interface ResolvedDraftLocation {
@@ -171,25 +185,37 @@ export function useAllDrafts(workspaceId: string) {
 
   // Stashed drafts live in a sibling pile (see `useStashedDrafts`). The
   // workspace-wide query powers the /drafts explorer — the per-scope picker
-  // in the composer uses its own scoped query.
+  // in the composer uses its own scoped query. `.limit` caps the worst-case
+  // row count so a user with a huge stash pile doesn't re-materialise every
+  // row on every write.
   const stashedDrafts =
     useLiveQuery(
       () => {
         if (!workspaceId) return []
-        return db.stashedDrafts.where("workspaceId").equals(workspaceId).toArray()
+        return db.stashedDrafts.where("workspaceId").equals(workspaceId).limit(WORKSPACE_STASH_SCAN_LIMIT).toArray()
       },
       [workspaceId],
       []
     ) ?? []
 
+  // `useLiveQuery` returns a fresh array reference on every Dexie re-fire,
+  // even when the row set is unchanged. Deriving a stable signature from the
+  // set of scopes present turns identity-based churn into value-based
+  // invalidation for downstream memos (`hasThreadDrafts` →
+  // `cachedEvents` subscription → rebuild), so an unrelated stash write
+  // doesn't force event re-fetch.
+  const stashedScopesSignature = useMemo(() => {
+    const scopes = new Set<string>()
+    for (const row of stashedDrafts) scopes.add(row.scope)
+    return [...scopes].sort().join("|")
+  }, [stashedDrafts])
+
   // Check if we have any thread drafts that need parent message resolution.
   // Includes stashed drafts because a thread's parent-message resolution path
   // is identical regardless of whether the row is auto-saved or stashed.
   const hasThreadDrafts = useMemo(
-    () =>
-      (draftMessages ?? []).some((m) => m.id.startsWith("thread:")) ||
-      stashedDrafts.some((s) => s.scope.startsWith("thread:")),
-    [draftMessages, stashedDrafts]
+    () => (draftMessages ?? []).some((m) => m.id.startsWith("thread:")) || stashedScopesSignature.includes("thread:"),
+    [draftMessages, stashedScopesSignature]
   )
 
   // Stable stream ID key — only changes when the set of IDs changes, not on

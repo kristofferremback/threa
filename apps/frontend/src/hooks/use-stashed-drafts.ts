@@ -73,12 +73,19 @@ export async function createStashedDraft(
 /**
  * Fetch-and-delete a stashed draft by id. Returns the row so the caller can
  * hydrate the composer; returns `null` if the id is missing (idempotent).
+ *
+ * Wrapped in a Dexie rw transaction so the get + delete are atomic against
+ * concurrent tabs — without it, two tabs opening the same `?stash=` link
+ * could both read the row before either deletes, and both would restore
+ * the same content into their composers.
  */
 export async function popStashedDraft(id: string): Promise<StashedDraft | null> {
-  const row = await db.stashedDrafts.get(id)
-  if (!row) return null
-  await db.stashedDrafts.delete(id)
-  return row
+  return db.transaction("rw", db.stashedDrafts, async () => {
+    const row = await db.stashedDrafts.get(id)
+    if (!row) return null
+    await db.stashedDrafts.delete(id)
+    return row
+  })
 }
 
 /** Delete a stashed draft without restoring it. */
