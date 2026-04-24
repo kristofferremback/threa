@@ -337,6 +337,8 @@ export class EventService {
         contentJson: params.contentJson,
         findStream: (db, id) => StreamRepository.findById(db, id),
         isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
+        countExposedMembers: (db, targetStreamId, sourceStreamId) =>
+          StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
         confirmedPrivacyWarning: params.confirmedPrivacyWarning,
       })
 

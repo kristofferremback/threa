@@ -3,7 +3,12 @@ import { HttpError } from "../../../lib/errors"
 import { sharedMessageId } from "../../../lib/id"
 import { type JSONContent, ShareFlavors, type ShareFlavor } from "@threa/types"
 import { MessageRepository } from "../repository"
-import { crossesPrivacyBoundary, type FindStreamForSharing, type IsAncestorStream } from "./access-check"
+import {
+  crossesPrivacyBoundary,
+  type CountExposedMembers,
+  type FindStreamForSharing,
+  type IsAncestorStream,
+} from "./access-check"
 import { SharedMessageRepository } from "./repository"
 
 /**
@@ -76,6 +81,12 @@ export interface ValidateAndRecordSharesParams {
    */
   isAncestor: IsAncestorStream
   /**
+   * Exposed-member count injected by the caller (same barrel-cycle reason).
+   * Runs the set-based NOT-EXISTS count in the repository so this service
+   * never issues its own SQL (INV-5).
+   */
+  countExposedMembers: CountExposedMembers
+  /**
    * Set when the sharer has acknowledged the privacy warning in the modal.
    * Backend re-runs the check to prevent spoofed confirmations — the flag is
    * only consulted AFTER the cross-boundary condition is independently
@@ -128,6 +139,7 @@ export const ShareService = {
         params.client,
         params.findStream,
         params.isAncestor,
+        params.countExposedMembers,
         ref.sourceStreamId,
         params.targetStreamId
       )

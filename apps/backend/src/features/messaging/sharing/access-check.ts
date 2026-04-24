@@ -1,13 +1,13 @@
 import type { Querier } from "../../../db"
-import { sql } from "../../../db"
 
 /**
  * Minimal structural shape needed to answer the source-visibility check.
  * Defined here so the sharing sub-feature does not import from the streams
  * feature — satisfies INV-52 and breaks the barrel cycle that arises
  * because streams/handlers.ts imports hydration helpers from the messaging
- * barrel. `parent_stream_id` / ancestry live in the DB and are answered by
- * the injected {@link IsAncestorStream} callback, not by walking app-side.
+ * barrel. Ancestry and member-counting live in the DB and are answered by
+ * the injected {@link IsAncestorStream} / {@link CountExposedMembers}
+ * callbacks, not by walking or querying app-side (INV-5).
  */
 export interface SharingStream {
   id: string
@@ -24,6 +24,15 @@ export type FindStreamForSharing = (db: Querier, id: string) => Promise<SharingS
  * stays free of a direct `StreamRepository` import (INV-52).
  */
 export type IsAncestorStream = (db: Querier, ancestorCandidateId: string, streamId: string) => Promise<boolean>
+
+/**
+ * Counts members of `targetStreamId` who are NOT already members of
+ * `sourceStreamId` — the number of users who would gain implicit read via
+ * the share. Implemented in the stream-member repository; injected here so
+ * access-check never issues its own SQL (INV-5) and stays cycle-free with
+ * the streams feature (INV-52).
+ */
+export type CountExposedMembers = (db: Querier, targetStreamId: string, sourceStreamId: string) => Promise<number>
 
 export interface PrivacyBoundaryResult {
   /** True when target members exist who cannot already see the source stream. */
@@ -46,6 +55,7 @@ export async function crossesPrivacyBoundary(
   db: Querier,
   findStream: FindStreamForSharing,
   isAncestor: IsAncestorStream,
+  countExposedMembers: CountExposedMembers,
   sourceStreamId: string,
   targetStreamId: string
 ): Promise<PrivacyBoundaryResult> {
@@ -62,16 +72,6 @@ export async function crossesPrivacyBoundary(
     return { triggered: false, exposedUserCount: 0 }
   }
 
-  const result = await db.query<{ count: string }>(sql`
-    SELECT COUNT(*)::text AS count
-    FROM stream_members tgt
-    WHERE tgt.stream_id = ${targetStreamId}
-      AND NOT EXISTS (
-        SELECT 1 FROM stream_members src
-        WHERE src.stream_id = ${sourceStreamId}
-          AND src.user_id = tgt.user_id
-      )
-  `)
-  const exposedUserCount = Number(result.rows[0]?.count ?? "0")
+  const exposedUserCount = await countExposedMembers(db, targetStreamId, sourceStreamId)
   return { triggered: exposedUserCount > 0, exposedUserCount }
 }

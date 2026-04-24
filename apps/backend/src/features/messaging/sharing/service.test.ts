@@ -99,6 +99,7 @@ describe("ShareService.validateAndRecordShares", () => {
   }
 
   const isAncestorStub = async () => false
+  const countExposedMembersStub = async () => 0
 
   function baseParams(extras: Partial<Parameters<typeof ShareService.validateAndRecordShares>[0]> = {}) {
     return {
@@ -109,6 +110,7 @@ describe("ShareService.validateAndRecordShares", () => {
       sharerId: "usr_1",
       findStream: findStreamStub(),
       isAncestor: isAncestorStub,
+      countExposedMembers: countExposedMembersStub,
       contentJson: {
         type: "doc",
         content: [{ type: "sharedMessage", attrs: { messageId: "msg_source", streamId: "stream_source" } }],

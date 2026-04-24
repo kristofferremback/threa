@@ -6,6 +6,7 @@ export {
   type SharingStream,
   type FindStreamForSharing,
   type IsAncestorStream,
+  type CountExposedMembers,
 } from "./access-check"
 export { invalidatePointersForEvent, POINTER_INVALIDATED_EVENT } from "./outbox-handler"
 export {
