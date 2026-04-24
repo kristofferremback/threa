@@ -7,13 +7,15 @@ import {
   useStreamOrDraft,
   useComposerHeightPublish,
   useStreamBootstrap,
+  useStashComposer,
 } from "@/hooks"
 import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { FloatingComposerShell, MessageComposer } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
+import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
 import { hasCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
@@ -237,6 +239,11 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()
 
+  // Stashed drafts — explicit "Save for later" pile scoped to this stream.
+  // Active DraftMessage stays one-per-scope; this hook manages the sibling
+  // many-per-scope stash and the `?stash=<id>` URL auto-restore.
+  const stash = useStashComposer(composer, workspaceId, draftKey)
+
   // Use a ref so the handler always reads fresh composer state without
   // re-registering on every render (composer object is not memoized).
   const composerRef = useRef(composer)
@@ -366,8 +373,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         const commandMarkdown = serializeToMarkdown(normalizedContent).trim()
 
         // Clear input immediately for responsiveness
-        const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
-        composer.setContent(emptyDoc)
+        composer.setContent(EMPTY_DOC)
         composer.clearDraft()
         setExpanded(false)
 
@@ -393,14 +399,13 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
       // Capture content before clearing
       const contentJson = liveContent
-      const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
       try {
         // Clear the editor immediately so the composer does not briefly show the
         // just-sent content alongside the optimistic timeline event.
         // We keep the durable draft until send succeeds, so failures can still
         // restore the UI without losing content.
-        composer.setContent(emptyDoc)
+        composer.setContent(EMPTY_DOC)
         setExpanded(false)
 
         const result = await sendMessage({
@@ -409,7 +414,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           attachments: attachments.length > 0 ? attachments : undefined,
         })
 
-        composer.setContent(emptyDoc)
+        composer.setContent(EMPTY_DOC)
         composer.clearDraft()
         composer.clearAttachments()
         if (result.navigateTo) {
@@ -483,6 +488,28 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       : undefined,
     streamContext,
     composerRef: composerFocusRef,
+    onStashDraft: stash.handleStashDraft,
+    stashedDraftsTrigger: (
+      <StashedDraftsPicker
+        drafts={stash.drafts}
+        canStashCurrent={composer.canSend}
+        onStashCurrent={stash.handleStashDraft}
+        onRestore={stash.handleRestoreStashed}
+        onDelete={stash.handleDeleteStashed}
+        controlsDisabled={composer.isSending}
+      />
+    ),
+    stashedDraftsTriggerFab: (
+      <StashedDraftsPicker
+        drafts={stash.drafts}
+        canStashCurrent={composer.canSend}
+        onStashCurrent={stash.handleStashDraft}
+        onRestore={stash.handleRestoreStashed}
+        onDelete={stash.handleDeleteStashed}
+        controlsDisabled={composer.isSending}
+        size="fab"
+      />
+    ),
   } as const
 
   return (
