@@ -2,10 +2,10 @@ export { ShareService, collectShareReferences, type ValidateAndRecordSharesParam
 export { SharedMessageRepository, type SharedMessage, type InsertSharedMessageParams } from "./repository"
 export {
   crossesPrivacyBoundary,
-  isAncestorStream,
   type PrivacyBoundaryResult,
   type SharingStream,
   type FindStreamForSharing,
+  type IsAncestorStream,
 } from "./access-check"
 export { invalidatePointersForEvent, POINTER_INVALIDATED_EVENT } from "./outbox-handler"
 export {

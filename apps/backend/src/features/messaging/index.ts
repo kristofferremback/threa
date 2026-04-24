@@ -43,7 +43,6 @@ export {
   SharedMessageRepository,
   collectShareReferences,
   crossesPrivacyBoundary,
-  isAncestorStream,
   invalidatePointersForEvent,
   hydrateSharedMessages,
   hydrateSharedMessageIds,

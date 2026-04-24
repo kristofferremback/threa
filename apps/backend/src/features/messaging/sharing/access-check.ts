@@ -2,46 +2,28 @@ import type { Querier } from "../../../db"
 import { sql } from "../../../db"
 
 /**
- * Minimal structural shape needed to answer ancestor / privacy checks.
+ * Minimal structural shape needed to answer the source-visibility check.
  * Defined here so the sharing sub-feature does not import from the streams
  * feature — satisfies INV-52 and breaks the barrel cycle that arises
  * because streams/handlers.ts imports hydration helpers from the messaging
- * barrel.
+ * barrel. `parent_stream_id` / ancestry live in the DB and are answered by
+ * the injected {@link IsAncestorStream} callback, not by walking app-side.
  */
 export interface SharingStream {
   id: string
   workspaceId: string
   visibility: string
-  parentStreamId: string | null
 }
 
 export type FindStreamForSharing = (db: Querier, id: string) => Promise<SharingStream | null>
 
 /**
- * Walk the parentStreamId chain starting at `streamId` and return true if
- * `ancestorCandidateId` appears anywhere on the path (including the start
- * itself). Used to treat share-to-parent as a safe path without privacy
- * prompt per plan F1/D2 — a thread's parent audience is by construction a
- * superset of the thread's, so nothing new is revealed.
- *
- * Bounded at `MAX_ANCESTOR_DEPTH` hops to guard against pathological data.
+ * Returns true when `ancestorCandidateId` is `streamId` itself or appears
+ * anywhere on its parent chain. Implemented in the streams repository as a
+ * single recursive CTE; injected here as a callback so the sharing sub-feature
+ * stays free of a direct `StreamRepository` import (INV-52).
  */
-const MAX_ANCESTOR_DEPTH = 8
-
-export async function isAncestorStream(
-  db: Querier,
-  findStream: FindStreamForSharing,
-  ancestorCandidateId: string,
-  streamId: string
-): Promise<boolean> {
-  if (ancestorCandidateId === streamId) return true
-  let current: SharingStream | null = await findStream(db, streamId)
-  for (let i = 0; i < MAX_ANCESTOR_DEPTH && current?.parentStreamId; i++) {
-    if (current.parentStreamId === ancestorCandidateId) return true
-    current = await findStream(db, current.parentStreamId)
-  }
-  return false
-}
+export type IsAncestorStream = (db: Querier, ancestorCandidateId: string, streamId: string) => Promise<boolean>
 
 export interface PrivacyBoundaryResult {
   /** True when target members exist who cannot already see the source stream. */
@@ -63,6 +45,7 @@ export interface PrivacyBoundaryResult {
 export async function crossesPrivacyBoundary(
   db: Querier,
   findStream: FindStreamForSharing,
+  isAncestor: IsAncestorStream,
   sourceStreamId: string,
   targetStreamId: string
 ): Promise<PrivacyBoundaryResult> {
@@ -70,7 +53,7 @@ export async function crossesPrivacyBoundary(
     return { triggered: false, exposedUserCount: 0 }
   }
 
-  if (await isAncestorStream(db, findStream, targetStreamId, sourceStreamId)) {
+  if (await isAncestor(db, targetStreamId, sourceStreamId)) {
     return { triggered: false, exposedUserCount: 0 }
   }
 

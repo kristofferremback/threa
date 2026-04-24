@@ -336,6 +336,7 @@ export class EventService {
         sharerId: params.authorId,
         contentJson: params.contentJson,
         findStream: (db, id) => StreamRepository.findById(db, id),
+        isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
         confirmedPrivacyWarning: params.confirmedPrivacyWarning,
       })
 

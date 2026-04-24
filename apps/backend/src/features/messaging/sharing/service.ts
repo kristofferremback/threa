@@ -3,7 +3,7 @@ import { HttpError } from "../../../lib/errors"
 import { sharedMessageId } from "../../../lib/id"
 import { type JSONContent, ShareFlavors, type ShareFlavor } from "@threa/types"
 import { MessageRepository } from "../repository"
-import { crossesPrivacyBoundary, type FindStreamForSharing } from "./access-check"
+import { crossesPrivacyBoundary, type FindStreamForSharing, type IsAncestorStream } from "./access-check"
 import { SharedMessageRepository } from "./repository"
 
 /**
@@ -70,6 +70,12 @@ export interface ValidateAndRecordSharesParams {
    */
   findStream: FindStreamForSharing
   /**
+   * Ancestor check injected by the caller (same barrel-cycle reason as
+   * {@link findStream}). Expected to resolve the chain in the DB layer via
+   * a recursive CTE — the sharing service must not walk it app-side.
+   */
+  isAncestor: IsAncestorStream
+  /**
    * Set when the sharer has acknowledged the privacy warning in the modal.
    * Backend re-runs the check to prevent spoofed confirmations — the flag is
    * only consulted AFTER the cross-boundary condition is independently
@@ -121,6 +127,7 @@ export const ShareService = {
       const boundary = await crossesPrivacyBoundary(
         params.client,
         params.findStream,
+        params.isAncestor,
         ref.sourceStreamId,
         params.targetStreamId
       )

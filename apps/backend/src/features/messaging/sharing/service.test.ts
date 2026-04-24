@@ -92,12 +92,13 @@ describe("ShareService.validateAndRecordShares", () => {
     id: "stream_source",
     workspaceId: "ws_1",
     visibility: "private" as const,
-    parentStreamId: null,
   }
 
   function findStreamStub(overrides: Partial<typeof sourceStream> = {}) {
     return async () => ({ ...sourceStream, ...overrides }) as any
   }
+
+  const isAncestorStub = async () => false
 
   function baseParams(extras: Partial<Parameters<typeof ShareService.validateAndRecordShares>[0]> = {}) {
     return {
@@ -107,6 +108,7 @@ describe("ShareService.validateAndRecordShares", () => {
       shareMessageId: "msg_share",
       sharerId: "usr_1",
       findStream: findStreamStub(),
+      isAncestor: isAncestorStub,
       contentJson: {
         type: "doc",
         content: [{ type: "sharedMessage", attrs: { messageId: "msg_source", streamId: "stream_source" } }],
