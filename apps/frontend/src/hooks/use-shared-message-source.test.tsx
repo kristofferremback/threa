@@ -8,9 +8,22 @@ async function clearEvents() {
   await db.events.clear()
 }
 
+/**
+ * Fake-timer scope: only the threshold tests below switch to fake timers,
+ * and they do so WITHOUT `shouldAdvanceTime: true`. With shouldAdvanceTime,
+ * `renderHook` itself consumes real-time wall ticks (5–50ms on CI), the
+ * fake clock auto-advances by the same amount, and a subsequent
+ * `vi.advanceTimersByTime(299)` ends up at ~319ms — past the 300ms
+ * SKELETON_DELAY_MS threshold — so the timer fires early and the
+ * "showSkeleton: false" assertion flakes. Manual control only.
+ *
+ * The IDB-fallback test below stays on real timers because it relies on
+ * `useLiveQuery` resolving via Dexie's microtask scheduling, which doesn't
+ * play well with fake timers.
+ */
+
 describe("useSharedMessageSource", () => {
   beforeEach(async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
     await clearEvents()
   })
 
@@ -103,6 +116,7 @@ describe("useSharedMessageSource", () => {
   })
 
   it("stays blank for the first 300ms then surfaces a skeleton hint", () => {
+    vi.useFakeTimers()
     const { result } = renderHook(() => useSharedMessageSource("msg_absent", "stream_src"))
 
     expect(result.current).toEqual({ status: "pending", showSkeleton: false })
@@ -119,6 +133,7 @@ describe("useSharedMessageSource", () => {
   })
 
   it("resets the skeleton state when the pointer identity changes", () => {
+    vi.useFakeTimers()
     const { result, rerender } = renderHook(({ id }) => useSharedMessageSource(id, "stream_src"), {
       initialProps: { id: "msg_a" },
     })

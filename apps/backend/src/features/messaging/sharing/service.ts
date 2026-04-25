@@ -178,6 +178,15 @@ export const ShareService = {
         ref.sourceStreamId,
         params.targetStreamId
       )
+      // SLICE-1 ASSUMPTION: `confirmedPrivacyWarning` is a single boolean
+      // covering every reference in the message. That's safe today because
+      // (a) share-to-parent short-circuits via the ancestor check so
+      // `triggered` is always false, and (b) Slice 2's modal pre-fills
+      // exactly one share node. When arbitrary multi-reference composing
+      // lands, swap to per-source confirmation (e.g. a
+      // `confirmedPrivacyFor: Set<sourceStreamId>`) so a user can't see
+      // the warning for one private source and have it transitively
+      // confirm a different private source they never saw.
       if (boundary.triggered && !params.confirmedPrivacyWarning) {
         throw new HttpError("Privacy confirmation required to share this message", {
           status: 409,

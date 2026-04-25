@@ -66,12 +66,17 @@ test.describe("Message share-to-parent", () => {
     const parentText = `Parent ${generateTestId()}`
     await sendChannelMessageViaApi(page, parentText)
 
-    // Open the thread on the parent message
+    // Open the thread on the parent message. Wait for the row to be in the
+    // DOM and visible before any interaction — `getByText` retries on text
+    // visibility but the XPath ancestor locator resolves against that match
+    // and may point at a row that's still being laid out (virtualized list /
+    // late mount), which makes a follow-up `hover()` time out at 30s on CI.
+    // `clickReplyInThread` already handles the hover/scroll dance internally.
     const parentRow = page
       .getByText(parentText, { exact: false })
       .first()
       .locator("xpath=ancestor::*[@data-message-id][1]")
-    await parentRow.hover()
+    await expect(parentRow).toBeVisible()
     await clickReplyInThread(parentRow)
     await waitForRealThreadPanel(page)
 
