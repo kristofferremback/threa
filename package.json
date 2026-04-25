@@ -47,7 +47,8 @@
     "docker:build": "bun run docker:build:backend && bun run docker:build:control-plane",
     "generate:api-docs": "bun apps/backend/scripts/generate-api-docs.ts",
     "generate:api-docs:check": "bun apps/backend/scripts/generate-api-docs.ts --check",
-    "infra:validate": "cd infra/aws && terraform validate"
+    "infra:validate": "cd infra/aws && terraform validate",
+    "test:codex:cloud": "bash scripts/test-codex-cloud.sh"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

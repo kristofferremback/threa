@@ -43,6 +43,14 @@ bun run lint
 bun run typecheck
 ```
 
+For Codex Cloud test runs that avoid Docker-backed DB usage, browser tests, and intent/agent suites, use:
+
+```bash
+bun run test:codex:cloud
+```
+
+This command runs only backend unit tests from `apps/backend/src`, excluding `features/agents/**` and any `*intent*.test.ts` files.
+
 ## Notes for cloud sandboxes
 
 - The scripts are intentionally idempotent enough for disposable environments.
