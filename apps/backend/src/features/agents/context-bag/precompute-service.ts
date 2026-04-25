@@ -86,7 +86,11 @@ export async function precomputeRefSummaries(
   // upsert. Below-threshold refs skip the cache entirely — they'll be
   // inlined at render time.
   const results: PrecomputedRefResult[] = []
-  const costContext: CostContext = { workspaceId, origin: "system" }
+  // User-initiated endpoint — attribute summarization spend to the caller.
+  // The background `ContextBagPrecomputeWorker` (outbox-driven) is the
+  // legitimate "system" caller; here the request came from a user composing
+  // a draft, so cost goes to them per Langfuse + cost dashboards.
+  const costContext: CostContext = { workspaceId, userId, origin: "user" }
 
   for (const resolved of resolveds) {
     const resolver = getResolver(resolved.ref.kind)
@@ -122,7 +126,6 @@ export async function precomputeRefSummaries(
   logger.info(
     {
       workspaceId,
-      userId,
       intent,
       refCount: results.length,
       readyCount: results.filter((r) => r.status === "ready").length,

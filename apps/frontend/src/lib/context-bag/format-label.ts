@@ -3,7 +3,9 @@
  *
  * Examples:
  * - Full thread:    "12 messages in #intro"
- * - Anchored slice: "Messages 5–12 in #intro"
+ * - Anchored slice: "Slice of #intro"  (sequence-numbered range deferred —
+ *                                        needs server-side resolution; tracked
+ *                                        as a follow-up)
  * - Empty source:   "Thread in #intro"
  * - No display name yet: "12 messages in this thread"
  *

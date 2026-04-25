@@ -312,6 +312,14 @@ export { CommandKinds } from "./api"
 // Discuss-with-Ariadne client-action id (single source of truth)
 export const DISCUSS_WITH_ARIADNE_COMMAND = "discuss-with-ariadne" as const
 
+/**
+ * Persona slug for Ariadne — the workspace-companion persona that backs
+ * "Discuss with Ariadne" scratchpads. Single source of truth (INV-33) so
+ * backend lookups (`PersonaRepository.findBySlug`), frontend command
+ * filters, and any future onboarding seeding stay in sync.
+ */
+export const ARIADNE_PERSONA_SLUG = "ariadne" as const
+
 // ProseMirror / TipTap JSON types
 export type {
   // Loose input type (compatible with TipTap)

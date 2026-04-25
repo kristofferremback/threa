@@ -164,7 +164,9 @@ beforeEach(() => {
   // context + query client, none of which the test wrapper provides. Stub it
   // out; the command-routing branch is exercised by its own dedicated tests
   // further down (rather than via render()-level assertions).
-  vi.spyOn(discussModule, "useDiscussWithAriadne").mockImplementation(() => vi.fn() as any)
+  vi.spyOn(discussModule, "useDiscussWithAriadne").mockImplementation(
+    () => vi.fn() as unknown as ReturnType<typeof discussModule.useDiscussWithAriadne>
+  )
   // `useStreamContextBag` calls `useQuery` which the wrapper doesn't provide
   // a client for. Stub to an empty bag so the strip renders nothing — the
   // strip's own behavior is covered by its dedicated tests.

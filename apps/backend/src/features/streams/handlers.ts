@@ -6,7 +6,14 @@ import type { ActivityService } from "../activity"
 import type { LinkPreviewService } from "../link-previews"
 import type { StreamEvent } from "./event-repository"
 import type { EventType, LinkPreviewSummary, StreamType, ContextIntent, ContextRefKind } from "@threa/types"
-import { StreamTypes, SLUG_PATTERN, ContextIntents, ContextRefKinds, CompanionModes } from "@threa/types"
+import {
+  ARIADNE_PERSONA_SLUG,
+  StreamTypes,
+  SLUG_PATTERN,
+  ContextIntents,
+  ContextRefKinds,
+  CompanionModes,
+} from "@threa/types"
 import type { Pool } from "pg"
 import { PersonaRepository, getResolver, fetchStreamBag } from "../agents"
 import { serializeBigInt } from "@threa/backend-common"
@@ -346,9 +353,18 @@ export function createStreamHandlers({
           await resolver.assertAccess(pool, ref, userId, workspaceId)
         }
 
-        const ariadne = await PersonaRepository.findBySlug(pool, "ariadne", workspaceId)
+        const ariadne = await PersonaRepository.findBySlug(pool, ARIADNE_PERSONA_SLUG, workspaceId)
         if (!ariadne) {
-          return res.status(500).json({ error: "Ariadne persona not available in this workspace" })
+          // Workspace-config state, not an internal error: 503 + a domain
+          // code so dashboards can filter without flagging this as a server
+          // fault. Surfaces clearly to the client during onboarding races
+          // (workspace created but Ariadne seed not yet run).
+          return res.status(503).json({
+            error: {
+              code: "ARIADNE_PERSONA_MISSING",
+              message: "Ariadne persona not yet provisioned in this workspace",
+            },
+          })
         }
         resolvedCompanionMode = CompanionModes.ON
         resolvedPersonaId = ariadne.id

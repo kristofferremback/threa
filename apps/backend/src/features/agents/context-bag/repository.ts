@@ -41,11 +41,23 @@ export interface InsertContextBagParams {
 }
 
 export const ContextBagRepository = {
-  async findByStream(db: Querier, streamId: string): Promise<StoredContextBag | null> {
+  /**
+   * Look up the bag attached to a stream.
+   *
+   * Workspace-scoped per INV-8: cross-workspace queries cannot leak a bag
+   * even if a streamId collision ever occurs. The unique index on
+   * `(stream_id, intent)` from `20260425130000_context_bag_unique_intent`
+   * makes the LIMIT 1 result deterministic for the v1 single-intent case;
+   * an explicit `ORDER BY created_at ASC` pins behavior if multiple intents
+   * land on the same stream later.
+   */
+  async findByStream(db: Querier, workspaceId: string, streamId: string): Promise<StoredContextBag | null> {
     const result = await db.query<StreamContextAttachmentRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}
       FROM stream_context_attachments
-      WHERE stream_id = ${streamId}
+      WHERE workspace_id = ${workspaceId}
+        AND stream_id = ${streamId}
+      ORDER BY created_at ASC
       LIMIT 1
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null
@@ -65,12 +77,21 @@ export const ContextBagRepository = {
     return mapRow(result.rows[0])
   },
 
-  async updateLastRendered(db: Querier, id: string, snapshot: LastRenderedSnapshot): Promise<void> {
+  /**
+   * Workspace-scoped UPDATE per INV-8 — the snapshot only lands when the
+   * row id actually belongs to the calling workspace. Idempotent.
+   */
+  async updateLastRendered(
+    db: Querier,
+    workspaceId: string,
+    id: string,
+    snapshot: LastRenderedSnapshot
+  ): Promise<void> {
     const json = JSON.stringify(snapshot)
     await db.query(sql`
       UPDATE stream_context_attachments
       SET last_rendered = ${json}::jsonb, updated_at = NOW()
-      WHERE id = ${id}
+      WHERE workspace_id = ${workspaceId} AND id = ${id}
     `)
   },
 }

@@ -55,12 +55,22 @@ export function ContextRefStrip({ workspaceId, streamId, draftRefs }: ContextRef
 
   if (!hasDraftRefs || !draftRefs) return null
 
-  const serverByStreamId = new Map((data?.refs ?? []).map((r) => [r.streamId, r]))
+  // Composite key matches the pill identity tuple — bag refs may share a
+  // streamId with different `fromMessageId` / `toMessageId` anchors, so a
+  // streamId-only Map would silently drop one of them.
+  const refKey = (r: {
+    refKind?: string
+    kind?: string
+    streamId: string
+    fromMessageId?: string | null
+    toMessageId?: string | null
+  }) => `${r.refKind ?? r.kind}|${r.streamId}|${r.fromMessageId ?? ""}|${r.toMessageId ?? ""}`
+  const serverByKey = new Map((data?.refs ?? []).map((r) => [refKey(r), r]))
 
   return (
     <>
       {draftRefs.map((ref) => {
-        const server = serverByStreamId.get(ref.streamId)
+        const server = serverByKey.get(refKey(ref))
         const label = formatContextRefLabel({
           slug: server?.source.slug ?? null,
           displayName: server?.source.displayName ?? null,

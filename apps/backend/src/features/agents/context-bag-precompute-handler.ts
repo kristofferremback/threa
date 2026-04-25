@@ -103,7 +103,7 @@ export class ContextBagPrecomputeHandler implements OutboxHandler {
             continue
           }
 
-          const bag = await ContextBagRepository.findByStream(this.db, streamId)
+          const bag = await ContextBagRepository.findByStream(this.db, workspaceId, streamId)
           if (!bag) {
             seen.push(event.id)
             continue
@@ -172,7 +172,7 @@ export function createContextBagPrecomputeWorker(
       return
     }
 
-    await persistSnapshot(pool, bagId, resolved.nextSnapshot)
-    logger.info({ streamId, bagId }, "context-bag precompute: summary warmed + snapshot persisted")
+    await persistSnapshot(pool, workspaceId, resolved.bagId, resolved.nextSnapshot)
+    logger.info({ streamId, bagId: resolved.bagId }, "context-bag precompute: summary warmed + snapshot persisted")
   }
 }

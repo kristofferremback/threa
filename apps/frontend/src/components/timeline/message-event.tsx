@@ -651,7 +651,16 @@ function SentMessageEvent({
 
   const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
   const handleDiscussWithAriadne = useCallback(
-    () => startDiscussWithAriadne({ sourceStreamId: streamId, sourceMessageId: payload.messageId }),
+    // `useDiscussWithAriadne` rethrows after toasting so the surrounding
+    // mutation pipeline can see failures. The action menu invokes us
+    // fire-and-forget without awaiting, so we swallow here to keep the
+    // failure out of the unhandled-rejection log — the user already saw
+    // the toast. INV-11: failing loud means the toast, not the console.
+    () => {
+      void startDiscussWithAriadne({ sourceStreamId: streamId, sourceMessageId: payload.messageId }).catch(() => {
+        /* toast already surfaced inside the hook */
+      })
+    },
     [startDiscussWithAriadne, streamId, payload.messageId]
   )
 

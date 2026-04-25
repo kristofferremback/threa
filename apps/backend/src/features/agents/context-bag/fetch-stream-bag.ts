@@ -81,7 +81,7 @@ export async function fetchStreamBag(
     }
   }
 
-  const bag = await ContextBagRepository.findByStream(db, streamId)
+  const bag = await ContextBagRepository.findByStream(db, workspaceId, streamId)
   if (!bag) {
     return { bag: null, refs: [] }
   }

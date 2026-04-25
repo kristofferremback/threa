@@ -627,7 +627,7 @@ export class PersonaAgent {
           // to match the crash-window semantics of `persistSnapshot` itself
           // (INV-41: no DB connection held across the AI call).
           if (resolvedBag) {
-            await persistSnapshot(pool, resolvedBag.bagId, resolvedBag.nextSnapshot)
+            await persistSnapshot(pool, workspaceId, resolvedBag.bagId, resolvedBag.nextSnapshot)
           }
 
           return {

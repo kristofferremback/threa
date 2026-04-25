@@ -68,7 +68,7 @@ export async function resolveBagForStream(
 
   // Phase 1 (DB): load the bag, resolve its refs, compute diff + inputs.
   const phase1 = await withClient(pool, async (db) => {
-    const bag = await ContextBagRepository.findByStream(db, streamId)
+    const bag = await ContextBagRepository.findByStream(db, costContext.workspaceId, streamId)
     if (!bag) return null
 
     // Short-circuit for idempotent callers (pre-compute worker): if the bag
@@ -196,7 +196,14 @@ export async function loadOrCreateSummary(params: {
  * pass. The pre-compute worker writes this after `resolveBagForStream`
  * finishes; retries short-circuit via `skipIfAlreadyRendered` rather than
  * re-writing the same snapshot. See `context-bag-precompute-handler.ts`.
+ *
+ * Workspace-scoped per INV-8.
  */
-export async function persistSnapshot(db: Querier, bagId: string, snapshot: LastRenderedSnapshot): Promise<void> {
-  await ContextBagRepository.updateLastRendered(db, bagId, snapshot)
+export async function persistSnapshot(
+  db: Querier,
+  workspaceId: string,
+  bagId: string,
+  snapshot: LastRenderedSnapshot
+): Promise<void> {
+  await ContextBagRepository.updateLastRendered(db, workspaceId, bagId, snapshot)
 }
