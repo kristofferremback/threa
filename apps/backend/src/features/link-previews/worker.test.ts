@@ -468,4 +468,99 @@ describe("createLinkPreviewWorker", () => {
       { forcePublish: undefined }
     )
   })
+
+  test("enriches X oEmbed previews with page image metadata when thumbnail is missing", async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString()
+
+      if (url.startsWith("https://publish.twitter.com/oembed")) {
+        return new Response(
+          JSON.stringify({
+            provider_name: "Twitter",
+            author_name: "Peter Steinberger",
+            html: '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">tweet text</p></blockquote>',
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      }
+
+      if (url.startsWith("https://x.com/steipete/status/2047957234664030380")) {
+        return new Response(
+          '<html><head><meta name="twitter:image" content="https://pbs.twimg.com/media/abc123.jpg"></head></html>',
+          { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }
+        )
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`)
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const completePreviewsAndPublish = mock(async () => {})
+    const worker = createLinkPreviewWorker({
+      linkPreviewService: {
+        extractAndCreatePending: mock(async () => [
+          { id: "lp_123", url: "https://x.com/steipete/status/2047957234664030380" },
+        ]),
+        getPreviewById: mock(async () => ({
+          id: "lp_123",
+          workspaceId: "ws_123",
+          url: "https://x.com/steipete/status/2047957234664030380",
+          normalizedUrl: "https://x.com/steipete/status/2047957234664030380",
+          title: null,
+          description: null,
+          imageUrl: null,
+          faviconUrl: null,
+          siteName: null,
+          contentType: "website",
+          status: "pending",
+          previewType: null,
+          previewData: null,
+          targetWorkspaceId: null,
+          targetStreamId: null,
+          targetMessageId: null,
+          fetchedAt: null,
+          expiresAt: null,
+          createdAt: new Date("2026-04-25T10:00:00.000Z"),
+        })),
+        completePreviewsAndPublish,
+        replacePreviewsForMessage: mock(async () => []),
+        publishEmptyPreviews: mock(async () => {}),
+      } as any,
+      workspaceIntegrationService: {
+        getGithubClient: mock(async () => null),
+      } as any,
+    })
+
+    await worker({
+      id: "job_123",
+      name: "link_preview.extract",
+      data: {
+        workspaceId: "ws_123",
+        streamId: "stream_123",
+        messageId: "msg_123",
+        contentMarkdown: "https://x.com/steipete/status/2047957234664030380",
+      },
+    })
+
+    expect(completePreviewsAndPublish).toHaveBeenCalledWith(
+      "ws_123",
+      "stream_123",
+      "msg_123",
+      [
+        expect.objectContaining({
+          id: "lp_123",
+          skipped: false,
+          overwrite: false,
+          metadata: expect.objectContaining({
+            title: "Peter Steinberger",
+            description: "tweet text",
+            imageUrl: "https://pbs.twimg.com/media/abc123.jpg",
+            siteName: "Twitter",
+            status: "completed",
+          }),
+        }),
+      ],
+      { forcePublish: undefined }
+    )
+  })
 })

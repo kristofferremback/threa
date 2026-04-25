@@ -59,6 +59,7 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
     const oembedDescription = extractOEmbedDescription(data.html)
     const isTwitterProvider = (data.provider_name ?? "").toLowerCase() === "twitter"
     const fallbackTitle = isTwitterProvider ? data.author_name ?? null : null
+    const fallbackImageUrl = isTwitterProvider ? await fetchOEmbedFallbackImage(url) : null
 
     // Derive a favicon from the provider's origin
     let faviconUrl: string | null = null
@@ -71,7 +72,7 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
     return {
       title: (data.title ?? fallbackTitle)?.slice(0, MAX_TITLE_LENGTH) ?? null,
       description: oembedDescription?.slice(0, MAX_DESCRIPTION_LENGTH) ?? null,
-      imageUrl: data.thumbnail_url ?? null,
+      imageUrl: data.thumbnail_url ?? fallbackImageUrl,
       faviconUrl,
       siteName: data.provider_name ?? null,
       contentType: "website",
@@ -99,6 +100,47 @@ export function extractOEmbedDescription(html: string | undefined): string | nul
   const decoded = decode(withoutTags)
   const compact = decoded?.replace(/\s+/g, " ").trim() ?? null
   return compact || null
+}
+
+/**
+ * Some X/Twitter oEmbed responses omit `thumbnail_url` even when the tweet has media.
+ * In those cases, attempt one additional metadata fetch against the canonical URL and
+ * read `twitter:image` / `og:image` via the same HTML parser used for generic pages.
+ */
+async function fetchOEmbedFallbackImage(url: string): Promise<string | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": FETCH_USER_AGENT,
+        Accept: "text/html, application/xhtml+xml, */*",
+      },
+      signal: controller.signal,
+      redirect: "follow",
+    })
+
+    if (!response.ok) {
+      response.body?.cancel()
+      return null
+    }
+
+    const contentTypeHeader = response.headers.get("content-type") ?? ""
+    if (!contentTypeHeader.includes("text/html") && !contentTypeHeader.includes("application/xhtml")) {
+      response.body?.cancel()
+      return null
+    }
+
+    const html = await response.text()
+    const metadata = await parseHtmlMeta(html.slice(0, MAX_HTML_BYTES), response.url || url)
+    return metadata.imageUrl ?? null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 // ── HTML metadata fetching ──────────────────────────────────────────
