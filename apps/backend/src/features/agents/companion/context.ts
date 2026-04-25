@@ -1,9 +1,9 @@
 import type { Pool } from "pg"
 import type { ModelMessage } from "ai"
-import type { JSONContent, UserPreferences } from "@threa/types"
+import type { UserPreferences } from "@threa/types"
 import { AgentTriggers, AuthorTypes, StreamTypes } from "@threa/types"
 import type { UserPreferencesService } from "../../user-preferences"
-import { MessageRepository, SharedMessageRepository, type Message } from "../../messaging"
+import { MessageRepository, SharedMessageRepository, collectSharedMessageIds, type Message } from "../../messaging"
 import { UserRepository } from "../../workspaces"
 import { PersonaRepository } from "../persona-repository"
 import type { Persona } from "../persona-repository"
@@ -207,10 +207,12 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
   const sharedAccessibleStreamIds = accessibleStreamIds ?? new Set([stream.id])
   const seedMessageIds = new Set(streamContext.conversationHistory.map((m) => m.id))
   const sharedRefIds = new Set<string>()
+  const collected = new Set<string>()
   for (const m of streamContext.conversationHistory) {
-    for (const id of extractSharedMessageIds(m.contentJson)) {
-      if (!seedMessageIds.has(id)) sharedRefIds.add(id)
-    }
+    collectSharedMessageIds(m.contentJson, collected)
+  }
+  for (const id of collected) {
+    if (!seedMessageIds.has(id)) sharedRefIds.add(id)
   }
 
   if (sharedRefIds.size > 0) {
@@ -273,13 +275,11 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     }
 
     streamContext.conversationHistory = streamContext.conversationHistory.map((m) => {
-      const ids = extractSharedMessageIds(m.contentJson)
-      if (ids.length === 0) return m
+      const ids = new Set<string>()
+      collectSharedMessageIds(m.contentJson, ids)
+      if (ids.size === 0) return m
       const blocks: string[] = []
-      const seen = new Set<string>()
       for (const id of ids) {
-        if (seen.has(id)) continue
-        seen.add(id)
         const source = allowedSources.get(id)
         if (!source) continue
         const author = authorNames.get(source.authorId) ?? "Unknown"
@@ -315,23 +315,6 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     authorNames,
     streamContext,
     accessibleStreamIds,
-  }
-}
-
-function extractSharedMessageIds(content: JSONContent): string[] {
-  const ids: string[] = []
-  walk(content)
-  return ids
-
-  function walk(node: JSONContent | undefined): void {
-    if (!node) return
-    if (node.type === "sharedMessage") {
-      const messageId = (node.attrs as { messageId?: string } | undefined)?.messageId
-      if (typeof messageId === "string" && messageId.length > 0) ids.push(messageId)
-    }
-    if (node.content) {
-      for (const child of node.content) walk(child)
-    }
   }
 }
 

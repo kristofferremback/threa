@@ -122,7 +122,7 @@ describe("ShareService.validateAndRecordShares", () => {
   }
 
   beforeEach(() => {
-    spyOn(MessageRepository, "findById").mockResolvedValue(sourceMessage)
+    spyOn(MessageRepository, "findByIds").mockResolvedValue(new Map([[sourceMessage.id, sourceMessage]]))
     spyOn(SharedMessageRepository, "insert").mockResolvedValue({} as any)
     spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
   })
@@ -182,7 +182,7 @@ describe("ShareService.validateAndRecordShares", () => {
   })
 
   it("fails when the referenced source message does not exist", async () => {
-    spyOn(MessageRepository, "findById").mockResolvedValue(null)
+    spyOn(MessageRepository, "findByIds").mockResolvedValue(new Map())
     await expect(
       ShareService.validateAndRecordShares(
         baseParams({
@@ -196,11 +196,44 @@ describe("ShareService.validateAndRecordShares", () => {
   })
 
   it("fails when the source message belongs to a different stream than claimed", async () => {
-    spyOn(MessageRepository, "findById").mockResolvedValue({ ...sourceMessage, streamId: "stream_other" } as any)
+    spyOn(MessageRepository, "findByIds").mockResolvedValue(
+      new Map([[sourceMessage.id, { ...sourceMessage, streamId: "stream_other" }]])
+    )
     await expect(ShareService.validateAndRecordShares(baseParams())).rejects.toMatchObject({
       status: 400,
       code: "SHARE_SOURCE_STREAM_MISMATCH",
     })
+  })
+
+  it("dedupes per-stream callbacks across duplicate references (INV-56 batching)", async () => {
+    const findStream = mock(async () => ({ ...sourceStream }) as any)
+    const isAncestor = mock(async () => false)
+    const countExposedMembers = mock(async () => 0)
+    const canReadStream = mock(async () => true)
+    spyOn(accessCheck, "crossesPrivacyBoundary").mockResolvedValue({ triggered: false, exposedUserCount: 0 })
+
+    // Two share-nodes pointing at the same source — per-stream callbacks
+    // should fire once each, not twice.
+    await ShareService.validateAndRecordShares(
+      baseParams({
+        findStream,
+        isAncestor,
+        countExposedMembers,
+        canReadStream,
+        contentJson: {
+          type: "doc",
+          content: [
+            { type: "sharedMessage", attrs: { messageId: "msg_source", streamId: "stream_source" } },
+            { type: "sharedMessage", attrs: { messageId: "msg_source", streamId: "stream_source" } },
+          ],
+        } as any,
+      })
+    )
+
+    expect(findStream).toHaveBeenCalledTimes(1)
+    expect(canReadStream).toHaveBeenCalledTimes(1)
+    expect(MessageRepository.findByIds).toHaveBeenCalledTimes(1)
+    expect(SharedMessageRepository.insert).toHaveBeenCalledTimes(2)
   })
 
   it("rejects shares when the sharer cannot read the source stream", async () => {

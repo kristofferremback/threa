@@ -163,6 +163,7 @@ export function StreamContent({
     isLoading,
     isConfirmedEmpty,
     error,
+    pagedSharedMessages,
     fetchOlderEvents,
     hasOlderEvents,
     isFetchingOlder,
@@ -173,6 +174,16 @@ export function StreamContent({
     exitJumpMode,
     isJumpMode,
   } = useEvents(workspaceId, streamId, { enabled: !isDraft, loadAll: isThread })
+
+  // Merge bootstrap + paginated `sharedMessages` so pointers in pages older
+  // than the bootstrap window (or in jump-mode windows) hydrate without
+  // waiting for a full bootstrap refetch. Bootstrap entries take precedence
+  // when both maps carry the same source-message id since bootstrap reflects
+  // the latest backend response while paged data may be older.
+  const mergedSharedMessages = useMemo(
+    () => ({ ...pagedSharedMessages, ...(bootstrap?.sharedMessages ?? {}) }),
+    [pagedSharedMessages, bootstrap?.sharedMessages]
+  )
 
   // For drafts, query pending/failed events directly from IDB so optimistic
   // messages are visible while offline or waiting for queue processing.
@@ -608,7 +619,7 @@ export function StreamContent({
   return (
     <EditLastMessageContext.Provider value={editLastMessageCtxWithScroll}>
       <QuoteReplyProvider>
-        <SharedMessagesProvider map={bootstrap?.sharedMessages ?? null}>
+        <SharedMessagesProvider map={mergedSharedMessages}>
           <TextSelectionQuote streamId={streamId} />
           <div className="relative h-full">
             <div className="absolute inset-0 overflow-hidden">

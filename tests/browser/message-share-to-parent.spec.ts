@@ -18,11 +18,16 @@ import {
  *    message, verify the parent channel's composer receives a
  *    sharedMessage node, send via the normal composer, and the pointer
  *    renders in the channel with hydrated content.
- * 2. Pointer edit propagation: edit the source (thread) message and
- *    confirm the pointer in the parent channel reflects the edit on the
- *    next bootstrap or invalidation.
- * 3. Pointer delete tombstone: soft-delete the source message and
- *    confirm the pointer renders the "Message deleted" tombstone.
+ * 2. Pointer edit propagation: edit the source (thread) message via the
+ *    messages API and confirm the pointer in the parent channel reflects
+ *    the edit (realtime `pointer:invalidated` → bootstrap refetch).
+ * 3. Pointer delete tombstone: soft-delete the source message via the
+ *    messages API and confirm the pointer renders the "Message deleted"
+ *    tombstone via the same invalidation path.
+ *
+ * Tests 2 and 3 run in a single browser context: the same user that
+ * created the source thread reply edits/deletes it, then watches the
+ * pointer in the channel update. No two-context fixture needed.
  */
 
 async function sendChannelMessageViaApi(page: Page, text: string): Promise<string> {
@@ -51,6 +56,67 @@ async function openMessageContextMenu(page: Page, text: string): Promise<void> {
   await row.getByRole("button", { name: /message actions/i }).click()
 }
 
+/**
+ * Set up a shared-pointer scenario end-to-end: create a channel, send a
+ * parent message, open its thread, send a reply, share the reply back up
+ * to the channel, and wait for the pointer card to render hydrated.
+ *
+ * Returns the IDs the edit/delete tests need to mutate the source via the
+ * API and observe the pointer update.
+ */
+async function setUpSharedPointer(
+  page: Page,
+  opts: { channelName: string; threadText: string }
+): Promise<{ workspaceId: string; channelStreamId: string; threadMessageId: string }> {
+  await createChannel(page, opts.channelName, { switchToAll: false })
+
+  const parentText = `Parent ${generateTestId()}`
+  await sendChannelMessageViaApi(page, parentText)
+
+  const parentRow = page
+    .getByText(parentText, { exact: false })
+    .first()
+    .locator("xpath=ancestor::*[@data-message-id][1]")
+  await expect(parentRow).toBeVisible()
+  await clickReplyInThread(parentRow)
+  await waitForRealThreadPanel(page)
+
+  await sendPanelReply(page, opts.threadText)
+
+  // Capture the thread-reply's message id — that's the source we'll later
+  // edit / delete via the API and watch propagate to the channel pointer.
+  const threadRow = page
+    .getByText(opts.threadText, { exact: false })
+    .first()
+    .locator("xpath=ancestor::*[@data-message-id][1]")
+  await expect(threadRow).toBeVisible()
+  const threadMessageId = (await threadRow.getAttribute("data-message-id")) ?? ""
+  expect(threadMessageId, "thread reply should expose data-message-id").not.toBe("")
+
+  await openMessageContextMenu(page, opts.threadText)
+  const shareEntry = page.getByRole("menuitem", { name: new RegExp(`share to #?${opts.channelName}`, "i") })
+  await expect(shareEntry).toBeVisible()
+  await shareEntry.click()
+
+  const composer = page.locator("[contenteditable='true']").first()
+  await expect(composer).toBeVisible()
+  await expect(composer.locator("[data-type='shared-message']")).toHaveCount(1)
+  await composer.focus()
+  await page.keyboard.press("Enter")
+
+  // Wait for the pointer card to land hydrated with the original source
+  // text. The follow-up edit/delete tests use this as the baseline before
+  // observing the pointer update.
+  await expect(
+    page.locator("[data-type='shared-message']").filter({ hasText: new RegExp(opts.threadText) })
+  ).toBeVisible({ timeout: 5000 })
+
+  const match = page.url().match(/\/w\/([^/]+)\/s\/([^/?]+)/)
+  expect(match).toBeTruthy()
+  const [, workspaceId, channelStreamId] = match!
+  return { workspaceId, channelStreamId, threadMessageId }
+}
+
 test.describe("Message share-to-parent", () => {
   let testId: string
 
@@ -61,65 +127,55 @@ test.describe("Message share-to-parent", () => {
 
   test("shares a thread message up to its parent channel", async ({ page }) => {
     const channelName = `share-${testId}`
-    await createChannel(page, channelName, { switchToAll: false })
-
-    const parentText = `Parent ${generateTestId()}`
-    await sendChannelMessageViaApi(page, parentText)
-
-    // Open the thread on the parent message. Wait for the row to be in the
-    // DOM and visible before any interaction — `getByText` retries on text
-    // visibility but the XPath ancestor locator resolves against that match
-    // and may point at a row that's still being laid out (virtualized list /
-    // late mount), which makes a follow-up `hover()` time out at 30s on CI.
-    // `clickReplyInThread` already handles the hover/scroll dance internally.
-    const parentRow = page
-      .getByText(parentText, { exact: false })
-      .first()
-      .locator("xpath=ancestor::*[@data-message-id][1]")
-    await expect(parentRow).toBeVisible()
-    await clickReplyInThread(parentRow)
-    await waitForRealThreadPanel(page)
-
-    // Send a thread reply whose content we want to share back up
     const threadText = `thread-reply-${testId}`
-    await sendPanelReply(page, threadText)
-
-    // Open the context menu on the thread reply, click "Share to #channel"
-    await openMessageContextMenu(page, threadText)
-    const shareEntry = page.getByRole("menuitem", { name: new RegExp(`share to #?${channelName}`, "i") })
-    await expect(shareEntry).toBeVisible()
-    await shareEntry.click()
-
-    // We should have navigated to the parent channel with the share node in
-    // the composer. Send it via the normal send button.
-    const composer = page.locator("[contenteditable='true']").first()
-    await expect(composer).toBeVisible()
-    await expect(composer.locator("[data-type='shared-message']")).toHaveCount(1)
-    await composer.focus()
-    await page.keyboard.press("Enter")
-
-    // The new message appears in the channel with the SharedMessageView, and
-    // hydration completes — the pointer body renders the real source text, not
-    // a stuck skeleton. Asserting on the hydrated text guards against a
-    // regression where hydration never lands (missing socket invalidation,
-    // broken SharedMessagesProvider lookup) that a `/loading/` match would
-    // silently pass.
-    await expect(
-      page.locator("[data-type='shared-message']").filter({ hasText: new RegExp(`thread-reply-${testId}`) })
-    ).toBeVisible({ timeout: 5000 })
+    await setUpSharedPointer(page, { channelName, threadText })
+    // setUpSharedPointer already asserts the hydrated pointer card is
+    // visible. Nothing more to check on the happy path.
   })
 
   test("propagates source edits to the pointer", async ({ page }) => {
-    test.skip(
-      true,
-      "Edit-propagation requires a two-user or two-context session to observe the live pointer update; tracked as a Slice 1 follow-up (covered by backend unit + outbox tests)."
-    )
+    const channelName = `share-${testId}`
+    const threadText = `thread-reply-${testId}`
+    const { workspaceId, threadMessageId } = await setUpSharedPointer(page, { channelName, threadText })
+
+    // Edit the source thread message via the messages API. The backend's
+    // outbox handler emits `pointer:invalidated` to the channel's room,
+    // the frontend stream-sync invalidates bootstrap, and the provider
+    // re-renders the pointer with the new content.
+    const editedText = `edited-thread-reply-${testId}`
+    const editResponse = await page.request.patch(`/api/workspaces/${workspaceId}/messages/${threadMessageId}`, {
+      data: {
+        contentJson: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: editedText }] }],
+        },
+        contentMarkdown: editedText,
+      },
+    })
+    await expectApiOk(editResponse, `Edit thread message ${threadMessageId}`)
+
+    // 10s is generous: the realtime fan-out + invalidation + bootstrap
+    // refetch usually completes within a couple of seconds, but CI can
+    // be slow under load.
+    await expect(page.locator("[data-type='shared-message']").filter({ hasText: new RegExp(editedText) })).toBeVisible({
+      timeout: 10000,
+    })
   })
 
   test("renders a tombstone when the source message is deleted", async ({ page }) => {
-    test.skip(
-      true,
-      "Delete-tombstone requires editing a soft-delete state while the pointer is visible; tracked as a Slice 1 follow-up (covered by backend hydration test)."
-    )
+    const channelName = `share-${testId}`
+    const threadText = `thread-reply-${testId}`
+    const { workspaceId, threadMessageId } = await setUpSharedPointer(page, { channelName, threadText })
+
+    // Soft-delete the source thread message via the messages API. Same
+    // invalidation path as the edit case; hydration now emits a
+    // `state: "deleted"` payload, which the NodeView renders as the
+    // muted "Message deleted by author" tombstone.
+    const deleteResponse = await page.request.delete(`/api/workspaces/${workspaceId}/messages/${threadMessageId}`)
+    await expectApiOk(deleteResponse, `Delete thread message ${threadMessageId}`)
+
+    await expect(
+      page.locator("[data-type='shared-message']").filter({ hasText: /Message deleted by author/i })
+    ).toBeVisible({ timeout: 10000 })
   })
 })

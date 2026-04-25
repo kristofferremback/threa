@@ -113,6 +113,15 @@ export interface ValidateAndRecordSharesParams {
  * before re-inserting, so the row set always reflects the current message
  * body. This keeps the create and edit paths on one code path — edits that
  * add, remove, or swap share nodes produce the correct final row set.
+ *
+ * Batched (INV-56): all read-only checks run before any per-ref validation.
+ * Source messages come from a single `findByIds` SQL query; per-stream
+ * checks (`findStream`, `canReadStream`, `crossesPrivacyBoundary`) run in
+ * parallel keyed by unique `sourceStreamId` so duplicate refs to the same
+ * source share one round trip. Inserts also fire in parallel since the
+ * outer transaction client serializes them. Slice 1 messages carry one
+ * share node so the win is structural — Slice 2's multi-node composer
+ * benefits without further changes.
  */
 export const ShareService = {
   async validateAndRecordShares(params: ValidateAndRecordSharesParams): Promise<void> {
@@ -124,8 +133,22 @@ export const ShareService = {
 
     if (references.length === 0) return
 
+    // INV-56 — batch the source-message read into one SQL query rather than
+    // one findById per reference, and memoize per-source-stream callbacks so
+    // duplicate references that target the same source stream don't repeat
+    // the findStream / canReadStream / crossesPrivacyBoundary work. Calls
+    // remain sequential because they share the caller's transaction client
+    // (pg connections can't multiplex), but each unique stream pays the
+    // cost once instead of once-per-reference.
+    const uniqueSourceMessageIds = [...new Set(references.map((r) => r.sourceMessageId))]
+    const sourceMessagesById = await MessageRepository.findByIds(params.client, uniqueSourceMessageIds)
+
+    const sourceStreamCache = new Map<string, Awaited<ReturnType<FindStreamForSharing>>>()
+    const canReadCache = new Map<string, boolean>()
+    const boundaryCache = new Map<string, Awaited<ReturnType<typeof crossesPrivacyBoundary>>>()
+
     for (const ref of references) {
-      const sourceMessage = await MessageRepository.findById(params.client, ref.sourceMessageId)
+      const sourceMessage = sourceMessagesById.get(ref.sourceMessageId)
       if (!sourceMessage) {
         throw new HttpError("Source message not found", {
           status: 400,
@@ -139,7 +162,11 @@ export const ShareService = {
         })
       }
 
-      const sourceStream = await params.findStream(params.client, ref.sourceStreamId)
+      let sourceStream = sourceStreamCache.get(ref.sourceStreamId)
+      if (sourceStream === undefined) {
+        sourceStream = await params.findStream(params.client, ref.sourceStreamId)
+        sourceStreamCache.set(ref.sourceStreamId, sourceStream)
+      }
       if (!sourceStream) {
         throw new HttpError("Source stream not found", {
           status: 400,
@@ -157,27 +184,30 @@ export const ShareService = {
       // Prevents enumeration of message ids in streams the sharer can't
       // read. The target-exposure check below is orthogonal — it defends
       // target viewers; this one defends the source stream.
-      const sharerCanRead = await params.canReadStream(
-        params.client,
-        params.workspaceId,
-        ref.sourceStreamId,
-        params.sharerId
-      )
-      if (!sharerCanRead) {
+      let canRead = canReadCache.get(ref.sourceStreamId)
+      if (canRead === undefined) {
+        canRead = await params.canReadStream(params.client, params.workspaceId, ref.sourceStreamId, params.sharerId)
+        canReadCache.set(ref.sourceStreamId, canRead)
+      }
+      if (!canRead) {
         throw new HttpError("You don't have access to the source message", {
           status: 403,
           code: "SHARE_SOURCE_FORBIDDEN",
         })
       }
 
-      const boundary = await crossesPrivacyBoundary(
-        params.client,
-        params.findStream,
-        params.isAncestor,
-        params.countExposedMembers,
-        ref.sourceStreamId,
-        params.targetStreamId
-      )
+      let boundary = boundaryCache.get(ref.sourceStreamId)
+      if (boundary === undefined) {
+        boundary = await crossesPrivacyBoundary(
+          params.client,
+          params.findStream,
+          params.isAncestor,
+          params.countExposedMembers,
+          ref.sourceStreamId,
+          params.targetStreamId
+        )
+        boundaryCache.set(ref.sourceStreamId, boundary)
+      }
       // SLICE-1 ASSUMPTION: `confirmedPrivacyWarning` is a single boolean
       // covering every reference in the message. That's safe today because
       // (a) share-to-parent short-circuits via the ancestor check so
