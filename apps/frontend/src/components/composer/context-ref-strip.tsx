@@ -25,30 +25,33 @@ interface PillProps {
   errorMessage?: string | null
 }
 
+/**
+ * Pill styling intentionally matches `<PendingAttachments>` in
+ * `timeline/pending-attachments.tsx` (rounded-lg, font-medium, primary
+ * accent) so the strip + the attachment row read as a single visual
+ * surface above the composer.
+ */
 function ContextRefPill({ label, status, errorMessage }: PillProps) {
   let Icon = MessageSquareReply
   if (status === "pending") Icon = Loader2
   else if (status === "error") Icon = AlertCircle
 
-  const baseStyles = cn(
-    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
-    "select-none transition-colors"
-  )
+  const baseStyles = "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium select-none"
 
   const statusStyles: Record<PillProps["status"], string> = {
-    pending: "border-muted-foreground/20 bg-muted/40 text-muted-foreground animate-pulse",
-    ready: "border-primary/20 bg-primary/10 text-primary",
-    inline: "border-primary/20 bg-primary/10 text-primary",
-    error: "border-destructive/30 bg-destructive/10 text-destructive",
+    pending: "border border-dashed border-muted-foreground/40 bg-transparent text-muted-foreground",
+    ready: "border border-primary/30 bg-primary/10 text-primary",
+    inline: "border border-primary/30 bg-primary/10 text-primary",
+    error: "border border-destructive bg-destructive/10 text-destructive",
   }
 
   const tooltip = errorMessage ?? (status === "pending" ? "Preparing context…" : null)
 
   const content = (
-    <span className={cn(baseStyles, statusStyles[status])}>
+    <div className={cn(baseStyles, statusStyles[status])}>
       <Icon className={cn("h-3.5 w-3.5 shrink-0", status === "pending" && "animate-spin")} />
-      <span className="truncate max-w-[220px]">{label}</span>
-    </span>
+      <span className="truncate max-w-[180px]">{label}</span>
+    </div>
   )
 
   if (!tooltip) return content
@@ -73,6 +76,10 @@ function ContextRefPill({ label, status, errorMessage }: PillProps) {
  * lifecycle as a file upload pill: visible while composing, "moves" onto
  * the message at send.
  *
+ * Container styling (`flex flex-wrap gap-2 mb-3`) intentionally mirrors
+ * `<PendingAttachments>` so when both are present (a draft with both
+ * uploads and context refs) they read as one visually unified row.
+ *
  * Labels still come from server source metadata via `useStreamContextBag`
  * so the chip says "12 messages in #intro" even mid-precompute. The query
  * is cheap (cached) and a no-op when the strip wouldn't render anyway.
@@ -86,7 +93,7 @@ export function ContextRefStrip({ workspaceId, streamId, draftRefs }: ContextRef
   const serverByStreamId = new Map((data?.refs ?? []).map((r) => [r.streamId, r]))
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2">
+    <div className="flex flex-wrap gap-2 px-3 pt-2">
       {draftRefs.map((ref) => {
         const server = serverByStreamId.get(ref.streamId)
         const label = formatContextRefLabel({

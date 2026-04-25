@@ -11,15 +11,20 @@ interface MessageContextBadgeProps {
 }
 
 /**
- * Renders the context-bag attachment as a small inline pill on the first
- * message of a bag-attached scratchpad — same mental model as a file
- * upload chip on a sent message. Bag is stream-level
+ * Renders the context-bag attachment as a small inline pill anchored to the
+ * first message of a bag-attached scratchpad — same UX pattern as a file
+ * upload chip on a sent message. The bag is stream-level
  * (`stream_context_attachments`, INV-57) but we anchor it visually to the
- * opening message so the affordance moves with the conversation start
+ * opening message so the affordance "moves" with the conversation start
  * rather than living permanently above the composer.
  *
- * Renders nothing for streams without a bag, so the cost of including this
- * on every potentially-first message is one cached fetch per stream.
+ * Pill styling intentionally matches `<PendingAttachments>` and the
+ * pre-send `<ContextRefStrip>` so users see one visual language across the
+ * composer-to-timeline lifecycle (chip moves onto the message at send).
+ *
+ * Renders nothing when the stream has no attached bag, so the per-message
+ * cost of including this on every potentially-first message is one cached
+ * fetch per stream.
  */
 export function MessageContextBadge({ workspaceId, streamId }: MessageContextBadgeProps) {
   const { data } = useStreamContextBag(workspaceId, streamId)
@@ -27,7 +32,7 @@ export function MessageContextBadge({ workspaceId, streamId }: MessageContextBad
   if (refs.length === 0) return null
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+    <div className="mt-2 flex flex-wrap gap-2">
       {refs.map((ref) => {
         const label = formatContextRefLabel({
           slug: ref.source.slug,
@@ -44,15 +49,15 @@ export function MessageContextBadge({ workspaceId, streamId }: MessageContextBad
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                <span
+                <div
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
-                    "border-primary/20 bg-primary/10 text-primary select-none"
+                    "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium select-none",
+                    "border border-primary/30 bg-primary/10 text-primary"
                   )}
                 >
                   <MessageSquareReply className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate max-w-[220px]">{label}</span>
-                </span>
+                </div>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-[260px]">
                 <p className="text-sm">Context attached to this conversation</p>
