@@ -153,6 +153,15 @@ describe("SyncEngine.handlePageResume", () => {
     expect(refreshSpy).not.toHaveBeenCalled()
   })
 
+  it("soft refreshes visible data even before the first socket connect", async () => {
+    const deps = makeDeps()
+    const engine = new SyncEngine(deps)
+
+    await engine.refreshAfterConnectivityResume()
+
+    expect(deps.workspaceService.bootstrap).toHaveBeenCalledTimes(1)
+  })
+
   it("is a no-op when the engine is destroyed", async () => {
     const engine = new SyncEngine(makeDeps())
     const socket = new MockSocket()
