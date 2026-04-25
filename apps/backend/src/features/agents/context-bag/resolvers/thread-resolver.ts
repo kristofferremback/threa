@@ -1,10 +1,9 @@
 import type { Querier } from "../../../../db"
-import { ContextRefKinds, Visibilities, type ContextRef } from "@threa/types"
+import { ContextRefKinds, type ContextRef } from "@threa/types"
 import { HttpError } from "../../../../lib/errors"
 import { MessageRepository } from "../../../messaging"
-import { StreamRepository, StreamMemberRepository } from "../../../streams"
-import { UserRepository } from "../../../workspaces"
-import { PersonaRepository } from "../../persona-repository"
+import { StreamRepository, checkStreamAccess } from "../../../streams"
+import { resolveActorNames } from "../../actor-names"
 import { fingerprintContent, fingerprintManifest as fingerprintInputs } from "../fingerprint"
 import type { RenderableMessage, Resolver, SummaryInput } from "../types"
 
@@ -28,24 +27,20 @@ export const ThreadResolver: Resolver<ThreadRef> = {
   },
 
   async assertAccess(db, ref, userId, workspaceId) {
-    const stream = await StreamRepository.findById(db, ref.streamId)
-    if (!stream || stream.workspaceId !== workspaceId) {
-      throw new HttpError("Context source stream not found", { status: 404, code: "CONTEXT_SOURCE_NOT_FOUND" })
-    }
-
-    // Threads inherit access from their root stream (channel visibility + membership).
-    const accessStream = stream.rootStreamId ? await StreamRepository.findById(db, stream.rootStreamId) : stream
-    if (!accessStream) {
-      throw new HttpError("Context source stream not found", { status: 404, code: "CONTEXT_SOURCE_NOT_FOUND" })
-    }
-
-    if (accessStream.visibility === Visibilities.PUBLIC) {
-      return
-    }
-
-    const isMember = await StreamMemberRepository.isMember(db, accessStream.id, userId)
-    if (!isMember) {
-      throw new HttpError("No access to context source stream", { status: 403, code: "CONTEXT_SOURCE_FORBIDDEN" })
+    // Single source of truth for "can this user read this stream?": handles
+    // workspace-boundary, public-channel, and thread-inherits-from-root cases.
+    // Inlining `StreamMemberRepository.isMember` here is the historical footgun
+    // (membership ≠ access).
+    const stream = await checkStreamAccess(db, ref.streamId, workspaceId, userId)
+    if (!stream) {
+      // We don't know whether the source is missing, in another workspace, or
+      // just inaccessible — pick FORBIDDEN as the safer default so we don't
+      // confirm existence of streams the user can't see. Callers that need a
+      // 404 vs 403 distinction can re-check with `StreamRepository.findById`.
+      throw new HttpError("No access to context source stream", {
+        status: 403,
+        code: "CONTEXT_SOURCE_FORBIDDEN",
+      })
     }
   },
 
@@ -71,7 +66,7 @@ export const ThreadResolver: Resolver<ThreadRef> = {
     const withRoot = root && !anchored.some((m) => m.id === root.id) ? [root, ...anchored] : anchored
 
     const authorIds = new Set(withRoot.map((m) => m.authorId))
-    const authorNames = await resolveAuthorNames(db, stream.workspaceId, authorIds)
+    const authorNames = await resolveActorNames(db, stream.workspaceId, authorIds)
 
     const items: RenderableMessage[] = withRoot.map((m) => ({
       messageId: m.id,
@@ -148,25 +143,4 @@ async function assertAnchorExists(
     status: 422,
     code: "CONTEXT_ANCHOR_OUT_OF_WINDOW",
   })
-}
-
-async function resolveAuthorNames(
-  db: Querier,
-  workspaceId: string,
-  authorIds: Set<string>
-): Promise<Map<string, string>> {
-  const ids = [...authorIds]
-  if (ids.length === 0) return new Map()
-
-  // INV-56: batch lookups rather than looping per-row. Persona rows live in a
-  // separate, workspace-agnostic table so we query both in parallel and merge.
-  const [users, personas] = await Promise.all([
-    UserRepository.findByIds(db, workspaceId, ids),
-    PersonaRepository.findByIds(db, ids),
-  ])
-
-  const out = new Map<string, string>()
-  for (const u of users) out.set(u.id, u.name)
-  for (const p of personas) out.set(p.id, p.name)
-  return out
 }

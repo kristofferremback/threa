@@ -686,11 +686,11 @@ export function createStreamHandlers({
 
       // Fold the stream's persisted ContextBag into the bootstrap so the
       // timeline message-context badge renders synchronously from cached
-      // data (no second fetch, no layout shift on first render). Membership
+      // data (no second fetch, no layout shift on first render). Access
       // check is skipped because `validateStreamAccess` above already
       // verified it. INV-8: per-ref read access is still re-verified inside
       // `fetchStreamBag` via the resolver.
-      const contextBag = await fetchStreamBag(pool, { workspaceId, streamId, userId }, { skipMembershipCheck: true })
+      const contextBag = await fetchStreamBag(pool, { workspaceId, streamId, userId }, { skipAccessCheck: true })
 
       res.json({
         data: {

@@ -205,14 +205,17 @@ describe("createContextBagHandlers.getStreamBag", () => {
     expect(res.body).toEqual({ bag: null, refs: [] })
   })
 
-  it("404s when the stream does not exist or belongs to another workspace", async () => {
+  it("403s when the stream does not exist or belongs to another workspace", async () => {
+    // checkStreamAccess collapses missing / wrong-workspace / no-access into a
+    // single FORBIDDEN response so the error doesn't confirm existence of
+    // streams the caller can't see.
     stubWithClient()
     spyOn(StreamRepository, "findById").mockResolvedValue(null)
 
     const handlers = createContextBagHandlers({ pool: {} as any, ai: {} as any })
     const req = mockReq(undefined, { streamId: "stream_missing" })
     const res = mockRes() as any
-    await expect(handlers.getStreamBag(req, res)).rejects.toThrow("Stream not found")
+    await expect(handlers.getStreamBag(req, res)).rejects.toThrow("No access to stream")
   })
 
   it("403s when the user is not a member of the stream", async () => {

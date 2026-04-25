@@ -105,6 +105,8 @@ describe("ThreadResolver.assertAccess", () => {
   it("rejects when the source stream is in a different workspace", async () => {
     spyOn(StreamRepository, "findById").mockResolvedValue(makeStream({ workspaceId: "ws_other" }))
 
+    // We collapse both "missing" and "wrong workspace" into FORBIDDEN so the
+    // error never confirms the existence of streams the caller can't see.
     await expect(
       ThreadResolver.assertAccess(
         {} as any,
@@ -112,7 +114,7 @@ describe("ThreadResolver.assertAccess", () => {
         "usr_x",
         "ws_1"
       )
-    ).rejects.toThrow(/not found/)
+    ).rejects.toMatchObject({ code: "CONTEXT_SOURCE_FORBIDDEN" })
   })
 })
 

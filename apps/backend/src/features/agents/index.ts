@@ -131,6 +131,10 @@ export {
 } from "./quote-resolver"
 export type { ResolveQuoteRepliesInput, ResolveQuoteRepliesResult } from "./quote-resolver"
 
+// Actor name resolution (users + personas) — shared across companion,
+// researcher, and context-bag thread resolution.
+export { resolveActorNames } from "./actor-names"
+
 // Context builder
 export { buildStreamContext, enrichMessagesWithAttachments } from "./context-builder"
 export type {

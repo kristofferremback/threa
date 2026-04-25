@@ -16,6 +16,7 @@ import {
   isUniqueViolation,
 } from "../../lib/errors"
 import { formatParticipantNames } from "./display-name"
+import { checkStreamAccess } from "./access"
 import { UserRepository } from "../workspaces"
 import { BotChannelAccessRepository } from "../api-keys"
 import {
@@ -126,29 +127,7 @@ export class StreamService {
   }
 
   private async checkAccess(streamId: string, workspaceId: string, userId: string): Promise<Stream | null> {
-    return withClient(this.pool, async (client) => {
-      const stream = await StreamRepository.findById(client, streamId)
-      if (!stream || stream.workspaceId !== workspaceId) return null
-
-      if (stream.rootStreamId) {
-        const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
-        if (!rootStream) return null
-
-        if (rootStream.visibility !== Visibilities.PUBLIC) {
-          const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
-          if (!isRootMember) return null
-        }
-
-        return stream
-      }
-
-      if (stream.visibility !== Visibilities.PUBLIC) {
-        const isMember = await StreamMemberRepository.isMember(client, streamId, userId)
-        if (!isMember) return null
-      }
-
-      return stream
-    })
+    return withClient(this.pool, async (client) => checkStreamAccess(client, streamId, workspaceId, userId))
   }
 
   async getScratchpadsByUser(workspaceId: string, userId: string): Promise<Stream[]> {

@@ -1,7 +1,7 @@
 import type { Querier } from "../../../db"
 import { ContextRefKinds, type ContextIntent } from "@threa/types"
 import { HttpError } from "../../../lib/errors"
-import { StreamRepository, StreamMemberRepository } from "../../streams"
+import { StreamRepository, checkStreamAccess } from "../../streams"
 import { MessageRepository } from "../../messaging"
 import { ContextBagRepository } from "./repository"
 import { getResolver } from "./registry"
@@ -34,12 +34,12 @@ export interface StreamContextBagResponse {
 
 export interface FetchStreamBagOptions {
   /**
-   * Skip the per-stream membership check. Set to true when the caller has
+   * Skip the per-stream access check. Set to true when the caller has
    * already validated stream access (e.g. the stream-bootstrap handler runs
    * `validateStreamAccess` before reaching this code) — avoids a duplicate
-   * `isMember` query.
+   * lookup.
    */
-  skipMembershipCheck?: boolean
+  skipAccessCheck?: boolean
 }
 
 /**
@@ -55,8 +55,8 @@ export interface FetchStreamBagOptions {
  * Returns `{bag: null, refs: []}` for streams without an attached bag.
  *
  * Access policy (INV-8):
- * - Caller must have stream access — verified via `StreamMemberRepository.isMember`
- *   unless `skipMembershipCheck` is set (bootstrap caller has already done it).
+ * - Caller must have stream access — verified via `checkStreamAccess`
+ *   unless `skipAccessCheck` is set (bootstrap caller has already done it).
  * - Per-ref read access is always re-verified via `resolver.assertAccess`.
  *   A user who lost access to a source thread sees the bag minus that ref.
  */
@@ -71,14 +71,14 @@ export async function fetchStreamBag(
 ): Promise<StreamContextBagResponse> {
   const { workspaceId, streamId, userId } = params
 
-  const stream = await StreamRepository.findById(db, streamId)
-  if (!stream || stream.workspaceId !== workspaceId) {
-    throw new HttpError("Stream not found", { status: 404, code: "STREAM_NOT_FOUND" })
-  }
-
-  if (!options.skipMembershipCheck) {
-    const isMember = await StreamMemberRepository.isMember(db, streamId, userId)
-    if (!isMember) {
+  // Use the canonical access check rather than membership directly:
+  // public channels grant read without `stream_members` rows, and threads
+  // inherit access from their root stream — both cases that
+  // `StreamMemberRepository.isMember` gets wrong. Bootstrap callers pass
+  // `skipAccessCheck: true` because `validateStreamAccess` already ran.
+  if (!options.skipAccessCheck) {
+    const stream = await checkStreamAccess(db, streamId, workspaceId, userId)
+    if (!stream) {
       throw new HttpError("No access to stream", { status: 403, code: "STREAM_FORBIDDEN" })
     }
   }
