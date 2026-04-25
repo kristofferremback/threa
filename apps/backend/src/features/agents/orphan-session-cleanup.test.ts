@@ -34,20 +34,22 @@ describe("createOrphanSessionCleanup", () => {
   it("does not fail stale sessions that have an active resumable general research run", async () => {
     const pool = {} as never
     spyOn(AgentSessionRepository, "findOrphaned").mockResolvedValue([runningSession()])
-    const hasActiveRun = spyOn(GeneralResearchRepository, "hasActiveRunForSession").mockResolvedValue(true)
+    const listActiveRuns = spyOn(GeneralResearchRepository, "listActiveRunSessionIds").mockResolvedValue(
+      new Set(["session_1"])
+    )
     const updateStatus = spyOn(AgentSessionRepository, "updateStatus").mockResolvedValue(runningSession())
 
     const cleanup = createOrphanSessionCleanup(pool, { intervalMs: 60_000, staleThresholdSeconds: 1 })
     await cleanup.runOnce()
 
-    expect(hasActiveRun).toHaveBeenCalledWith(pool, "session_1")
+    expect(listActiveRuns).toHaveBeenCalledWith(pool, ["session_1"])
     expect(updateStatus).not.toHaveBeenCalled()
   })
 
   it("still fails stale sessions without active resumable research", async () => {
     const pool = {} as never
     spyOn(AgentSessionRepository, "findOrphaned").mockResolvedValue([runningSession()])
-    spyOn(GeneralResearchRepository, "hasActiveRunForSession").mockResolvedValue(false)
+    spyOn(GeneralResearchRepository, "listActiveRunSessionIds").mockResolvedValue(new Set())
     const updateStatus = spyOn(AgentSessionRepository, "updateStatus").mockResolvedValue(runningSession())
 
     const cleanup = createOrphanSessionCleanup(pool, { intervalMs: 60_000, staleThresholdSeconds: 1 })
@@ -59,5 +61,17 @@ describe("createOrphanSessionCleanup", () => {
       SessionStatuses.FAILED,
       expect.objectContaining({ error: "Session orphaned (stale heartbeat)" })
     )
+  })
+
+  it("does not fail sessions when research state cannot be checked", async () => {
+    const pool = {} as never
+    spyOn(AgentSessionRepository, "findOrphaned").mockResolvedValue([runningSession()])
+    spyOn(GeneralResearchRepository, "listActiveRunSessionIds").mockRejectedValue(new Error("db unavailable"))
+    const updateStatus = spyOn(AgentSessionRepository, "updateStatus").mockResolvedValue(runningSession())
+
+    const cleanup = createOrphanSessionCleanup(pool, { intervalMs: 60_000, staleThresholdSeconds: 1 })
+    await cleanup.runOnce()
+
+    expect(updateStatus).not.toHaveBeenCalled()
   })
 })

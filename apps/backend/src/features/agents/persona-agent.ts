@@ -321,7 +321,7 @@ export class PersonaAgent {
         const targetStreamId = sessionStreamId
 
         const checkForNewResearchMessages = async (sinceSequence: bigint) => {
-          const events = await StreamEventRepository.list(db, targetStreamId, {
+          const events = await StreamEventRepository.list(pool, targetStreamId, {
             types: ["message_created", "message_edited", "message_deleted"],
             afterSequence: sinceSequence,
             limit: 50,
@@ -333,7 +333,7 @@ export class PersonaAgent {
           const changedMessageIds = filteredEvents
             .map((event) => (event.payload as { messageId?: string }).messageId)
             .filter((id): id is string => typeof id === "string")
-          const messagesById = await MessageRepository.findByIds(db, changedMessageIds)
+          const messagesById = await MessageRepository.findByIds(pool, changedMessageIds)
           const userIds = [
             ...new Set(
               filteredEvents
@@ -349,8 +349,8 @@ export class PersonaAgent {
             ),
           ]
           const [members, personas] = await Promise.all([
-            userIds.length > 0 ? UserRepository.findByIds(db, workspaceId, userIds) : Promise.resolve([]),
-            personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+            userIds.length > 0 ? UserRepository.findByIds(pool, workspaceId, userIds) : Promise.resolve([]),
+            personaIds.length > 0 ? PersonaRepository.findByIds(pool, personaIds) : Promise.resolve([]),
           ])
           const names = new Map<string, string>()
           for (const member of members) names.set(member.id, member.name)
@@ -359,7 +359,7 @@ export class PersonaAgent {
             (max, event) => (event.sequence > max ? event.sequence : max),
             sinceSequence
           )
-          await AgentSessionRepository.updateLastSeenSequence(db, session.id, maxSequence)
+          await AgentSessionRepository.updateLastSeenSequence(pool, session.id, maxSequence)
           return {
             lastSeenSequence: maxSequence,
             messages: filteredEvents.flatMap((event) => {

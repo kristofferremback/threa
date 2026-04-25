@@ -39,12 +39,16 @@ export function createOrphanSessionCleanup(
 
       logger.info({ count: orphaned.length }, "Found orphaned sessions, marking as failed")
 
+      // If research state cannot be read, do not mark sessions FAILED; the next
+      // tick can retry rather than terminating resumable work incorrectly.
+      const activeResearchSessionIds = await GeneralResearchRepository.listActiveRunSessionIds(
+        pool,
+        orphaned.map((session) => session.id)
+      )
+
       for (const session of orphaned) {
         try {
-          // Keep this check inside the fail-safe block: if research state cannot
-          // be read, do not mark the session FAILED; the next tick can retry.
-          const hasActiveGeneralResearch = await GeneralResearchRepository.hasActiveRunForSession(pool, session.id)
-          if (hasActiveGeneralResearch) {
+          if (activeResearchSessionIds.has(session.id)) {
             logger.info(
               { sessionId: session.id, streamId: session.streamId },
               "Leaving orphaned session running because resumable general research is active"

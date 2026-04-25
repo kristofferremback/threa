@@ -234,6 +234,9 @@ export class GeneralResearcher {
       lastSeenSequence: input.initialLastSeenSequence ?? 0n,
     }
 
+    let activePlan: ResearchPlan | null = null
+    const topicResults: Array<TopicSynthesis & { topic: TopicPlan; sources: SourceItem[]; rawContext: string }> = []
+
     try {
       const plan = await this.runCheckpointed(
         state,
@@ -261,9 +264,8 @@ export class GeneralResearcher {
       }
 
       const reconsidered = await this.maybeReconsiderPlan(state, input, plan)
-      const activePlan = reconsidered ?? plan
+      activePlan = reconsidered ?? plan
 
-      const topicResults: Array<TopicSynthesis & { topic: TopicPlan; sources: SourceItem[]; rawContext: string }> = []
       const webSearchTool = input.tavilyApiKey ? createWebSearchTool({ tavilyApiKey: input.tavilyApiKey }) : null
       const githubTools = input.github
         ? {
@@ -307,15 +309,16 @@ export class GeneralResearcher {
         })
       }
 
+      const reportPlan = activePlan
       const report = await this.runCheckpointed(
         state,
         "report_writer",
         "report_writer",
-        { activePlan },
+        { activePlan: reportPlan },
         ReportSchema,
         async () => {
           this.emit(state, input, "Writing concise research report")
-          return this.writeReport(input, activePlan, topicResults)
+          return this.writeReport(input, reportPlan, topicResults)
         }
       )
       const referenced = await this.runCheckpointed(
@@ -360,7 +363,13 @@ export class GeneralResearcher {
         const plan = planStep?.outputJson
           ? this.parseCheckpoint(ResearchPlanSchema, planStep.outputJson, { runId: run.id, stepKey: "lead_plan" })
           : null
-        return this.partial(state, input, plan ?? null, [], input.signal?.aborted ? "user_abort" : "timeout")
+        return this.partial(
+          state,
+          input,
+          activePlan ?? plan,
+          topicResults,
+          input.signal?.aborted ? "user_abort" : "timeout"
+        )
       }
       logger.error({ error, runId: run.id }, "General research failed")
       throw error

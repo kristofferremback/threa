@@ -210,20 +210,25 @@ export const GeneralResearchRepository = {
   },
 
   async hasActiveRunForSession(db: Querier, agentSessionId: string): Promise<boolean> {
-    const result = await db.query<{ exists: boolean }>(
+    const activeSessionIds = await this.listActiveRunSessionIds(db, [agentSessionId])
+    return activeSessionIds.has(agentSessionId)
+  },
+
+  async listActiveRunSessionIds(db: Querier, agentSessionIds: string[]): Promise<Set<string>> {
+    if (agentSessionIds.length === 0) return new Set()
+    const result = await db.query<{ agent_session_id: string }>(
       sql`
-        SELECT EXISTS (
-          SELECT 1
-          FROM general_research_runs
-          WHERE agent_session_id = ${agentSessionId}
-            AND status IN (
-              ${GeneralResearchRunStatuses.PENDING},
-              ${GeneralResearchRunStatuses.RUNNING}
-            )
-        ) AS exists
+        SELECT DISTINCT agent_session_id
+        FROM general_research_runs
+        WHERE agent_session_id = ANY(${agentSessionIds})
+          AND status IN (
+            ${GeneralResearchRunStatuses.PENDING},
+            ${GeneralResearchRunStatuses.RUNNING}
+          )
+          AND (lease_expires_at IS NULL OR lease_expires_at > NOW())
       `
     )
-    return result.rows[0]?.exists === true
+    return new Set(result.rows.map((row) => row.agent_session_id))
   },
 
   async listStaleActiveRuns(db: Querier, staleBefore: Date, limit = 100): Promise<GeneralResearchRun[]> {
