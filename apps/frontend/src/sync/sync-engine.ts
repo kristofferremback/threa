@@ -134,7 +134,7 @@ export class SyncEngine {
    * transport survives but the client missed stream updates).
    */
   async refreshAfterConnectivityResume(): Promise<void> {
-    if (this.isDestroyed || !this.socket || !this.hasEverConnected) return
+    if (this.isDestroyed) return
     await this.runBootstrap(true)
   }
 
@@ -232,7 +232,6 @@ export class SyncEngine {
   // =========================================================================
 
   private async bootstrapWorkspace(_isReconnect: boolean): Promise<void> {
-    if (!this.socket) return
     const { workspaceId, syncStatus, queryClient, workspaceService, streamService } = this.deps
 
     syncStatus.set(`workspace:${workspaceId}`, "syncing")
@@ -244,8 +243,12 @@ export class SyncEngine {
     }
 
     try {
-      // Subscribe-then-fetch (INV-53)
-      await joinRoomBestEffort(this.socket, `ws:${workspaceId}`, "SyncEngine")
+      // Subscribe-then-fetch (INV-53). Soft refresh can run while the socket
+      // client is still reconnecting; in that case we still fetch fresh
+      // bootstrap data and skip the room-join step.
+      if (this.socket) {
+        await joinRoomBestEffort(this.socket, `ws:${workspaceId}`, "SyncEngine")
+      }
 
       const fetchStartedAt = Date.now()
       let bootstrap: WorkspaceBootstrap
