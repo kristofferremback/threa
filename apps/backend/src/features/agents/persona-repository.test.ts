@@ -4,8 +4,13 @@ import { ARIADNE_AGENT_ID, EMPTY_AGENT_ID } from "./built-in-agents"
 import { PersonaRepository } from "./persona-repository"
 
 function createDb(rowsByQuery: unknown[][]) {
+  const queries: unknown[] = []
   return {
-    query: async () => ({ rows: rowsByQuery.shift() ?? [] }),
+    queries,
+    query: async (query: unknown) => {
+      queries.push(query)
+      return { rows: rowsByQuery.shift() ?? [] }
+    },
   } as any
 }
 
@@ -41,6 +46,7 @@ describe("PersonaRepository built-in agent config", () => {
     })
     expect(persona?.systemPrompt).toContain("You are Ariadne")
     expect(persona?.enabledTools).toContain(AgentToolNames.GITHUB_GET_PULL_REQUEST)
+    expect(persona?.createdAt.toISOString()).toBe("2026-04-25T00:00:00.000Z")
   })
 
   test("applies workspace override patches to built-ins", async () => {
@@ -90,6 +96,28 @@ describe("PersonaRepository built-in agent config", () => {
     const persona = await PersonaRepository.getSystemDefault(db, "workspace_1")
 
     expect(persona).toBeNull()
+  })
+
+  test("batch-resolves built-in overrides in findByIds", async () => {
+    const db = createDb([
+      [
+        {
+          agent_id: ARIADNE_AGENT_ID,
+          patch: { model: "openrouter:anthropic/claude-haiku-4.5" },
+        },
+      ],
+      [workspacePersonaRow],
+    ])
+
+    const personas = await PersonaRepository.findByIds(
+      db,
+      [ARIADNE_AGENT_ID, "persona_workspace_helper"],
+      "workspace_1"
+    )
+
+    expect(personas.map((persona) => persona.id)).toEqual([ARIADNE_AGENT_ID, "persona_workspace_helper"])
+    expect(personas[0].model).toBe("openrouter:anthropic/claude-haiku-4.5")
+    expect(db.queries).toHaveLength(2)
   })
 
   test("lists visible built-ins and workspace personas but not internal built-ins", async () => {

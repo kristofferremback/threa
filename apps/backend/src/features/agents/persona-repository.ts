@@ -67,6 +67,8 @@ function mapRowToPersona(row: PersonaRow): Persona {
   }
 }
 
+const BUILT_IN_AGENT_CONFIG_TIMESTAMP = new Date("2026-04-25T00:00:00.000Z")
+
 function mapBuiltInToPersona(agent: BuiltInAgentConfig): Persona {
   return {
     id: agent.id,
@@ -82,8 +84,8 @@ function mapBuiltInToPersona(agent: BuiltInAgentConfig): Persona {
     enabledTools: agent.enabledTools,
     managedBy: agent.managedBy,
     status: agent.status,
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
+    createdAt: BUILT_IN_AGENT_CONFIG_TIMESTAMP,
+    updatedAt: BUILT_IN_AGENT_CONFIG_TIMESTAMP,
   }
 }
 
@@ -99,6 +101,16 @@ async function resolveBuiltInPersona(
 
   const override = await AgentConfigOverrideRepository.findActiveByWorkspaceAndAgent(db, workspaceId, agentId)
   const resolved = override ? applyBuiltInAgentPatch(base, override.patch, { workspaceId, agentId }) : base
+  return mapBuiltInToPersona(resolved)
+}
+
+function resolveBuiltInPersonaWithOverrides(
+  base: BuiltInAgentConfig,
+  overridesByAgentId: Map<string, unknown>,
+  workspaceId: string
+): Persona {
+  const patch = overridesByAgentId.get(base.id)
+  const resolved = patch ? applyBuiltInAgentPatch(base, patch, { workspaceId, agentId: base.id }) : base
   return mapBuiltInToPersona(resolved)
 }
 
@@ -126,10 +138,19 @@ export const PersonaRepository = {
   async findByIds(db: Querier, ids: string[], workspaceId?: string | null): Promise<Persona[]> {
     if (ids.length === 0) return []
 
-    const builtIns = (await Promise.all(ids.map((id) => resolveBuiltInPersona(db, id, workspaceId)))).filter(
-      (persona): persona is Persona => persona !== null
-    )
+    const builtInConfigs = ids.map(getBuiltInAgentConfig).filter((agent): agent is BuiltInAgentConfig => agent !== null)
     const dbIds = ids.filter((id) => !getBuiltInAgentConfig(id))
+    let builtIns: Persona[]
+
+    if (workspaceId && builtInConfigs.length > 0) {
+      const overrides = await AgentConfigOverrideRepository.listActiveByWorkspace(db, workspaceId)
+      const overridesByAgentId = new Map(overrides.map((override) => [override.agentId, override.patch]))
+      builtIns = builtInConfigs.map((agent) =>
+        resolveBuiltInPersonaWithOverrides(agent, overridesByAgentId, workspaceId)
+      )
+    } else {
+      builtIns = builtInConfigs.map(mapBuiltInToPersona)
+    }
 
     if (dbIds.length === 0) return builtIns
 
@@ -205,12 +226,8 @@ export const PersonaRepository = {
     const overrides = await AgentConfigOverrideRepository.listActiveByWorkspace(db, workspaceId)
     const overridesByAgentId = new Map(overrides.map((override) => [override.agentId, override.patch]))
     const builtIns = listVisibleBuiltInAgentConfigs()
-      .map((agent) => {
-        const patch = overridesByAgentId.get(agent.id)
-        return patch ? applyBuiltInAgentPatch(agent, patch, { workspaceId, agentId: agent.id }) : agent
-      })
-      .filter((agent) => agent.status === "active")
-      .map(mapBuiltInToPersona)
+      .map((agent) => resolveBuiltInPersonaWithOverrides(agent, overridesByAgentId, workspaceId))
+      .filter((persona) => persona.status === "active")
 
     const result = await db.query<PersonaRow>(
       sql`
