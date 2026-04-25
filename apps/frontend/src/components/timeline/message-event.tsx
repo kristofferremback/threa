@@ -12,6 +12,7 @@ import { enqueueOperation } from "@/sync/operation-queue"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
+import { MessageContextBadge } from "@/components/composer"
 import { RelativeTime } from "@/components/relative-time"
 import { ActorAvatar } from "@/components/actor-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
@@ -94,13 +95,23 @@ interface MessageEventProps {
    * header.
    */
   groupContinuation?: boolean
+  /**
+   * True when this is the first message in the stream. Anchors the
+   * `<MessageContextBadge>` for bag-attached scratchpads — same UX pattern
+   * as a file-attachment chip that lived on the composer pre-send and now
+   * lives on the message that "carried" it.
+   */
+  isFirstMessage?: boolean
 }
 
 interface MessageLayoutProps {
   event: StreamEvent
   payload: MessagePayload
   workspaceId: string
+  streamId: string
   actorName: string
+  /** True when this is the first message in the stream — renders `<MessageContextBadge>` for bag-attached scratchpads. */
+  isFirstMessage?: boolean
   /** Persona slug for SVG icon support (e.g., "ariadne") */
   /** User avatar image URL */
   statusIndicator: ReactNode
@@ -229,6 +240,7 @@ function MessageLayout({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   statusIndicator,
   actions,
@@ -240,6 +252,7 @@ function MessageLayout({
   isNew,
   isEditing,
   isGroupContinuation,
+  isFirstMessage,
   containerRef,
   deferSecondaryHydration,
   touchHandlers,
@@ -276,6 +289,7 @@ function MessageLayout({
             deferHydration={deferSecondaryHydration}
           />
         )}
+        {isFirstMessage && <MessageContextBadge workspaceId={workspaceId} streamId={streamId} />}
         <MessageLinkPreviews
           messageId={payload.messageId}
           workspaceId={workspaceId}
@@ -443,6 +457,8 @@ interface MessageEventInnerProps {
    * full content column).
    */
   groupContinuation?: boolean
+  /** True when this is the first message in the stream — drives the context-bag attachment badge. */
+  isFirstMessage?: boolean
 }
 
 function SentMessageEvent({
@@ -457,6 +473,7 @@ function SentMessageEvent({
   activity,
   deferSecondaryHydration,
   groupContinuation,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const messageService = useMessageService()
@@ -727,7 +744,9 @@ function SentMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
         statusIndicator={
           <>
             <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
@@ -922,9 +941,11 @@ function PendingMessageEvent({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   deferSecondaryHydration,
   groupContinuation,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const { markEditing, deleteMessage } = usePendingMessages()
   const isMobile = useIsMobile()
@@ -938,7 +959,9 @@ function PendingMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
         deferSecondaryHydration={deferSecondaryHydration}
         isGroupContinuation={groupContinuation}
         containerClassName={cn(
@@ -985,8 +1008,10 @@ function FailedMessageEvent({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   deferSecondaryHydration,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const { retryMessage, markEditing, deleteMessage } = usePendingMessages()
   const isMobile = useIsMobile()
@@ -1000,7 +1025,9 @@ function FailedMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
         deferSecondaryHydration={deferSecondaryHydration}
         containerClassName={cn(
           "border-l-2 border-destructive pl-2",
@@ -1048,8 +1075,10 @@ function EditingMessageEvent({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   deferSecondaryHydration,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1066,7 +1095,9 @@ function EditingMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
         deferSecondaryHydration={deferSecondaryHydration}
         isEditing={!isMobile}
         containerRef={containerRef}
@@ -1098,6 +1129,7 @@ export function MessageEvent({
   activity,
   deferSecondaryHydration = false,
   groupContinuation = false,
+  isFirstMessage = false,
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
@@ -1118,6 +1150,7 @@ export function MessageEvent({
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
           groupContinuation={groupContinuation}
+          isFirstMessage={isFirstMessage}
         />
       )
     case "failed":
@@ -1130,6 +1163,7 @@ export function MessageEvent({
           actorName={actorName}
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
+          isFirstMessage={isFirstMessage}
         />
       )
     case "editing":
@@ -1141,6 +1175,7 @@ export function MessageEvent({
           streamId={streamId}
           actorName={actorName}
           deferSecondaryHydration={deferSecondaryHydration}
+          isFirstMessage={isFirstMessage}
         />
       )
     default:
@@ -1157,6 +1192,7 @@ export function MessageEvent({
           activity={activity}
           deferSecondaryHydration={deferSecondaryHydration}
           groupContinuation={groupContinuation}
+          isFirstMessage={isFirstMessage}
         />
       )
   }

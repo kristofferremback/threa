@@ -7,17 +7,14 @@ import type { DraftContextRef } from "@/lib/context-bag/types"
 
 interface ContextRefStripProps {
   workspaceId: string
-  /**
-   * Stream the strip lives in. The server bag is fetched for this stream;
-   * its refs point at the source streams the bag references.
-   */
+  /** Stream the strip lives in. Used to look up source-stream metadata for label rendering. */
   streamId: string
   /**
-   * Optional draft sidecar refs. When non-empty, takes precedence over the
-   * server bag — lets the strip reflect in-flight precompute status while
-   * the user composes their first message. Once the draft clears (after
-   * send), the strip falls through to the server bag and stays visible
-   * across reloads.
+   * Sidecar refs from the live draft. The strip renders only when this list
+   * is non-empty — once the user sends their first message and the draft is
+   * cleared, the strip disappears and the chip "moves" into the timeline as
+   * a `<MessageContextBadge>` on the first message (matches the
+   * attachment-on-message UX every other chat app uses).
    */
   draftRefs?: DraftContextRef[]
 }
@@ -69,71 +66,43 @@ function ContextRefPill({ label, status, errorMessage }: PillProps) {
 }
 
 /**
- * Inline strip rendered above the composer that surfaces any context refs
- * attached to the current stream. Handles two data sources:
+ * Inline strip rendered above the composer for any context refs attached to
+ * the active draft. Renders nothing when the draft has no refs — including
+ * the post-send case where the draft has cleared and the chip has migrated
+ * to the timeline (`<MessageContextBadge>` on the first message). Same
+ * lifecycle as a file upload pill: visible while composing, "moves" onto
+ * the message at send.
  *
- * 1. **Draft sidecar** (pre-send) — `draftRefs` from `DraftMessage.contextRefs`.
- *    Takes precedence when non-empty so live precompute status (pending →
- *    ready) is reflected without waiting on the server fetch.
- * 2. **Server bag** (post-send / persistent) — `useStreamContextBag` queries
- *    `GET /streams/:id/context-bag`. Survives draft clear, page reload, and
- *    cross-device navigation.
- *
- * Renders nothing when neither source has refs — bag-free streams pay no
- * visual cost.
+ * Labels still come from server source metadata via `useStreamContextBag`
+ * so the chip says "12 messages in #intro" even mid-precompute. The query
+ * is cheap (cached) and a no-op when the strip wouldn't render anyway.
  */
 export function ContextRefStrip({ workspaceId, streamId, draftRefs }: ContextRefStripProps) {
-  const { data } = useStreamContextBag(workspaceId, streamId)
+  const hasDraftRefs = Boolean(draftRefs && draftRefs.length > 0)
+  const { data } = useStreamContextBag(workspaceId, hasDraftRefs ? streamId : null)
 
-  // Draft sidecar takes precedence — labels still come from server source
-  // metadata when available so the chip says "12 messages in #intro" even
-  // mid-precompute. We index server refs by streamId for the lookup.
-  if (draftRefs && draftRefs.length > 0) {
-    const serverByStreamId = new Map((data?.refs ?? []).map((r) => [r.streamId, r]))
-    return (
-      <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2">
-        {draftRefs.map((ref) => {
-          const server = serverByStreamId.get(ref.streamId)
-          const label = formatContextRefLabel({
-            slug: server?.source.slug ?? null,
-            displayName: server?.source.displayName ?? null,
-            streamType: server?.source.type ?? null,
-            itemCount: server?.source.itemCount ?? null,
-            fromMessageId: ref.fromMessageId,
-            toMessageId: ref.toMessageId,
-          })
-          return (
-            <ContextRefPill
-              key={`${ref.refKind}|${ref.streamId}|${ref.fromMessageId ?? ""}|${ref.toMessageId ?? ""}`}
-              label={label}
-              status={ref.status}
-              errorMessage={ref.errorMessage}
-            />
-          )
-        })}
-      </div>
-    )
-  }
+  if (!hasDraftRefs || !draftRefs) return null
 
-  const serverRefs = data?.refs ?? []
-  if (serverRefs.length === 0) return null
+  const serverByStreamId = new Map((data?.refs ?? []).map((r) => [r.streamId, r]))
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2">
-      {serverRefs.map((ref) => {
+      {draftRefs.map((ref) => {
+        const server = serverByStreamId.get(ref.streamId)
         const label = formatContextRefLabel({
-          slug: ref.source.slug,
-          displayName: ref.source.displayName,
-          streamType: ref.source.type,
-          itemCount: ref.source.itemCount,
+          slug: server?.source.slug ?? null,
+          displayName: server?.source.displayName ?? null,
+          streamType: server?.source.type ?? null,
+          itemCount: server?.source.itemCount ?? null,
           fromMessageId: ref.fromMessageId,
           toMessageId: ref.toMessageId,
         })
         return (
           <ContextRefPill
-            key={`${ref.kind}|${ref.streamId}|${ref.fromMessageId ?? ""}|${ref.toMessageId ?? ""}`}
+            key={`${ref.refKind}|${ref.streamId}|${ref.fromMessageId ?? ""}|${ref.toMessageId ?? ""}`}
             label={label}
-            status="ready"
+            status={ref.status}
+            errorMessage={ref.errorMessage}
           />
         )
       })}
