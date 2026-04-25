@@ -339,7 +339,6 @@ export class WorkspaceService {
       options.roles ? Promise.resolve(options.roles) : WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId),
       WorkosAuthzMirrorRepository.findMembershipAssignment(this.pool, workspaceId, localUser.workosUserId),
     ])
-    const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
     const nextRole = assertRoleAssignableByActor(roles, roleSlug, options.actorPermissions)
 
     if (!assignment) {
@@ -377,6 +376,8 @@ export class WorkspaceService {
             code: "ROLE_MUTATION_IN_PROGRESS",
           })
         }
+        const lockedRoles = options.roles ?? (await WorkosAuthzMirrorRepository.listRoles(client, workspaceId))
+        const lockedRolesBySlug = new Map(lockedRoles.map((role) => [role.slug, role]))
 
         const lockedAssignment = await WorkosAuthzMirrorRepository.findMembershipAssignment(
           client,
@@ -397,7 +398,7 @@ export class WorkspaceService {
         }
 
         const lockedTargetCurrentlyAdmin = lockedAssignment.roleSlugs.some((slug) =>
-          (rolesBySlug.get(slug)?.permissions ?? []).some((permission) =>
+          (lockedRolesBySlug.get(slug)?.permissions ?? []).some((permission) =>
             ADMIN_COMPATIBILITY_PERMISSIONS.has(permission)
           )
         )
@@ -421,33 +422,51 @@ export class WorkspaceService {
         roleSlug,
       })
 
-      const decoratedUpdatedUser = await withTransaction(this.pool, async (client) => {
-        await WorkosAuthzMirrorRepository.upsertMembershipRoles({
-          db: client,
-          workspaceId,
-          organizationMembershipId: assignment.organizationMembershipId,
-          workosUserId: localUser.workosUserId,
-          roleSlugs: [roleSlug],
+      let decoratedUpdatedUser: User
+      try {
+        decoratedUpdatedUser = await withTransaction(this.pool, async (client) => {
+          await WorkosAuthzMirrorRepository.upsertMembershipRoles({
+            db: client,
+            workspaceId,
+            organizationMembershipId: assignment.organizationMembershipId,
+            workosUserId: localUser.workosUserId,
+            roleSlugs: [roleSlug],
+          })
+          await WorkosAuthzMirrorRepository.syncCompatibilityRoles(client, workspaceId)
+
+          const updatedUser = await UserRepository.findById(client, workspaceId, userId)
+          if (!updatedUser) {
+            throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+          }
+
+          const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updatedUser, {
+            workspace,
+            roles,
+          })
+
+          await OutboxRepository.insert(client, "workspace_user:updated", {
+            workspaceId,
+            user: serializeBigInt(decoratedUser),
+          })
+
+          await WorkosAuthzMirrorRepository.releaseRoleMutationLease(client, workspaceId, leaseId)
+          releaseLease = false
+
+          return decoratedUser
         })
-        await WorkosAuthzMirrorRepository.syncCompatibilityRoles(client, workspaceId)
-
-        const updatedUser = await UserRepository.findById(client, workspaceId, userId)
-        if (!updatedUser) {
-          throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
-        }
-
-        const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updatedUser, { workspace, roles })
-
-        await OutboxRepository.insert(client, "workspace_user:updated", {
-          workspaceId,
-          user: serializeBigInt(decoratedUser),
-        })
-
-        await WorkosAuthzMirrorRepository.releaseRoleMutationLease(client, workspaceId, leaseId)
-        releaseLease = false
-
-        return decoratedUser
-      })
+      } catch (error) {
+        logger.error(
+          {
+            err: error,
+            workspaceId,
+            userId,
+            roleSlug,
+            organizationMembershipId: assignment.organizationMembershipId,
+          },
+          "Failed to update local role mirror after WorkOS membership update"
+        )
+        throw error
+      }
 
       return decoratedUpdatedUser
     } finally {

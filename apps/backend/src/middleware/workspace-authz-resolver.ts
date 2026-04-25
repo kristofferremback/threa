@@ -1,5 +1,5 @@
 import type { AuthSessionClaims } from "@threa/backend-common"
-import { DEFAULT_WORKSPACE_ROLES, type WorkspacePermissionScope } from "@threa/types"
+import { DEFAULT_WORKSPACE_ROLES, type WorkspacePermissionScope, type WorkspaceRole } from "@threa/types"
 import type { Pool } from "pg"
 import { WorkspaceRepository, WorkosAuthzMirrorRepository } from "../features/workspaces"
 import { compatibilityRoleFromPermissions, type WorkspaceAuthorizationContext } from "./authorization"
@@ -31,6 +31,10 @@ function getAssignedRoleSlugs(source: { roles?: string[]; role?: string | null; 
   return []
 }
 
+export function getEffectiveWorkspaceRoles(mirrorRoles: WorkspaceRole[]): WorkspaceRole[] {
+  return mirrorRoles.length > 0 ? mirrorRoles : DEFAULT_WORKSPACE_ROLES
+}
+
 export async function resolveWorkspaceAuthorization(params: {
   pool: Pool
   workspaceId: string
@@ -47,7 +51,7 @@ export async function resolveWorkspaceAuthorization(params: {
   if (!workspaceMetadata?.workosOrganizationId) {
     return { status: "missing_org" }
   }
-  const roles = mirrorRoles.length > 0 ? mirrorRoles : DEFAULT_WORKSPACE_ROLES
+  const roles = getEffectiveWorkspaceRoles(mirrorRoles)
   const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
 
   if (params.source === "session") {
