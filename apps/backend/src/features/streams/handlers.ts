@@ -8,7 +8,7 @@ import type { StreamEvent } from "./event-repository"
 import type { EventType, LinkPreviewSummary, StreamType, ContextIntent, ContextRefKind } from "@threa/types"
 import { StreamTypes, SLUG_PATTERN, ContextIntents, ContextRefKinds, CompanionModes } from "@threa/types"
 import type { Pool } from "pg"
-import { PersonaRepository, getResolver } from "../agents"
+import { PersonaRepository, getResolver, fetchStreamBag } from "../agents"
 import { serializeBigInt } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
@@ -667,6 +667,14 @@ export function createStreamHandlers({
         enrichedEvents
       )
 
+      // Fold the stream's persisted ContextBag into the bootstrap so the
+      // timeline message-context badge renders synchronously from cached
+      // data (no second fetch, no layout shift on first render). Membership
+      // check is skipped because `validateStreamAccess` above already
+      // verified it. INV-8: per-ref read access is still re-verified inside
+      // `fetchStreamBag` via the resolver.
+      const contextBag = await fetchStreamBag(pool, { workspaceId, streamId, userId }, { skipMembershipCheck: true })
+
       res.json({
         data: {
           stream,
@@ -680,6 +688,7 @@ export function createStreamHandlers({
           unreadCount,
           mentionCount: activityCounts?.mentionCount ?? 0,
           activityCount: activityCounts?.totalCount ?? 0,
+          contextBag,
         },
       })
     },

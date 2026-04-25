@@ -651,8 +651,8 @@ function SentMessageEvent({
 
   const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
   const handleDiscussWithAriadne = useCallback(
-    () => startDiscussWithAriadne({ sourceStreamId: streamId }),
-    [startDiscussWithAriadne, streamId]
+    () => startDiscussWithAriadne({ sourceStreamId: streamId, sourceMessageId: payload.messageId }),
+    [startDiscussWithAriadne, streamId, payload.messageId]
   )
 
   // Shared action context for both desktop dropdown and mobile drawer

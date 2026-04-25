@@ -28,34 +28,33 @@ export function useDiscussWithAriadne(workspaceId: string) {
   const navigate = useNavigate()
 
   return useCallback(
-    async (args: { sourceStreamId: string }) => {
+    async (args: { sourceStreamId: string; sourceMessageId?: string }) => {
       try {
         const stream = await createStream.mutateAsync({
           type: "scratchpad",
           companionMode: "on",
-          contextBag: buildDiscussWithAriadneBag({ sourceStreamId: args.sourceStreamId }),
+          contextBag: buildDiscussWithAriadneBag({
+            sourceStreamId: args.sourceStreamId,
+            sourceMessageId: args.sourceMessageId,
+          }),
         })
 
         // Seed the new scratchpad's draft with a context-ref sidecar so the
         // composer's `<ContextRefStrip>` renders the attached thread the
         // moment the user lands on the page — atomic with whatever they
-        // type next. The strip itself fetches `GET /streams/:id/context-bag`
-        // for rich label data (count + slug), so we don't need to plumb
-        // labels through here; the sidecar just signals "yes, this draft
-        // has a ref attached, it's ready to send."
+        // type next. Status is optimistic `"ready"` because the backend's
+        // precompute handler is warming `context_summaries` in parallel
+        // via the `stream:created` outbox event.
         //
-        // Status is optimistic `"ready"` because the backend's precompute
-        // handler is warming `context_summaries` in parallel via the
-        // `stream:created` outbox event. If the cache misses on the first
-        // turn, `resolveBagForStream` falls back to inline summarization —
-        // slower but correct.
+        // `fromMessageId` carries through to the chip so it can deep-link
+        // back to the exact message the discussion was started from.
         await seedDraftWithContextRef({
           workspaceId,
           streamId: stream.id,
           ref: {
             refKind: ContextRefKinds.THREAD,
             streamId: args.sourceStreamId,
-            fromMessageId: null,
+            fromMessageId: args.sourceMessageId ?? null,
             toMessageId: null,
             status: "ready",
             fingerprint: null,

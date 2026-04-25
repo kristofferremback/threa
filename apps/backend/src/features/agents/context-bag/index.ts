@@ -16,12 +16,13 @@ export { resolveBagForStream, persistSnapshot, loadOrCreateSummary } from "./res
 export type { ResolvedBag, ResolveBagDeps } from "./resolve"
 export { precomputeRefSummaries } from "./precompute-service"
 export type { PrecomputeRefsDeps, PrecomputeRefsParams, PrecomputedRefResult } from "./precompute-service"
+export { createContextBagHandlers } from "./handlers"
 export {
-  createContextBagHandlers,
+  fetchStreamBag,
   type ContextRefSource,
   type EnrichedContextRef,
   type StreamContextBagResponse,
-} from "./handlers"
+} from "./fetch-stream-bag"
 export { appendBagToSystemPrompt } from "./prompt"
 export type {
   StoredContextBag,

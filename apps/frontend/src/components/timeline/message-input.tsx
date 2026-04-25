@@ -14,7 +14,7 @@ import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { ContextRefStrip, FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
 import { extractCommandNode } from "@/lib/commands"
@@ -474,6 +474,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     onContentChange: composer.handleContentChange,
     pendingAttachments: composer.pendingAttachments,
     onRemoveAttachment: composer.handleRemoveAttachment,
+    contextRefs: composer.contextRefs,
+    streamId,
+    workspaceId,
     fileInputRef: composer.fileInputRef,
     onFileSelect: composer.handleFileSelect,
     onFileUpload: composer.uploadFile,
@@ -555,7 +558,6 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           This replaces a previous ref-counted React state mechanism that was prone to
           leaks across hydration races and virtualization cycles. */}
       <FloatingComposerShell ref={selfRef} hidden={expanded} data-message-composer-root>
-        <ContextRefStrip workspaceId={workspaceId} streamId={streamId} draftRefs={composer.contextRefs} />
         {!expanded && <MessageComposer {...composerProps} autoFocus={autoFocus} onExpandClick={handleExpandClick} />}
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </FloatingComposerShell>

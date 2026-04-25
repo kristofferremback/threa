@@ -5,7 +5,7 @@
  */
 
 import type { StreamType, Visibility, CompanionMode, SavedStatus, AuthorType } from "./constants"
-import type { ContextBag } from "./context-bag"
+import type { ContextBag, ContextIntent } from "./context-bag"
 import type { JSONContent } from "./prosemirror"
 import type {
   Stream,
@@ -53,6 +53,36 @@ export interface UpdateCompanionModeInput {
   companionPersonaId?: string | null
 }
 
+/**
+ * Per-ref source-stream metadata for a context-bag attachment. Lives next
+ * to `StreamBootstrap.contextBag` so the timeline can render a message's
+ * context-bag chip synchronously from the bootstrap payload — no separate
+ * fetch, no layout shift on first render.
+ */
+export interface StreamContextRefSource {
+  streamId: string
+  displayName: string | null
+  slug: string | null
+  type: string
+  itemCount: number
+}
+
+export interface StreamContextRef {
+  kind: "thread"
+  streamId: string
+  fromMessageId: string | null
+  toMessageId: string | null
+  source: StreamContextRefSource
+}
+
+export interface StreamContextBagPayload {
+  bag: {
+    id: string
+    intent: ContextIntent
+  } | null
+  refs: StreamContextRef[]
+}
+
 export interface StreamBootstrap {
   stream: Stream
   events: StreamEvent[]
@@ -66,6 +96,13 @@ export interface StreamBootstrap {
   unreadCount: number
   mentionCount: number
   activityCount: number
+  /**
+   * Persisted ContextBag attached to this stream (if any). Optional on the
+   * type so older bootstrap payloads cached in the workspace store don't
+   * fail validation; the live backend always returns it as
+   * `{bag: null, refs: []}` for streams without a bag.
+   */
+  contextBag?: StreamContextBagPayload
 }
 
 export interface EventsAroundResponse {

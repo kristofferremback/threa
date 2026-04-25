@@ -65,6 +65,7 @@ export {
   loadOrCreateSummary,
   precomputeRefSummaries,
   createContextBagHandlers,
+  fetchStreamBag,
   appendBagToSystemPrompt,
   getIntentConfig,
   getResolver,
@@ -88,6 +89,9 @@ export type {
   PrecomputeRefsDeps,
   PrecomputeRefsParams,
   PrecomputedRefResult,
+  ContextRefSource,
+  EnrichedContextRef,
+  StreamContextBagResponse,
 } from "./context-bag"
 
 // Workers

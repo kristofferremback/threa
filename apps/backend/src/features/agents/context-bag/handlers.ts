@@ -4,11 +4,12 @@ import { z } from "zod"
 import type { AI } from "../../../lib/ai/ai"
 import { ContextIntents, ContextRefKinds, type ContextIntent } from "@threa/types"
 import { withClient } from "../../../db"
-import { HttpError } from "../../../lib/errors"
-import { StreamRepository, StreamMemberRepository } from "../../streams"
-import { MessageRepository } from "../../messaging"
-import { ContextBagRepository } from "./repository"
-import { getResolver } from "./registry"
+import {
+  fetchStreamBag,
+  type ContextRefSource,
+  type EnrichedContextRef,
+  type StreamContextBagResponse,
+} from "./fetch-stream-bag"
 import * as precomputeService from "./precompute-service"
 
 interface Dependencies {
@@ -30,35 +31,8 @@ const precomputeSchema = z.object({
   refs: z.array(refSchema).min(1).max(10),
 })
 
-/**
- * Per-ref source-stream metadata returned by `GET /streams/:id/context-bag`.
- * Drives the label the composer strip renders ("12 messages in #intro").
- * Item-count comes from the source stream so the strip stays correct
- * without forcing the client to re-fetch the source thread.
- */
-export interface ContextRefSource {
-  streamId: string
-  displayName: string | null
-  slug: string | null
-  type: string
-  itemCount: number
-}
-
-export interface EnrichedContextRef {
-  kind: typeof ContextRefKinds.THREAD
-  streamId: string
-  fromMessageId: string | null
-  toMessageId: string | null
-  source: ContextRefSource
-}
-
-export interface StreamContextBagResponse {
-  bag: {
-    id: string
-    intent: ContextIntent
-  } | null
-  refs: EnrichedContextRef[]
-}
+// Re-export so existing import sites keep working without churn.
+export type { ContextRefSource, EnrichedContextRef, StreamContextBagResponse }
 
 export function createContextBagHandlers({ pool, ai }: Dependencies) {
   return {
@@ -113,56 +87,7 @@ export function createContextBagHandlers({ pool, ai }: Dependencies) {
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
-      const result = await withClient(pool, async (db) => {
-        const stream = await StreamRepository.findById(db, streamId)
-        if (!stream || stream.workspaceId !== workspaceId) {
-          throw new HttpError("Stream not found", { status: 404, code: "STREAM_NOT_FOUND" })
-        }
-
-        const isMember = await StreamMemberRepository.isMember(db, streamId, userId)
-        if (!isMember) {
-          throw new HttpError("No access to stream", { status: 403, code: "STREAM_FORBIDDEN" })
-        }
-
-        const bag = await ContextBagRepository.findByStream(db, streamId)
-        if (!bag) {
-          return { bag: null, refs: [] satisfies EnrichedContextRef[] }
-        }
-
-        const enriched: EnrichedContextRef[] = []
-        for (const ref of bag.refs) {
-          const resolver = getResolver(ref.kind)
-          // Re-verify per-ref access — the user might have lost membership on
-          // the source stream between bag creation and this read.
-          await resolver.assertAccess(db, ref, userId, workspaceId)
-
-          const sourceStream = await StreamRepository.findById(db, ref.streamId)
-          if (!sourceStream) continue
-
-          // Lightweight count for the chip label. One indexed query per ref,
-          // capped by `bag.refs.length` (≤ 10) per the precompute schema.
-          const itemCount = await MessageRepository.countByStream(db, ref.streamId)
-
-          enriched.push({
-            kind: ContextRefKinds.THREAD,
-            streamId: ref.streamId,
-            fromMessageId: ref.fromMessageId ?? null,
-            toMessageId: ref.toMessageId ?? null,
-            source: {
-              streamId: sourceStream.id,
-              displayName: sourceStream.displayName ?? null,
-              slug: sourceStream.slug ?? null,
-              type: sourceStream.type,
-              itemCount,
-            },
-          })
-        }
-
-        return {
-          bag: { id: bag.id, intent: bag.intent },
-          refs: enriched,
-        } satisfies StreamContextBagResponse
-      })
+      const result = await withClient(pool, async (db) => fetchStreamBag(db, { workspaceId, streamId, userId }))
 
       res.json(result)
     },

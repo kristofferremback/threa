@@ -1,9 +1,9 @@
 import { Loader2, MessageSquareReply, AlertCircle } from "lucide-react"
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
-import { cn } from "@/lib/utils"
 import { useStreamContextBag } from "@/hooks/use-stream-context-bag"
 import { formatContextRefLabel } from "@/lib/context-bag/format-label"
+import { buildContextRefSourceHref } from "@/lib/context-bag/source-link"
 import type { DraftContextRef } from "@/lib/context-bag/types"
+import { AttachmentPill, type AttachmentPillStatus } from "./attachment-pill"
 
 interface ContextRefStripProps {
   workspaceId: string
@@ -19,73 +19,38 @@ interface ContextRefStripProps {
   draftRefs?: DraftContextRef[]
 }
 
-interface PillProps {
-  label: string
-  status: "pending" | "ready" | "inline" | "error"
-  errorMessage?: string | null
+const STATUS_MAP: Record<DraftContextRef["status"], AttachmentPillStatus> = {
+  pending: "pending",
+  ready: "default",
+  inline: "default",
+  error: "error",
+}
+
+const STATUS_ICON: Record<DraftContextRef["status"], typeof MessageSquareReply> = {
+  pending: Loader2,
+  ready: MessageSquareReply,
+  inline: MessageSquareReply,
+  error: AlertCircle,
 }
 
 /**
- * Pill styling intentionally matches `<PendingAttachments>` in
- * `timeline/pending-attachments.tsx` (rounded-lg, font-medium, primary
- * accent) so the strip + the attachment row read as a single visual
- * surface above the composer.
- */
-function ContextRefPill({ label, status, errorMessage }: PillProps) {
-  let Icon = MessageSquareReply
-  if (status === "pending") Icon = Loader2
-  else if (status === "error") Icon = AlertCircle
-
-  const baseStyles = "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium select-none"
-
-  const statusStyles: Record<PillProps["status"], string> = {
-    pending: "border border-dashed border-muted-foreground/40 bg-transparent text-muted-foreground",
-    ready: "border border-primary/30 bg-primary/10 text-primary",
-    inline: "border border-primary/30 bg-primary/10 text-primary",
-    error: "border border-destructive bg-destructive/10 text-destructive",
-  }
-
-  const tooltip = errorMessage ?? (status === "pending" ? "Preparing context…" : null)
-
-  const content = (
-    <div className={cn(baseStyles, statusStyles[status])}>
-      <Icon className={cn("h-3.5 w-3.5 shrink-0", status === "pending" && "animate-spin")} />
-      <span className="truncate max-w-[180px]">{label}</span>
-    </div>
-  )
-
-  if (!tooltip) return content
-
-  return (
-    <TooltipProvider delayDuration={300}>
-      <Tooltip>
-        <TooltipTrigger asChild>{content}</TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[260px]">
-          <p className="text-sm">{tooltip}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
-}
-
-/**
- * Inline strip rendered above the composer for any context refs attached to
- * the active draft. Renders nothing when the draft has no refs — including
- * the post-send case where the draft has cleared and the chip has migrated
- * to the timeline (`<MessageContextBadge>` on the first message). Same
- * lifecycle as a file upload pill: visible while composing, "moves" onto
- * the message at send.
+ * Inline strip rendered above the composer for any context refs attached
+ * to the active draft. Uses the same `<AttachmentPill>` primitive as
+ * `<PendingAttachments>` so context refs and uploaded files read as one
+ * type of "thing attached to this message."
  *
- * Container styling (`flex flex-wrap gap-2 mb-3`) intentionally mirrors
- * `<PendingAttachments>` so when both are present (a draft with both
- * uploads and context refs) they read as one visually unified row.
+ * Renders nothing when the draft has no refs — the post-send case where
+ * the chip migrates to the timeline as `<MessageContextBadge>` on the
+ * first message is intentionally separate.
  *
- * Labels still come from server source metadata via `useStreamContextBag`
- * so the chip says "12 messages in #intro" even mid-precompute. The query
- * is cheap (cached) and a no-op when the strip wouldn't render anyway.
+ * Each pill is a `<Link>` to the source thread, deep-linked to the
+ * specific message when `fromMessageId` is set, so users can jump back to
+ * "where this discussion came from" with a single click.
  */
 export function ContextRefStrip({ workspaceId, streamId, draftRefs }: ContextRefStripProps) {
   const hasDraftRefs = Boolean(draftRefs && draftRefs.length > 0)
+  // Bootstrap-hydrated, so this is synchronous for any stream whose
+  // bootstrap has already loaded — no fetch wait, no layout shift.
   const { data } = useStreamContextBag(workspaceId, hasDraftRefs ? streamId : null)
 
   if (!hasDraftRefs || !draftRefs) return null
@@ -93,7 +58,7 @@ export function ContextRefStrip({ workspaceId, streamId, draftRefs }: ContextRef
   const serverByStreamId = new Map((data?.refs ?? []).map((r) => [r.streamId, r]))
 
   return (
-    <div className="flex flex-wrap gap-2 px-3 pt-2">
+    <>
       {draftRefs.map((ref) => {
         const server = serverByStreamId.get(ref.streamId)
         const label = formatContextRefLabel({
@@ -104,15 +69,28 @@ export function ContextRefStrip({ workspaceId, streamId, draftRefs }: ContextRef
           fromMessageId: ref.fromMessageId,
           toMessageId: ref.toMessageId,
         })
+        const tooltip =
+          ref.errorMessage ?? (ref.status === "pending" ? "Preparing context…" : "Click to open the source thread")
         return (
-          <ContextRefPill
+          <AttachmentPill
             key={`${ref.refKind}|${ref.streamId}|${ref.fromMessageId ?? ""}|${ref.toMessageId ?? ""}`}
+            icon={STATUS_ICON[ref.status]}
             label={label}
-            status={ref.status}
-            errorMessage={ref.errorMessage}
+            status={STATUS_MAP[ref.status]}
+            tooltip={tooltip}
+            href={
+              ref.status === "pending"
+                ? undefined
+                : buildContextRefSourceHref({
+                    workspaceId,
+                    sourceStreamId: ref.streamId,
+                    fromMessageId: ref.fromMessageId,
+                  })
+            }
+            labelMaxWidth="max-w-[200px]"
           />
         )
       })}
-    </div>
+    </>
   )
 }

@@ -1,8 +1,8 @@
 import { MessageSquareReply } from "lucide-react"
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
-import { cn } from "@/lib/utils"
 import { useStreamContextBag } from "@/hooks/use-stream-context-bag"
 import { formatContextRefLabel } from "@/lib/context-bag/format-label"
+import { buildContextRefSourceHref } from "@/lib/context-bag/source-link"
+import { AttachmentPill } from "./attachment-pill"
 
 interface MessageContextBadgeProps {
   workspaceId: string
@@ -11,20 +11,22 @@ interface MessageContextBadgeProps {
 }
 
 /**
- * Renders the context-bag attachment as a small inline pill anchored to the
- * first message of a bag-attached scratchpad — same UX pattern as a file
- * upload chip on a sent message. The bag is stream-level
- * (`stream_context_attachments`, INV-57) but we anchor it visually to the
- * opening message so the affordance "moves" with the conversation start
- * rather than living permanently above the composer.
+ * Renders the stream's context-bag attachment as inline pills anchored to
+ * the first message of a bag-attached scratchpad — same visual language as
+ * the composer attachment row (`<AttachmentPill>` shared primitive). The
+ * pill is a `<Link>` to the source thread, deep-linked to the originating
+ * message when `fromMessageId` is set, so users can jump back to "where
+ * this discussion came from."
  *
- * Pill styling intentionally matches `<PendingAttachments>` and the
- * pre-send `<ContextRefStrip>` so users see one visual language across the
- * composer-to-timeline lifecycle (chip moves onto the message at send).
+ * The bag is stream-level (`stream_context_attachments`, INV-57) but
+ * anchoring it visually to the opening message matches how file-upload
+ * pills work (composer pre-send → on the message post-send), so the chip
+ * reads as "attached to this message" rather than as a permanent stream
+ * banner.
  *
- * Renders nothing when the stream has no attached bag, so the per-message
- * cost of including this on every potentially-first message is one cached
- * fetch per stream.
+ * Renders synchronously from the bootstrap-hydrated cache for any stream
+ * whose bootstrap has already loaded — no fetch wait, no layout shift on
+ * first render. Returns null when the stream has no attached bag.
  */
 export function MessageContextBadge({ workspaceId, streamId }: MessageContextBadgeProps) {
   const { data } = useStreamContextBag(workspaceId, streamId)
@@ -43,27 +45,18 @@ export function MessageContextBadge({ workspaceId, streamId }: MessageContextBad
           toMessageId: ref.toMessageId,
         })
         return (
-          <TooltipProvider
+          <AttachmentPill
             key={`${ref.kind}|${ref.streamId}|${ref.fromMessageId ?? ""}|${ref.toMessageId ?? ""}`}
-            delayDuration={300}
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium select-none",
-                    "border border-primary/30 bg-primary/10 text-primary"
-                  )}
-                >
-                  <MessageSquareReply className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate max-w-[220px]">{label}</span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[260px]">
-                <p className="text-sm">Context attached to this conversation</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+            icon={MessageSquareReply}
+            label={label}
+            tooltip="Click to open the source thread"
+            href={buildContextRefSourceHref({
+              workspaceId,
+              sourceStreamId: ref.streamId,
+              fromMessageId: ref.fromMessageId,
+            })}
+            labelMaxWidth="max-w-[220px]"
+          />
         )
       })}
     </div>
