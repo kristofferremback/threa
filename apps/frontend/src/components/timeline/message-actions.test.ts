@@ -247,14 +247,49 @@ describe("message action behaviors", () => {
   })
 })
 
-describe("share-to-parent action", () => {
-  it("is hidden when onShareToParent is not supplied", () => {
+describe("share-to-root action", () => {
+  it("is hidden when onShareToRoot is not supplied", () => {
     const actions = getVisibleActions(createContext())
+    expect(actions.find((a) => a.id === "share-to-root")).toBeUndefined()
+  })
+
+  it("is visible when onShareToRoot is supplied", () => {
+    const actions = getVisibleActions(createContext({ onShareToRoot: () => {} }))
+    expect(actions.find((a) => a.id === "share-to-root")).toBeDefined()
+  })
+
+  it("invokes the onShareToRoot callback when run", () => {
+    const onShareToRoot = vi.fn()
+    const ctx = createContext({ onShareToRoot })
+    const action = getVisibleActions(ctx).find((a) => a.id === "share-to-root")!
+    action.action!(ctx)
+    expect(onShareToRoot).toHaveBeenCalledOnce()
+  })
+
+  it("uses the provided shareToRootLabel when set", () => {
+    const ctx = createContext({
+      onShareToRoot: () => {},
+      shareToRootLabel: "Share to #general",
+    })
+    const action = getVisibleActions(ctx).find((a) => a.id === "share-to-root")!
+    expect(resolveActionLabel(action, ctx)).toBe("Share to #general")
+  })
+
+  it("falls back to a generic label when shareToRootLabel is absent", () => {
+    const ctx = createContext({ onShareToRoot: () => {} })
+    const action = getVisibleActions(ctx).find((a) => a.id === "share-to-root")!
+    expect(resolveActionLabel(action, ctx)).toBe("Share to channel")
+  })
+})
+
+describe("share-to-parent action", () => {
+  it("is hidden when onShareToParent is not supplied (one-level threads only show root entry)", () => {
+    const actions = getVisibleActions(createContext({ onShareToRoot: () => {} }))
     expect(actions.find((a) => a.id === "share-to-parent")).toBeUndefined()
   })
 
-  it("is visible when onShareToParent is supplied", () => {
-    const actions = getVisibleActions(createContext({ onShareToParent: () => {} }))
+  it("is visible when onShareToParent is supplied (nested-thread case)", () => {
+    const actions = getVisibleActions(createContext({ onShareToRoot: () => {}, onShareToParent: () => {} }))
     expect(actions.find((a) => a.id === "share-to-parent")).toBeDefined()
   })
 
@@ -269,16 +304,16 @@ describe("share-to-parent action", () => {
   it("uses the provided shareToParentLabel when set", () => {
     const ctx = createContext({
       onShareToParent: () => {},
-      shareToParentLabel: "Share to #general",
+      shareToParentLabel: "Share to thread (Design review)",
     })
     const action = getVisibleActions(ctx).find((a) => a.id === "share-to-parent")!
-    expect(resolveActionLabel(action, ctx)).toBe("Share to #general")
+    expect(resolveActionLabel(action, ctx)).toBe("Share to thread (Design review)")
   })
 
   it("falls back to a generic label when shareToParentLabel is absent", () => {
     const ctx = createContext({ onShareToParent: () => {} })
     const action = getVisibleActions(ctx).find((a) => a.id === "share-to-parent")!
-    expect(resolveActionLabel(action, ctx)).toBe("Share to parent")
+    expect(resolveActionLabel(action, ctx)).toBe("Share to parent thread")
   })
 })
 
@@ -290,8 +325,8 @@ describe("resolveActionLabel", () => {
   })
 
   it("invokes the label function for dynamic entries", () => {
-    const action = { ...messageActions.find((a) => a.id === "share-to-parent")! }
-    const ctx = createContext({ shareToParentLabel: "Share to DM" })
+    const action = { ...messageActions.find((a) => a.id === "share-to-root")! }
+    const ctx = createContext({ shareToRootLabel: "Share to DM" })
     expect(resolveActionLabel(action, ctx)).toBe("Share to DM")
   })
 })

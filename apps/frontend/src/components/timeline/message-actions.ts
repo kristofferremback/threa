@@ -61,12 +61,23 @@ export interface MessageActionContext {
   /** Callback to insert a partial quote reply with a user-selected snippet */
   onQuoteReplyWithSnippet?: (snippet: string) => void
   /**
-   * Share-to-parent fast path: queue a pointer share into the parent stream's
-   * composer and navigate there. Only present when the message is in a thread
-   * whose parent is a top-level stream.
+   * Share-to-root fast path: queue a pointer share into the top-level non-thread
+   * ancestor (channel/dm/scratchpad) and navigate there. Always preferred over
+   * share-to-parent for nested-thread cases — the root is by far the more
+   * useful target. Both entries appear when parent ≠ root (nested thread); a
+   * one-level thread shows only this one because parent === root.
+   */
+  onShareToRoot?: () => void
+  /** Label text for the share-to-root entry, e.g. "Share to #general" or "Share to scratchpad" */
+  shareToRootLabel?: string
+  /**
+   * Share-to-parent fast path: queue a pointer share into the immediate parent
+   * stream's composer and navigate there. Only present in nested threads where
+   * the parent is itself a thread (or otherwise distinct from the root) — for
+   * one-level threads parent === root, so the root entry covers it.
    */
   onShareToParent?: () => void
-  /** Label text for the share-to-parent entry, e.g. "Share to #general" or "Share to DM" */
+  /** Label text for the share-to-parent entry, e.g. "Share to ⌐ thread-name" */
   shareToParentLabel?: string
   /** Callback to save or unsave the message */
   onToggleSave?: () => void
@@ -144,8 +155,15 @@ export const messageActions: MessageAction[] = [
     action: (ctx) => ctx.onQuoteReply?.(),
   },
   {
+    id: "share-to-root",
+    label: (ctx) => ctx.shareToRootLabel ?? "Share to channel",
+    icon: Share2,
+    when: (ctx) => !!ctx.onShareToRoot,
+    action: (ctx) => ctx.onShareToRoot?.(),
+  },
+  {
     id: "share-to-parent",
-    label: (ctx) => ctx.shareToParentLabel ?? "Share to parent",
+    label: (ctx) => ctx.shareToParentLabel ?? "Share to parent thread",
     icon: Share2,
     when: (ctx) => !!ctx.onShareToParent,
     action: (ctx) => ctx.onShareToParent?.(),

@@ -28,7 +28,7 @@ import {
   type MessageAgentActivity,
 } from "@/hooks"
 import { Quote, MessageSquareReply } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -52,7 +52,6 @@ import { MessageReactions } from "./message-reactions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 import { useQuoteReply } from "./quote-reply-context"
 import { useSwipeAction } from "@/hooks/use-swipe-action"
-import { useLocation, useNavigate } from "react-router-dom"
 import { useStreamFromStore } from "@/stores/stream-store"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
 
@@ -453,13 +452,19 @@ interface MessageEventInnerProps {
  * scratchpads get a generic label to avoid awkward display-name phrasing
  * ("Share to Untitled scratchpad" etc.) in slice 1.
  */
-function buildShareToParentLabel(parent: { type: string; displayName: string | null; slug: string | null }): string {
-  if (parent.type === "channel") {
-    const tag = parent.slug ? `#${parent.slug}` : (parent.displayName ?? "channel")
+function buildShareToStreamLabel(target: { type: string; displayName: string | null; slug: string | null }): string {
+  if (target.type === "channel") {
+    const tag = target.slug ? `#${target.slug}` : (target.displayName ?? "channel")
     return `Share to ${tag}`
   }
-  if (parent.type === "dm") return "Share to DM"
-  if (parent.type === "scratchpad") return "Share to scratchpad"
+  if (target.type === "dm") return "Share to DM"
+  if (target.type === "scratchpad") return "Share to scratchpad"
+  // Thread parent — only reachable from a nested thread. Use the display name
+  // when available so the user can tell the two entries apart in the menu.
+  if (target.type === "thread") {
+    const name = target.displayName ?? target.slug ?? "thread"
+    return `Share to thread (${name})`
+  }
   return "Share to parent"
 }
 
@@ -485,6 +490,13 @@ function SentMessageEvent({
   const location = useLocation()
   const currentStream = useStreamFromStore(streamId)
   const parentStream = useStreamFromStore(currentStream?.parentStreamId ?? undefined)
+  const rootStream = useStreamFromStore(currentStream?.rootStreamId ?? undefined)
+  // For one-level threads, parent === root, so we only show the root entry to
+  // avoid two identical menu items. For nested threads (parent is itself a
+  // thread), we show both: root for the most useful target (the channel/dm/
+  // scratchpad), parent for the intermediate thread when that's what the
+  // user actually wants.
+  const showParentEntry = parentStream && rootStream && parentStream.id !== rootStream.id
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -706,9 +718,9 @@ function SentMessageEvent({
               snippet,
             })
         : undefined,
-      onShareToParent: parentStream
+      onShareToRoot: rootStream
         ? () => {
-            queueShareHandoff(parentStream.id, {
+            queueShareHandoff(rootStream.id, {
               messageId: payload.messageId,
               streamId,
               authorName: actorName,
@@ -717,16 +729,32 @@ function SentMessageEvent({
             })
             // Preserve the current query string so a thread panel (?panel=…)
             // stays open across the share. When the user is already viewing
-            // the parent in the main view, skip navigation entirely — the
+            // the root in the main view, skip navigation entirely — the
             // existing composer subscribes to the handoff store and picks
             // the share up in place; an unnecessary navigate() would strip
             // params and close the open panel.
-            const targetPathname = `/w/${workspaceId}/s/${parentStream.id}`
+            const targetPathname = `/w/${workspaceId}/s/${rootStream.id}`
             if (location.pathname === targetPathname) return
             navigate(`${targetPathname}${location.search}`)
           }
         : undefined,
-      shareToParentLabel: parentStream ? buildShareToParentLabel(parentStream) : undefined,
+      shareToRootLabel: rootStream ? buildShareToStreamLabel(rootStream) : undefined,
+      onShareToParent:
+        showParentEntry && parentStream
+          ? () => {
+              queueShareHandoff(parentStream.id, {
+                messageId: payload.messageId,
+                streamId,
+                authorName: actorName,
+                authorId: event.actorId ?? "",
+                actorType: event.actorType ?? "user",
+              })
+              const targetPathname = `/w/${workspaceId}/s/${parentStream.id}`
+              if (location.pathname === targetPathname) return
+              navigate(`${targetPathname}${location.search}`)
+            }
+          : undefined,
+      shareToParentLabel: showParentEntry && parentStream ? buildShareToStreamLabel(parentStream) : undefined,
     }),
     [
       payload.contentMarkdown,
@@ -754,7 +782,11 @@ function SentMessageEvent({
       handleToggleSave,
       handleRequestReminder,
       parentStream,
+      rootStream,
+      showParentEntry,
       navigate,
+      location.pathname,
+      location.search,
     ]
   )
 

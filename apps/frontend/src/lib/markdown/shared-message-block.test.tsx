@@ -92,4 +92,29 @@ describe("MarkdownContent — sharedMessage paragraph swap", () => {
     expect(screen.getByText("Just a regular paragraph").tagName).toBe("P")
     expect(document.querySelector('[data-type="shared-message"]')).toBeNull()
   })
+
+  it("renders the source body as full markdown (bold, links) — not stripped to plain text", () => {
+    const markdown = "Shared a message from [Ariadne](shared-message:stream_src/msg_abc)"
+    renderMarkdown(markdown, {
+      msg_abc: {
+        state: "ok",
+        messageId: "msg_abc",
+        streamId: "stream_src",
+        authorId: "usr_1",
+        authorName: "Ariadne",
+        authorType: "user",
+        contentJson: { type: "doc", content: [] },
+        contentMarkdown: "**Hey** with [a link](https://example.com)",
+        editedAt: null,
+        createdAt: "2026-04-23T10:00:00Z",
+      },
+    })
+
+    const card = document.querySelector('[data-type="shared-message"]') as HTMLElement
+    expect(card).not.toBeNull()
+    // Bold renders as <strong>, link renders as <a>; literal markdown syntax must not appear.
+    expect(card.querySelector("strong")?.textContent).toBe("Hey")
+    expect(card.querySelector("a[href='https://example.com']")?.textContent).toBe("a link")
+    expect(card.textContent).not.toContain("**")
+  })
 })

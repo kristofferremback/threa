@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSharedMessageSource, type SharedMessageSource } from "@/hooks/use-shared-message-source"
-import { stripMarkdownToInline } from "@/lib/markdown"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 
 interface SharedMessagePointerBlockProps {
   streamId: string
@@ -18,6 +18,11 @@ interface SharedMessagePointerBlockProps {
  * other surface that consumes `contentMarkdown`). The in-composer card lives
  * in `SharedMessageView` (a TipTap NodeView); both route through the shared
  * resolver hook so cache behavior matches.
+ *
+ * The body is rendered as full markdown via `MarkdownContent` — this card is
+ * the live inline surfacing of the source message, not a sidebar/preview
+ * snippet (INV-60 doesn't apply), so emoji shortcodes, mentions, formatting,
+ * and code blocks all render as they would for the original message.
  */
 export function SharedMessagePointerBlock({ streamId, messageId, authorName }: SharedMessagePointerBlockProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
@@ -26,8 +31,8 @@ export function SharedMessagePointerBlock({ streamId, messageId, authorName }: S
   const card = (
     <div
       className={cn(
-        "my-1 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-sm",
-        "hover:bg-muted/50 transition-colors"
+        "my-1 flex items-start gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm",
+        "hover:bg-accent/30 transition-colors"
       )}
       data-type="shared-message"
     >
@@ -73,20 +78,16 @@ function renderBody(fallbackAuthor: string, source: SharedMessageSource) {
     )
   }
 
-  // INV-60: preview surfaces must render stripped markdown, never raw
-  // syntax. Collapse the source to a single inline string and truncate
-  // with a character cap (line-based slicing gets eaten by the strip).
-  const snippet = stripMarkdownToInline(source.contentMarkdown)
-  const display = snippet.length > 200 ? snippet.slice(0, 200) + "…" : snippet
-
   return (
     <>
       <AuthorLabel name={source.authorName || fallbackAuthor || "—"} />
-      <p className="mt-0.5 text-muted-foreground">{display}</p>
+      <div className="mt-0.5">
+        <MarkdownContent content={source.contentMarkdown} className="text-sm leading-relaxed" />
+      </div>
     </>
   )
 }
 
 function AuthorLabel({ name }: { name: string }) {
-  return <span className="text-xs font-medium text-muted-foreground">{name}</span>
+  return <span className="text-xs font-medium text-foreground/80">{name}</span>
 }

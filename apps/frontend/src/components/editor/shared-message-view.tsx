@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSharedMessageSource, type SharedMessageSource } from "@/hooks/use-shared-message-source"
-import { stripMarkdownToInline } from "@/lib/markdown"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import type { SharedMessageAttrs } from "./shared-message-extension"
 
 /**
@@ -21,7 +21,7 @@ export function SharedMessageView({ node, deleteNode, selected }: NodeViewProps)
   return (
     <NodeViewWrapper
       className={cn(
-        "my-1 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-sm select-none",
+        "my-1 flex items-start gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm select-none",
         "group/shared-message",
         selected && "ring-2 ring-primary/30"
       )}
@@ -76,18 +76,20 @@ function renderBody(attrs: SharedMessageAttrs, source: SharedMessageSource, _wor
     )
   }
 
-  // INV-60: preview surfaces must strip markdown before rendering.
-  const snippet = stripMarkdownToInline(source.contentMarkdown)
-  const display = snippet.length > 200 ? snippet.slice(0, 200) + "…" : snippet
-
   return (
     <>
       <AuthorLabel name={source.authorName || attrs.authorName || "—"} />
-      <p className="mt-0.5 text-muted-foreground">{display}</p>
+      {/* The card is a real inline rendering of the source message, not a
+          single-line preview, so it gets full markdown (emoji, mentions,
+          formatting) rather than the strip-to-inline used by sidebar
+          surfaces. INV-60 doesn't apply here. */}
+      <div className="mt-0.5">
+        <MarkdownContent content={source.contentMarkdown} className="text-sm leading-relaxed" />
+      </div>
     </>
   )
 }
 
 function AuthorLabel({ name }: { name: string }) {
-  return <span className="text-xs font-medium text-muted-foreground">{name}</span>
+  return <span className="text-xs font-medium text-foreground/80">{name}</span>
 }
