@@ -12,6 +12,8 @@ describe("ControlPlaneAuthzSyncService", () => {
   const getSnapshot = spyOn(ControlPlaneAuthzMirrorRepository, "getSnapshot")
   const replaceSnapshot = spyOn(ControlPlaneAuthzMirrorRepository, "replaceSnapshot")
   const findByWorkosOrganizationId = spyOn(WorkspaceRegistryRepository, "findByWorkosOrganizationId")
+  const listAuthzSyncTargets = spyOn(WorkspaceRegistryRepository, "listAuthzSyncTargets")
+  const insertOutbox = spyOn(backendCommon.OutboxRepository, "insert")
   const withTransaction = spyOn(backendCommon, "withTransaction")
 
   afterEach(() => {
@@ -22,6 +24,8 @@ describe("ControlPlaneAuthzSyncService", () => {
     getSnapshot.mockReset()
     replaceSnapshot.mockReset()
     findByWorkosOrganizationId.mockReset()
+    listAuthzSyncTargets.mockReset()
+    insertOutbox.mockReset()
     withTransaction.mockReset()
   })
 
@@ -121,6 +125,51 @@ describe("ControlPlaneAuthzSyncService", () => {
     await service.dispatchRegionalSync({ workspaceId: "ws_1", region: "eu" })
 
     expect(regionalClient.applyWorkspaceAuthzSnapshot).toHaveBeenCalledWith("eu", "ws_1", snapshot)
+  })
+
+  test("reconcile refreshes snapshots whose role catalog is empty", async () => {
+    tryAcquireLease.mockResolvedValue({ cursor: null } as never)
+    releaseLease.mockResolvedValue(undefined as never)
+    listAuthzSyncTargets.mockResolvedValue([{ id: "ws_1", region: "eu", workos_organization_id: "org_1" }] as never)
+    getSnapshot.mockResolvedValue({
+      workspaceId: "ws_1",
+      workosOrganizationId: "org_1",
+      revision: "1",
+      generatedAt: "2026-04-19T20:00:37Z",
+      roles: [],
+      memberships: [],
+    } as never)
+    replaceSnapshot.mockResolvedValue("2" as never)
+    insertOutbox.mockResolvedValue({} as never)
+    withTransaction.mockImplementation((async (...args: Parameters<typeof backendCommon.withTransaction>) => {
+      const callback = args[1]
+      return callback({} as never)
+    }) as typeof backendCommon.withTransaction)
+
+    const workosOrgService = {
+      listRolesForOrganization: mock(async () => [
+        { slug: "admin", name: "Admin", description: null, permissions: ["members:write"], type: "system" },
+      ]),
+      listOrganizationMemberships: mock(async () => []),
+    } as any
+
+    const service = new ControlPlaneAuthzSyncService({
+      pool: {} as never,
+      workosOrgService,
+      regionalClient: {} as never,
+    })
+
+    await service.reconcileRegionalSnapshots()
+
+    expect(workosOrgService.listRolesForOrganization).toHaveBeenCalledWith("org_1")
+    expect(replaceSnapshot).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        workspaceId: "ws_1",
+        roles: [expect.objectContaining({ slug: "admin" })],
+      })
+    )
+    expect(releaseLease).toHaveBeenCalledWith(expect.anything(), "workos_authz_reconcile", expect.any(String), null)
   })
 
   test("skips snapshot side effects when the event was recorded during a replay race", async () => {

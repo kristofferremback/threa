@@ -141,7 +141,7 @@ export class ControlPlaneAuthzSyncService {
         }
 
         const snapshot = await ControlPlaneAuthzMirrorRepository.getSnapshot(this.deps.pool, target.id)
-        if (!snapshot) {
+        if (!snapshot || snapshot.roles.length === 0) {
           await this.refreshWorkspaceFromWorkos(target)
           continue
         }
