@@ -1,17 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { ChevronLeft, Quote } from "lucide-react"
+import { ChevronDown, ChevronLeft, Quote } from "lucide-react"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { MarkdownContent } from "@/components/ui/markdown-content"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useMessageReactions, stripColons, reactionShortcodes } from "@/hooks/use-message-reactions"
 import { getInitials } from "@/lib/initials"
 import { cn } from "@/lib/utils"
 import { buildQuickEmojis } from "@/lib/emoji-picker"
-import { type MessageActionContext, type MessageAction, getVisibleActions, resolveActionLabel } from "./message-actions"
+import {
+  type MessageActionContext,
+  type MessageAction,
+  type GroupedActionItem,
+  getVisibleActions,
+  groupVisibleActions,
+  resolveActionLabel,
+} from "./message-actions"
 import { EmojiQuickBar } from "./emoji-quick-bar"
 
 interface MessageActionDrawerProps {
@@ -24,6 +32,7 @@ interface MessageActionDrawerProps {
 
 export function MessageActionDrawer({ open, onOpenChange, context, authorName }: MessageActionDrawerProps) {
   const actions = getVisibleActions(context)
+  const groupedActions = useMemo(() => groupVisibleActions(actions), [actions])
   const { emojis, emojiWeights } = useWorkspaceEmoji(context.workspaceId ?? "")
   const { toggleReaction } = useMessageReactions(context.workspaceId ?? "", context.messageId ?? "")
   const [expanded, setExpanded] = useState(false)
@@ -129,14 +138,6 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     [context, handleOpenChange]
   )
 
-  const handleSubAction = useCallback(
-    (sub: { action: (ctx: MessageActionContext) => void | Promise<void> }) => {
-      handleOpenChange(false)
-      sub.action(context)
-    },
-    [context, handleOpenChange]
-  )
-
   if (!open && actions.length === 0) return null
 
   return (
@@ -205,64 +206,15 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
 
             {/* Action list */}
             <div className="px-2 pb-[max(12px,env(safe-area-inset-bottom))]">
-              {actions.map((action) => {
-                // Flatten sub-actions into separate rows (no nested menus on mobile)
-                if (action.subActions && action.subActions.length > 0) {
-                  return (
-                    <div key={action.id}>
-                      {action.separatorBefore && <Divider />}
-                      {action.subActions.map((sub) => {
-                        const SubIcon = sub.icon
-                        return (
-                          <button
-                            key={sub.id}
-                            type="button"
-                            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm active:bg-muted/80 transition-colors"
-                            onClick={() => handleSubAction(sub)}
-                          >
-                            <SubIcon className="h-[18px] w-[18px] text-muted-foreground shrink-0" />
-                            <span>{sub.label}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )
-                }
-
-                const Icon = action.icon
-                const isDestructive = action.variant === "destructive"
-                const href = action.getHref?.(context)
-
-                const rowClassName = cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-                  isDestructive ? "text-destructive active:bg-destructive/10" : "active:bg-muted/80"
-                )
-                const iconEl = (
-                  <Icon
-                    className={cn(
-                      "h-[18px] w-[18px] shrink-0",
-                      isDestructive ? "text-destructive" : "text-muted-foreground"
-                    )}
-                  />
-                )
-
-                return (
-                  <div key={action.id}>
-                    {action.separatorBefore && <Divider />}
-                    {href ? (
-                      <Link to={href} className={rowClassName} onClick={() => handleOpenChange(false)}>
-                        {iconEl}
-                        <span>{resolveActionLabel(action, context)}</span>
-                      </Link>
-                    ) : (
-                      <button type="button" className={rowClassName} onClick={() => handleAction(action)}>
-                        {iconEl}
-                        <span>{resolveActionLabel(action, context)}</span>
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
+              {groupedActions.map((item) => (
+                <DrawerActionItem
+                  key={item.kind === "single" ? item.action.id : item.primary.id}
+                  item={item}
+                  context={context}
+                  onClose={() => handleOpenChange(false)}
+                  onAction={handleAction}
+                />
+              ))}
             </div>
           </>
         )}
@@ -401,4 +353,152 @@ function ExpandedQuoteView({
 
 function Divider() {
   return <Separator className="mx-3 my-1 bg-border/50" />
+}
+
+function DrawerActionItem({
+  item,
+  context,
+  onClose,
+  onAction,
+}: {
+  item: GroupedActionItem
+  context: MessageActionContext
+  onClose: () => void
+  onAction: (action: MessageAction) => void
+}) {
+  if (item.kind === "single") {
+    const action = item.action
+    return (
+      <>
+        {action.separatorBefore && <Divider />}
+        <DrawerActionPrimary action={action} context={context} onClose={onClose} onAction={onAction} />
+      </>
+    )
+  }
+
+  const { primary, alternatives } = item
+  return (
+    <>
+      {primary.separatorBefore && <Divider />}
+      <DrawerActionSplitRow
+        primary={primary}
+        alternatives={alternatives}
+        context={context}
+        onClose={onClose}
+        onAction={onAction}
+      />
+    </>
+  )
+}
+
+/** Single-action row body (used both standalone and as the left half of a split row). */
+function DrawerActionPrimary({
+  action,
+  context,
+  onClose,
+  onAction,
+  className,
+}: {
+  action: MessageAction
+  context: MessageActionContext
+  onClose: () => void
+  onAction: (action: MessageAction) => void
+  className?: string
+}) {
+  const Icon = action.icon
+  const isDestructive = action.variant === "destructive"
+  const href = action.getHref?.(context)
+
+  const baseClassName = cn(
+    "flex items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors",
+    isDestructive ? "text-destructive active:bg-destructive/10" : "active:bg-muted/80"
+  )
+  const iconEl = (
+    <Icon className={cn("h-[18px] w-[18px] shrink-0", isDestructive ? "text-destructive" : "text-muted-foreground")} />
+  )
+
+  if (href) {
+    return (
+      <Link to={href} className={cn(baseClassName, "rounded-lg w-full", className)} onClick={onClose}>
+        {iconEl}
+        <span>{resolveActionLabel(action, context)}</span>
+      </Link>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className={cn(baseClassName, "w-full rounded-lg", className)}
+      onClick={() => onAction(action)}
+    >
+      {iconEl}
+      <span>{resolveActionLabel(action, context)}</span>
+    </button>
+  )
+}
+
+/**
+ * Split-row pattern (à la GitHub's merge button): the primary action is the
+ * default tap target on the left; a chevron button on the right opens a small
+ * dropdown listing the alternatives. Same data model is reused on desktop —
+ * `messageActions` declares the group via `groupId` and `groupVisibleActions`
+ * collapses adjacent same-group entries into the {primary, alternatives}
+ * shape this row consumes.
+ */
+function DrawerActionSplitRow({
+  primary,
+  alternatives,
+  context,
+  onClose,
+  onAction,
+}: {
+  primary: MessageAction
+  alternatives: MessageAction[]
+  context: MessageActionContext
+  onClose: () => void
+  onAction: (action: MessageAction) => void
+}) {
+  return (
+    <div className="flex items-stretch w-full rounded-lg overflow-hidden active:bg-transparent">
+      <div className="flex-1 min-w-0">
+        <DrawerActionPrimary
+          action={primary}
+          context={context}
+          onClose={onClose}
+          onAction={onAction}
+          className="rounded-none rounded-l-lg"
+        />
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex items-center justify-center w-10 shrink-0 border-l border-border/50 text-muted-foreground active:bg-muted/80 transition-colors rounded-r-lg"
+            aria-label={`Other ${primary.id.includes("share") ? "share" : "options"} options`}
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={4} className="min-w-[220px]">
+          {alternatives.map((alt) => {
+            const AltIcon = alt.icon
+            return (
+              <DropdownMenuItem
+                key={alt.id}
+                className="gap-2 cursor-pointer"
+                onSelect={() => {
+                  onClose()
+                  alt.action?.(context)
+                }}
+              >
+                <AltIcon className="h-4 w-4 text-muted-foreground" />
+                <span>{resolveActionLabel(alt, context)}</span>
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
 }

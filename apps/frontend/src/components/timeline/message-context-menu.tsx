@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { EllipsisVertical } from "lucide-react"
+import { ChevronDown, EllipsisVertical } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -12,7 +12,15 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { type MessageAction, type MessageActionContext, getVisibleActions, resolveActionLabel } from "./message-actions"
+import { cn } from "@/lib/utils"
+import {
+  type GroupedActionItem,
+  type MessageAction,
+  type MessageActionContext,
+  getVisibleActions,
+  groupVisibleActions,
+  resolveActionLabel,
+} from "./message-actions"
 
 interface MessageContextMenuProps {
   context: MessageActionContext
@@ -21,6 +29,7 @@ interface MessageContextMenuProps {
 export function MessageContextMenu({ context }: MessageContextMenuProps) {
   const [open, setOpen] = useState(false)
   const actions = getVisibleActions(context)
+  const groupedActions = useMemo(() => groupVisibleActions(actions), [actions])
 
   if (actions.length === 0) return null
 
@@ -44,13 +53,12 @@ export function MessageContextMenu({ context }: MessageContextMenuProps) {
         // then Radix's cleanup steals focus back to the trigger button.
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
-        {actions.map((action, index) => (
-          <ActionItem
-            key={action.id}
-            action={action}
+        {groupedActions.map((item) => (
+          <GroupedItem
+            key={item.kind === "single" ? item.action.id : item.primary.id}
+            item={item}
             context={context}
             onClose={() => setOpen(false)}
-            showSeparatorBefore={action.separatorBefore && index > 0}
           />
         ))}
       </DropdownMenuContent>
@@ -58,7 +66,76 @@ export function MessageContextMenu({ context }: MessageContextMenuProps) {
   )
 }
 
-function ActionItem({
+function GroupedItem({
+  item,
+  context,
+  onClose,
+}: {
+  item: GroupedActionItem
+  context: MessageActionContext
+  onClose: () => void
+}) {
+  if (item.kind === "single") {
+    return <SingleAction action={item.action} context={context} onClose={onClose} showSeparatorBefore />
+  }
+
+  // Split-button group: render the primary as a normal item, then immediately
+  // a sub-menu with a chevron-only trigger holding the alternatives. Same
+  // shape as the mobile drawer (driven by `groupVisibleActions`); the desktop
+  // dropdown surface uses Radix sub-menus instead of a portalled popover.
+  const { primary, alternatives } = item
+  const PrimaryIcon = primary.icon
+  const isDestructive = primary.variant === "destructive"
+
+  return (
+    <>
+      {primary.separatorBefore && <DropdownMenuSeparator />}
+      <div className="flex items-stretch">
+        <DropdownMenuItem
+          className={cn(
+            "flex-1 gap-2 cursor-pointer rounded-r-none",
+            isDestructive && "text-destructive focus:text-destructive"
+          )}
+          onSelect={() => {
+            onClose()
+            primary.action?.(context)
+          }}
+        >
+          <PrimaryIcon className={cn("h-4 w-4", isDestructive ? "" : "text-muted-foreground")} />
+          {resolveActionLabel(primary, context)}
+        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger
+            className="px-2 cursor-pointer rounded-l-none border-l border-border/50 [&>svg.lucide-chevron-right]:hidden"
+            aria-label={`More ${primary.groupId ?? "options"}`}
+          >
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            {alternatives.map((alt) => {
+              const AltIcon = alt.icon
+              return (
+                <DropdownMenuItem
+                  key={alt.id}
+                  className="gap-2 cursor-pointer"
+                  onSelect={() => {
+                    onClose()
+                    alt.action?.(context)
+                  }}
+                >
+                  <AltIcon className="h-4 w-4 text-muted-foreground" />
+                  {resolveActionLabel(alt, context)}
+                </DropdownMenuItem>
+              )
+            })}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      </div>
+    </>
+  )
+}
+
+function SingleAction({
   action,
   context,
   onClose,
@@ -71,40 +148,7 @@ function ActionItem({
 }) {
   const Icon = action.icon
   const href = action.getHref?.(context)
-
-  const separator = showSeparatorBefore ? <DropdownMenuSeparator /> : null
-
-  if (action.subActions && action.subActions.length > 0) {
-    return (
-      <>
-        {separator}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger className="gap-2 cursor-pointer">
-            <Icon className="h-4 w-4 text-muted-foreground" />
-            {resolveActionLabel(action, context)}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {action.subActions.map((sub) => {
-              const SubIcon = sub.icon
-              return (
-                <DropdownMenuItem
-                  key={sub.id}
-                  className="gap-2 cursor-pointer"
-                  onSelect={() => {
-                    sub.action(context)
-                    onClose()
-                  }}
-                >
-                  <SubIcon className="h-4 w-4 text-muted-foreground" />
-                  {sub.label}
-                </DropdownMenuItem>
-              )
-            })}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      </>
-    )
-  }
+  const separator = showSeparatorBefore && action.separatorBefore ? <DropdownMenuSeparator /> : null
 
   if (href) {
     return (
@@ -130,8 +174,8 @@ function ActionItem({
           isDestructive ? "gap-2 cursor-pointer text-destructive focus:text-destructive" : "gap-2 cursor-pointer"
         }
         onSelect={() => {
-          action.action?.(context)
           onClose()
+          action.action?.(context)
         }}
       >
         <Icon className={isDestructive ? "h-4 w-4" : "h-4 w-4 text-muted-foreground"} />

@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from "vitest"
-import { getVisibleActions, messageActions, resolveActionLabel, type MessageActionContext } from "./message-actions"
+import {
+  getVisibleActions,
+  groupVisibleActions,
+  messageActions,
+  resolveActionLabel,
+  type MessageActionContext,
+} from "./message-actions"
 
 function createContext(overrides: Partial<MessageActionContext> = {}): MessageActionContext {
   return {
@@ -11,11 +17,11 @@ function createContext(overrides: Partial<MessageActionContext> = {}): MessageAc
 }
 
 describe("getVisibleActions", () => {
-  it("should return reply-in-thread and copy for user messages", () => {
+  it("should return reply-in-thread and the copy entries for user messages", () => {
     const actions = getVisibleActions(createContext())
     const ids = actions.map((a) => a.id)
 
-    expect(ids).toEqual(["reply-in-thread", "copy"])
+    expect(ids).toEqual(["reply-in-thread", "copy-as-markdown", "copy-as-plain-text"])
   })
 
   it("should include show-trace for persona messages with sessionId and traceUrl", () => {
@@ -28,7 +34,7 @@ describe("getVisibleActions", () => {
     )
     const ids = actions.map((a) => a.id)
 
-    expect(ids).toEqual(["show-trace", "reply-in-thread", "copy"])
+    expect(ids).toEqual(["show-trace", "reply-in-thread", "copy-as-markdown", "copy-as-plain-text"])
   })
 
   it("should not include show-trace for persona messages without sessionId", () => {
@@ -57,7 +63,12 @@ describe("getVisibleActions", () => {
     const ids = actions.map((a) => a.id)
 
     expect(ids).not.toContain("reply-in-thread")
-    expect(ids).toEqual(["copy"])
+    expect(ids).toEqual(["copy-as-markdown", "copy-as-plain-text"])
+  })
+
+  it("should include copy-link when permalink fields are present", () => {
+    const actions = getVisibleActions(createContext({ messageId: "msg_1", workspaceId: "ws_1", streamId: "stream_1" }))
+    expect(actions.map((a) => a.id)).toContain("copy-link")
   })
 
   describe("edit action visibility", () => {
@@ -132,7 +143,7 @@ describe("getVisibleActions", () => {
 
       const ids = actions.map((a) => a.id)
       const editIdx = ids.indexOf("edit-message")
-      const copyIdx = ids.indexOf("copy")
+      const copyIdx = ids.indexOf("copy-as-markdown")
       const deleteIdx = ids.indexOf("delete-message")
 
       expect(editIdx).toBeLessThan(copyIdx)
@@ -147,7 +158,7 @@ describe("getVisibleActions", () => {
       const ids = actions.map((a) => a.id)
       const editIdx = ids.indexOf("edit-message")
       const revisionsIdx = ids.indexOf("see-revisions")
-      const copyIdx = ids.indexOf("copy")
+      const copyIdx = ids.indexOf("copy-as-markdown")
 
       expect(editIdx).toBeLessThan(revisionsIdx)
       expect(revisionsIdx).toBeLessThan(copyIdx)
@@ -176,34 +187,22 @@ describe("message action behaviors", () => {
     expect(replyAction.getHref!(ctx)).toBe("/panel/thread_456")
   })
 
-  it("copy should have markdown and plain text sub-actions", () => {
-    const copyAction = messageActions.find((a) => a.id === "copy")!
-
-    expect(copyAction.subActions).toHaveLength(2)
-    expect(copyAction.subActions![0].id).toBe("copy-markdown")
-    expect(copyAction.subActions![1].id).toBe("copy-plain-text")
-  })
-
-  it("copy-markdown should write markdown to clipboard", async () => {
+  it("copy-as-markdown writes raw markdown to the clipboard", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    const copyAction = messageActions.find((a) => a.id === "copy")!
-    const markdownSub = copyAction.subActions!.find((a) => a.id === "copy-markdown")!
-
-    await markdownSub.action!(createContext({ contentMarkdown: "# Title\n\n**bold** text" }))
+    const action = messageActions.find((a) => a.id === "copy-as-markdown")!
+    await action.action!(createContext({ contentMarkdown: "# Title\n\n**bold** text" }))
 
     expect(writeText).toHaveBeenCalledWith("# Title\n\n**bold** text")
   })
 
-  it("copy-plain-text should strip markdown before copying", async () => {
+  it("copy-as-plain-text strips markdown before writing", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    const copyAction = messageActions.find((a) => a.id === "copy")!
-    const plainSub = copyAction.subActions!.find((a) => a.id === "copy-plain-text")!
-
-    await plainSub.action!(createContext({ contentMarkdown: "# Title\n\n**bold** and `code`" }))
+    const action = messageActions.find((a) => a.id === "copy-as-plain-text")!
+    await action.action!(createContext({ contentMarkdown: "# Title\n\n**bold** and `code`" }))
 
     expect(writeText).toHaveBeenCalledWith("Title\n\nbold and code")
   })
@@ -317,16 +316,45 @@ describe("share-to-parent action", () => {
   })
 })
 
-describe("resolveActionLabel", () => {
-  it("returns a string label directly for static entries", () => {
+describe("groupVisibleActions", () => {
+  it("returns single items for ungrouped actions", () => {
     const ctx = createContext()
-    const copy = messageActions.find((a) => a.id === "copy")!
-    expect(resolveActionLabel(copy, ctx)).toBe(copy.label as string)
+    const items = groupVisibleActions(getVisibleActions(ctx))
+    // No share/copy-link callbacks, so just reply + copy-as-markdown + copy-as-plain-text.
+    // copy-as-markdown + copy-as-plain-text share groupId="copy" → one group.
+    expect(items.map((i) => i.kind)).toEqual(["single", "group"])
+    const reply = items[0]
+    expect(reply.kind === "single" && reply.action.id).toBe("reply-in-thread")
+    const copyGroup = items[1]
+    expect(copyGroup.kind === "group" && copyGroup.primary.id).toBe("copy-as-markdown")
+    expect(copyGroup.kind === "group" && copyGroup.alternatives.map((a) => a.id)).toEqual(["copy-as-plain-text"])
   })
 
-  it("invokes the label function for dynamic entries", () => {
-    const action = { ...messageActions.find((a) => a.id === "share-to-root")! }
-    const ctx = createContext({ shareToRootLabel: "Share to DM" })
-    expect(resolveActionLabel(action, ctx)).toBe("Share to DM")
+  it("collapses adjacent same-groupId actions into a group with primary + alternatives", () => {
+    const ctx = createContext({ onShareToRoot: () => {}, onShareToParent: () => {} })
+    const items = groupVisibleActions(getVisibleActions(ctx))
+    const shareGroup = items.find((i) => i.kind === "group" && i.primary.id === "share-to-root")
+    expect(shareGroup).toBeDefined()
+    if (shareGroup?.kind !== "group") throw new Error("expected group")
+    expect(shareGroup.primary.id).toBe("share-to-root")
+    expect(shareGroup.alternatives.map((a) => a.id)).toEqual(["share-to-parent"])
+  })
+
+  it("degrades a single-member group to a single item (no chevron)", () => {
+    // Only share-to-root visible, share-to-parent gone — group should collapse.
+    const ctx = createContext({ onShareToRoot: () => {} })
+    const items = groupVisibleActions(getVisibleActions(ctx))
+    const shareItem = items.find((i) => i.kind === "single" && i.action.id === "share-to-root")
+    expect(shareItem).toBeDefined()
+    expect(items.find((i) => i.kind === "group" && i.primary.id === "share-to-root")).toBeUndefined()
+  })
+
+  it("includes copy-link as a third copy-group alternative when permalink fields are present", () => {
+    const ctx = createContext({ messageId: "msg_1", workspaceId: "ws_1", streamId: "stream_1" })
+    const items = groupVisibleActions(getVisibleActions(ctx))
+    const copyGroup = items.find((i) => i.kind === "group" && i.primary.id === "copy-as-markdown")
+    expect(copyGroup).toBeDefined()
+    if (copyGroup?.kind !== "group") throw new Error("expected group")
+    expect(copyGroup.alternatives.map((a) => a.id)).toEqual(["copy-as-plain-text", "copy-link"])
   })
 })
