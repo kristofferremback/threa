@@ -155,7 +155,7 @@ export {
 } from "./constants"
 
 // Domain entities (wire format)
-export { getAvatarUrl, getBotAvatarUrl } from "./domain"
+export { DEFAULT_WORKSPACE_ROLES, getAvatarUrl, getBotAvatarUrl } from "./domain"
 export type {
   Workspace,
   WorkspaceRole,

@@ -186,6 +186,7 @@ export interface CommandInfo {
 export interface WorkspaceBootstrap {
   workspace: Workspace
   viewerPermissions?: WorkspacePermissionScope[]
+  roles?: WorkspaceRole[]
   users: User[]
   streams: StreamWithPreview[]
   streamMemberships: StreamMember[]

@@ -41,7 +41,7 @@ import type {
   WorkspaceIntegrationStatus,
   GitHubPreviewType,
 } from "./constants"
-import type { WorkspacePermissionScope } from "./api-keys"
+import { WORKSPACE_PERMISSION_SCOPES, type WorkspacePermissionScope } from "./api-keys"
 import type { ThreaDocument } from "./prosemirror"
 
 export interface WorkspaceRoleRef {
@@ -54,6 +54,41 @@ export interface WorkspaceRole extends WorkspaceRoleRef {
   permissions: WorkspacePermissionScope[]
   type: string
 }
+
+export const DEFAULT_WORKSPACE_ROLES: WorkspaceRole[] = [
+  {
+    slug: "admin",
+    name: "Admin",
+    description: "Full workspace administration including integrations, bots, and member management",
+    permissions: [
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
+      WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
+      WORKSPACE_PERMISSION_SCOPES.USERS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
+      WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE,
+      WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN,
+    ],
+    type: "system",
+  },
+  {
+    slug: "member",
+    name: "Member",
+    description: "Default workspace member",
+    permissions: [
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
+      WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
+      WORKSPACE_PERMISSION_SCOPES.USERS_READ,
+      WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
+      WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
+    ],
+    type: "system",
+  },
+]
 
 export interface Workspace {
   id: string

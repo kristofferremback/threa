@@ -15,7 +15,12 @@ import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import type { WorkosOrgService } from "@threa/backend-common"
-import type { WorkspaceAuthzSnapshot, WorkspacePermissionScope, WorkspaceRole } from "@threa/types"
+import {
+  DEFAULT_WORKSPACE_ROLES,
+  type WorkspaceAuthzSnapshot,
+  type WorkspacePermissionScope,
+  type WorkspaceRole,
+} from "@threa/types"
 import { UserApiKeyRepository } from "../user-api-keys"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
@@ -309,7 +314,8 @@ export class WorkspaceService {
         code: "WORKSPACE_AUTHORIZATION_NOT_CONFIGURED",
       })
     }
-    return WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId)
+    const roles = await WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId)
+    return roles.length > 0 ? roles : DEFAULT_WORKSPACE_ROLES
   }
 
   async updateUserRole(

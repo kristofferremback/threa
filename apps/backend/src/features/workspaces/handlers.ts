@@ -199,6 +199,7 @@ export function createWorkspaceHandlers({
         data: {
           workspace,
           viewerPermissions: getWorkspacePermissions(req),
+          roles,
           users,
           streams: resolvedStreams,
           streamMemberships,

@@ -1,5 +1,5 @@
 import { ulid } from "ulid"
-import { WORKSPACE_PERMISSION_SCOPES, type WorkspacePermissionScope } from "@threa/types"
+import { DEFAULT_WORKSPACE_ROLES } from "@threa/types"
 import { logger } from "../logger"
 import type {
   WorkosAppInvitation,
@@ -10,40 +10,7 @@ import type {
   WorkosUserSummary,
 } from "./workos-org-service"
 
-const DEFAULT_SYSTEM_ROLES: WorkosRoleSummary[] = [
-  {
-    slug: "admin",
-    name: "Admin",
-    description: "Full workspace administration including integrations, bots, and member management",
-    permissions: [
-      WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
-      WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
-      WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
-      WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
-      WORKSPACE_PERMISSION_SCOPES.USERS_READ,
-      WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
-      WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
-      WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE,
-      WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN,
-    ] satisfies WorkspacePermissionScope[],
-    type: "system",
-  },
-  {
-    slug: "member",
-    name: "Member",
-    description: "Default workspace member",
-    permissions: [
-      WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
-      WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
-      WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
-      WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
-      WORKSPACE_PERMISSION_SCOPES.USERS_READ,
-      WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
-      WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
-    ] satisfies WorkspacePermissionScope[],
-    type: "system",
-  },
-]
+const DEFAULT_SYSTEM_ROLES: WorkosRoleSummary[] = DEFAULT_WORKSPACE_ROLES
 
 function cloneRoles(roles: WorkosRoleSummary[]): WorkosRoleSummary[] {
   return roles.map((role) => ({

@@ -33,6 +33,7 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
     queryKey: ["workspace-roles", workspaceId],
     queryFn: () => workspacesApi.listRoles(workspaceId),
     enabled: canManageRoles,
+    initialData: bootstrapData?.roles,
   })
 
   const invitationsQuery = useQuery({

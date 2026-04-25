@@ -233,6 +233,25 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
   })
 })
 
+describe("WorkspaceService.listAssignableRoles", () => {
+  const mockGetWorkosOrganizationId = spyOn(WorkspaceRepository, "getWorkosOrganizationId")
+  const mockListMirrorRoles = spyOn(WorkosAuthzMirrorRepository, "listRoles")
+
+  beforeEach(() => {
+    mockGetWorkosOrganizationId.mockReset().mockResolvedValue("org_1" as never)
+    mockListMirrorRoles.mockReset().mockResolvedValue([] as never)
+  })
+
+  test("falls back to built-in roles while the WorkOS role mirror is empty", async () => {
+    const service = createWorkspaceService(false, createMockWorkosOrgService())
+
+    const roles = await service.listAssignableRoles("ws_1")
+
+    expect(roles.map((role) => role.slug)).toEqual(["admin", "member"])
+    expect(roles.find((role) => role.slug === "admin")?.permissions).toContain("members:write")
+  })
+})
+
 describe("WorkspaceService.updateUserRole", () => {
   const mockFindWorkspace = spyOn(WorkspaceRepository, "findById")
   const mockFindUser = spyOn(UserRepository, "findById")
