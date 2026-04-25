@@ -16,6 +16,7 @@ import {
 import type { WorkspaceIntegrationService } from "../workspace-integrations"
 
 const log = logger.child({ module: "link-preview-worker" })
+const TWITTER_IMAGE_FETCH_USER_AGENT = "Twitterbot/1.0"
 
 interface WorkerDeps {
   linkPreviewService: LinkPreviewService
@@ -115,7 +116,7 @@ async function fetchOEmbedFallbackImage(url: string): Promise<string | null> {
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        "User-Agent": FETCH_USER_AGENT,
+        "User-Agent": TWITTER_IMAGE_FETCH_USER_AGENT,
         Accept: "text/html, application/xhtml+xml, */*",
       },
       signal: controller.signal,

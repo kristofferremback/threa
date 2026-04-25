@@ -470,7 +470,7 @@ describe("createLinkPreviewWorker", () => {
   })
 
   test("enriches X oEmbed previews with page image metadata when thumbnail is missing", async () => {
-    const fetchMock = mock(async (input: RequestInfo | URL) => {
+    const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString()
 
       if (url.startsWith("https://publish.twitter.com/oembed")) {
@@ -485,6 +485,8 @@ describe("createLinkPreviewWorker", () => {
       }
 
       if (url.startsWith("https://x.com/steipete/status/2047957234664030380")) {
+        const headers = new Headers(init?.headers)
+        expect(headers.get("User-Agent")).toBe("Twitterbot/1.0")
         return new Response(
           '<html><head><meta name="twitter:image" content="https://pbs.twimg.com/media/abc123.jpg"></head></html>',
           { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }
