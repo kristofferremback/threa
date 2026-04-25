@@ -1,9 +1,9 @@
 import type { Pool } from "pg"
 import type { ModelMessage } from "ai"
-import type { UserPreferences } from "@threa/types"
+import type { JSONContent, UserPreferences } from "@threa/types"
 import { AgentTriggers, AuthorTypes, StreamTypes } from "@threa/types"
 import type { UserPreferencesService } from "../../user-preferences"
-import { MessageRepository, type Message } from "../../messaging"
+import { MessageRepository, SharedMessageRepository, type Message } from "../../messaging"
 import { UserRepository } from "../../workspaces"
 import { PersonaRepository } from "../persona-repository"
 import type { Persona } from "../persona-repository"
@@ -194,6 +194,104 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     })
   }
 
+  // Inline cross-stream shared-message sources for the agent. The wire-format
+  // markdown for a `sharedMessage` node is just an opaque `shared-message:`
+  // link, so without this expansion the model only sees "Shared a message
+  // from X" and never the actual content. Append a `<shared-message-source>`
+  // block per resolved source so the body, author, and origin are dead-clear.
+  //
+  // Access rule (D6): include a source if its own stream is reachable to the
+  // viewer OR any of its share-grant `target_stream_id`s is reachable. Bot
+  // turns fall back to "current stream only" so cross-stream sources only
+  // surface via an explicit share grant into this stream.
+  const sharedAccessibleStreamIds = accessibleStreamIds ?? new Set([stream.id])
+  const seedMessageIds = new Set(streamContext.conversationHistory.map((m) => m.id))
+  const sharedRefIds = new Set<string>()
+  for (const m of streamContext.conversationHistory) {
+    for (const id of extractSharedMessageIds(m.contentJson)) {
+      if (!seedMessageIds.has(id)) sharedRefIds.add(id)
+    }
+  }
+
+  if (sharedRefIds.size > 0) {
+    const refIdArray = [...sharedRefIds]
+    const [sourceCandidates, grants] = await Promise.all([
+      MessageRepository.findByIdsInWorkspace(db, workspaceId, refIdArray),
+      SharedMessageRepository.listBySourceMessageIds(db, workspaceId, refIdArray),
+    ])
+
+    // sourceMessageId -> targets it has been shared into
+    const grantTargetsBySource = new Map<string, Set<string>>()
+    for (const g of grants) {
+      let set = grantTargetsBySource.get(g.sourceMessageId)
+      if (!set) {
+        set = new Set()
+        grantTargetsBySource.set(g.sourceMessageId, set)
+      }
+      set.add(g.targetStreamId)
+    }
+
+    const allowedSources = new Map<string, Message>()
+    for (const id of refIdArray) {
+      const source = sourceCandidates.get(id)
+      if (!source || source.deletedAt) continue
+      const sourceVisibleByMembership = sharedAccessibleStreamIds.has(source.streamId)
+      const grantTargets = grantTargetsBySource.get(id)
+      const sourceVisibleByGrant = !!grantTargets && [...grantTargets].some((t) => sharedAccessibleStreamIds.has(t))
+      if (sourceVisibleByMembership || sourceVisibleByGrant) {
+        allowedSources.set(id, source)
+      } else {
+        logger.debug(
+          { sharedSourceId: id, reason: "not_accessible" },
+          "Shared-message source skipped during agent context build"
+        )
+      }
+    }
+
+    // Resolve any author names we don't already have for the new sources.
+    const newUserIds = [
+      ...new Set(
+        [...allowedSources.values()]
+          .filter((m) => m.authorType === AuthorTypes.USER && !authorNames.has(m.authorId))
+          .map((m) => m.authorId)
+      ),
+    ]
+    const newPersonaIds = [
+      ...new Set(
+        [...allowedSources.values()]
+          .filter((m) => m.authorType === AuthorTypes.PERSONA && !authorNames.has(m.authorId))
+          .map((m) => m.authorId)
+      ),
+    ]
+    if (newUserIds.length > 0) {
+      const users = await UserRepository.findByIds(db, workspaceId, newUserIds)
+      for (const u of users) authorNames.set(u.id, u.name)
+    }
+    if (newPersonaIds.length > 0) {
+      const personas = await PersonaRepository.findByIds(db, newPersonaIds)
+      for (const p of personas) authorNames.set(p.id, p.name)
+    }
+
+    streamContext.conversationHistory = streamContext.conversationHistory.map((m) => {
+      const ids = extractSharedMessageIds(m.contentJson)
+      if (ids.length === 0) return m
+      const blocks: string[] = []
+      const seen = new Set<string>()
+      for (const id of ids) {
+        if (seen.has(id)) continue
+        seen.add(id)
+        const source = allowedSources.get(id)
+        if (!source) continue
+        const author = authorNames.get(source.authorId) ?? "Unknown"
+        blocks.push(
+          `<shared-message-source sourceMessageId="${escapeXmlAttr(source.id)}" author="${escapeXmlAttr(author)}" sourceStreamId="${escapeXmlAttr(source.streamId)}" createdAt="${source.createdAt.toISOString()}">\n${source.contentMarkdown}\n</shared-message-source>`
+        )
+      }
+      if (blocks.length === 0) return m
+      return { ...m, contentMarkdown: [m.contentMarkdown, ...blocks].join("\n\n") }
+    })
+  }
+
   const scratchpadCustomPrompt = await resolveScratchpadCustomPrompt(db, stream, preferences)
 
   const systemPrompt = buildSystemPrompt(
@@ -218,4 +316,25 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     streamContext,
     accessibleStreamIds,
   }
+}
+
+function extractSharedMessageIds(content: JSONContent): string[] {
+  const ids: string[] = []
+  walk(content)
+  return ids
+
+  function walk(node: JSONContent | undefined): void {
+    if (!node) return
+    if (node.type === "sharedMessage") {
+      const messageId = (node.attrs as { messageId?: string } | undefined)?.messageId
+      if (typeof messageId === "string" && messageId.length > 0) ids.push(messageId)
+    }
+    if (node.content) {
+      for (const child of node.content) walk(child)
+    }
+  }
+}
+
+function escapeXmlAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
