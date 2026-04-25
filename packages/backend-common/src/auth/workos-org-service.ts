@@ -1,6 +1,9 @@
 import { WorkOS } from "@workos-inc/node"
+import { filterWorkspacePermissionScopes, type WorkspacePermissionScope } from "@threa/types"
 import { logger } from "../logger"
 import type { WorkosConfig } from "./types"
+
+const WORKOS_REQUEST_TIMEOUT_MS = 10_000
 
 type WidgetScope =
   | "widgets:api-keys:manage"
@@ -43,6 +46,52 @@ export interface WorkosUserSummary {
   lastName: string | null
 }
 
+export interface WorkosRoleSummary {
+  slug: string
+  name: string
+  description: string | null
+  permissions: WorkspacePermissionScope[]
+  type: string
+}
+
+export interface WorkosMembershipRoleRef {
+  slug: string
+}
+
+export interface WorkosEventSummary {
+  id: string
+  event: string
+  createdAt: string
+  data: Record<string, unknown>
+}
+
+export interface WorkosOrganizationMembership {
+  id: string
+  userId: string
+  organizationId: string
+  status: "active" | "inactive" | "pending"
+  role: WorkosMembershipRoleRef | null
+  roles: WorkosMembershipRoleRef[]
+}
+
+function mapOrganizationMembership(membership: {
+  id: string
+  userId: string
+  organizationId: string
+  status: "active" | "inactive" | "pending"
+  role?: { slug: string } | null
+  roles?: Array<{ slug: string }> | null
+}): WorkosOrganizationMembership {
+  return {
+    id: membership.id,
+    userId: membership.userId,
+    organizationId: membership.organizationId,
+    status: membership.status,
+    role: membership.role ? { slug: membership.role.slug } : null,
+    roles: membership.roles?.map((role) => ({ slug: role.slug })) ?? [],
+  }
+}
+
 export interface WorkosOrgService {
   createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }>
   getOrganizationByExternalId(externalId: string): Promise<{ id: string } | null>
@@ -64,15 +113,55 @@ export interface WorkosOrgService {
   /** Look up a user by WorkOS id. Returns null if the user no longer exists. */
   getUser(workosUserId: string): Promise<WorkosUserSummary | null>
   getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null>
-  ensureOrganizationMembership(params: { organizationId: string; userId: string; roleSlug: string }): Promise<void>
+  listRolesForOrganization(organizationId: string): Promise<WorkosRoleSummary[]>
+  listOrganizationMemberships(organizationId: string): Promise<WorkosOrganizationMembership[]>
+  getOrganizationMembership(params: {
+    organizationId: string
+    userId: string
+  }): Promise<WorkosOrganizationMembership | null>
+  ensureOrganizationMembership(params: {
+    organizationId: string
+    userId: string
+    roleSlug?: string
+    roleSlugs?: string[]
+  }): Promise<void>
+  updateOrganizationMembership(params: {
+    organizationMembershipId: string
+    roleSlug?: string
+    roleSlugs?: string[]
+  }): Promise<WorkosOrganizationMembership>
+  listEvents(params: { events: string[]; after?: string; limit?: number }): Promise<{
+    data: WorkosEventSummary[]
+    after: string | null
+  }>
   getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string>
 }
 
 export class WorkosOrgServiceImpl implements WorkosOrgService {
   private workos: WorkOS
+  private apiKey: string
 
   constructor(config: WorkosConfig) {
+    this.apiKey = config.apiKey
     this.workos = new WorkOS(config.apiKey, { clientId: config.clientId })
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const response = await fetch(`https://api.workos.com${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(WORKOS_REQUEST_TIMEOUT_MS),
+    })
+
+    if (!response.ok) {
+      throw new Error(`WorkOS ${method} ${path} failed with ${response.status}: ${await response.text()}`)
+    }
+
+    return response.json() as Promise<T>
   }
 
   async createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }> {
@@ -209,53 +298,145 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
     }
   }
 
+  async listRolesForOrganization(organizationId: string): Promise<WorkosRoleSummary[]> {
+    const roles = await this.request<{
+      data: Array<{
+        slug: string
+        name: string
+        description: string | null
+        permissions: string[]
+        type: string
+      }>
+    }>("GET", `/authorization/organizations/${organizationId}/roles`)
+    return roles.data.map((role) => ({
+      slug: role.slug,
+      name: role.name,
+      description: role.description ?? null,
+      permissions: filterWorkspacePermissionScopes(role.permissions),
+      type: role.type,
+    }))
+  }
+
+  async listOrganizationMemberships(organizationId: string): Promise<WorkosOrganizationMembership[]> {
+    const results: WorkosOrganizationMembership[] = []
+    let after: string | undefined
+
+    for (;;) {
+      const page = await this.workos.userManagement.listOrganizationMemberships({
+        organizationId,
+        statuses: ["active", "inactive", "pending"],
+        limit: 100,
+        ...(after ? { after } : {}),
+      })
+
+      results.push(...page.data.map(mapOrganizationMembership))
+      after = page.listMetadata.after ?? undefined
+      if (!after) return results
+    }
+  }
+
+  async getOrganizationMembership(params: {
+    organizationId: string
+    userId: string
+  }): Promise<WorkosOrganizationMembership | null> {
+    const memberships = await this.workos.userManagement.listOrganizationMemberships({
+      organizationId: params.organizationId,
+      userId: params.userId,
+      statuses: ["active", "inactive", "pending"],
+      limit: 1,
+    })
+    const membership = memberships.data[0]
+    if (!membership) {
+      return null
+    }
+
+    return mapOrganizationMembership(membership)
+  }
+
   async ensureOrganizationMembership(params: {
     organizationId: string
     userId: string
-    roleSlug: string
+    roleSlug?: string
+    roleSlugs?: string[]
   }): Promise<void> {
     try {
       await this.workos.userManagement.createOrganizationMembership({
         organizationId: params.organizationId,
         userId: params.userId,
-        roleSlug: params.roleSlug,
+        ...(params.roleSlug ? { roleSlug: params.roleSlug } : {}),
+        ...(params.roleSlugs ? { roleSlugs: params.roleSlugs } : {}),
       })
       logger.info(
-        { organizationId: params.organizationId, userId: params.userId, roleSlug: params.roleSlug },
+        {
+          organizationId: params.organizationId,
+          userId: params.userId,
+          roleSlug: params.roleSlug,
+          roleSlugs: params.roleSlugs,
+        },
         "Created WorkOS organization membership"
       )
     } catch (error) {
       const code = getWorkosErrorCode(error)
       if (code === "user_already_organization_member") {
-        // Upgrade role if needed (e.g., member promoted to admin in Threa).
-        // Only upgrades to "admin" — never downgrades, so acceptShadow("member")
-        // won't demote an existing admin.
-        if (params.roleSlug === "admin") {
-          try {
-            const memberships = await this.workos.userManagement.listOrganizationMemberships({
-              organizationId: params.organizationId,
-              userId: params.userId,
-            })
-            const existing = memberships.data[0]
-            if (existing && existing.role?.slug !== params.roleSlug) {
-              await this.workos.userManagement.updateOrganizationMembership(existing.id, {
-                roleSlug: params.roleSlug,
-              })
-              logger.info(
-                { organizationId: params.organizationId, userId: params.userId, roleSlug: params.roleSlug },
-                "Upgraded WorkOS organization membership role"
-              )
-            }
-          } catch (upgradeError) {
-            logger.warn(
-              { err: upgradeError, organizationId: params.organizationId, userId: params.userId },
-              "Failed to upgrade WorkOS org membership role (best-effort)"
-            )
-          }
+        if (!params.roleSlug && !params.roleSlugs) {
+          return
         }
+        const existing = await this.getOrganizationMembership({
+          organizationId: params.organizationId,
+          userId: params.userId,
+        })
+        if (!existing) {
+          return
+        }
+        await this.updateOrganizationMembership({
+          organizationMembershipId: existing.id,
+          ...(params.roleSlug ? { roleSlug: params.roleSlug } : {}),
+          ...(params.roleSlugs ? { roleSlugs: params.roleSlugs } : {}),
+        })
         return
       }
       throw error
+    }
+  }
+
+  async updateOrganizationMembership(params: {
+    organizationMembershipId: string
+    roleSlug?: string
+    roleSlugs?: string[]
+  }): Promise<WorkosOrganizationMembership> {
+    const membership = await this.workos.userManagement.updateOrganizationMembership(params.organizationMembershipId, {
+      ...(params.roleSlug ? { roleSlug: params.roleSlug } : {}),
+      ...(params.roleSlugs ? { roleSlugs: params.roleSlugs } : {}),
+    })
+
+    return {
+      id: membership.id,
+      userId: membership.userId,
+      organizationId: membership.organizationId,
+      status: membership.status,
+      role: membership.role ? { slug: membership.role.slug } : null,
+      roles: membership.roles?.map((role) => ({ slug: role.slug })) ?? [],
+    }
+  }
+
+  async listEvents(params: { events: string[]; after?: string; limit?: number }): Promise<{
+    data: WorkosEventSummary[]
+    after: string | null
+  }> {
+    const response = await this.workos.events.listEvents({
+      events: params.events as never,
+      after: params.after,
+      limit: params.limit,
+    })
+
+    return {
+      data: response.data.map((event) => ({
+        id: event.id,
+        event: event.event,
+        createdAt: event.createdAt,
+        data: event.data as Record<string, unknown>,
+      })),
+      after: response.listMetadata.after ?? null,
     }
   }
 

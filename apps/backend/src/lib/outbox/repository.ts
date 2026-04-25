@@ -3,6 +3,7 @@ import type { Stream } from "../../features/streams"
 import type { StreamEvent } from "../../features/streams"
 import type { User } from "../../features/workspaces"
 import type { ConversationWithStaleness } from "../../features/conversations"
+import type { WorkspaceAuthzSource } from "../../middleware/authorization"
 import type {
   Memo as WireMemo,
   UserPreferences,
@@ -261,6 +262,7 @@ export interface MemoRevisedOutboxPayload extends WorkspaceScopedPayload {
 export interface CommandDispatchedOutboxPayload extends StreamScopedPayload {
   event: StreamEvent
   authorId: string
+  source?: WorkspaceAuthzSource
 }
 
 export interface CommandCompletedOutboxPayload extends StreamScopedPayload {
@@ -313,6 +315,7 @@ export interface InvitationSentOutboxPayload extends WorkspaceScopedPayload {
   invitationId: string
   email: string
   role: string
+  roleSlug: string
   inviterWorkosUserId?: string
 }
 

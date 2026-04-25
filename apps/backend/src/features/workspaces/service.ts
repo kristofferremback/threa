@@ -1,7 +1,9 @@
 import { Pool } from "pg"
+import { randomUUID } from "node:crypto"
 import { withTransaction, withClient, type Querier } from "../../db"
 import { WorkspaceRepository, Workspace } from "./repository"
 import { UserRepository, type User } from "./user-repository"
+import { WorkosAuthzMirrorRepository } from "./workos-authz-mirror-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { EmojiUsageRepository } from "../emoji"
@@ -13,9 +15,17 @@ import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
 import type { WorkosOrgService } from "@threa/backend-common"
+import {
+  DEFAULT_WORKSPACE_ROLES,
+  type WorkspaceAuthzSnapshot,
+  type WorkspacePermissionScope,
+  type WorkspaceRole,
+} from "@threa/types"
 import { UserApiKeyRepository } from "../user-api-keys"
 import { AvatarUploadRepository } from "./avatar-upload-repository"
 import type { AvatarService } from "./avatar-service"
+import { ADMIN_COMPATIBILITY_PERMISSIONS, workosRoleSlugFromCompatibilityRole } from "../../middleware/authorization"
+import { decorateUserWithAuthzMirror, decorateUsersWithAuthzMirror } from "./user-authz-decorator"
 
 function deriveSlugFromEmail(email: string): string {
   const prefix = email.split("@")[0]
@@ -32,6 +42,35 @@ export interface CreateWorkspaceParams {
 
 interface WorkspaceServiceOptions {
   requireWorkspaceCreationInvite?: boolean
+}
+
+const ROLE_MUTATION_LEASE_MS = 5 * 60 * 1000
+
+interface RoleAssignmentOptions {
+  actorPermissions: Iterable<WorkspacePermissionScope>
+  roles?: WorkspaceRole[]
+}
+
+export function assertRoleAssignableByActor(
+  roles: WorkspaceRole[],
+  roleSlug: string,
+  actorPermissions: Iterable<WorkspacePermissionScope>
+): WorkspaceRole {
+  const nextRole = roles.find((role) => role.slug === roleSlug)
+  if (!nextRole) {
+    throw new HttpError("Role not found", { status: 404, code: "ROLE_NOT_FOUND" })
+  }
+
+  const granted = actorPermissions instanceof Set ? actorPermissions : new Set(actorPermissions)
+  const missingPermission = nextRole.permissions.find((permission) => !granted.has(permission))
+  if (missingPermission) {
+    throw new HttpError(`Cannot assign role requiring permission: ${missingPermission}`, {
+      status: 403,
+      code: "ROLE_ASSIGNMENT_PERMISSION_DENIED",
+    })
+  }
+
+  return nextRole
 }
 
 export class WorkspaceService {
@@ -84,7 +123,7 @@ export class WorkspaceService {
     ownerName: string
   }): Promise<Workspace> {
     try {
-      return await withTransaction(this.pool, async (client) => {
+      const workspace = await withTransaction(this.pool, async (client) => {
         const ownerUserId = generateUserId()
 
         const ws = await WorkspaceRepository.insert(client, {
@@ -100,11 +139,14 @@ export class WorkspaceService {
           workosUserId: params.ownerWorkosUserId,
           email: params.ownerEmail,
           name: params.ownerName,
-          role: "owner",
+          role: "admin",
         })
 
         return ws
       })
+
+      await this.ensureWorkosMembership(params.id, params.ownerWorkosUserId, "admin")
+      return workspace
     } catch (error) {
       // Idempotency guard: if this exact workspace PK already exists, return it.
       // Only catch PK collisions — slug or other constraint violations are real errors.
@@ -121,7 +163,7 @@ export class WorkspaceService {
       await this.assertWorkspaceCreationAllowed(params.email)
     }
 
-    return withTransaction(this.pool, async (client) => {
+    const workspace = await withTransaction(this.pool, async (client) => {
       const id = workspaceId()
       const ownerUserId = generateUserId()
       const slug = await generateUniqueSlug(params.name, (slug) => WorkspaceRepository.slugExists(client, slug))
@@ -139,12 +181,15 @@ export class WorkspaceService {
         workosUserId: params.workosUserId,
         email: params.email,
         name: params.userName,
-        role: "owner",
+        role: "admin",
         setupCompleted: params.setupCompleted,
       })
 
       return ws
     })
+
+    await this.ensureWorkosMembership(workspace.id, params.workosUserId, "admin")
+    return workspace
   }
 
   private async assertWorkspaceCreationAllowed(email: string): Promise<void> {
@@ -176,7 +221,7 @@ export class WorkspaceService {
       setupCompleted?: boolean
     }
   ): Promise<User> {
-    return withTransaction(this.pool, async (client) => {
+    const user = await withTransaction(this.pool, async (client) => {
       return this.createUserInTransaction(client, {
         workspaceId: wsId,
         workosUserId: params.workosUserId,
@@ -186,6 +231,9 @@ export class WorkspaceService {
         setupCompleted: params.setupCompleted,
       })
     })
+
+    await this.ensureWorkosMembership(wsId, params.workosUserId, params.role ?? "user")
+    return user
   }
 
   async createUserInTransaction(
@@ -251,6 +299,222 @@ export class WorkspaceService {
 
   async getUsers(workspaceId: string): Promise<User[]> {
     return UserRepository.listByWorkspace(this.pool, workspaceId)
+  }
+
+  async getUsersWithRoles(workspaceId: string, roles?: WorkspaceRole[]): Promise<User[]> {
+    const users = await this.getUsers(workspaceId)
+    return decorateUsersWithAuthzMirror(this.pool, workspaceId, users, { roles })
+  }
+
+  async listAssignableRoles(workspaceId: string): Promise<WorkspaceRole[]> {
+    const orgId = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
+    if (!orgId) {
+      return DEFAULT_WORKSPACE_ROLES
+    }
+    const roles = await WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId)
+    return roles.length > 0 ? roles : DEFAULT_WORKSPACE_ROLES
+  }
+
+  async updateUserRole(
+    workspaceId: string,
+    userId: string,
+    roleSlug: string,
+    options: RoleAssignmentOptions
+  ): Promise<User> {
+    if (!this.workosOrgService) {
+      throw new HttpError("WorkOS role management is not configured", {
+        status: 500,
+        code: "WORKOS_ROLE_MANAGEMENT_NOT_CONFIGURED",
+      })
+    }
+
+    const [workspace, localUser] = await Promise.all([
+      WorkspaceRepository.findById(this.pool, workspaceId),
+      UserRepository.findById(this.pool, workspaceId, userId),
+    ])
+    if (!workspace || !localUser) {
+      throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+    }
+    const [roles, assignment] = await Promise.all([
+      options.roles ? Promise.resolve(options.roles) : WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId),
+      WorkosAuthzMirrorRepository.findMembershipAssignment(this.pool, workspaceId, localUser.workosUserId),
+    ])
+    const nextRole = assertRoleAssignableByActor(roles, roleSlug, options.actorPermissions)
+
+    if (!assignment) {
+      throw new HttpError("WorkOS organization membership not found", {
+        status: 404,
+        code: "WORKOS_MEMBERSHIP_NOT_FOUND",
+      })
+    }
+
+    const currentRoleSlugs = assignment.roleSlugs
+    if (currentRoleSlugs.length > 1) {
+      throw new HttpError("This user has multiple roles and cannot be edited in-app yet", {
+        status: 409,
+        code: "MULTIPLE_ROLES_NOT_EDITABLE",
+      })
+    }
+
+    const targetWillBeAdmin = nextRole.permissions.some((permission) => ADMIN_COMPATIBILITY_PERMISSIONS.has(permission))
+
+    const workosOrgService = this.workosOrgService
+    const leaseId = randomUUID()
+    let releaseLease = true
+
+    try {
+      await withTransaction(this.pool, async (client) => {
+        const claimed = await WorkosAuthzMirrorRepository.claimRoleMutationLease({
+          db: client,
+          workspaceId,
+          leaseId,
+          lockedUntil: new Date(Date.now() + ROLE_MUTATION_LEASE_MS),
+        })
+        if (!claimed) {
+          throw new HttpError("A role mutation is already in progress for this workspace", {
+            status: 409,
+            code: "ROLE_MUTATION_IN_PROGRESS",
+          })
+        }
+        const lockedRoles = options.roles ?? (await WorkosAuthzMirrorRepository.listRoles(client, workspaceId))
+        const lockedRolesBySlug = new Map(lockedRoles.map((role) => [role.slug, role]))
+
+        const lockedAssignment = await WorkosAuthzMirrorRepository.findMembershipAssignment(
+          client,
+          workspaceId,
+          localUser.workosUserId
+        )
+        if (!lockedAssignment) {
+          throw new HttpError("WorkOS organization membership not found", {
+            status: 404,
+            code: "WORKOS_MEMBERSHIP_NOT_FOUND",
+          })
+        }
+        if (lockedAssignment.roleSlugs.length > 1) {
+          throw new HttpError("This user has multiple roles and cannot be edited in-app yet", {
+            status: 409,
+            code: "MULTIPLE_ROLES_NOT_EDITABLE",
+          })
+        }
+
+        const lockedTargetCurrentlyAdmin = lockedAssignment.roleSlugs.some((slug) =>
+          (lockedRolesBySlug.get(slug)?.permissions ?? []).some((permission) =>
+            ADMIN_COMPATIBILITY_PERMISSIONS.has(permission)
+          )
+        )
+        if (lockedTargetCurrentlyAdmin && !targetWillBeAdmin) {
+          const otherAdminExists = await WorkosAuthzMirrorRepository.hasOtherRoleManager(
+            client,
+            workspaceId,
+            lockedAssignment.organizationMembershipId
+          )
+          if (!otherAdminExists) {
+            throw new HttpError("Workspace must retain at least one member who can manage roles", {
+              status: 409,
+              code: "LAST_ADMIN_NOT_ALLOWED",
+            })
+          }
+        }
+      })
+
+      await workosOrgService.updateOrganizationMembership({
+        organizationMembershipId: assignment.organizationMembershipId,
+        roleSlug,
+      })
+
+      let decoratedUpdatedUser: User
+      try {
+        decoratedUpdatedUser = await withTransaction(this.pool, async (client) => {
+          await WorkosAuthzMirrorRepository.upsertMembershipRoles({
+            db: client,
+            workspaceId,
+            organizationMembershipId: assignment.organizationMembershipId,
+            workosUserId: localUser.workosUserId,
+            roleSlugs: [roleSlug],
+          })
+          await WorkosAuthzMirrorRepository.syncCompatibilityRoles(client, workspaceId)
+
+          const updatedUser = await UserRepository.findById(client, workspaceId, userId)
+          if (!updatedUser) {
+            throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+          }
+
+          const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updatedUser, {
+            workspace,
+            roles,
+          })
+
+          await OutboxRepository.insert(client, "workspace_user:updated", {
+            workspaceId,
+            user: serializeBigInt(decoratedUser),
+          })
+
+          await WorkosAuthzMirrorRepository.releaseRoleMutationLease(client, workspaceId, leaseId)
+          releaseLease = false
+
+          return decoratedUser
+        })
+      } catch (error) {
+        logger.error(
+          {
+            err: error,
+            workspaceId,
+            userId,
+            roleSlug,
+            organizationMembershipId: assignment.organizationMembershipId,
+          },
+          "Failed to update local role mirror after WorkOS membership update"
+        )
+        throw error
+      }
+
+      return decoratedUpdatedUser
+    } finally {
+      if (releaseLease) {
+        try {
+          await WorkosAuthzMirrorRepository.releaseRoleMutationLease(this.pool, workspaceId, leaseId)
+        } catch (error) {
+          logger.warn({ err: error, workspaceId }, "Failed to release workspace role mutation lease")
+        }
+      }
+    }
+  }
+
+  async applyWorkosAuthzSnapshot(snapshot: WorkspaceAuthzSnapshot): Promise<boolean> {
+    return withTransaction(this.pool, async (client) => {
+      const workspace = await WorkspaceRepository.findById(client, snapshot.workspaceId)
+      if (!workspace) {
+        throw new HttpError("Workspace not found", { status: 404, code: "WORKSPACE_NOT_FOUND" })
+      }
+
+      const applied = await WorkosAuthzMirrorRepository.applySnapshot(client, snapshot)
+      if (!applied) {
+        return false
+      }
+
+      await WorkosAuthzMirrorRepository.syncCompatibilityRoles(client, snapshot.workspaceId)
+
+      const decoratedUsers = await decorateUsersWithAuthzMirror(
+        client,
+        snapshot.workspaceId,
+        await UserRepository.listByWorkspace(client, snapshot.workspaceId),
+        { workspace }
+      )
+      if (decoratedUsers.length > 0) {
+        await OutboxRepository.insertMany(
+          client,
+          decoratedUsers.map((user) => ({
+            eventType: "workspace_user:updated" as const,
+            payload: {
+              workspaceId: snapshot.workspaceId,
+              user: serializeBigInt(user),
+            },
+          }))
+        )
+      }
+
+      return true
+    })
   }
 
   async isMember(workspaceId: string, workosUserId: string): Promise<boolean> {
@@ -341,12 +605,14 @@ export class WorkspaceService {
             throw new HttpError("User setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
           }
 
+          const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updated)
+
           await OutboxRepository.insert(client, "workspace_user:updated", {
             workspaceId,
-            user: serializeBigInt(updated),
+            user: serializeBigInt(decoratedUser),
           })
 
-          return updated
+          return decoratedUser
         })
       } catch (error) {
         if (attempt >= MAX_SLUG_ATTEMPTS || !isUniqueViolation(error, "users_workspace_slug_key")) {
@@ -373,12 +639,14 @@ export class WorkspaceService {
         throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
+      const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, updated)
+
       await OutboxRepository.insert(client, "workspace_user:updated", {
         workspaceId,
-        user: serializeBigInt(updated),
+        user: serializeBigInt(decoratedUser),
       })
 
-      return updated
+      return decoratedUser
     })
   }
 
@@ -412,7 +680,7 @@ export class WorkspaceService {
       avatarUploadId: uploadId,
     })
 
-    return user
+    return decorateUserWithAuthzMirror(this.pool, workspaceId, user)
   }
 
   async removeUserAvatar(userId: string, workspaceId: string): Promise<User> {
@@ -432,12 +700,14 @@ export class WorkspaceService {
         throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
       }
 
+      const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, result)
+
       await OutboxRepository.insert(client, "workspace_user:updated", {
         workspaceId,
-        user: serializeBigInt(result),
+        user: serializeBigInt(decoratedUser),
       })
 
-      return result
+      return decoratedUser
     })
 
     if (oldAvatarUrl) {
@@ -482,6 +752,36 @@ export class WorkspaceService {
 
     // Re-read to get the winning org ID (handles concurrent creation race)
     return WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
+  }
+
+  private async ensureWorkosMembership(workspaceId: string, workosUserId: string, role: User["role"]): Promise<void> {
+    if (!this.workosOrgService) return
+
+    const orgId = await this.ensureWorkosOrganization(workspaceId)
+    if (!orgId) {
+      logger.error({ workspaceId, workosUserId }, "Failed to provision WorkOS organization for workspace user")
+      throw new HttpError("Failed to provision WorkOS organization for workspace user", {
+        status: 503,
+        code: "WORKOS_MEMBERSHIP_PROVISIONING_FAILED",
+      })
+    }
+
+    try {
+      await this.workosOrgService.ensureOrganizationMembership({
+        organizationId: orgId,
+        userId: workosUserId,
+        roleSlug: workosRoleSlugFromCompatibilityRole(role),
+      })
+    } catch (error) {
+      logger.error(
+        { err: error, workspaceId, workosUserId, roleSlug: workosRoleSlugFromCompatibilityRole(role) },
+        "Failed to provision WorkOS organization membership for workspace user"
+      )
+      throw new HttpError("Failed to provision WorkOS organization membership for workspace user", {
+        status: 503,
+        code: "WORKOS_MEMBERSHIP_PROVISIONING_FAILED",
+      })
+    }
   }
 
   private async shouldPreferEmailSlug(orgId: string | null, email: string): Promise<boolean> {

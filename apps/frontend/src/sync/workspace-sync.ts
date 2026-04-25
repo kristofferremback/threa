@@ -34,6 +34,10 @@ interface WorkspaceUserPayload {
   workspaceId: string
   workosUserId: string
   role: User["role"]
+  isOwner?: boolean
+  assignedRole?: User["assignedRole"]
+  assignedRoles?: User["assignedRoles"]
+  canEditRole?: boolean
   slug: string
   name: string
   description: string | null
@@ -144,8 +148,11 @@ function withWorkspaceUsers(bootstrap: WorkspaceBootstrap, users: User[]): Works
   }
 }
 
-function toWorkspaceUser(user: WorkspaceUserPayload): User {
-  return { ...user }
+function toWorkspaceUser(user: WorkspaceUserPayload, existing?: User): User {
+  return {
+    ...(existing ?? {}),
+    ...user,
+  }
 }
 function toWorkspaceBootstrapStream(stream: CachedStream): WorkspaceBootstrap["streams"][number] {
   return {
@@ -643,7 +650,10 @@ export function registerWorkspaceSocketHandlers(
     // Update workspace bootstrap cache with user if not already present.
     updateBootstrapOrInvalidate(queryClient, workspaceId, (old) => {
       const users = getWorkspaceUsers(old)
-      const incomingUser = toWorkspaceUser(user)
+      const incomingUser = toWorkspaceUser(
+        user,
+        users.find((existingUser) => existingUser.id === user.id)
+      )
       const updatedUsers = users.some((u) => u.id === user.id) ? users : [...users, incomingUser]
 
       return withWorkspaceUsers(old, updatedUsers)
@@ -683,16 +693,24 @@ export function registerWorkspaceSocketHandlers(
       if (!old || typeof old !== "object") return old
       const bootstrap = old as WorkspaceBootstrap
       const users = getWorkspaceUsers(bootstrap)
-      const incomingUser = toWorkspaceUser(user)
-      const updatedUsers = users.map((u) => (u.id === user.id ? incomingUser : u))
+      const updatedUsers = users.map((existingUser) =>
+        existingUser.id === user.id ? toWorkspaceUser(user, existingUser) : existingUser
+      )
 
       return withWorkspaceUsers(bootstrap, updatedUsers)
     })
 
+    const currentUser = refs.getCurrentUser()
+    if (currentUser?.id === user.workosUserId) {
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId), type: "active" })
+    }
+
     // Update IndexedDB
-    db.workspaceUsers.put({
-      ...toWorkspaceUser(user),
-      _cachedAt: now,
+    void db.workspaceUsers.get(user.id).then((existingUser) => {
+      db.workspaceUsers.put({
+        ...toWorkspaceUser(user, existingUser ? { ...existingUser } : undefined),
+        _cachedAt: now,
+      })
     })
   }
 
@@ -1445,6 +1463,7 @@ export async function applyWorkspaceBootstrap(
       emojis: bootstrap.emojis,
       emojiWeights: bootstrap.emojiWeights,
       commands: bootstrap.commands,
+      viewerPermissions: bootstrap.viewerPermissions ?? [],
       _cachedAt: now,
     }),
   ])
@@ -1511,6 +1530,7 @@ export async function applyWorkspaceBootstrap(
       emojis: bootstrap.emojis,
       emojiWeights: bootstrap.emojiWeights,
       commands: bootstrap.commands,
+      viewerPermissions: bootstrap.viewerPermissions ?? [],
       _cachedAt: now,
     },
   })
@@ -1611,6 +1631,7 @@ export async function applyReconnectBootstrapBatch(
           emojis: finalBootstrap.emojis,
           emojiWeights: finalBootstrap.emojiWeights,
           commands: finalBootstrap.commands,
+          viewerPermissions: finalBootstrap.viewerPermissions ?? [],
           _cachedAt: now,
         }),
       ])
@@ -1689,6 +1710,7 @@ export async function applyReconnectBootstrapBatch(
       emojis: finalBootstrap.emojis,
       emojiWeights: finalBootstrap.emojiWeights,
       commands: finalBootstrap.commands,
+      viewerPermissions: finalBootstrap.viewerPermissions ?? [],
       _cachedAt: now,
     },
   })

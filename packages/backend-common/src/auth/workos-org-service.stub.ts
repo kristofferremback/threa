@@ -1,16 +1,36 @@
 import { ulid } from "ulid"
+import { DEFAULT_WORKSPACE_ROLES } from "@threa/types"
 import { logger } from "../logger"
-import type { WorkosAppInvitation, WorkosOrgService, WorkosUserSummary } from "./workos-org-service"
+import type {
+  WorkosAppInvitation,
+  WorkosEventSummary,
+  WorkosOrgService,
+  WorkosOrganizationMembership,
+  WorkosRoleSummary,
+  WorkosUserSummary,
+} from "./workos-org-service"
+
+const DEFAULT_SYSTEM_ROLES: WorkosRoleSummary[] = DEFAULT_WORKSPACE_ROLES
+
+function cloneRoles(roles: WorkosRoleSummary[]): WorkosRoleSummary[] {
+  return roles.map((role) => ({
+    ...role,
+    permissions: [...role.permissions],
+  }))
+}
 
 export class StubWorkosOrgService implements WorkosOrgService {
   private orgsByExternalId = new Map<string, string>()
   private appInvitations: WorkosAppInvitation[] = []
+  private orgRoles = new Map<string, WorkosRoleSummary[]>()
+  private memberships = new Map<string, WorkosOrganizationMembership>()
   /** Test helper: let callers pre-populate a user lookup table. */
   public users = new Map<string, WorkosUserSummary>()
 
   async createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }> {
     const id = `org_stub_${ulid()}`
     this.orgsByExternalId.set(params.externalId, id)
+    this.orgRoles.set(id, cloneRoles(DEFAULT_SYSTEM_ROLES))
     logger.info({ orgId: id, name: params.name, externalId: params.externalId }, "Stub: Created organization")
     return { id }
   }
@@ -86,15 +106,73 @@ export class StubWorkosOrgService implements WorkosOrgService {
     return { id: organizationId, domains: [] }
   }
 
+  async listRolesForOrganization(organizationId: string): Promise<WorkosRoleSummary[]> {
+    return cloneRoles(this.orgRoles.get(organizationId) ?? DEFAULT_SYSTEM_ROLES)
+  }
+
+  async listOrganizationMemberships(organizationId: string): Promise<WorkosOrganizationMembership[]> {
+    return [...this.memberships.values()].filter((membership) => membership.organizationId === organizationId)
+  }
+
+  async getOrganizationMembership(params: {
+    organizationId: string
+    userId: string
+  }): Promise<WorkosOrganizationMembership | null> {
+    return this.memberships.get(`${params.organizationId}:${params.userId}`) ?? null
+  }
+
   async ensureOrganizationMembership(params: {
     organizationId: string
     userId: string
-    roleSlug: string
+    roleSlug?: string
+    roleSlugs?: string[]
   }): Promise<void> {
+    const roles = params.roleSlugs ?? (params.roleSlug ? [params.roleSlug] : [])
+    this.memberships.set(`${params.organizationId}:${params.userId}`, {
+      id: `om_stub_${ulid()}`,
+      userId: params.userId,
+      organizationId: params.organizationId,
+      status: "active",
+      role: roles[0] ? { slug: roles[0] } : null,
+      roles: roles.map((slug) => ({ slug })),
+    })
     logger.info(
-      { organizationId: params.organizationId, userId: params.userId, roleSlug: params.roleSlug },
+      {
+        organizationId: params.organizationId,
+        userId: params.userId,
+        roleSlug: params.roleSlug,
+        roleSlugs: params.roleSlugs,
+      },
       "Stub: Ensured organization membership"
     )
+  }
+
+  async updateOrganizationMembership(params: {
+    organizationMembershipId: string
+    roleSlug?: string
+    roleSlugs?: string[]
+  }): Promise<WorkosOrganizationMembership> {
+    const membership =
+      [...this.memberships.values()].find((value) => value.id === params.organizationMembershipId) ?? null
+    if (!membership) {
+      throw new Error(`Stub organization membership not found: ${params.organizationMembershipId}`)
+    }
+
+    const roles = params.roleSlugs ?? (params.roleSlug ? [params.roleSlug] : [])
+    const updated: WorkosOrganizationMembership = {
+      ...membership,
+      role: roles[0] ? { slug: roles[0] } : null,
+      roles: roles.map((slug) => ({ slug })),
+    }
+    this.memberships.set(`${membership.organizationId}:${membership.userId}`, updated)
+    return updated
+  }
+
+  async listEvents(_params: { events: string[]; after?: string; limit?: number }): Promise<{
+    data: WorkosEventSummary[]
+    after: string | null
+  }> {
+    return { data: [], after: null }
   }
 
   async getWidgetToken(_params: { organizationId: string; userId: string; scopes: string[] }): Promise<string> {

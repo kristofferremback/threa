@@ -20,8 +20,6 @@ import { getInitials } from "@/lib/initials"
 
 function getRoleBadge(role: User["role"]) {
   switch (role) {
-    case "owner":
-      return <Badge variant="secondary">Owner</Badge>
     case "admin":
       return <Badge variant="secondary">Admin</Badge>
     default:
@@ -69,7 +67,14 @@ export function UserProfileModal({ userId, open, onOpenChange }: UserProfileModa
             <div className="text-center">
               <h2 className="text-xl font-semibold">{user.name}</h2>
               {user.pronouns && <p className="text-sm text-muted-foreground">{user.pronouns}</p>}
-              <div className="mt-1">{getRoleBadge(user.role)}</div>
+              <div className="mt-1 flex items-center justify-center gap-2">
+                {user.isOwner && <Badge variant="secondary">Owner</Badge>}
+                {user.assignedRole ? (
+                  <Badge variant="secondary">{user.assignedRole.name}</Badge>
+                ) : (
+                  getRoleBadge(user.role)
+                )}
+              </div>
             </div>
           </div>
 

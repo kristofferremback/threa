@@ -13,7 +13,7 @@ import { eventId, commandId as generateCommandId } from "../../lib/id"
 import { toShortcode, normalizeMessage, toEmoji } from "../emoji"
 import { parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
-import { messageMetadataSchema } from "./metadata-schema"
+import { messageMetadataSchema } from "../messaging-metadata"
 
 // Schema for JSON input to an existing stream (from rich clients)
 const createMessageJsonToStreamSchema = z.object({
@@ -199,6 +199,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
             streamId,
             event: serializeBigInt(evt),
             authorId: userId,
+            source: req.authz!.source,
           })
 
           return evt

@@ -1,27 +1,23 @@
 import { describe, expect, test } from "bun:test"
 import type { NextFunction, Request, Response } from "express"
-import { requireRole } from "./authorization"
+import { requireWorkspacePermission } from "./authorization"
 
 interface MockResponse {
   statusCode: number
   body: unknown
 }
 
-function createReq(role?: "owner" | "admin" | "user"): Request {
+function createReq(permissions?: string[]): Request {
   return {
-    user: role
-      ? ({
-          id: "usr_1",
-          workspaceId: "ws_1",
-          workosUserId: "workos_user_1",
-          role,
-          slug: role,
-          timezone: null,
-          locale: null,
-          name: role,
-          email: `${role}@example.com`,
-          joinedAt: new Date(),
-        } as Request["user"])
+    authz: permissions
+      ? {
+          source: "session",
+          organizationId: "org_1",
+          organizationMembershipId: "om_1",
+          permissions: new Set(permissions as Array<"messages:read" | "workspace:admin">),
+          assignedRoles: [{ slug: "member", name: "Member" }],
+          canEditRole: true,
+        }
       : undefined,
   } as Request
 }
@@ -42,7 +38,7 @@ function createRes(): Response & MockResponse {
 }
 
 function run(req: Request): { nextCalled: boolean; res: Response & MockResponse } {
-  const middleware = requireRole("admin")
+  const middleware = requireWorkspacePermission("workspace:admin")
   const res = createRes()
   let nextCalled = false
   const next: NextFunction = () => {
@@ -52,23 +48,23 @@ function run(req: Request): { nextCalled: boolean; res: Response & MockResponse 
   return { nextCalled, res }
 }
 
-describe("requireRole", () => {
-  test("authorization matrix for requireRole('admin')", () => {
-    const ownerResult = run(createReq("owner"))
-    expect(ownerResult.nextCalled).toBe(true)
-    expect(ownerResult.res.statusCode).toBe(200)
+describe("requireWorkspacePermission", () => {
+  test("passes when permission is present", () => {
+    const result = run(createReq(["workspace:admin"]))
+    expect(result.nextCalled).toBe(true)
+    expect(result.res.statusCode).toBe(200)
+  })
 
-    const adminResult = run(createReq("admin"))
-    expect(adminResult.nextCalled).toBe(true)
-    expect(adminResult.res.statusCode).toBe(200)
+  test("returns 403 when permission is missing", () => {
+    const result = run(createReq(["messages:read"]))
+    expect(result.nextCalled).toBe(false)
+    expect(result.res.statusCode).toBe(403)
+    expect(result.res.body).toEqual({ error: "Missing required permission: workspace:admin" })
+  })
 
-    const userResult = run(createReq("user"))
-    expect(userResult.nextCalled).toBe(false)
-    expect(userResult.res.statusCode).toBe(403)
-    expect(userResult.res.body).toEqual({ error: "Insufficient role" })
-
-    const noUserResult = run(createReq())
-    expect(noUserResult.nextCalled).toBe(false)
-    expect(noUserResult.res.statusCode).toBe(401)
+  test("returns 401 when authz context is missing", () => {
+    const result = run(createReq())
+    expect(result.nextCalled).toBe(false)
+    expect(result.res.statusCode).toBe(401)
   })
 })

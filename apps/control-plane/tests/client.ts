@@ -120,9 +120,21 @@ export async function createWorkspace(
 /** Create an invitation shadow via internal API */
 export async function createShadow(
   client: TestClient,
-  params: { id: string; workspaceId: string; email: string; region: string; expiresAt: string }
+  params: {
+    id: string
+    workspaceId: string
+    email: string
+    region: string
+    expiresAt: string
+    roleSlug?: string
+    inviterWorkosUserId?: string
+  }
 ) {
-  const res = await client.internalRequest<{ shadow: unknown }>("POST", "/internal/invitation-shadows", params)
+  const body = {
+    roleSlug: params.roleSlug ?? "member",
+    ...params,
+  }
+  const res = await client.internalRequest<{ shadow: unknown }>("POST", "/internal/invitation-shadows", body)
   if (res.status !== 201) {
     throw new Error(`Create shadow failed with status ${res.status}: ${JSON.stringify(res.data)}`)
   }

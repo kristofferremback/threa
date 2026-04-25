@@ -111,7 +111,7 @@ export class InvitationShadowService {
         await this.workosOrgService.ensureOrganizationMembership({
           organizationId: orgId,
           userId: user.id,
-          roleSlug: "member",
+          roleSlug: shadow.role_slug,
         })
       } catch (error) {
         logger.warn({ err: error, workspaceId: shadow.workspace_id }, "Failed to sync WorkOS org membership on accept")
@@ -130,6 +130,7 @@ export class InvitationShadowService {
     id: string
     workspaceId: string
     email: string
+    roleSlug: string
     region: string
     expiresAt: Date
     inviterWorkosUserId?: string

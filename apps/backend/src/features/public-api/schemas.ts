@@ -7,7 +7,7 @@
  */
 import { z } from "zod"
 import { STREAM_TYPES, MEMO_TYPES, KNOWLEDGE_TYPES, EXTRACTION_CONTENT_TYPES } from "@threa/types"
-import { messageMetadataSchema, messageMetadataFilterSchema } from "../messaging"
+import { messageMetadataSchema, messageMetadataFilterSchema } from "../messaging-metadata"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
 const PUBLIC_ATTACHMENT_SEARCH_MAX_LIMIT = 50

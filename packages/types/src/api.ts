@@ -16,7 +16,9 @@ import type {
   WorkspaceInvitation,
   Persona,
   Bot,
+  WorkspaceRole,
 } from "./domain"
+import type { WorkspacePermissionScope } from "./api-keys"
 import type { UserPreferences } from "./preferences"
 
 // ============================================================================
@@ -183,6 +185,8 @@ export interface CommandInfo {
 
 export interface WorkspaceBootstrap {
   workspace: Workspace
+  viewerPermissions?: WorkspacePermissionScope[]
+  roles?: WorkspaceRole[]
   users: User[]
   streams: StreamWithPreview[]
   streamMemberships: StreamMember[]
@@ -215,6 +219,7 @@ export interface PendingInvitation {
 export interface SendInvitationsInput {
   emails: string[]
   role?: "admin" | "user"
+  roleSlug?: string
 }
 
 export type InvitationSkipReason = "already_user" | "pending_invitation"
@@ -229,6 +234,14 @@ export interface CompleteUserSetupInput {
   slug?: string
   timezone: string
   locale: string
+}
+
+export interface UpdateWorkspaceUserRoleInput {
+  roleSlug: string
+}
+
+export interface WorkspaceRolesResponse {
+  roles: WorkspaceRole[]
 }
 
 // ============================================================================

@@ -1,7 +1,7 @@
 /**
  * Sync WorkOS authorization config from code definitions.
  *
- * Reads API_KEY_PERMISSIONS from @threa/types and ensures they exist in WorkOS.
+ * Reads WORKSPACE_PERMISSIONS from @threa/types and ensures they exist in WorkOS.
  * Creates missing permissions, updates name/description on existing ones.
  * Also ensures required roles exist with the correct permissions.
  *
@@ -14,7 +14,7 @@
 
 import * as fs from "fs"
 import * as path from "path"
-import { API_KEY_PERMISSIONS } from "../packages/types/src"
+import { WORKSPACE_PERMISSIONS } from "../packages/types/src"
 
 const WORKOS_BASE = "https://api.workos.com"
 
@@ -93,9 +93,7 @@ async function updatePermission(
 }
 
 // --- Role definitions ---
-// Roles required for widget and API key management.
-// The "admin" role needs the system permission "widgets:api-keys:manage" to
-// render the API Keys Widget. The "member" role is the default for regular users.
+// Roles required for Threa's default workspace authorization model.
 
 interface RoleDefinition {
   slug: string
@@ -108,14 +106,33 @@ const REQUIRED_ROLES: RoleDefinition[] = [
   {
     slug: "admin",
     name: "Admin",
-    description: "Full workspace administration including API key management",
-    permissions: ["widgets:api-keys:manage"],
+    description: "Full workspace administration including integrations, bots, and member management",
+    permissions: [
+      "widgets:api-keys:manage",
+      "messages:search",
+      "streams:read",
+      "messages:read",
+      "messages:write",
+      "users:read",
+      "memos:read",
+      "attachments:read",
+      "members:write",
+      "workspace:admin",
+    ],
   },
   {
     slug: "member",
     name: "Member",
     description: "Default workspace member",
-    permissions: [],
+    permissions: [
+      "messages:search",
+      "streams:read",
+      "messages:read",
+      "messages:write",
+      "users:read",
+      "memos:read",
+      "attachments:read",
+    ],
   },
 ]
 
@@ -142,26 +159,74 @@ async function createRole(
   return workosRequest<WorkOSRole>(apiKey, "POST", "/authorization/roles", role)
 }
 
+async function updateRole(
+  apiKey: string,
+  slug: string,
+  updates: { name?: string; description?: string }
+): Promise<WorkOSRole> {
+  return workosRequest<WorkOSRole>(apiKey, "PATCH", `/authorization/roles/${slug}`, updates)
+}
+
 async function setRolePermissions(apiKey: string, roleSlug: string, permissions: string[]): Promise<void> {
   await workosRequest<unknown>(apiKey, "PUT", `/authorization/roles/${roleSlug}/permissions`, { permissions })
+}
+
+interface RoleDriftEntry {
+  slug: string
+  fields: string[]
+  missingPermissions: string[]
+  extraPermissions: string[]
+}
+
+function detectRoleDrift(remoteRoles: WorkOSRole[]): RoleDriftEntry[] {
+  const remoteRolesBySlug = new Map(remoteRoles.map((role) => [role.slug, role]))
+
+  return REQUIRED_ROLES.flatMap((role) => {
+    const existing = remoteRolesBySlug.get(role.slug)
+    if (!existing) {
+      return [
+        {
+          slug: role.slug,
+          fields: ["missing"],
+          missingPermissions: [...role.permissions],
+          extraPermissions: [],
+        },
+      ]
+    }
+
+    const fields: string[] = []
+    if (existing.name !== role.name) fields.push("name")
+    if ((existing.description ?? "") !== role.description) fields.push("description")
+
+    const existingPerms = new Set(existing.permissions)
+    const requiredPerms = new Set(role.permissions)
+    const missingPermissions = role.permissions.filter((permission) => !existingPerms.has(permission))
+    const extraPermissions = existing.permissions.filter((permission) => !requiredPerms.has(permission))
+
+    if (fields.length === 0 && missingPermissions.length === 0 && extraPermissions.length === 0) {
+      return []
+    }
+
+    return [{ slug: role.slug, fields, missingPermissions, extraPermissions }]
+  })
 }
 
 // --- Drift detection ---
 
 interface DriftReport {
-  missing: typeof API_KEY_PERMISSIONS
+  missing: typeof WORKSPACE_PERMISSIONS
   stale: { slug: string; fields: string[] }[]
   orphans: WorkOSPermission[]
 }
 
 function detectDrift(remote: WorkOSPermission[]): DriftReport {
   const remoteBySlug = new Map(remote.filter((p) => !p.system).map((p) => [p.slug, p]))
-  const localSlugs = new Set<string>(API_KEY_PERMISSIONS.map((p) => p.slug))
+  const localSlugs = new Set<string>(WORKSPACE_PERMISSIONS.map((p) => p.slug))
 
-  const missing = API_KEY_PERMISSIONS.filter((p) => !remoteBySlug.has(p.slug))
+  const missing = WORKSPACE_PERMISSIONS.filter((p) => !remoteBySlug.has(p.slug))
 
   const stale: DriftReport["stale"] = []
-  for (const local of API_KEY_PERMISSIONS) {
+  for (const local of WORKSPACE_PERMISSIONS) {
     const existing = remoteBySlug.get(local.slug)
     if (!existing) continue
     const fields: string[] = []
@@ -241,27 +306,35 @@ async function check() {
   // --- Role check ---
   console.log("\n--- Roles ---\n")
   const remoteRoles = await listRoles(apiKey)
-  const remoteRolesBySlug = new Map(remoteRoles.map((r) => [r.slug, r]))
-  let roleDrift = false
+  const roleDriftEntries = detectRoleDrift(remoteRoles)
+  const roleDriftBySlug = new Map(roleDriftEntries.map((entry) => [entry.slug, entry]))
 
   for (const role of REQUIRED_ROLES) {
-    const existing = remoteRolesBySlug.get(role.slug)
-    if (!existing) {
-      console.log(`  [MISSING] role "${role.slug}" — will be created on merge`)
-      roleDrift = true
-    } else {
-      const existingPerms = new Set(existing.permissions)
-      const missingPerms = role.permissions.filter((p) => !existingPerms.has(p))
-      if (missingPerms.length > 0) {
-        console.log(`  [STALE] role "${role.slug}" — missing permissions: [${missingPerms.join(", ")}]`)
-        roleDrift = true
-      } else {
-        console.log(`  [OK] role "${role.slug}"`)
-      }
+    const driftEntry = roleDriftBySlug.get(role.slug)
+    if (!driftEntry) {
+      console.log(`  [OK] role "${role.slug}"`)
+      continue
     }
+
+    if (driftEntry.fields.includes("missing")) {
+      console.log(`  [MISSING] role "${role.slug}" — will be created on merge`)
+      continue
+    }
+
+    const issues: string[] = []
+    if (driftEntry.fields.length > 0) {
+      issues.push(`fields differ: [${driftEntry.fields.join(", ")}]`)
+    }
+    if (driftEntry.missingPermissions.length > 0) {
+      issues.push(`missing permissions: [${driftEntry.missingPermissions.join(", ")}]`)
+    }
+    if (driftEntry.extraPermissions.length > 0) {
+      issues.push(`extra permissions: [${driftEntry.extraPermissions.join(", ")}]`)
+    }
+    console.log(`  [STALE] role "${role.slug}" — ${issues.join("; ")}`)
   }
 
-  if (!roleDrift) {
+  if (roleDriftEntries.length === 0) {
     console.log("No role drift detected.")
   }
 }
@@ -272,13 +345,13 @@ async function sync(dryRun: boolean) {
   const drift = detectDrift(remote)
 
   console.log(`Found ${remote.length} permissions in WorkOS (${remote.filter((p) => !p.system).length} non-system)`)
-  console.log(`Local definitions: ${API_KEY_PERMISSIONS.length}\n`)
+  console.log(`Local definitions: ${WORKSPACE_PERMISSIONS.length}\n`)
 
   let created = 0
   let updated = 0
   let unchanged = 0
 
-  for (const local of API_KEY_PERMISSIONS) {
+  for (const local of WORKSPACE_PERMISSIONS) {
     const isMissing = drift.missing.some((p) => p.slug === local.slug)
     const staleEntry = drift.stale.find((p) => p.slug === local.slug)
 
@@ -317,9 +390,11 @@ async function sync(dryRun: boolean) {
   console.log("\n--- Roles ---\n")
   const remoteRoles = await listRoles(apiKey)
   const remoteRolesBySlug = new Map(remoteRoles.map((r) => [r.slug, r]))
+  const roleDriftBySlug = new Map(detectRoleDrift(remoteRoles).map((entry) => [entry.slug, entry]))
 
   for (const role of REQUIRED_ROLES) {
     const existing = remoteRolesBySlug.get(role.slug)
+    const driftEntry = roleDriftBySlug.get(role.slug)
 
     if (!existing) {
       if (dryRun) {
@@ -332,17 +407,29 @@ async function sync(dryRun: boolean) {
         console.log(`  [CREATED] role "${role.slug}" with permissions: [${role.permissions.join(", ")}]`)
       }
     } else {
-      // Check if permissions need updating
-      const existingPerms = new Set(existing.permissions)
-      const missingPerms = role.permissions.filter((p) => !existingPerms.has(p))
-
-      if (missingPerms.length > 0) {
-        const allPerms = [...new Set([...existing.permissions, ...role.permissions])]
+      if (driftEntry?.fields.length) {
+        const fieldSummary = driftEntry.fields.join(", ")
         if (dryRun) {
-          console.log(`  [UPDATE] role "${role.slug}" — adding permissions: [${missingPerms.join(", ")}]`)
+          console.log(`  [UPDATE] role "${role.slug}" — syncing fields: [${fieldSummary}]`)
         } else {
-          await setRolePermissions(apiKey, role.slug, allPerms)
-          console.log(`  [UPDATED] role "${role.slug}" — added permissions: [${missingPerms.join(", ")}]`)
+          await updateRole(apiKey, role.slug, { name: role.name, description: role.description })
+          console.log(`  [UPDATED] role "${role.slug}" — synced fields: [${fieldSummary}]`)
+        }
+      }
+
+      if (driftEntry && (driftEntry.missingPermissions.length > 0 || driftEntry.extraPermissions.length > 0)) {
+        const changes: string[] = []
+        if (driftEntry.missingPermissions.length > 0) {
+          changes.push(`adding [${driftEntry.missingPermissions.join(", ")}]`)
+        }
+        if (driftEntry.extraPermissions.length > 0) {
+          changes.push(`removing [${driftEntry.extraPermissions.join(", ")}]`)
+        }
+        if (dryRun) {
+          console.log(`  [UPDATE] role "${role.slug}" — ${changes.join("; ")}`)
+        } else {
+          await setRolePermissions(apiKey, role.slug, role.permissions)
+          console.log(`  [UPDATED] role "${role.slug}" — ${changes.join("; ")}`)
         }
       } else {
         console.log(`  [OK] role "${role.slug}"`)

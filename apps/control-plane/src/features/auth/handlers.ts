@@ -4,6 +4,7 @@ import {
   HttpError,
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_CONFIG,
+  SESSION_COOKIE_CLEAR_CONFIG,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
   type AuthService,
@@ -126,8 +127,7 @@ export function createControlPlaneAuthHandlers({
     async logout(req: Request, res: Response) {
       const session = req.cookies[SESSION_COOKIE_NAME]
 
-      const { maxAge: _, ...clearOpts } = SESSION_COOKIE_CONFIG
-      res.clearCookie(SESSION_COOKIE_NAME, clearOpts)
+      res.clearCookie(SESSION_COOKIE_NAME, SESSION_COOKIE_CLEAR_CONFIG)
 
       const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
 

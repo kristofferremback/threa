@@ -9,6 +9,7 @@ import type { EventType, LinkPreviewSummary, StreamType } from "@threa/types"
 import { StreamTypes, SLUG_PATTERN } from "@threa/types"
 import { serializeBigInt } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
+import { hasWorkspacePermission } from "../../middleware/authorization"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
 
 const createStreamSchema = z
@@ -662,8 +663,11 @@ export function createStreamHandlers({
       const workspaceId = req.workspaceId!
       const { streamId, memberId } = req.params
 
-      if (actor.role !== "owner" && actor.role !== "admin") {
-        throw new HttpError("Only workspace owners and admins can remove members", { status: 403, code: "FORBIDDEN" })
+      if (!hasWorkspacePermission(req, "members:write")) {
+        throw new HttpError("Missing required permission: members:write", {
+          status: 403,
+          code: "FORBIDDEN",
+        })
       }
 
       await streamService.validateStreamAccess(streamId, workspaceId, actor.id)

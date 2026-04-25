@@ -3,12 +3,14 @@ import type {
   Workspace,
   WorkspaceBootstrap,
   User,
+  WorkspaceRole,
   CreateWorkspaceInput,
   CompleteUserSetupInput,
   PendingInvitation,
   UserApiKey,
   CreateUserApiKeyResponse,
   ApiKeyScope,
+  UpdateWorkspaceUserRoleInput,
 } from "@threa/types"
 
 export type { WorkspaceBootstrap, CreateWorkspaceInput }
@@ -66,6 +68,16 @@ export const workspacesApi = {
       { signal }
     )
     return res.available
+  },
+
+  async listRoles(workspaceId: string): Promise<WorkspaceRole[]> {
+    const res = await api.get<{ roles: WorkspaceRole[] }>(`/api/workspaces/${workspaceId}/roles`)
+    return res.roles
+  },
+
+  async updateUserRole(workspaceId: string, userId: string, data: UpdateWorkspaceUserRoleInput): Promise<User> {
+    const res = await api.patch<{ user: User }>(`/api/workspaces/${workspaceId}/users/${userId}/role`, data)
+    return res.user
   },
 
   async updateProfile(

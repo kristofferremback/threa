@@ -99,29 +99,67 @@ describe("createPublicApiAuthMiddleware", () => {
             : null,
       },
       pool: {
-        query: async () => ({
-          rows: [
-            {
-              id: "user_1",
-              workspace_id: "ws_1",
-              name: "Test User",
-              email: "test@example.com",
-              role: "admin",
-              slug: "test",
-              workos_user_id: "wos_1",
-              description: null,
-              avatar_url: null,
-              timezone: null,
-              locale: null,
-              pronouns: null,
-              phone: null,
-              github_username: null,
-              setup_completed: true,
-              joined_at: new Date(),
-            },
-          ],
-          rowCount: 1,
-        }),
+        query: async (query: { text?: string }) => {
+          const text = query?.text ?? ""
+          if (text.includes("FROM users u")) {
+            return {
+              rows: [
+                {
+                  id: "user_1",
+                  workspace_id: "ws_1",
+                  name: "Test User",
+                  email: "test@example.com",
+                  role: "admin",
+                  slug: "test",
+                  workos_user_id: "wos_1",
+                  description: null,
+                  avatar_url: null,
+                  timezone: null,
+                  locale: null,
+                  pronouns: null,
+                  phone: null,
+                  github_username: null,
+                  setup_completed: true,
+                  joined_at: new Date(),
+                },
+              ],
+              rowCount: 1,
+            }
+          }
+          if (text.includes("FROM workspaces")) {
+            return {
+              rows: [{ created_by: "user_1", workos_organization_id: "org_1" }],
+              rowCount: 1,
+            }
+          }
+          if (text.includes("FROM workos_workspace_roles")) {
+            return {
+              rows: [
+                {
+                  slug: "admin",
+                  name: "Admin",
+                  description: null,
+                  permissions: ["messages:read"],
+                  role_type: "environment_role",
+                },
+              ],
+              rowCount: 1,
+            }
+          }
+          if (text.includes("FROM workos_workspace_memberships")) {
+            return {
+              rows: [
+                {
+                  organization_membership_id: "om_1",
+                  workos_user_id: "wos_1",
+                  role_slugs: ["admin"],
+                },
+              ],
+              rowCount: 1,
+            }
+          }
+          return { rows: [], rowCount: 0 }
+        },
       } as any,
     })
 
@@ -231,6 +269,14 @@ describe("requireApiKeyScope", () => {
       name: "Test",
       scopes: new Set(["messages:search"]),
     }
+    req.authz = {
+      source: "user_api_key",
+      organizationId: "org_1",
+      organizationMembershipId: "om_1",
+      permissions: new Set(["messages:search"]),
+      assignedRoles: [{ slug: "member", name: "Member" }],
+      canEditRole: true,
+    }
 
     let nextCalled = false
     let error: any = null
@@ -254,6 +300,14 @@ describe("requireApiKeyScope", () => {
       name: "Bot Key",
       scopes: new Set(["messages:write"]),
     }
+    req.authz = {
+      source: "bot_api_key",
+      organizationId: null,
+      organizationMembershipId: null,
+      permissions: new Set(["messages:write"]),
+      assignedRoles: [],
+      canEditRole: false,
+    }
 
     let nextCalled = false
     let error: any = null
@@ -267,7 +321,7 @@ describe("requireApiKeyScope", () => {
     expect(error).toBeUndefined()
   })
 
-  test("should return 404 when scope is missing from user key", () => {
+  test("should return 403 when scope is missing from user key", () => {
     const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
     req.userApiKey = {
@@ -277,6 +331,14 @@ describe("requireApiKeyScope", () => {
       name: "Test",
       scopes: new Set(["streams:read"]),
     }
+    req.authz = {
+      source: "user_api_key",
+      organizationId: "org_1",
+      organizationMembershipId: "om_1",
+      permissions: new Set(["streams:read"]),
+      assignedRoles: [{ slug: "member", name: "Member" }],
+      canEditRole: true,
+    }
 
     let error: any = null
     const next: NextFunction = (err?: any) => {
@@ -285,10 +347,10 @@ describe("requireApiKeyScope", () => {
     middleware(req, {} as Response, next)
 
     expect(error).not.toBeNull()
-    expect(error.status).toBe(404)
+    expect(error.status).toBe(403)
   })
 
-  test("should return 404 when scope is missing from bot key", () => {
+  test("should return 403 when scope is missing from bot key", () => {
     const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE)
     const req = createReq()
     req.botApiKey = {
@@ -298,6 +360,14 @@ describe("requireApiKeyScope", () => {
       name: "Bot Key",
       scopes: new Set(["messages:read"]),
     }
+    req.authz = {
+      source: "bot_api_key",
+      organizationId: null,
+      organizationMembershipId: null,
+      permissions: new Set(["messages:read"]),
+      assignedRoles: [],
+      canEditRole: false,
+    }
 
     let error: any = null
     const next: NextFunction = (err?: any) => {
@@ -306,7 +376,7 @@ describe("requireApiKeyScope", () => {
     middleware(req, {} as Response, next)
 
     expect(error).not.toBeNull()
-    expect(error.status).toBe(404)
+    expect(error.status).toBe(403)
   })
 
   test("should return 401 when no key context on request", () => {

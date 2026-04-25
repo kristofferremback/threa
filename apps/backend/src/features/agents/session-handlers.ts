@@ -2,16 +2,16 @@ import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import { withClient } from "../../db"
 import { AgentSessionRepository } from "./session-repository"
-import { StreamRepository, StreamEventRepository } from "../streams"
-import { StreamMemberRepository } from "../streams"
+import { StreamEventRepository, type StreamService } from "../streams"
 import { PersonaRepository } from "./persona-repository"
 import type { AgentSessionWithSteps, AgentStepType } from "@threa/types"
 
 interface Dependencies {
   pool: Pool
+  streamService: StreamService
 }
 
-export function createAgentSessionHandlers({ pool }: Dependencies) {
+export function createAgentSessionHandlers({ pool, streamService }: Dependencies) {
   return {
     /**
      * GET /api/workspaces/:workspaceId/agent-sessions/:sessionId
@@ -30,17 +30,13 @@ export function createAgentSessionHandlers({ pool }: Dependencies) {
           return { error: "Session not found", status: 404 }
         }
 
-        const [stream, membership, persona, steps] = await Promise.all([
-          StreamRepository.findById(db, session.streamId),
-          StreamMemberRepository.findByStreamAndMember(db, session.streamId, userId),
+        const [stream, persona, steps] = await Promise.all([
+          streamService.tryAccess(session.streamId, workspaceId, userId),
           PersonaRepository.findById(db, session.personaId),
           AgentSessionRepository.findStepsBySession(db, sessionId),
         ])
 
-        if (!stream || stream.workspaceId !== workspaceId) {
-          return { error: "Session not found", status: 404 }
-        }
-        if (!membership) {
+        if (!stream) {
           return { error: "Not authorized to view this session", status: 403 }
         }
         if (!persona) {

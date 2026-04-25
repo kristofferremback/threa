@@ -439,14 +439,14 @@ describe("Public API — OpenAPI Spec Validation", () => {
       expect(res.status).toBe(401)
     })
 
-    test("404 for insufficient scope", async () => {
+    test("403 for insufficient scope", async () => {
       const res = await apiRequest(
         "POST",
         `/api/v1/workspaces/${ctx.workspaceId}/streams/${ctx.channelId}/messages`,
         ctx.readOnlyKey,
         { content: "should fail" }
       )
-      expect(res.status).toBe(404)
+      expect(res.status).toBe(403)
     })
 
     test("400 for invalid request body", async () => {

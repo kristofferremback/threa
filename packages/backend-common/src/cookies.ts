@@ -45,3 +45,6 @@ export const SESSION_COOKIE_CONFIG = {
   // sibling PR subdomains like pr-204-staging.threa.io.
   ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
 }
+
+const { maxAge: _, ...clearConfig } = SESSION_COOKIE_CONFIG
+export const SESSION_COOKIE_CLEAR_CONFIG = clearConfig

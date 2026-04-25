@@ -1,10 +1,10 @@
 import type { Pool } from "pg"
 import { App, Octokit } from "octokit"
+import type { WorkosOrgService } from "@threa/backend-common"
 import { logger } from "../../lib/logger"
 import { HttpError } from "../../lib/errors"
 import { workspaceIntegrationId } from "../../lib/id"
 import type { GitHubAppConfig } from "../../lib/env"
-import { UserRepository } from "../workspaces"
 import {
   WorkspaceIntegrationProviders,
   WorkspaceIntegrationStatuses,
@@ -109,6 +109,7 @@ export class GitHubClient {
 interface WorkspaceIntegrationServiceDeps {
   pool: Pool
   github: GitHubAppConfig
+  workosOrgService: WorkosOrgService
 }
 
 export class WorkspaceIntegrationService {
@@ -167,33 +168,12 @@ export class WorkspaceIntegrationService {
     })
   }
 
-  async handleGithubCallback(params: {
-    state: string
-    installationId: string
-    workosUserId: string
-  }): Promise<{ workspaceId: string }> {
-    this.requireGitHubEnabled()
-
-    let workspaceId: string
+  resolveGithubCallbackWorkspaceId(state: string): string {
     try {
-      workspaceId = verifyGithubInstallState(this.deps.github.integrationSecret, params.state).workspaceId
+      return verifyGithubInstallState(this.deps.github.integrationSecret, state).workspaceId
     } catch (error) {
       throw new HttpError((error as Error).message, { status: 400, code: "INVALID_GITHUB_INSTALL_STATE" })
     }
-
-    const access = await UserRepository.findWorkspaceUserAccess(this.deps.pool, workspaceId, params.workosUserId)
-    if (!access.workspaceExists) {
-      throw new HttpError("Workspace not found", { status: 404, code: "WORKSPACE_NOT_FOUND" })
-    }
-    if (!access.user) {
-      throw new HttpError("Not a member of this workspace", { status: 403, code: "FORBIDDEN" })
-    }
-    if (access.user.role !== "admin" && access.user.role !== "owner") {
-      throw new HttpError("Only admins can connect GitHub", { status: 403, code: "FORBIDDEN" })
-    }
-
-    await this.completeGithubInstallation(workspaceId, access.user.id, params.installationId)
-    return { workspaceId }
   }
 
   async getGithubClient(workspaceId: string): Promise<GitHubClient | null> {
@@ -267,7 +247,7 @@ export class WorkspaceIntegrationService {
     return this.refreshGithubCredentials(workspaceId, record, credentials.installationId, metadata)
   }
 
-  private async completeGithubInstallation(
+  async completeGithubInstallation(
     workspaceId: string,
     installedByUserId: string,
     installationIdRaw: string

@@ -1,6 +1,14 @@
 import type { Request, Response, NextFunction } from "express"
 import type { Pool } from "pg"
+import {
+  SESSION_COOKIE_CLEAR_CONFIG,
+  SESSION_COOKIE_CONFIG,
+  SESSION_COOKIE_NAME,
+  type AuthService,
+} from "@threa/backend-common"
 import { UserRepository, type User } from "../features/workspaces"
+import { storedCompatibilityRole } from "./authorization"
+import { resolveWorkspaceAuthorization } from "./workspace-authz-resolver"
 
 declare global {
   namespace Express {
@@ -13,9 +21,10 @@ declare global {
 
 interface Dependencies {
   pool: Pool
+  authService: AuthService
 }
 
-export function createWorkspaceUserMiddleware({ pool }: Dependencies) {
+export function createWorkspaceUserMiddleware({ pool, authService }: Dependencies) {
   return async function workspaceUserMiddleware(req: Request, res: Response, next: NextFunction) {
     const { workspaceId } = req.params
 
@@ -38,8 +47,66 @@ export function createWorkspaceUserMiddleware({ pool }: Dependencies) {
       return res.status(403).json({ error: "Not a user in this workspace" })
     }
 
+    let authz = await resolveWorkspaceAuthorization({
+      pool,
+      workspaceId,
+      userId: user.id,
+      source: "session",
+      session: req.authSession,
+    })
+    if (authz.status === "missing_org") {
+      return res.status(500).json({ error: "Workspace is not configured for WorkOS authorization" })
+    }
+    if (authz.status === "org_mismatch") {
+      const refreshed = await authService.refreshSession({
+        sealedSession: req.authSession?.sealedSession ?? req.cookies[SESSION_COOKIE_NAME] ?? "",
+        organizationId: authz.organizationId,
+      })
+      if (!refreshed.success || !refreshed.user || !refreshed.session || !refreshed.sealedSession) {
+        res.clearCookie(SESSION_COOKIE_NAME, SESSION_COOKIE_CLEAR_CONFIG)
+        return res.status(401).json({ error: "Session expired" })
+      }
+
+      res.cookie(SESSION_COOKIE_NAME, refreshed.sealedSession, SESSION_COOKIE_CONFIG)
+      req.authUser = refreshed.user
+      req.authSession = {
+        sealedSession: refreshed.sealedSession,
+        organizationId: refreshed.session.organizationId,
+        role: refreshed.session.role,
+        roles: [...refreshed.session.roles],
+        permissions: [...refreshed.session.permissions],
+      }
+
+      authz = await resolveWorkspaceAuthorization({
+        pool,
+        workspaceId,
+        userId: user.id,
+        source: "session",
+        session: req.authSession,
+      })
+    }
+    if (authz.status === "missing_membership") {
+      return res.status(403).json({ error: "Not authorized in this workspace" })
+    }
+    if (authz.status !== "ok") {
+      return res.status(401).json({ error: "Session expired" })
+    }
+
+    const storedRole = storedCompatibilityRole(user.role, authz.value.compatibilityRole, authz.value.isOwner)
+    if (user.role !== storedRole) {
+      await UserRepository.update(pool, workspaceId, user.id, { role: storedRole })
+    }
+
     req.workspaceId = workspaceId
-    req.user = user
+    req.authz = authz.value
+    req.user = {
+      ...user,
+      role: storedRole,
+      isOwner: authz.value.isOwner,
+      assignedRole: authz.value.assignedRoles[0] ?? null,
+      assignedRoles: authz.value.assignedRoles,
+      canEditRole: authz.value.canEditRole,
+    }
     next()
   }
 }

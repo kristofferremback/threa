@@ -6,6 +6,7 @@ import { UserRepository } from "../workspaces"
 import { OutboxRepository } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import * as db from "../../db"
+import type { WorkspaceRole } from "@threa/types"
 
 const identity = {
   workosUserId: "workos_user_1",
@@ -132,6 +133,7 @@ describe("InvitationService.sendInvitations", () => {
   const mockFindPendingByEmailsAndWorkspace = spyOn(InvitationRepository, "findPendingByEmailsAndWorkspace")
   const mockInsertInvitation = spyOn(InvitationRepository, "insert")
   const mockInsertOutbox = spyOn(OutboxRepository, "insert")
+  const mockListAssignableRoles = mock<() => Promise<WorkspaceRole[]>>()
 
   spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn({} as PoolClient))
 
@@ -147,8 +149,29 @@ describe("InvitationService.sendInvitations", () => {
     mockInsertOutbox
       .mockReset()
       .mockResolvedValue({ id: 1n, eventType: "test", payload: {}, createdAt: new Date() } as never)
+    mockListAssignableRoles.mockReset().mockResolvedValue([
+      {
+        slug: "member",
+        name: "Member",
+        description: null,
+        permissions: ["messages:read"],
+        type: "environment_role",
+      },
+      {
+        slug: "admin",
+        name: "Admin",
+        description: null,
+        permissions: ["workspace:admin"],
+        type: "environment_role",
+      },
+    ])
 
-    service = new InvitationService({} as never, {} as never)
+    service = new InvitationService(
+      {} as never,
+      {
+        listAssignableRoles: mockListAssignableRoles,
+      } as never
+    )
   })
 
   test("should include inviterWorkosUserId in outbox event payload", async () => {
@@ -157,6 +180,8 @@ describe("InvitationService.sendInvitations", () => {
       invitedBy: "usr_1",
       emails: ["test@example.com"],
       role: "user",
+      roleSlug: "member",
+      actorPermissions: ["messages:read"],
     })
 
     const sentCall = mockInsertOutbox.mock.calls.find((call) => call[1] === "invitation:sent")
@@ -165,6 +190,7 @@ describe("InvitationService.sendInvitations", () => {
       workspaceId: "ws_1",
       email: "test@example.com",
       role: "user",
+      roleSlug: "member",
       inviterWorkosUserId: "workos_user_1",
     })
   })
@@ -177,6 +203,8 @@ describe("InvitationService.sendInvitations", () => {
       invitedBy: "usr_1",
       emails: ["existing@example.com", "new@example.com"],
       role: "user",
+      roleSlug: "member",
+      actorPermissions: ["messages:read"],
     })
 
     expect(result.skipped).toEqual([{ email: "existing@example.com", reason: "already_user" }])
@@ -192,10 +220,112 @@ describe("InvitationService.sendInvitations", () => {
       invitedBy: "usr_1",
       emails: ["pending@example.com"],
       role: "user",
+      roleSlug: "member",
+      actorPermissions: ["messages:read"],
     })
 
     expect(result.skipped).toEqual([{ email: "pending@example.com", reason: "pending_invitation" }])
     expect(result.sent).toHaveLength(0)
+  })
+
+  test("should decorate returned invitations with role names from the role catalog", async () => {
+    const result = await service.sendInvitations({
+      workspaceId: "ws_1",
+      invitedBy: "usr_1",
+      emails: ["test@example.com"],
+      role: "user",
+      roleSlug: "member",
+      actorPermissions: ["messages:read"],
+    })
+
+    expect(result.sent).toEqual([
+      expect.objectContaining({
+        roleSlug: "member",
+        assignedRole: { slug: "member", name: "Member" },
+      }),
+    ])
+  })
+
+  test("blocks inviting a role with permissions the actor lacks", async () => {
+    await expect(
+      service.sendInvitations({
+        workspaceId: "ws_1",
+        invitedBy: "usr_1",
+        emails: ["admin@example.com"],
+        role: "admin",
+        roleSlug: "admin",
+        actorPermissions: ["members:write"],
+      })
+    ).rejects.toMatchObject({
+      name: "HttpError",
+      status: 403,
+      code: "ROLE_ASSIGNMENT_PERMISSION_DENIED",
+    })
+    expect(mockInsertInvitation).not.toHaveBeenCalled()
+  })
+})
+
+describe("InvitationService.listInvitations", () => {
+  let service: InvitationService
+
+  const mockMarkExpired = spyOn(InvitationRepository, "markExpired")
+  const mockListByWorkspace = spyOn(InvitationRepository, "listByWorkspace")
+  const mockListAssignableRoles = mock<() => Promise<WorkspaceRole[]>>()
+
+  beforeEach(() => {
+    mockMarkExpired.mockReset().mockResolvedValue(0)
+    mockListByWorkspace.mockReset().mockResolvedValue([
+      {
+        id: "inv_1",
+        workspaceId: "ws_1",
+        email: "test@example.com",
+        role: "user",
+        roleSlug: "member",
+        assignedRole: null,
+        invitedBy: "usr_1",
+        workosInvitationId: null,
+        status: "pending",
+        createdAt: new Date(),
+        expiresAt: new Date(),
+        acceptedAt: null,
+        revokedAt: null,
+      },
+    ] as never)
+    mockListAssignableRoles.mockReset().mockResolvedValue([
+      {
+        slug: "member",
+        name: "Member",
+        description: null,
+        permissions: [],
+        type: "environment_role",
+      },
+    ])
+
+    service = new InvitationService(
+      {} as never,
+      {
+        listAssignableRoles: mockListAssignableRoles,
+      } as never
+    )
+  })
+
+  test("should use provided roles instead of reloading the role catalog", async () => {
+    const invitations = await service.listInvitations("ws_1", undefined, [
+      {
+        slug: "member",
+        name: "Member",
+        description: null,
+        permissions: [],
+        type: "environment_role",
+      },
+    ])
+
+    expect(mockListAssignableRoles).not.toHaveBeenCalled()
+    expect(invitations).toEqual([
+      expect.objectContaining({
+        assignedRole: { slug: "member", name: "Member" },
+      }),
+    ])
   })
 })
 

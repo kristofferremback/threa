@@ -9,8 +9,7 @@ import {
   useStreamBootstrap,
   useStashComposer,
 } from "@/hooks"
-import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
-import { useUser } from "@/auth"
+import { useWorkspaceMetadata, useWorkspaceStreams } from "@/stores/workspace-store"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
@@ -203,12 +202,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   })
   const accessBootstrap = rootStreamId ? rootBootstrap : currentBootstrap
 
-  const currentUser = useUser()
-  const workspaceUsers = useWorkspaceUsers(workspaceId)
-  const currentUserRole = useMemo(
-    () => workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role,
-    [workspaceUsers, currentUser?.id]
-  )
+  const workspaceMetadata = useWorkspaceMetadata(workspaceId)
 
   const streamContext = useMemo<MentionStreamContext | undefined>(() => {
     if (!stream) return undefined
@@ -231,10 +225,10 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     // Bot mention filter: the same channel-level grants determine mentionability.
     if (accessBootstrap?.botMemberIds) ctx.botMemberIds = new Set(accessBootstrap.botMemberIds)
 
-    ctx.canInviteBots = currentUserRole === "admin" || currentUserRole === "owner"
+    ctx.canInviteBots = workspaceMetadata?.viewerPermissions?.includes("workspace:admin") ?? false
 
     return ctx
-  }, [stream, idbStreams, accessBootstrap, currentUserRole])
+  }, [stream, idbStreams, accessBootstrap, workspaceMetadata?.viewerPermissions])
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()

@@ -17,11 +17,15 @@ export class ApiError extends Error {
 
 // Response type for error responses
 interface ErrorResponse {
-  error?: {
-    code: string
-    message: string
-    details?: Record<string, unknown>
-  }
+  error?:
+    | {
+        code: string
+        message: string
+        details?: Record<string, unknown>
+      }
+    | string
+  code?: string
+  details?: Record<string, unknown>
 }
 
 /**
@@ -56,12 +60,13 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   // Handle error responses
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      body.error?.code || "UNKNOWN_ERROR",
-      body.error?.message || `Request failed with status ${response.status}`,
-      body.error?.details
-    )
+    const errorMessage =
+      typeof body.error === "string"
+        ? body.error
+        : body.error?.message || `Request failed with status ${response.status}`
+    const errorCode = typeof body.error === "string" ? body.code : body.error?.code
+    const errorDetails = typeof body.error === "string" ? body.details : body.error?.details
+    throw new ApiError(response.status, errorCode || "UNKNOWN_ERROR", errorMessage, errorDetails)
   }
 
   return body as T

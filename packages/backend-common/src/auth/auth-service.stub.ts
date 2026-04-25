@@ -1,17 +1,92 @@
 import type { AuthResult, AuthService } from "./auth-service"
+import type { WorkosOrgService } from "./workos-org-service"
 
 export interface DevLoginResult {
   user: { id: string; email: string; name: string }
   session: string
 }
 
+interface StubSessionPayload {
+  userId: string
+  organizationId?: string | null
+  role?: string | null
+  roles?: string[]
+  permissions?: string[]
+}
+
+interface OrgSessionClaims {
+  organizationId: string
+  role: string | null
+  roles: string[]
+  permissions: string[]
+}
+
+function encodeStubSession(payload: StubSessionPayload): string {
+  return `test_session_${Buffer.from(JSON.stringify(payload)).toString("base64url")}`
+}
+
+function decodeStubSession(sealedSession: string): StubSessionPayload | null {
+  const match = sealedSession.match(/^test_session_(.+)$/)
+  if (!match) {
+    return null
+  }
+
+  try {
+    const decoded = JSON.parse(Buffer.from(match[1], "base64url").toString("utf8")) as StubSessionPayload
+    if (typeof decoded?.userId === "string" && decoded.userId.length > 0) {
+      return decoded
+    }
+  } catch {
+    // Fall through to the legacy `test_session_<userId>` format.
+  }
+
+  return { userId: match[1] }
+}
+
 /**
  * A stub AuthService for e2e testing that bypasses WorkOS entirely.
  * Users are identified by a simple token format: "test_session_<userId>"
+ * or an encoded JSON payload for org-scoped session refresh flows.
  */
 export class StubAuthService implements AuthService {
   private users: Map<string, { id: string; email: string; firstName: string | null; lastName: string | null }> =
     new Map()
+  private workosOrgService: WorkosOrgService | null
+
+  constructor(options: { workosOrgService?: WorkosOrgService } = {}) {
+    this.workosOrgService = options.workosOrgService ?? null
+  }
+
+  /**
+   * Look up the user's claims in the given org by reading the stub WorkOS
+   * mirror: role slugs on their membership, then the permission set defined by
+   * the org's role catalog. Real WorkOS embeds these in the sealed session;
+   * mirroring that lets middleware treat stub sessions like real ones.
+   */
+  private async deriveOrgClaims(organizationId: string, userId: string): Promise<OrgSessionClaims> {
+    if (!this.workosOrgService) {
+      return { organizationId, role: null, roles: [], permissions: [] }
+    }
+
+    const [membership, orgRoles] = await Promise.all([
+      this.workosOrgService.getOrganizationMembership({ organizationId, userId }),
+      this.workosOrgService.listRolesForOrganization(organizationId),
+    ])
+
+    const membershipRoleSlugs = membership?.roles?.map((role) => role.slug) ?? []
+    const roleSlugs =
+      membershipRoleSlugs.length > 0 ? membershipRoleSlugs : membership?.role ? [membership.role.slug] : []
+
+    const rolesBySlug = new Map(orgRoles.map((role) => [role.slug, role]))
+    const permissions = Array.from(new Set(roleSlugs.flatMap((slug) => rolesBySlug.get(slug)?.permissions ?? [])))
+
+    return {
+      organizationId,
+      role: roleSlugs[0] ?? null,
+      roles: roleSlugs,
+      permissions,
+    }
+  }
 
   /**
    * Dev login endpoint - creates/ensures in-memory auth user and registers session.
@@ -65,12 +140,12 @@ export class StubAuthService implements AuthService {
       }
     }
 
-    const match = sealedSession.match(/^test_session_(.+)$/)
-    if (!match) {
+    const session = decodeStubSession(sealedSession)
+    if (!session) {
       return { success: false, refreshed: false, reason: "invalid_session_format" }
     }
 
-    const userId = match[1]
+    const userId = session.userId
     let user = this.users.get(userId)
 
     // Auto-register from session token for cross-process stub auth.
@@ -90,7 +165,44 @@ export class StubAuthService implements AuthService {
     return {
       success: true,
       user,
+      session: {
+        organizationId: session.organizationId ?? null,
+        role: session.role ?? null,
+        roles: [...(session.roles ?? [])],
+        permissions: [...(session.permissions ?? [])],
+      },
       refreshed: false,
+    }
+  }
+
+  async refreshSession(params: { sealedSession: string; organizationId?: string }): Promise<AuthResult> {
+    const authenticated = await this.authenticateSession(params.sealedSession)
+    if (!authenticated.success || !authenticated.user) {
+      return authenticated
+    }
+
+    const organizationId = params.organizationId ?? authenticated.session?.organizationId ?? null
+    const claims: OrgSessionClaims | null = organizationId
+      ? await this.deriveOrgClaims(organizationId, authenticated.user.id)
+      : null
+
+    return {
+      success: true,
+      user: authenticated.user,
+      session: {
+        organizationId,
+        role: claims?.role ?? null,
+        roles: claims?.roles ?? [],
+        permissions: claims?.permissions ?? [],
+      },
+      sealedSession: encodeStubSession({
+        userId: authenticated.user.id,
+        organizationId,
+        role: claims?.role ?? null,
+        roles: claims?.roles ?? [],
+        permissions: claims?.permissions ?? [],
+      }),
+      refreshed: true,
     }
   }
 

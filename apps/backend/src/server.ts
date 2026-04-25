@@ -205,7 +205,9 @@ export async function startServer(): Promise<ServerInstance> {
   const avatarService = new AvatarService(storage)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
-  const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
+  const authService = config.useStubAuth
+    ? new StubAuthService({ workosOrgService })
+    : new WorkosAuthService(config.workos)
 
   // Attachment service
   const malwareScanner = createMalwareScanner(storage, config.attachments)
@@ -391,7 +393,11 @@ export async function startServer(): Promise<ServerInstance> {
   const botApiKeyService = new BotApiKeyService(pool)
 
   // Link preview service — created early for route registration
-  const workspaceIntegrationService = new WorkspaceIntegrationService({ pool, github: config.github })
+  const workspaceIntegrationService = new WorkspaceIntegrationService({
+    pool,
+    github: config.github,
+    workosOrgService,
+  })
   const linkPreviewService = new LinkPreviewService({ pool, streamService })
 
   const isProduction = process.env.NODE_ENV === "production"

@@ -32,7 +32,7 @@ export function createCommandWorker(deps: CommandWorkerDeps): JobHandler<Command
   const { pool, commandRegistry } = deps
 
   return async (job) => {
-    const { commandId, commandName, args, workspaceId, streamId, userId } = job.data
+    const { commandId, commandName, args, workspaceId, streamId, userId, source = "user_api_key" } = job.data
 
     logger.info({ jobId: job.id, commandId, commandName }, "Processing command job")
 
@@ -55,6 +55,7 @@ export function createCommandWorker(deps: CommandWorkerDeps): JobHandler<Command
       workspaceId,
       streamId,
       userId,
+      source,
       args,
     }
 

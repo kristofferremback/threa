@@ -1,10 +1,17 @@
 // Auth
 export { WorkosAuthService } from "./auth/auth-service"
-export type { AuthResult, AuthService } from "./auth/auth-service"
+export type { AuthResult, AuthService, AuthenticatedUser, AuthSessionClaims } from "./auth/auth-service"
 export { StubAuthService } from "./auth/auth-service.stub"
 export type { DevLoginResult } from "./auth/auth-service.stub"
 export { WorkosOrgServiceImpl, getWorkosErrorCode } from "./auth/workos-org-service"
-export type { WorkosOrgService, WorkosAppInvitation, WorkosUserSummary } from "./auth/workos-org-service"
+export type {
+  WorkosOrgService,
+  WorkosAppInvitation,
+  WorkosEventSummary,
+  WorkosOrganizationMembership,
+  WorkosRoleSummary,
+  WorkosUserSummary,
+} from "./auth/workos-org-service"
 export { StubWorkosOrgService } from "./auth/workos-org-service.stub"
 export { createAuthMiddleware } from "./auth/middleware"
 export { WorkosApiKeyService } from "./auth/api-key-service"
@@ -81,7 +88,7 @@ export {
   savedMessageId,
   reminderQueueId,
 } from "./id"
-export { parseCookies, SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG } from "./cookies"
+export { parseCookies, SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG, SESSION_COOKIE_CLEAR_CONFIG } from "./cookies"
 export { generateSlug, generateUniqueSlug } from "./slug"
 
 // Outbox infrastructure

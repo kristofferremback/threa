@@ -155,9 +155,11 @@ export {
 } from "./constants"
 
 // Domain entities (wire format)
-export { getAvatarUrl, getBotAvatarUrl } from "./domain"
+export { DEFAULT_WORKSPACE_ROLES, getAvatarUrl, getBotAvatarUrl } from "./domain"
 export type {
   Workspace,
+  WorkspaceRole,
+  WorkspaceRoleRef,
   User,
   WorkspaceInvitation,
   Stream,
@@ -264,6 +266,8 @@ export type {
   SendInvitationsResponse,
   InvitationSkipReason,
   CompleteUserSetupInput,
+  UpdateWorkspaceUserRoleInput,
+  WorkspaceRolesResponse,
   // Activity
   Activity,
   ActivityCreatedPayload,
@@ -298,6 +302,9 @@ export type {
   AIBudgetResponse,
   UpdateAIBudgetInput,
 } from "./api"
+
+// Internal service contracts
+export type { WorkspaceAuthzSnapshot, WorkspaceAuthzSnapshotMembership } from "./internal"
 
 // Push Notifications
 export { DEVICE_KEY_LENGTH } from "./api"
@@ -408,12 +415,18 @@ export {
 
 // API Keys
 export {
+  WORKSPACE_PERMISSION_SCOPES,
+  WORKSPACE_PERMISSIONS,
   API_KEY_SCOPES,
   API_KEY_PERMISSIONS,
   SENT_VIA_API_PREFIX,
+  filterWorkspacePermissionScopes,
+  isWorkspacePermissionScope,
   sentViaApiKey,
   isSentViaApi,
   type ApiKeyScope,
+  type WorkspacePermissionScope,
+  type WorkspacePermission,
   type ApiKeyPermission,
   type UserApiKey,
   type CreateUserApiKeyResponse,

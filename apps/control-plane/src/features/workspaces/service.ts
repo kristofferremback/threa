@@ -11,11 +11,19 @@ import {
   type WorkosOrgService,
 } from "@threa/backend-common"
 import { WorkspaceRegistryRepository } from "./repository"
+import { ControlPlaneAuthzMirrorRepository } from "./authz-mirror-repository"
+import { OUTBOX_REGIONAL_AUTHZ_SYNC } from "./authz-sync-service"
 import type { RegionalClient } from "../../lib/regional-client"
 import type { KvClient } from "../../lib/cloudflare-kv-client"
 
 export const OUTBOX_KV_SYNC = "kv_sync"
 export const OUTBOX_REGIONAL_CREATE = "regional_create"
+
+function getRoleSlugs(membership: { roles: Array<{ slug: string }>; role?: { slug: string } | null }): string[] {
+  if (membership.roles.length > 0) return membership.roles.map((r) => r.slug)
+  if (membership.role) return [membership.role.slug]
+  return []
+}
 
 interface Dependencies {
   pool: Pool
@@ -159,6 +167,7 @@ export class ControlPlaneWorkspaceService {
           userId: workosUserId,
           roleSlug: "admin",
         })
+        await this.syncAuthzSnapshotFromWorkos({ workspaceId: id, region, workosOrganizationId: orgId })
       }
     } catch (error) {
       logger.warn({ err: error, workspaceId: id }, "Failed to sync WorkOS org membership on workspace creation")
@@ -196,6 +205,36 @@ export class ControlPlaneWorkspaceService {
 
     // Re-read to get the winning org ID (handles concurrent creation race)
     return WorkspaceRegistryRepository.getWorkosOrganizationId(this.pool, workspaceId)
+  }
+
+  private async syncAuthzSnapshotFromWorkos(params: {
+    workspaceId: string
+    region: string
+    workosOrganizationId: string
+  }): Promise<void> {
+    const [roles, memberships] = await Promise.all([
+      this.workosOrgService.listRolesForOrganization(params.workosOrganizationId),
+      this.workosOrgService.listOrganizationMemberships(params.workosOrganizationId),
+    ])
+
+    await withTransaction(this.pool, async (client) => {
+      await ControlPlaneAuthzMirrorRepository.replaceSnapshot(client, {
+        workspaceId: params.workspaceId,
+        workosOrganizationId: params.workosOrganizationId,
+        roles,
+        memberships: memberships
+          .filter((membership) => membership.status === "active")
+          .map((membership) => ({
+            organizationMembershipId: membership.id,
+            workosUserId: membership.userId,
+            roleSlugs: getRoleSlugs(membership),
+          })),
+      })
+      await OutboxRepository.insert(client, OUTBOX_REGIONAL_AUTHZ_SYNC, {
+        workspaceId: params.workspaceId,
+        region: params.region,
+      })
+    })
   }
 
   /** Outbox handler: provision workspace in the regional backend */

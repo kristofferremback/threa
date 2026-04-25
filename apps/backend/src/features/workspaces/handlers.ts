@@ -12,6 +12,8 @@ import { getEffectiveLevel } from "../streams"
 import { BotRepository, serializeBot } from "../public-api"
 import { displayNameFromWorkos, type WorkosOrgService } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
+import { getWorkspacePermissions, hasWorkspacePermission } from "../../middleware/authorization"
+import { decorateUsersWithAuthzMirror } from "./user-authz-decorator"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -34,6 +36,10 @@ const updateProfileSchema = z.object({
 
 const checkSlugAvailableSchema = z.object({
   slug: z.string().min(1, "slug query parameter is required"),
+})
+
+const updateUserRoleSchema = z.object({
+  roleSlug: z.string().min(1, "roleSlug is required"),
 })
 
 export { createWorkspaceSchema }
@@ -110,28 +116,33 @@ export function createWorkspaceHandlers({
 
     async getUsers(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const users = await workspaceService.getUsers(workspaceId)
+      const users = await workspaceService.getUsersWithRoles(workspaceId)
       res.json({ users })
     },
 
     async bootstrap(req: Request, res: Response) {
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
+      const canManageMembers = hasWorkspacePermission(req, "members:write")
 
-      const [workspace, users, streams, personas, bots, emojiWeights, userPreferences, dmPeers] = await Promise.all([
-        workspaceService.getWorkspaceById(workspaceId),
-        workspaceService.getUsers(workspaceId),
-        streamService.listWithPreviews(workspaceId, userId),
-        workspaceService.getPersonasForWorkspace(workspaceId),
-        BotRepository.listByWorkspace(pool, workspaceId),
-        workspaceService.getEmojiWeights(workspaceId, userId),
-        userPreferencesService.getPreferences(workspaceId, userId),
-        streamService.listDmPeers(workspaceId, userId),
-      ])
+      const [workspace, roles, rawUsers, streams, personas, bots, emojiWeights, userPreferences, dmPeers] =
+        await Promise.all([
+          workspaceService.getWorkspaceById(workspaceId),
+          req.authz?.roles ?? workspaceService.listAssignableRoles(workspaceId),
+          workspaceService.getUsers(workspaceId),
+          streamService.listWithPreviews(workspaceId, userId),
+          workspaceService.getPersonasForWorkspace(workspaceId),
+          BotRepository.listByWorkspace(pool, workspaceId),
+          workspaceService.getEmojiWeights(workspaceId, userId),
+          userPreferencesService.getPreferences(workspaceId, userId),
+          streamService.listDmPeers(workspaceId, userId),
+        ])
 
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" })
       }
+
+      const users = await decorateUsersWithAuthzMirror(pool, workspaceId, rawUsers, { workspace, roles })
 
       // Resolve DM display names — viewer-dependent, so computed at bootstrap time
       const resolvedStreams = await streamService.resolveDmDisplayNames(streams, users, userId)
@@ -180,14 +191,15 @@ export function createWorkspaceHandlers({
         })
         .map((m) => m.streamId)
 
-      // Include invitations for admin+ members
-      const userRole = req.user!.role
-      const isAdmin = userRole === "admin" || userRole === "owner"
-      const invitations = isAdmin ? await invitationService.listInvitations(workspaceId) : undefined
+      const invitations = canManageMembers
+        ? await invitationService.listInvitations(workspaceId, undefined, roles)
+        : undefined
 
       res.json({
         data: {
           workspace,
+          viewerPermissions: getWorkspacePermissions(req),
+          roles,
           users,
           streams: resolvedStreams,
           streamMemberships,
@@ -286,6 +298,31 @@ export function createWorkspaceHandlers({
       const workspaceId = req.workspaceId!
 
       const user = await workspaceService.removeUserAvatar(userId, workspaceId)
+      res.json({ user })
+    },
+
+    async listRoles(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const roles = req.authz?.roles ?? (await workspaceService.listAssignableRoles(workspaceId))
+      res.json({ roles })
+    },
+
+    async updateUserRole(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const { userId } = req.params
+
+      const result = updateUserRoleSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const user = await workspaceService.updateUserRole(workspaceId, userId, result.data.roleSlug, {
+        actorPermissions: req.authz!.permissions,
+        roles: req.authz?.roles,
+      })
       res.json({ user })
     },
 

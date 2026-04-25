@@ -6,7 +6,7 @@ import {
   MESSAGE_METADATA_MAX_KEY_LENGTH,
   MESSAGE_METADATA_MAX_VALUE_LENGTH,
   MESSAGE_METADATA_RESERVED_PREFIX,
-} from "./metadata-schema"
+} from "../messaging-metadata"
 
 describe("messageMetadataSchema (create)", () => {
   test("accepts a typical external reference map", () => {

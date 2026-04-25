@@ -13,6 +13,7 @@ export class ControlPlaneClient {
     id: string
     workspaceId: string
     email: string
+    roleSlug: string
     region: string
     expiresAt: Date
     inviterWorkosUserId?: string

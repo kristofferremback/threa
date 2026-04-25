@@ -4,6 +4,7 @@ export interface InvitationShadowRow {
   id: string
   workspace_id: string
   email: string
+  role_slug: string
   region: string
   status: string
   workos_invitation_id: string | null
@@ -19,7 +20,7 @@ export interface PendingInvitationRow {
   expires_at: Date
 }
 
-const SELECT_FIELDS = `id, workspace_id, email, region, status, workos_invitation_id, inviter_workos_user_id, created_at, expires_at`
+const SELECT_FIELDS = `id, workspace_id, email, role_slug, region, status, workos_invitation_id, inviter_workos_user_id, created_at, expires_at`
 
 export const InvitationShadowRepository = {
   async findById(db: Querier, id: string): Promise<InvitationShadowRow | null> {
@@ -48,15 +49,17 @@ export const InvitationShadowRepository = {
       id: string
       workspaceId: string
       email: string
+      roleSlug: string
       region: string
       expiresAt: Date
       inviterWorkosUserId?: string
     }
   ): Promise<InvitationShadowRow> {
     const result = await db.query<InvitationShadowRow>(
-      `INSERT INTO invitation_shadows (id, workspace_id, email, region, expires_at, inviter_workos_user_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO invitation_shadows (id, workspace_id, email, role_slug, region, expires_at, inviter_workos_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (id) DO UPDATE SET
+         role_slug = EXCLUDED.role_slug,
          expires_at = EXCLUDED.expires_at,
          inviter_workos_user_id = COALESCE(EXCLUDED.inviter_workos_user_id, invitation_shadows.inviter_workos_user_id)
        RETURNING ${SELECT_FIELDS}`,
@@ -64,6 +67,7 @@ export const InvitationShadowRepository = {
         shadow.id,
         shadow.workspaceId,
         shadow.email.toLowerCase(),
+        shadow.roleSlug,
         shadow.region,
         shadow.expiresAt,
         shadow.inviterWorkosUserId ?? null,

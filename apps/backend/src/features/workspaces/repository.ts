@@ -90,6 +90,25 @@ export const WorkspaceRepository = {
     return result.rows[0]?.workos_organization_id ?? null
   },
 
+  async getAuthorizationMetadata(
+    db: Querier,
+    workspaceId: string
+  ): Promise<{ createdBy: string; workosOrganizationId: string | null } | null> {
+    const result = await db.query<{ created_by: string; workos_organization_id: string | null }>(sql`
+      SELECT created_by, workos_organization_id
+      FROM workspaces
+      WHERE id = ${workspaceId}
+    `)
+    const row = result.rows[0]
+    if (!row) {
+      return null
+    }
+    return {
+      createdBy: row.created_by,
+      workosOrganizationId: row.workos_organization_id,
+    }
+  },
+
   async setWorkosOrganizationId(db: Querier, workspaceId: string, orgId: string): Promise<void> {
     await db.query(sql`
       UPDATE workspaces SET workos_organization_id = ${orgId} WHERE id = ${workspaceId}

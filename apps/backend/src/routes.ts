@@ -5,7 +5,7 @@ import { createWorkspaceUserMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware, createAvatarUploadMiddleware } from "./middleware/upload"
 import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-limit"
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
-import { requireRole } from "./middleware/authorization"
+import { requireWorkspacePermission } from "./middleware/authorization"
 import { createAuthHandlers } from "./auth/handlers"
 import { createWorkspaceHandlers, WorkspaceRepository } from "./features/workspaces"
 import { createStreamHandlers } from "./features/streams"
@@ -131,7 +131,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   } = deps
 
   const auth = createAuthMiddleware({ authService })
-  const workspaceUser = createWorkspaceUserMiddleware({ pool })
+  const workspaceUser = createWorkspaceUserMiddleware({ pool, authService })
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceUser]
@@ -166,10 +166,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const invitation = createInvitationHandlers({ invitationService })
   const activity = createActivityHandlers({ activityService })
   const savedMessages = createSavedMessagesHandlers({ savedMessagesService })
-  const agentSession = createAgentSessionHandlers({ pool })
+  const agentSession = createAgentSessionHandlers({ pool, streamService })
   const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
   const workspaceIntegration = createWorkspaceIntegrationHandlers({
     workspaceIntegrationService,
+    authService,
+    pool,
     allowedFrontendOrigins: corsAllowedOrigins,
   })
 
@@ -185,6 +187,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     app.post("/internal/workspaces", internalAuth, internal.createWorkspace)
     app.post("/internal/invitations/:id/accept", internalAuth, internal.acceptInvitation)
+    app.put("/internal/workspaces/:workspaceId/authz-snapshot", internalAuth, internal.applyWorkspaceAuthzSnapshot)
   }
 
   // Global baseline rate limit
@@ -220,20 +223,30 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces", auth, workspace.create)
   app.get("/api/workspaces/:workspaceId", ...authed, workspace.get)
   app.get("/api/workspaces/:workspaceId/bootstrap", ...authed, workspace.bootstrap)
-  app.get("/api/workspaces/:workspaceId/users", ...authed, workspace.getUsers)
+  app.get("/api/workspaces/:workspaceId/users", ...authed, requireWorkspacePermission("users:read"), workspace.getUsers)
   app.get("/api/workspaces/:workspaceId/emojis", ...authed, emoji.list)
 
   // User preferences
   app.get("/api/workspaces/:workspaceId/preferences", ...authed, preferences.get)
   app.patch("/api/workspaces/:workspaceId/preferences", ...authed, preferences.update)
 
-  app.get("/api/workspaces/:workspaceId/streams", ...authed, stream.list)
+  app.get("/api/workspaces/:workspaceId/streams", ...authed, requireWorkspacePermission("streams:read"), stream.list)
   app.post("/api/workspaces/:workspaceId/streams", ...authed, stream.create)
   app.post("/api/workspaces/:workspaceId/streams/read-all", ...authed, workspace.markAllAsRead)
   app.get("/api/workspaces/:workspaceId/streams/slug-available", ...authed, stream.checkSlugAvailable)
-  app.get("/api/workspaces/:workspaceId/streams/:streamId", ...authed, stream.get)
+  app.get(
+    "/api/workspaces/:workspaceId/streams/:streamId",
+    ...authed,
+    requireWorkspacePermission("streams:read"),
+    stream.get
+  )
   app.patch("/api/workspaces/:workspaceId/streams/:streamId", ...authed, stream.update)
-  app.get("/api/workspaces/:workspaceId/streams/:streamId/bootstrap", ...authed, stream.bootstrap)
+  app.get(
+    "/api/workspaces/:workspaceId/streams/:streamId/bootstrap",
+    ...authed,
+    requireWorkspacePermission("messages:read"),
+    stream.bootstrap
+  )
   app.patch("/api/workspaces/:workspaceId/streams/:streamId/companion", ...authed, stream.updateCompanionMode)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/pin", ...authed, stream.pin)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/notification-level", ...authed, stream.setNotificationLevel)
@@ -241,28 +254,113 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/streams/:streamId/read", ...authed, stream.markAsRead)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", ...authed, stream.archive)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/unarchive", ...authed, stream.unarchive)
-  app.post("/api/workspaces/:workspaceId/streams/:streamId/members", ...authed, stream.addMember)
-  app.delete("/api/workspaces/:workspaceId/streams/:streamId/members/:memberId", ...authed, stream.removeMember)
+  app.post(
+    "/api/workspaces/:workspaceId/streams/:streamId/members",
+    ...authed,
+    requireWorkspacePermission("members:write"),
+    stream.addMember
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/streams/:streamId/members/:memberId",
+    ...authed,
+    requireWorkspacePermission("members:write"),
+    stream.removeMember
+  )
 
-  app.get("/api/workspaces/:workspaceId/streams/:streamId/events", ...authed, stream.listEvents)
-  app.get("/api/workspaces/:workspaceId/streams/:streamId/events/around", ...authed, stream.listEventsAround)
+  app.get(
+    "/api/workspaces/:workspaceId/streams/:streamId/events",
+    ...authed,
+    requireWorkspacePermission("messages:read"),
+    stream.listEvents
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/streams/:streamId/events/around",
+    ...authed,
+    requireWorkspacePermission("messages:read"),
+    stream.listEventsAround
+  )
 
   // Search
-  app.post("/api/workspaces/:workspaceId/search", ...authed, rateLimits.search, search.search)
-  app.post("/api/workspaces/:workspaceId/memos/search", ...authed, rateLimits.search, memo.search)
-  app.get("/api/workspaces/:workspaceId/memos/:memoId", ...authed, memo.getById)
+  app.post(
+    "/api/workspaces/:workspaceId/search",
+    ...authed,
+    requireWorkspacePermission("messages:search"),
+    rateLimits.search,
+    search.search
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/memos/search",
+    ...authed,
+    requireWorkspacePermission("memos:read"),
+    rateLimits.search,
+    memo.search
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/memos/:memoId",
+    ...authed,
+    requireWorkspacePermission("memos:read"),
+    memo.getById
+  )
 
-  app.post("/api/workspaces/:workspaceId/messages", ...authed, rateLimits.messageCreate, message.create)
-  app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
-  app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
-  app.get("/api/workspaces/:workspaceId/messages/:messageId/versions", ...authed, message.getHistory)
-  app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", ...authed, message.addReaction)
-  app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", ...authed, message.removeReaction)
+  app.post(
+    "/api/workspaces/:workspaceId/messages",
+    ...authed,
+    requireWorkspacePermission("messages:write"),
+    rateLimits.messageCreate,
+    message.create
+  )
+  app.patch(
+    "/api/workspaces/:workspaceId/messages/:messageId",
+    ...authed,
+    requireWorkspacePermission("messages:write"),
+    message.update
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/messages/:messageId",
+    ...authed,
+    requireWorkspacePermission("messages:write"),
+    message.delete
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/messages/:messageId/versions",
+    ...authed,
+    requireWorkspacePermission("messages:read"),
+    message.getHistory
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/messages/:messageId/reactions",
+    ...authed,
+    requireWorkspacePermission("messages:write"),
+    message.addReaction
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji",
+    ...authed,
+    requireWorkspacePermission("messages:write"),
+    message.removeReaction
+  )
 
   // Attachments (workspace-scoped upload, stream assigned on message creation)
-  app.post("/api/workspaces/:workspaceId/attachments", ...authed, rateLimits.upload, upload, attachment.upload)
-  app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
-  app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
+  app.post(
+    "/api/workspaces/:workspaceId/attachments",
+    ...authed,
+    requireWorkspacePermission("messages:write"),
+    rateLimits.upload,
+    upload,
+    attachment.upload
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/attachments/:attachmentId/url",
+    ...authed,
+    requireWorkspacePermission("attachments:read"),
+    attachment.getDownloadUrl
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/attachments/:attachmentId",
+    ...authed,
+    requireWorkspacePermission("messages:write"),
+    attachment.delete
+  )
 
   // Conversations
   app.get("/api/workspaces/:workspaceId/streams/:streamId/conversations", ...authed, conversation.listByStream)
@@ -274,18 +372,40 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
 
   // Invitations (admin+ only)
-  app.get("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.list)
-  app.post("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.send)
+  app.get(
+    "/api/workspaces/:workspaceId/invitations",
+    ...authed,
+    requireWorkspacePermission("members:write"),
+    invitation.list
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/invitations",
+    ...authed,
+    requireWorkspacePermission("members:write"),
+    invitation.send
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/roles",
+    ...authed,
+    requireWorkspacePermission("members:write"),
+    workspace.listRoles
+  )
+  app.patch(
+    "/api/workspaces/:workspaceId/users/:userId/role",
+    ...authed,
+    requireWorkspacePermission("members:write"),
+    workspace.updateUserRole
+  )
   app.post(
     "/api/workspaces/:workspaceId/invitations/:invitationId/revoke",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("members:write"),
     invitation.revoke
   )
   app.post(
     "/api/workspaces/:workspaceId/invitations/:invitationId/resend",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("members:write"),
     invitation.resend
   )
 
@@ -305,7 +425,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
-  app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, requireRole("admin"), aiUsage.updateBudget)
+  app.put(
+    "/api/workspaces/:workspaceId/ai-budget",
+    ...authed,
+    requireWorkspacePermission("workspace:admin"),
+    aiUsage.updateBudget
+  )
 
   // Activity feed
   app.get("/api/workspaces/:workspaceId/activity", ...authed, activity.list)
@@ -327,7 +452,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/push/cleanup-endpoint", auth, push.cleanupEndpoint)
 
   // Agent Sessions (trace viewing)
-  app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
+  app.get(
+    "/api/workspaces/:workspaceId/agent-sessions/:sessionId",
+    ...authed,
+    requireWorkspacePermission("messages:read"),
+    agentSession.getSession
+  )
 
   // Link Previews
   app.get("/api/workspaces/:workspaceId/messages/:messageId/link-previews", ...authed, linkPreview.getForMessage)
@@ -346,19 +476,19 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get(
     "/api/workspaces/:workspaceId/integrations/github",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     workspaceIntegration.getGithub
   )
   app.get(
     "/api/workspaces/:workspaceId/integrations/github/connect",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     workspaceIntegration.connectGithub
   )
   app.delete(
     "/api/workspaces/:workspaceId/integrations/github",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     workspaceIntegration.disconnectGithub
   )
 
@@ -374,30 +504,60 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Bot management (admin-only)
   const botHandlers = createBotHandlers({ botApiKeyService, avatarService, streamService, pool })
   app.get("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.list)
-  app.post("/api/workspaces/:workspaceId/bots", ...authed, requireRole("admin"), botHandlers.create)
+  app.post(
+    "/api/workspaces/:workspaceId/bots",
+    ...authed,
+    requireWorkspacePermission("workspace:admin"),
+    botHandlers.create
+  )
   app.get("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.get)
-  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, requireRole("admin"), botHandlers.update)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, requireRole("admin"), botHandlers.archive)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, requireRole("admin"), botHandlers.restore)
-  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.listKeys)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.createKey)
+  app.patch(
+    "/api/workspaces/:workspaceId/bots/:botId",
+    ...authed,
+    requireWorkspacePermission("workspace:admin"),
+    botHandlers.update
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/archive",
+    ...authed,
+    requireWorkspacePermission("workspace:admin"),
+    botHandlers.archive
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/restore",
+    ...authed,
+    requireWorkspacePermission("workspace:admin"),
+    botHandlers.restore
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/bots/:botId/keys",
+    ...authed,
+    requireWorkspacePermission("workspace:admin"),
+    botHandlers.listKeys
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/keys",
+    ...authed,
+    requireWorkspacePermission("workspace:admin"),
+    botHandlers.createKey
+  )
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/keys/:keyId/revoke",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     botHandlers.revokeKey
   )
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/avatar",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     avatarUpload,
     botHandlers.uploadAvatar
   )
   app.delete(
     "/api/workspaces/:workspaceId/bots/:botId/avatar",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     botHandlers.removeAvatar
   )
   // Bot avatar serving (unauthenticated — S3 keys contain unguessable ULIDs)
@@ -406,26 +566,26 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get(
     "/api/workspaces/:workspaceId/bots/:botId/streams",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     botHandlers.listStreamGrants
   )
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     botHandlers.grantStreamAccess
   )
   app.delete(
     "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     botHandlers.revokeStreamAccess
   )
   // Stream → bots reverse lookup (admin-only)
   app.get(
     "/api/workspaces/:workspaceId/streams/:streamId/bots",
     ...authed,
-    requireRole("admin"),
+    requireWorkspacePermission("workspace:admin"),
     botHandlers.listStreamBots
   )
 

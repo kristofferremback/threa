@@ -8,6 +8,7 @@ const sendInvitationsSchema = z.object({
     .min(1, "At least one email is required")
     .max(20, "Maximum 20 emails per request"),
   role: z.enum(["admin", "user"]).optional().default("user"),
+  roleSlug: z.string().min(1).optional(),
 })
 
 interface Dependencies {
@@ -29,12 +30,16 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
       }
 
       const { emails, role } = result.data
+      const roleSlug = result.data.roleSlug ?? (role === "admin" ? "admin" : "member")
 
       const sendResult = await invitationService.sendInvitations({
         workspaceId,
         invitedBy: userId,
         emails,
         role,
+        roleSlug,
+        actorPermissions: req.authz!.permissions,
+        roles: req.authz?.roles,
       })
 
       res.status(201).json(sendResult)
@@ -65,7 +70,10 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
       const workspaceId = req.workspaceId!
       const { invitationId } = req.params
 
-      const invitation = await invitationService.resendInvitation(invitationId, workspaceId)
+      const invitation = await invitationService.resendInvitation(invitationId, workspaceId, {
+        actorPermissions: req.authz!.permissions,
+        roles: req.authz?.roles,
+      })
 
       if (!invitation) {
         return res.status(404).json({ error: "Invitation not found or not pending" })

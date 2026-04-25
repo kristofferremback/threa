@@ -86,6 +86,7 @@ describe("workspace store cache subscriptions", () => {
           emojis: [{ shortcode: "wave", emoji: "👋", type: "native", group: "people", order: 0, aliases: [] }],
           emojiWeights: {},
           commands: [],
+          viewerPermissions: ["streams:read"],
           _cachedAt: Date.now(),
         },
       })

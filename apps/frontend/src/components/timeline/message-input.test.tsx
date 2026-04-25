@@ -7,7 +7,6 @@ import { useState } from "react"
 import * as contextsModule from "@/contexts"
 import * as hooksModule from "@/hooks"
 import * as workspaceStoreModule from "@/stores/workspace-store"
-import * as authModule from "@/auth"
 import * as quoteReplyModule from "./quote-reply-context"
 import * as composerModule from "@/components/composer"
 import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
@@ -126,10 +125,9 @@ beforeEach(() => {
   vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockReturnValue(
     [] as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceStreams>
   )
-  vi.spyOn(workspaceStoreModule, "useWorkspaceUsers").mockReturnValue(
-    [] as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceUsers>
+  vi.spyOn(workspaceStoreModule, "useWorkspaceMetadata").mockReturnValue(
+    undefined as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceMetadata>
   )
-  vi.spyOn(authModule, "useUser").mockReturnValue(null as unknown as ReturnType<typeof authModule.useUser>)
   vi.spyOn(hooksModule, "useStreamBootstrap").mockReturnValue({
     data: undefined,
   } as unknown as ReturnType<typeof hooksModule.useStreamBootstrap>)

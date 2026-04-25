@@ -6,6 +6,7 @@ import { OutboxRepository } from "../../lib/outbox"
 import { serializeBigInt } from "@threa/backend-common"
 import { logger } from "../../lib/logger"
 import type { AvatarService } from "./avatar-service"
+import { decorateUserWithAuthzMirror } from "./user-authz-decorator"
 
 export class AvatarProcessingService {
   private pool: Pool
@@ -51,9 +52,10 @@ export class AvatarProcessingService {
         variantsUsed = true
         const fullUser = await UserRepository.findById(client, workspaceId, userId)
         if (fullUser) {
+          const decoratedUser = await decorateUserWithAuthzMirror(client, workspaceId, fullUser)
           await OutboxRepository.insert(client, "workspace_user:updated", {
             workspaceId,
-            user: serializeBigInt(fullUser),
+            user: serializeBigInt(decoratedUser),
           })
         }
       } else {

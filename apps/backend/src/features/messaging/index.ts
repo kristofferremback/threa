@@ -22,10 +22,6 @@ export type {
   RemoveReactionParams,
 } from "./event-service"
 
-// Handlers
-export { createMessageHandlers } from "./handlers"
-export { createMessageSchema, updateMessageSchema, addReactionSchema } from "./handlers"
-
 // Metadata
 export {
   messageMetadataSchema,
@@ -35,4 +31,8 @@ export {
   MESSAGE_METADATA_MAX_VALUE_LENGTH,
   MESSAGE_METADATA_MAX_SERIALIZED_BYTES,
   MESSAGE_METADATA_RESERVED_PREFIX,
-} from "./metadata-schema"
+} from "../messaging-metadata"
+
+// Handlers
+export { createMessageHandlers } from "./handlers"
+export { createMessageSchema, updateMessageSchema, addReactionSchema } from "./handlers"
