@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react"
+import { forwardRef, useImperativeHandle, useRef } from "react"
 import { useZoomPan } from "@/hooks/use-zoom-pan"
 
 export interface ZoomableImageHandle {
@@ -11,6 +11,9 @@ interface ZoomableImageProps {
   src: string
   alt: string
   onZoomChange?: (zoomed: boolean) => void
+  /** Fires synchronously on every scale change (including 60fps during pinch).
+   *  Subscribers should be self-contained — using this to drive parent state
+   *  defeats the ref-based fanout pattern. */
   onScaleChange?: (scale: number) => void
 }
 
@@ -21,15 +24,12 @@ export const ZoomableImage = forwardRef<ZoomableImageHandle, ZoomableImageProps>
   const containerRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
 
-  const { isZoomed, scale, zoomIn, zoomOut, reset } = useZoomPan({
+  const { isZoomed, zoomIn, zoomOut, reset } = useZoomPan({
     containerRef,
     contentRef: imgRef,
     onZoomChange,
+    onScaleChange,
   })
-
-  useEffect(() => {
-    onScaleChange?.(scale)
-  }, [scale, onScaleChange])
 
   useImperativeHandle(
     ref,

@@ -9,6 +9,9 @@ interface UseZoomPanOptions {
   containerRef: RefObject<HTMLElement | null>
   contentRef: RefObject<HTMLElement | null>
   onZoomChange?: (zoomed: boolean) => void
+  /** Called synchronously inside `commit` whenever scale changes.
+   *  Avoids a React-state cascade through the parent during pinch (60fps). */
+  onScaleChange?: (scale: number) => void
 }
 
 interface ZoomPanState {
@@ -70,7 +73,7 @@ export function fitContain(
 
 const TRANSITION_EASE = "transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)"
 
-export function useZoomPan({ containerRef, contentRef, onZoomChange }: UseZoomPanOptions) {
+export function useZoomPan({ containerRef, contentRef, onZoomChange, onScaleChange }: UseZoomPanOptions) {
   const stateRef = useRef<ZoomPanState>(IDENTITY)
   const containerSizeRef = useRef({ w: 0, h: 0 })
   const baseSizeRef = useRef({ w: 0, h: 0 })
@@ -78,10 +81,11 @@ export function useZoomPan({ containerRef, contentRef, onZoomChange }: UseZoomPa
   const isZoomedRef = useRef(false)
 
   const [isZoomed, setIsZoomed] = useState(false)
-  const [scale, setScale] = useState(1)
 
   const onZoomChangeRef = useRef(onZoomChange)
   onZoomChangeRef.current = onZoomChange
+  const onScaleChangeRef = useRef(onScaleChange)
+  onScaleChangeRef.current = onScaleChange
 
   const applyTransform = useCallback(
     (transition?: boolean) => {
@@ -97,6 +101,7 @@ export function useZoomPan({ containerRef, contentRef, onZoomChange }: UseZoomPa
 
   const commit = useCallback(
     (next: ZoomPanState, opts?: { transition?: boolean }) => {
+      const prevScale = stateRef.current.scale
       const clamped = clampTranslate(
         next,
         containerSizeRef.current.w,
@@ -119,7 +124,9 @@ export function useZoomPan({ containerRef, contentRef, onZoomChange }: UseZoomPa
         setIsZoomed(zoomed)
         onZoomChangeRef.current?.(zoomed)
       }
-      setScale(clamped.scale)
+      // Synchronous fanout — subscribers (e.g. ZoomControls) update without
+      // pulling the gallery through a React-state cascade at 60fps.
+      if (clamped.scale !== prevScale) onScaleChangeRef.current?.(clamped.scale)
     },
     [applyTransform]
   )
@@ -199,15 +206,22 @@ export function useZoomPan({ containerRef, contentRef, onZoomChange }: UseZoomPa
     if (!container) return
 
     function onWheel(e: WheelEvent) {
+      // Normalise to pixels so line-mode and page-mode mice don't make a single
+      // scroll notch jump from 1× straight to ZOOM_MAX (or pan only 1–3 px).
+      // Line height ≈ 16px, page ≈ a viewport.
+      let pxPerUnit = 1
+      if (e.deltaMode === 1) pxPerUnit = 16
+      else if (e.deltaMode === 2) pxPerUnit = container!.clientHeight
+      const dxPx = e.deltaX * pxPerUnit
+      const dyPx = e.deltaY * pxPerUnit
+
       const zoomIntent = e.ctrlKey || e.metaKey
       if (zoomIntent) {
         e.preventDefault()
         const rect = container!.getBoundingClientRect()
         const localX = e.clientX - rect.left
         const localY = e.clientY - rect.top
-        // deltaMode 0 = pixels, 1 = lines, 2 = pages. Trackpad pinch = pixels.
-        const intensity = e.deltaMode === 0 ? 0.01 : 0.3
-        const factor = Math.exp(-e.deltaY * intensity)
+        const factor = Math.exp(-dyPx * 0.01)
         const current = stateRef.current
         const target = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, current.scale * factor))
         if (target === current.scale) return
@@ -217,7 +231,7 @@ export function useZoomPan({ containerRef, contentRef, onZoomChange }: UseZoomPa
       } else if (isZoomedRef.current) {
         e.preventDefault()
         const current = stateRef.current
-        commit({ scale: current.scale, tx: current.tx - e.deltaX, ty: current.ty - e.deltaY })
+        commit({ scale: current.scale, tx: current.tx - dxPx, ty: current.ty - dyPx })
       }
       // Not zoomed + no modifier: let the browser do nothing (dialog has nothing to scroll).
     }
@@ -445,7 +459,6 @@ export function useZoomPan({ containerRef, contentRef, onZoomChange }: UseZoomPa
 
   return {
     isZoomed,
-    scale,
     zoomIn,
     zoomOut,
     reset,

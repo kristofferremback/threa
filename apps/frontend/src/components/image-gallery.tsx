@@ -199,11 +199,24 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
   // Zoom/pan state for the current slide. Only reflects the active image.
   const zoomableRef = useRef<ZoomableImageHandle>(null)
   const [isZoomed, setIsZoomed] = useState(false)
-  const [zoomScale, setZoomScale] = useState(1)
   // Ref mirror so touch handlers (which avoid re-rendering during gestures) can
   // read the current zoom state without stale closures.
   const isZoomedRef = useRef(false)
   isZoomedRef.current = isZoomed
+
+  // Pub/sub for scale so the percent display in ZoomControls can update at
+  // 60fps during pinch without re-rendering this component (PR #384 pattern:
+  // refs during gesture, React state only on commit).
+  const scaleListenersRef = useRef<Set<(scale: number) => void>>(new Set())
+  const publishScale = useCallback((scale: number) => {
+    for (const cb of scaleListenersRef.current) cb(scale)
+  }, [])
+  const subscribeScale = useCallback((cb: (scale: number) => void) => {
+    scaleListenersRef.current.add(cb)
+    return () => {
+      scaleListenersRef.current.delete(cb)
+    }
+  }, [])
 
   // Touch gesture state (all refs — no setState during active gesture)
   const touchStartX = useRef(0)
@@ -528,7 +541,7 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
     <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
       {!isMobile && current?.type === "image" && (
         <ZoomControls
-          scale={zoomScale}
+          subscribeScale={subscribeScale}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onReset={handleZoomReset}
@@ -646,7 +659,7 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
                           isActive={Math.abs(i - currentIndex) <= 1}
                           zoomableRef={i === currentIndex && item.type === "image" ? zoomableRef : undefined}
                           onZoomChange={i === currentIndex && item.type === "image" ? setIsZoomed : undefined}
-                          onScaleChange={i === currentIndex && item.type === "image" ? setZoomScale : undefined}
+                          onScaleChange={i === currentIndex && item.type === "image" ? publishScale : undefined}
                         />
                       </div>
                     ))}
@@ -672,7 +685,7 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
                     current={current}
                     zoomableRef={current.type === "image" ? zoomableRef : undefined}
                     onZoomChange={current.type === "image" ? setIsZoomed : undefined}
-                    onScaleChange={current.type === "image" ? setZoomScale : undefined}
+                    onScaleChange={current.type === "image" ? publishScale : undefined}
                   />
                 </div>
 

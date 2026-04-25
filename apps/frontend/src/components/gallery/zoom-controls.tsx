@@ -1,17 +1,23 @@
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react"
 import { ZOOM_MIN, ZOOM_MAX } from "@/hooks/use-zoom-pan"
 import { cn } from "@/lib/utils"
 
 interface ZoomControlsProps {
-  scale: number
+  /** Subscribe to scale updates. Returns an unsubscribe fn. The component owns
+   *  its scale state locally so 60fps pinch updates don't re-render the gallery. */
+  subscribeScale: (cb: (scale: number) => void) => () => void
   onZoomIn: () => void
   onZoomOut: () => void
   onReset: () => void
   className?: string
 }
 
-export function ZoomControls({ scale, onZoomIn, onZoomOut, onReset, className }: ZoomControlsProps) {
+export function ZoomControls({ subscribeScale, onZoomIn, onZoomOut, onReset, className }: ZoomControlsProps) {
+  const [scale, setScale] = useState(1)
+  useEffect(() => subscribeScale(setScale), [subscribeScale])
+
   const canZoomIn = scale < ZOOM_MAX - 1e-3
   const canZoomOut = scale > ZOOM_MIN + 1e-3
   const percent = Math.round(scale * 100)

@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest"
-import { clampTranslate, fitContain, zoomToPoint } from "./use-zoom-pan"
+import { describe, it, expect, vi } from "vitest"
+import { act, renderHook } from "@testing-library/react"
+import { useRef } from "react"
+import { clampTranslate, fitContain, useZoomPan, zoomToPoint, ZOOM_MAX, ZOOM_STEP } from "./use-zoom-pan"
 
 describe("fitContain", () => {
   it("returns zeros for degenerate inputs", () => {
@@ -37,10 +39,7 @@ describe("zoomToPoint", () => {
     // Start at identity, zoom 1→2 toward point (100, 0) from center.
     // After zoom, the image-local point that was under (100, 0) must still be under (100, 0).
     // Formula: tx' = px*(1-k) + tx*k = 100*(1-2) + 0*2 = -100.
-    const next = zoomToPoint({ scale: 1, tx: 0, ty: 0 }, 2, 100, 0)
-    expect(next.scale).toBe(2)
-    expect(next.tx).toBe(-100)
-    expect(next.ty).toBe(0)
+    expect(zoomToPoint({ scale: 1, tx: 0, ty: 0 }, 2, 100, 0)).toEqual({ scale: 2, tx: -100, ty: 0 })
   })
 
   it("consecutive zoom-to-point calls compose correctly", () => {
@@ -97,5 +96,106 @@ describe("clampTranslate", () => {
   it("preserves scale through clamping", () => {
     const next = clampTranslate({ scale: 3.7, tx: 0, ty: 0 }, base.containerW, base.containerH, base.baseW, base.baseH)
     expect(next.scale).toBe(3.7)
+  })
+})
+
+/**
+ * Wires up the hook with a real container div + img, mocked to a known size so
+ * the zoom math operates on stable bounds. jsdom does not lay out, so we have
+ * to spoof clientWidth/Height and naturalWidth/Height directly.
+ */
+function renderZoomPanHarness(opts?: { onZoomChange?: (z: boolean) => void; onScaleChange?: (s: number) => void }) {
+  const container = document.createElement("div")
+  const img = document.createElement("img")
+  Object.defineProperty(container, "clientWidth", { value: 400, configurable: true })
+  Object.defineProperty(container, "clientHeight", { value: 200, configurable: true })
+  Object.defineProperty(img, "naturalWidth", { value: 800, configurable: true })
+  Object.defineProperty(img, "naturalHeight", { value: 400, configurable: true })
+  Object.defineProperty(img, "complete", { value: true, configurable: true })
+  document.body.appendChild(container)
+  container.appendChild(img)
+
+  const result = renderHook(() => {
+    const containerRef = useRef<HTMLDivElement | null>(container)
+    const contentRef = useRef<HTMLImageElement | null>(img)
+    return useZoomPan({ containerRef, contentRef, ...opts })
+  })
+
+  return {
+    ...result,
+    img,
+    container,
+    cleanup: () => {
+      container.remove()
+    },
+  }
+}
+
+describe("useZoomPan (integration)", () => {
+  it("starts unzoomed and applies identity transform", () => {
+    const harness = renderZoomPanHarness()
+    expect(harness.result.current.isZoomed).toBe(false)
+    // Transform may be empty before any commit fires; either way it's effectively identity.
+    expect(harness.img.style.transform === "" || harness.img.style.transform.includes("scale(1)")).toBe(true)
+    harness.cleanup()
+  })
+
+  it("zoomIn flips isZoomed and writes a scaled transform onto the image", () => {
+    const onZoomChange = vi.fn()
+    const harness = renderZoomPanHarness({ onZoomChange })
+
+    act(() => harness.result.current.zoomIn())
+
+    expect(harness.result.current.isZoomed).toBe(true)
+    expect(onZoomChange).toHaveBeenCalledWith(true)
+    expect(harness.img.style.transform).toContain(`scale(${ZOOM_STEP})`)
+    harness.cleanup()
+  })
+
+  it("publishes scale synchronously to onScaleChange (no React state hop)", () => {
+    const onScaleChange = vi.fn()
+    const harness = renderZoomPanHarness({ onScaleChange })
+
+    act(() => harness.result.current.zoomIn())
+
+    expect(onScaleChange).toHaveBeenCalledWith(ZOOM_STEP)
+    harness.cleanup()
+  })
+
+  it("reset returns to identity and re-fires onZoomChange(false)", () => {
+    const onZoomChange = vi.fn()
+    const harness = renderZoomPanHarness({ onZoomChange })
+
+    act(() => harness.result.current.zoomIn())
+    onZoomChange.mockClear()
+    act(() => harness.result.current.reset())
+
+    expect(harness.result.current.isZoomed).toBe(false)
+    expect(onZoomChange).toHaveBeenCalledWith(false)
+    expect(harness.img.style.transform).toContain("scale(1)")
+    harness.cleanup()
+  })
+
+  it("zoomOut from identity is a no-op (clamped at ZOOM_MIN)", () => {
+    const onScaleChange = vi.fn()
+    const harness = renderZoomPanHarness({ onScaleChange })
+
+    act(() => harness.result.current.zoomOut())
+
+    expect(harness.result.current.isZoomed).toBe(false)
+    expect(onScaleChange).not.toHaveBeenCalled()
+    harness.cleanup()
+  })
+
+  it("repeated zoomIn caps at ZOOM_MAX", () => {
+    const onScaleChange = vi.fn()
+    const harness = renderZoomPanHarness({ onScaleChange })
+
+    // ZOOM_STEP=1.5, ZOOM_MAX=8 → ceil(log_1.5(8)) = 6 steps suffices.
+    for (let i = 0; i < 10; i++) act(() => harness.result.current.zoomIn())
+
+    const lastScale = onScaleChange.mock.calls.at(-1)?.[0]
+    expect(lastScale).toBe(ZOOM_MAX)
+    harness.cleanup()
   })
 })
