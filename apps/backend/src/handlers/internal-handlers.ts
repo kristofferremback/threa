@@ -1,11 +1,6 @@
 import type { Request, Response } from "express"
 import { z } from "zod"
-import {
-  WORKSPACE_PERMISSION_SCOPES,
-  type WorkspaceAuthzSnapshot,
-  type WorkspacePermissionScope,
-  type WorkspaceRole,
-} from "@threa/types"
+import { filterWorkspacePermissionScopes, type WorkspaceAuthzSnapshot, type WorkspaceRole } from "@threa/types"
 import { HttpError } from "../lib/errors"
 import type { WorkspaceService } from "../features/workspaces"
 import type { InvitationService } from "../features/invitations"
@@ -25,15 +20,11 @@ const acceptInvitationSchema = z.object({
   name: z.string().min(1),
 })
 
-const workspacePermissionScopeSchema = z.enum(
-  Object.values(WORKSPACE_PERMISSION_SCOPES) as [WorkspacePermissionScope, ...WorkspacePermissionScope[]]
-)
-
 const workspaceRoleSchema: z.ZodType<WorkspaceRole> = z.object({
   slug: z.string().min(1),
   name: z.string().min(1),
   description: z.string().nullable(),
-  permissions: z.array(workspacePermissionScopeSchema),
+  permissions: z.array(z.string()).transform(filterWorkspacePermissionScopes),
   type: z.string().min(1),
 })
 

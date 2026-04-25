@@ -1,5 +1,5 @@
 import { WorkOS } from "@workos-inc/node"
-import type { WorkspacePermissionScope } from "@threa/types"
+import { filterWorkspacePermissionScopes, type WorkspacePermissionScope } from "@threa/types"
 import { logger } from "../logger"
 import type { WorkosConfig } from "./types"
 
@@ -304,7 +304,7 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
         slug: string
         name: string
         description: string | null
-        permissions: WorkspacePermissionScope[]
+        permissions: string[]
         type: string
       }>
     }>("GET", `/authorization/organizations/${organizationId}/roles`)
@@ -312,7 +312,7 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
       slug: role.slug,
       name: role.name,
       description: role.description ?? null,
-      permissions: role.permissions,
+      permissions: filterWorkspacePermissionScopes(role.permissions),
       type: role.type,
     }))
   }

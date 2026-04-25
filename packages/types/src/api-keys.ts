@@ -12,6 +12,16 @@ export const WORKSPACE_PERMISSION_SCOPES = {
 
 export type WorkspacePermissionScope = (typeof WORKSPACE_PERMISSION_SCOPES)[keyof typeof WORKSPACE_PERMISSION_SCOPES]
 
+const WORKSPACE_PERMISSION_SCOPE_SET = new Set<string>(Object.values(WORKSPACE_PERMISSION_SCOPES))
+
+export function isWorkspacePermissionScope(permission: string): permission is WorkspacePermissionScope {
+  return WORKSPACE_PERMISSION_SCOPE_SET.has(permission)
+}
+
+export function filterWorkspacePermissionScopes(permissions: string[]): WorkspacePermissionScope[] {
+  return permissions.filter(isWorkspacePermissionScope)
+}
+
 export interface WorkspacePermission {
   slug: WorkspacePermissionScope
   name: string

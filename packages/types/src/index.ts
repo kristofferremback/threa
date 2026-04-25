@@ -420,6 +420,8 @@ export {
   API_KEY_SCOPES,
   API_KEY_PERMISSIONS,
   SENT_VIA_API_PREFIX,
+  filterWorkspacePermissionScopes,
+  isWorkspacePermissionScope,
   sentViaApiKey,
   isSentViaApi,
   type ApiKeyScope,
