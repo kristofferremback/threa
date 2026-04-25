@@ -1,5 +1,13 @@
 import Dexie, { type EntityTable } from "dexie"
-import type { AuthorType, CompanionMode, EventType, JSONContent, NotificationLevel, StreamType } from "@threa/types"
+import type {
+  AuthorType,
+  CompanionMode,
+  EventType,
+  JSONContent,
+  NotificationLevel,
+  StreamContextBagPayload,
+  StreamType,
+} from "@threa/types"
 import type { DraftContextRef } from "@/lib/context-bag/types"
 
 const WORKSPACE_USERS_STORE = "workspaceUsers"
@@ -59,6 +67,14 @@ export interface CachedStream {
   pinned?: boolean
   notificationLevel?: string | null
   lastReadEventId?: string | null
+  /**
+   * Persisted ContextBag attached to this stream. Mirrored into IDB by
+   * `applyStreamBootstrap` so the timeline message-context badge can render
+   * synchronously on first paint — no fetch, no layout shift. Always present
+   * shape-wise (`{bag: null, refs: []}` for streams without an attached bag);
+   * optional on the type so older cached records still parse.
+   */
+  contextBag?: StreamContextBagPayload
   _cachedAt: number
 }
 

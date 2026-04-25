@@ -244,6 +244,9 @@ export type {
   UpdateStreamInput,
   UpdateCompanionModeInput,
   StreamBootstrap,
+  StreamContextBagPayload,
+  StreamContextRef,
+  StreamContextRefSource,
   EventsAroundResponse,
   // Messages
   CreateMessageInput,

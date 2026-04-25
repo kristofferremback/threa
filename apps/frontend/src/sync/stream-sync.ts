@@ -160,6 +160,10 @@ async function writeBootstrapEventsAndStream(
     pinned: bootstrap.membership?.pinned,
     notificationLevel: bootstrap.membership?.notificationLevel,
     lastReadEventId: bootstrap.membership?.lastReadEventId,
+    // Mirror the persisted ContextBag into IDB so the timeline can read it
+    // synchronously on first paint via the `useWorkspaceStreams` cache —
+    // matches how attachments live on the message payload (sync from IDB).
+    contextBag: bootstrap.contextBag,
     _cachedAt: now,
   }
   const isDmWithNullName = stream.type === StreamTypes.DM && stream.displayName == null

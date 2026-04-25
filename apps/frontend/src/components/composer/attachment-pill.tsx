@@ -76,7 +76,12 @@ export function AttachmentPill({
   labelMaxWidth = "max-w-[160px]",
   className,
 }: AttachmentPillProps) {
-  const baseStyles = "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium select-none"
+  // Matches `<Button variant="outline" size="sm" className="h-8 gap-2 text-xs">` —
+  // the canonical attachment surface used by `<AttachmentList>` for sent-message
+  // file cards. Keeping pre-send composer pills and post-send message pills at
+  // identical metrics so the chip's size doesn't change as it "moves" from
+  // composer to timeline.
+  const baseStyles = "inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs select-none"
   const statusStyles = STATUS_STYLES[status]
 
   const inner = (
