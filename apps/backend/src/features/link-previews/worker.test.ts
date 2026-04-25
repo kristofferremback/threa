@@ -565,4 +565,107 @@ describe("createLinkPreviewWorker", () => {
       { forcePublish: undefined }
     )
   })
+
+  test("uses media links from oEmbed HTML when canonical tweet page has no image metadata", async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString()
+
+      if (url.startsWith("https://publish.twitter.com/oembed")) {
+        return new Response(
+          JSON.stringify({
+            provider_name: "Twitter",
+            author_name: "Tran Mau Tri Tam",
+            html: '<blockquote class="twitter-tweet"><p>Paste a URL. <a href="https://t.co/DwmswUYWSP">pic.twitter.com/DwmswUYWSP</a></p></blockquote>',
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      }
+
+      if (url.startsWith("https://x.com/tranmautritam/status/2047744367549612456")) {
+        const headers = new Headers(init?.headers)
+        expect(headers.get("User-Agent")).toBe("Twitterbot/1.0")
+        return new Response("<html><head><title>tweet page</title></head></html>", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        })
+      }
+
+      if (url.startsWith("https://t.co/DwmswUYWSP")) {
+        return new Response(
+          '<html><head><meta property="og:image" content="https://pbs.twimg.com/amplify_video_thumb/example.jpg:large"></head></html>',
+          { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }
+        )
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`)
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const completePreviewsAndPublish = mock(async () => {})
+    const worker = createLinkPreviewWorker({
+      linkPreviewService: {
+        extractAndCreatePending: mock(async () => [
+          { id: "lp_124", url: "https://x.com/tranmautritam/status/2047744367549612456" },
+        ]),
+        getPreviewById: mock(async () => ({
+          id: "lp_124",
+          workspaceId: "ws_123",
+          url: "https://x.com/tranmautritam/status/2047744367549612456",
+          normalizedUrl: "https://x.com/tranmautritam/status/2047744367549612456",
+          title: null,
+          description: null,
+          imageUrl: null,
+          faviconUrl: null,
+          siteName: null,
+          contentType: "website",
+          status: "pending",
+          previewType: null,
+          previewData: null,
+          targetWorkspaceId: null,
+          targetStreamId: null,
+          targetMessageId: null,
+          fetchedAt: null,
+          expiresAt: null,
+          createdAt: new Date("2026-04-25T10:00:00.000Z"),
+        })),
+        completePreviewsAndPublish,
+        replacePreviewsForMessage: mock(async () => []),
+        publishEmptyPreviews: mock(async () => {}),
+      } as any,
+      workspaceIntegrationService: {
+        getGithubClient: mock(async () => null),
+      } as any,
+    })
+
+    await worker({
+      id: "job_124",
+      name: "link_preview.extract",
+      data: {
+        workspaceId: "ws_123",
+        streamId: "stream_123",
+        messageId: "msg_124",
+        contentMarkdown: "https://x.com/tranmautritam/status/2047744367549612456",
+      },
+    })
+
+    expect(completePreviewsAndPublish).toHaveBeenCalledWith(
+      "ws_123",
+      "stream_123",
+      "msg_124",
+      [
+        expect.objectContaining({
+          id: "lp_124",
+          skipped: false,
+          overwrite: false,
+          metadata: expect.objectContaining({
+            title: "Tran Mau Tri Tam",
+            imageUrl: "https://pbs.twimg.com/amplify_video_thumb/example.jpg:large",
+            siteName: "Twitter",
+            status: "completed",
+          }),
+        }),
+      ],
+      { forcePublish: undefined }
+    )
+  })
 })

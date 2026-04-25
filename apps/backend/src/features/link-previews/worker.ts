@@ -60,7 +60,10 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
     const oembedDescription = extractOEmbedDescription(data.html)
     const isTwitterProvider = (data.provider_name ?? "").toLowerCase() === "twitter"
     const fallbackTitle = isTwitterProvider ? data.author_name ?? null : null
-    const fallbackImageUrl = isTwitterProvider ? await fetchOEmbedFallbackImage(url) : null
+    let fallbackImageUrl = isTwitterProvider ? await fetchOEmbedFallbackImage(url) : null
+    if (!fallbackImageUrl && isTwitterProvider) {
+      fallbackImageUrl = await fetchLinkedOEmbedImage(data.html)
+    }
 
     // Derive a favicon from the provider's origin
     let faviconUrl: string | null = null
@@ -103,6 +106,37 @@ export function extractOEmbedDescription(html: string | undefined): string | nul
   return compact || null
 }
 
+function extractOEmbedLinkHrefs(html: string | undefined): string[] {
+  if (!html) return []
+  const urls: string[] = []
+  const hrefRegex = /<a\b[^>]*href=(["'])(.*?)\1/gi
+  let match: RegExpExecArray | null
+  while ((match = hrefRegex.exec(html)) !== null) {
+    const href = match[2]?.trim()
+    if (href?.startsWith("http://") || href?.startsWith("https://")) {
+      urls.push(href)
+    }
+  }
+  return urls
+}
+
+async function fetchLinkedOEmbedImage(html: string | undefined): Promise<string | null> {
+  const urls = extractOEmbedLinkHrefs(html)
+  const seen = new Set<string>()
+  const supported = /^(https?:\/\/(?:t\.co|pic\.twitter\.com|x\.com|twitter\.com)\/)/i
+
+  for (const candidate of urls) {
+    if (seen.has(candidate)) continue
+    seen.add(candidate)
+    if (!supported.test(candidate)) continue
+
+    const imageUrl = await fetchOEmbedFallbackImage(candidate)
+    if (imageUrl) return imageUrl
+  }
+
+  return null
+}
+
 /**
  * Some X/Twitter oEmbed responses omit `thumbnail_url` even when the tweet has media.
  * In those cases, attempt one additional metadata fetch against the canonical URL and
@@ -129,6 +163,10 @@ async function fetchOEmbedFallbackImage(url: string): Promise<string | null> {
     }
 
     const contentTypeHeader = response.headers.get("content-type") ?? ""
+    if (contentTypeHeader.startsWith("image/")) {
+      response.body?.cancel()
+      return response.url || url
+    }
     if (!contentTypeHeader.includes("text/html") && !contentTypeHeader.includes("application/xhtml")) {
       response.body?.cancel()
       return null
