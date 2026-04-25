@@ -246,7 +246,8 @@ export async function parseHtmlMeta(html: string, url: string): Promise<UpdateLi
   const description =
     decode(meta["og:description"]) ?? decode(meta["twitter:description"]) ?? decode(meta["description"]) ?? null
   const imageUrl = decode(meta["og:image"]) ?? decode(meta["twitter:image"]) ?? null
-  const siteName = decode(meta["og:site_name"]) ?? null
+  const siteName = decode(meta["og:site_name"]) ?? fallbackSiteName(url)
+  const fallbackTitle = !title && !description && !imageUrl ? fallbackTitleFromUrl(url) : null
 
   // Resolve favicon
   let faviconUrl: string | null = null
@@ -261,7 +262,7 @@ export async function parseHtmlMeta(html: string, url: string): Promise<UpdateLi
   }
 
   return {
-    title: title?.slice(0, MAX_TITLE_LENGTH) ?? null,
+    title: (title ?? fallbackTitle)?.slice(0, MAX_TITLE_LENGTH) ?? null,
     description: description?.slice(0, MAX_DESCRIPTION_LENGTH) ?? null,
     imageUrl: imageUrl ? resolveUrl(imageUrl, url) : null,
     faviconUrl,
@@ -269,6 +270,28 @@ export async function parseHtmlMeta(html: string, url: string): Promise<UpdateLi
     contentType: "website",
     status: "completed",
     expiresAt: hoursFromNow(24),
+  }
+}
+
+function fallbackSiteName(url: string): string | null {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "")
+  } catch {
+    return null
+  }
+}
+
+function fallbackTitleFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const cleanedPath = parsed.pathname.replace(/\/+$/, "")
+    const lastSegment = cleanedPath.split("/").filter(Boolean).at(-1)
+    if (!lastSegment) return parsed.hostname.replace(/^www\./, "")
+
+    const decoded = decodeURIComponent(lastSegment).replace(/[-_]+/g, " ").trim()
+    return decoded || parsed.hostname.replace(/^www\./, "")
+  } catch {
+    return null
   }
 }
 

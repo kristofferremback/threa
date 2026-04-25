@@ -243,13 +243,13 @@ describe("parseHtmlMeta", () => {
     expect(result.title).toBe("Reversed Order")
   })
 
-  test("returns null fields when no metadata found", async () => {
+  test("falls back to URL-derived title/site when no metadata found", async () => {
     const html = `<html><head></head></html>`
-    const result = await parseHtmlMeta(html, baseUrl)
-    expect(result.title).toBeNull()
+    const result = await parseHtmlMeta(html, "https://news.example.com/articles/hello-world")
+    expect(result.title).toBe("hello world")
     expect(result.description).toBeNull()
     expect(result.imageUrl).toBeNull()
-    expect(result.siteName).toBeNull()
+    expect(result.siteName).toBe("news.example.com")
     expect(result.status).toBe("completed")
   })
 
