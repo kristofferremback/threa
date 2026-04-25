@@ -126,19 +126,25 @@ export function resolveActionLabel(action: MessageAction, context: MessageAction
 }
 
 /**
- * A grouped item in the rendered menu. Either a single (ungrouped, or a group
- * with only one visible action) or a group with a primary + alternatives.
+ * A grouped item in the rendered menu.
+ *
+ * - `single` — an ungrouped action (or a group whose only visible member
+ *   degraded to a standalone row). Renders as a normal menu row.
+ * - `group` — multiple visible same-`groupId` actions. The renderer shows
+ *   `members[0]` as the row's primary tap target and exposes ALL members
+ *   (including `members[0]`) in a chevron-driven dropdown so the menu is
+ *   a complete list of options rather than "the alternatives". The first
+ *   member is always the default — opening the dropdown should feel like
+ *   a list with the default option pre-highlighted.
  */
-export type GroupedActionItem =
-  | { kind: "single"; action: MessageAction }
-  | { kind: "group"; primary: MessageAction; alternatives: MessageAction[] }
+export type GroupedActionItem = { kind: "single"; action: MessageAction } | { kind: "group"; members: MessageAction[] }
 
 /**
  * Collapse adjacent same-`groupId` actions into split-button groups, leaving
  * ungrouped actions as `single` items. Order is preserved; grouped items
- * appear at the position of their first member. The first action in a group
- * becomes the primary (default tap target); the rest are alternatives shown
- * behind a chevron-driven dropdown by the renderer.
+ * appear at the position of their first member. The first member becomes
+ * the primary (default tap target); the dropdown lists every member so the
+ * UI presents the full set of options rather than "the others".
  *
  * Same-group actions are expected to be defined adjacently in
  * {@link messageActions}; this is enforced by visibility filtering. A group
@@ -155,17 +161,16 @@ export function groupVisibleActions(actions: MessageAction[]): GroupedActionItem
       continue
     }
 
-    const group: MessageAction[] = [action]
+    const members: MessageAction[] = [action]
     let j = i + 1
     while (j < actions.length && actions[j].groupId === action.groupId) {
-      group.push(actions[j])
+      members.push(actions[j])
       j++
     }
-    if (group.length === 1) {
+    if (members.length === 1) {
       items.push({ kind: "single", action })
     } else {
-      const [primary, ...alternatives] = group
-      items.push({ kind: "group", primary, alternatives })
+      items.push({ kind: "group", members })
     }
     i = j
   }
@@ -294,7 +299,6 @@ export const messageActions: MessageAction[] = [
     id: "copy-link",
     label: "Copy link to message",
     icon: Link2,
-    groupId: "copy",
     when: (ctx) => !!ctx.messageId && !!ctx.workspaceId && !!ctx.streamId,
     action: async (ctx) => {
       try {

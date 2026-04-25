@@ -55,7 +55,7 @@ export function MessageContextMenu({ context }: MessageContextMenuProps) {
       >
         {groupedActions.map((item) => (
           <GroupedItem
-            key={item.kind === "single" ? item.action.id : item.primary.id}
+            key={item.kind === "single" ? item.action.id : item.members[0].id}
             item={item}
             context={context}
             onClose={() => setOpen(false)}
@@ -79,18 +79,20 @@ function GroupedItem({
     return <SingleAction action={item.action} context={context} onClose={onClose} showSeparatorBefore />
   }
 
-  // Split-button group: render the primary as a normal item, then immediately
-  // a sub-menu with a chevron-only trigger holding the alternatives. Same
-  // shape as the mobile drawer (driven by `groupVisibleActions`); the desktop
-  // dropdown surface uses Radix sub-menus instead of a portalled popover.
-  const { primary, alternatives } = item
+  // Split-button group: render the primary as a normal item, then a chevron
+  // sub-trigger that opens a sub-menu listing ALL group members (primary
+  // first, then the rest). The sub-menu opens below the row (side="bottom",
+  // align="end") so it doesn't cover the primary text. Same data model as
+  // the mobile drawer (driven by `groupVisibleActions`).
+  const { members } = item
+  const primary = members[0]
   const PrimaryIcon = primary.icon
   const isDestructive = primary.variant === "destructive"
 
   return (
     <>
       {primary.separatorBefore && <DropdownMenuSeparator />}
-      <div className="flex items-stretch">
+      <div className="flex items-stretch group/split">
         <DropdownMenuItem
           className={cn(
             "flex-1 gap-2 cursor-pointer rounded-r-none",
@@ -107,24 +109,25 @@ function GroupedItem({
         <DropdownMenuSub>
           <DropdownMenuSubTrigger
             className="px-2 cursor-pointer rounded-l-none border-l border-border/50 [&>svg.lucide-chevron-right]:hidden"
-            aria-label={`More ${primary.groupId ?? "options"}`}
+            aria-label={`Other ${primary.groupId ?? "options"}`}
           >
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
           </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {alternatives.map((alt) => {
-              const AltIcon = alt.icon
+          <DropdownMenuSubContent sideOffset={4} alignOffset={-4}>
+            {members.map((member, idx) => {
+              const MemberIcon = member.icon
+              const isPrimary = idx === 0
               return (
                 <DropdownMenuItem
-                  key={alt.id}
-                  className="gap-2 cursor-pointer"
+                  key={member.id}
+                  className={cn("gap-2 cursor-pointer", isPrimary && "font-medium")}
                   onSelect={() => {
                     onClose()
-                    alt.action?.(context)
+                    member.action?.(context)
                   }}
                 >
-                  <AltIcon className="h-4 w-4 text-muted-foreground" />
-                  {resolveActionLabel(alt, context)}
+                  <MemberIcon className="h-4 w-4 text-muted-foreground" />
+                  {resolveActionLabel(member, context)}
                 </DropdownMenuItem>
               )
             })}

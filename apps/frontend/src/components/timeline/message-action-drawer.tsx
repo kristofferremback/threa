@@ -208,7 +208,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
             <div className="px-2 pb-[max(12px,env(safe-area-inset-bottom))]">
               {groupedActions.map((item) => (
                 <DrawerActionItem
-                  key={item.kind === "single" ? item.action.id : item.primary.id}
+                  key={item.kind === "single" ? item.action.id : item.members[0].id}
                   item={item}
                   context={context}
                   onClose={() => handleOpenChange(false)}
@@ -376,17 +376,12 @@ function DrawerActionItem({
     )
   }
 
-  const { primary, alternatives } = item
+  const { members } = item
+  const primary = members[0]
   return (
     <>
       {primary.separatorBefore && <Divider />}
-      <DrawerActionSplitRow
-        primary={primary}
-        alternatives={alternatives}
-        context={context}
-        onClose={onClose}
-        onAction={onAction}
-      />
+      <DrawerActionSplitRow members={members} context={context} onClose={onClose} onAction={onAction} />
     </>
   )
 }
@@ -441,26 +436,26 @@ function DrawerActionPrimary({
 /**
  * Split-row pattern (à la GitHub's merge button): the primary action is the
  * default tap target on the left; a chevron button on the right opens a small
- * dropdown listing the alternatives. Same data model is reused on desktop —
- * `messageActions` declares the group via `groupId` and `groupVisibleActions`
- * collapses adjacent same-group entries into the {primary, alternatives}
- * shape this row consumes.
+ * dropdown listing ALL group members (primary first). Same data model as the
+ * desktop context menu — `messageActions` declares the group via `groupId`
+ * and `groupVisibleActions` collapses adjacent same-group entries into the
+ * `{ members }` shape this row consumes; the renderer always shows
+ * `members[0]` as the row's tap target and the full set in the dropdown.
  */
 function DrawerActionSplitRow({
-  primary,
-  alternatives,
+  members,
   context,
   onClose,
   onAction,
 }: {
-  primary: MessageAction
-  alternatives: MessageAction[]
+  members: MessageAction[]
   context: MessageActionContext
   onClose: () => void
   onAction: (action: MessageAction) => void
 }) {
+  const primary = members[0]
   return (
-    <div className="flex items-stretch w-full rounded-lg overflow-hidden active:bg-transparent">
+    <div className="flex items-stretch w-full rounded-lg overflow-hidden">
       <div className="flex-1 min-w-0">
         <DrawerActionPrimary
           action={primary}
@@ -475,25 +470,26 @@ function DrawerActionSplitRow({
           <button
             type="button"
             className="flex items-center justify-center w-10 shrink-0 border-l border-border/50 text-muted-foreground active:bg-muted/80 transition-colors rounded-r-lg"
-            aria-label={`Other ${primary.id.includes("share") ? "share" : "options"} options`}
+            aria-label={`Other ${primary.groupId ?? "options"}`}
           >
             <ChevronDown className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} className="min-w-[220px]">
-          {alternatives.map((alt) => {
-            const AltIcon = alt.icon
+          {members.map((member, idx) => {
+            const MemberIcon = member.icon
+            const isPrimary = idx === 0
             return (
               <DropdownMenuItem
-                key={alt.id}
-                className="gap-2 cursor-pointer"
+                key={member.id}
+                className={cn("gap-2 cursor-pointer", isPrimary && "font-medium")}
                 onSelect={() => {
                   onClose()
-                  alt.action?.(context)
+                  member.action?.(context)
                 }}
               >
-                <AltIcon className="h-4 w-4 text-muted-foreground" />
-                <span>{resolveActionLabel(alt, context)}</span>
+                <MemberIcon className="h-4 w-4 text-muted-foreground" />
+                <span>{resolveActionLabel(member, context)}</span>
               </DropdownMenuItem>
             )
           })}

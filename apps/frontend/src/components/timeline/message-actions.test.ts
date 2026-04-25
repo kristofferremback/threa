@@ -317,7 +317,7 @@ describe("share-to-parent action", () => {
 })
 
 describe("groupVisibleActions", () => {
-  it("returns single items for ungrouped actions", () => {
+  it("returns single items for ungrouped actions and groups same-id ones", () => {
     const ctx = createContext()
     const items = groupVisibleActions(getVisibleActions(ctx))
     // No share/copy-link callbacks, so just reply + copy-as-markdown + copy-as-plain-text.
@@ -326,18 +326,18 @@ describe("groupVisibleActions", () => {
     const reply = items[0]
     expect(reply.kind === "single" && reply.action.id).toBe("reply-in-thread")
     const copyGroup = items[1]
-    expect(copyGroup.kind === "group" && copyGroup.primary.id).toBe("copy-as-markdown")
-    expect(copyGroup.kind === "group" && copyGroup.alternatives.map((a) => a.id)).toEqual(["copy-as-plain-text"])
+    if (copyGroup.kind !== "group") throw new Error("expected group")
+    // Members include the default first.
+    expect(copyGroup.members.map((m) => m.id)).toEqual(["copy-as-markdown", "copy-as-plain-text"])
   })
 
-  it("collapses adjacent same-groupId actions into a group with primary + alternatives", () => {
+  it("collapses adjacent same-groupId actions into a group whose first member is the default", () => {
     const ctx = createContext({ onShareToRoot: () => {}, onShareToParent: () => {} })
     const items = groupVisibleActions(getVisibleActions(ctx))
-    const shareGroup = items.find((i) => i.kind === "group" && i.primary.id === "share-to-root")
+    const shareGroup = items.find((i) => i.kind === "group" && i.members[0]?.id === "share-to-root")
     expect(shareGroup).toBeDefined()
     if (shareGroup?.kind !== "group") throw new Error("expected group")
-    expect(shareGroup.primary.id).toBe("share-to-root")
-    expect(shareGroup.alternatives.map((a) => a.id)).toEqual(["share-to-parent"])
+    expect(shareGroup.members.map((m) => m.id)).toEqual(["share-to-root", "share-to-parent"])
   })
 
   it("degrades a single-member group to a single item (no chevron)", () => {
@@ -346,15 +346,18 @@ describe("groupVisibleActions", () => {
     const items = groupVisibleActions(getVisibleActions(ctx))
     const shareItem = items.find((i) => i.kind === "single" && i.action.id === "share-to-root")
     expect(shareItem).toBeDefined()
-    expect(items.find((i) => i.kind === "group" && i.primary.id === "share-to-root")).toBeUndefined()
+    expect(items.find((i) => i.kind === "group" && i.members[0]?.id === "share-to-root")).toBeUndefined()
   })
 
-  it("includes copy-link as a third copy-group alternative when permalink fields are present", () => {
+  it("keeps copy-link as a separate top-level row (not part of the copy group)", () => {
     const ctx = createContext({ messageId: "msg_1", workspaceId: "ws_1", streamId: "stream_1" })
     const items = groupVisibleActions(getVisibleActions(ctx))
-    const copyGroup = items.find((i) => i.kind === "group" && i.primary.id === "copy-as-markdown")
-    expect(copyGroup).toBeDefined()
-    if (copyGroup?.kind !== "group") throw new Error("expected group")
-    expect(copyGroup.alternatives.map((a) => a.id)).toEqual(["copy-as-plain-text", "copy-link"])
+
+    const copyGroup = items.find((i) => i.kind === "group" && i.members[0]?.id === "copy-as-markdown")
+    if (copyGroup?.kind !== "group") throw new Error("expected copy group")
+    expect(copyGroup.members.map((m) => m.id)).toEqual(["copy-as-markdown", "copy-as-plain-text"])
+
+    const linkRow = items.find((i) => i.kind === "single" && i.action.id === "copy-link")
+    expect(linkRow).toBeDefined()
   })
 })
