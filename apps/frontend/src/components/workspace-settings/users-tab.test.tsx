@@ -179,6 +179,9 @@ describe("UsersTab", () => {
     })
 
     const select = await screen.findByDisplayValue("Member")
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Support Admin" })).toBeInTheDocument()
+    })
     await user.selectOptions(select, "support-admin")
 
     await waitFor(() => {

@@ -8,7 +8,7 @@ import { workspaceKeys } from "@/hooks/use-workspaces"
 import { useFormattedDate } from "@/hooks"
 import { InviteDialog } from "./invite-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import type { WorkspaceBootstrap } from "@threa/types"
+import { DEFAULT_WORKSPACE_ROLES, type WorkspaceBootstrap } from "@threa/types"
 
 interface UsersTabProps {
   workspaceId: string
@@ -35,6 +35,8 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
     enabled: canManageRoles,
     initialData: bootstrapData?.roles,
   })
+  const roles =
+    rolesQuery.data && rolesQuery.data.length > 0 ? rolesQuery.data : (bootstrapData?.roles ?? DEFAULT_WORKSPACE_ROLES)
 
   const invitationsQuery = useQuery({
     queryKey: ["invitations", workspaceId],
@@ -80,7 +82,7 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {user.isOwner && <Badge variant="default">Owner</Badge>}
-              {canManageRoles && user.canEditRole !== false && (rolesQuery.data?.length ?? 0) > 0 ? (
+              {canManageRoles && user.canEditRole !== false && roles.length > 0 ? (
                 <Select
                   value={user.assignedRole?.slug ?? ""}
                   onValueChange={(roleSlug) => updateRoleMutation.mutate({ userId: user.id, roleSlug })}
@@ -90,7 +92,7 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {rolesQuery.data?.map((role) => (
+                    {roles.map((role) => (
                       <SelectItem key={role.slug} value={role.slug}>
                         {role.name}
                       </SelectItem>
@@ -154,7 +156,7 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
 
       <InviteDialog
         workspaceId={workspaceId}
-        roles={rolesQuery.data ?? []}
+        roles={roles}
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         onSuccess={() => invitationsQuery.refetch()}
