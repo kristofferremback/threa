@@ -24,6 +24,14 @@ export {
   type StreamContextBagResponse,
 } from "./fetch-stream-bag"
 export { appendBagToSystemPrompt } from "./prompt"
+export {
+  contextBagSchema,
+  contextRefSchema,
+  contextIntentSchema,
+  contextRefKindSchema,
+  type ContextBagInput,
+  type ContextRefInput,
+} from "./schemas"
 export type {
   StoredContextBag,
   SummaryInput,

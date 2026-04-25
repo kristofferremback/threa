@@ -2,7 +2,7 @@ import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import { z } from "zod"
 import type { AI } from "../../../lib/ai/ai"
-import { ContextIntents, ContextRefKinds, type ContextIntent } from "@threa/types"
+import type { ContextIntent } from "@threa/types"
 import { withClient } from "../../../db"
 import {
   fetchStreamBag,
@@ -11,26 +11,18 @@ import {
   type StreamContextBagResponse,
 } from "./fetch-stream-bag"
 import * as precomputeService from "./precompute-service"
+import { contextBagSchema } from "./schemas"
 
 interface Dependencies {
   pool: Pool
   ai: AI
 }
 
-const threadRefSchema = z.object({
-  kind: z.literal(ContextRefKinds.THREAD),
-  streamId: z.string().min(1),
-  fromMessageId: z.string().min(1).optional(),
-  toMessageId: z.string().min(1).optional(),
-  originMessageId: z.string().min(1).optional(),
-})
-
-const refSchema = z.discriminatedUnion("kind", [threadRefSchema])
-
-const precomputeSchema = z.object({
-  intent: z.enum([ContextIntents.DISCUSS_THREAD]),
-  refs: z.array(refSchema).min(1).max(10),
-})
+// Same wire shape as the contextBag attached to `POST /streams` — this
+// endpoint pre-warms the summary cache for the same payload before the user
+// commits it. Keeping a single schema means a new ref kind / field is
+// validated identically on both surfaces.
+const precomputeSchema = contextBagSchema
 
 // Re-export so existing import sites keep working without churn.
 export type { ContextRefSource, EnrichedContextRef, StreamContextBagResponse }

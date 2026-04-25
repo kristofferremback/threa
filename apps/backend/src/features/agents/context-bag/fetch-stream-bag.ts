@@ -3,6 +3,7 @@ import { ContextRefKinds, type ContextIntent } from "@threa/types"
 import { HttpError } from "../../../lib/errors"
 import { StreamRepository, checkStreamAccess } from "../../streams"
 import { MessageRepository } from "../../messaging"
+import { logger } from "../../../lib/logger"
 import { ContextBagRepository } from "./repository"
 import { getResolver } from "./registry"
 
@@ -88,15 +89,45 @@ export async function fetchStreamBag(
     return { bag: null, refs: [] }
   }
 
+  // Per-ref access checks first. If a single ref is forbidden the bag should
+  // still render with the rest — losing access to one source thread shouldn't
+  // crash the whole bootstrap. Anything other than a clean FORBIDDEN bubbles
+  // up so a real failure (DB error, programmer bug) still surfaces.
+  const visibleRefs = (
+    await Promise.all(
+      bag.refs.map(async (ref) => {
+        const resolver = getResolver(ref.kind)
+        try {
+          await resolver.assertAccess(db, ref, userId, workspaceId)
+          return ref
+        } catch (err) {
+          if (err instanceof HttpError && err.status === 403) {
+            logger.info(
+              { workspaceId, streamId, refKind: ref.kind, refStreamId: ref.streamId, code: err.code },
+              "context-bag: dropping ref the caller can no longer read"
+            )
+            return null
+          }
+          throw err
+        }
+      })
+    )
+  ).filter((r): r is (typeof bag.refs)[number] => r !== null)
+
+  // Batch the source-stream lookups + per-stream message counts. The v1 max is
+  // 10 refs but the old per-ref loop hit 2N+1 round-trips; one query per
+  // dimension is the right ceiling regardless of N. INV-56.
+  const refStreamIds = [...new Set(visibleRefs.map((r) => r.streamId))]
+  const [sourceStreams, itemCounts] = await Promise.all([
+    StreamRepository.findByIds(db, refStreamIds),
+    MessageRepository.countByStreams(db, refStreamIds),
+  ])
+  const streamById = new Map(sourceStreams.map((s) => [s.id, s]))
+
   const enriched: EnrichedContextRef[] = []
-  for (const ref of bag.refs) {
-    const resolver = getResolver(ref.kind)
-    await resolver.assertAccess(db, ref, userId, workspaceId)
-
-    const sourceStream = await StreamRepository.findById(db, ref.streamId)
+  for (const ref of visibleRefs) {
+    const sourceStream = streamById.get(ref.streamId)
     if (!sourceStream) continue
-
-    const itemCount = await MessageRepository.countByStream(db, ref.streamId)
 
     enriched.push({
       kind: ContextRefKinds.THREAD,
@@ -109,7 +140,7 @@ export async function fetchStreamBag(
         displayName: sourceStream.displayName ?? null,
         slug: sourceStream.slug ?? null,
         type: sourceStream.type,
-        itemCount,
+        itemCount: itemCounts.get(ref.streamId) ?? 0,
       },
     })
   }

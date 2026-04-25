@@ -150,6 +150,15 @@ describe("createContextBagHandlers.getStreamBag", () => {
   it("returns the bag with enriched per-ref source metadata", async () => {
     stubWithClient()
     stubAccessOk()
+    spyOn(StreamRepository, "findByIds").mockResolvedValue([
+      {
+        id: "stream_src",
+        workspaceId: "ws_1",
+        type: "channel",
+        slug: "intro",
+        displayName: "Intro",
+      } as any,
+    ])
     spyOn(ContextBagRepository, "findByStream").mockResolvedValue({
       id: "sca_1",
       workspaceId: "ws_1",
@@ -162,7 +171,7 @@ describe("createContextBagHandlers.getStreamBag", () => {
       updatedAt: new Date(),
     })
     spyOn(ThreadResolver, "assertAccess").mockResolvedValue(undefined)
-    spyOn(MessageRepository, "countByStream").mockResolvedValue(12)
+    spyOn(MessageRepository, "countByStreams").mockResolvedValue(new Map([["stream_src", 12]]))
 
     const handlers = createContextBagHandlers({ pool: {} as any, ai: {} as any })
     const req = mockReq(undefined, { streamId: "stream_scratch" })

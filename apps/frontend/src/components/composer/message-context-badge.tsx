@@ -1,12 +1,9 @@
 import { MessageSquareReply } from "lucide-react"
-import { Link } from "react-router-dom"
-import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
-import { cn } from "@/lib/utils"
 import type { StreamContextRef } from "@threa/types"
 import { useCachedStreamContextBag } from "@/hooks/use-cached-stream-context-bag"
 import { formatContextRefLabel } from "@/lib/context-bag/format-label"
 import { buildContextRefSourceHref } from "@/lib/context-bag/source-link"
+import { AttachmentPill } from "./attachment-pill"
 
 interface MessageContextBadgeProps {
   workspaceId: string
@@ -16,17 +13,19 @@ interface MessageContextBadgeProps {
 
 /**
  * Renders the stream's context-bag attachment as inline pills anchored to
- * the first message of a bag-attached scratchpad. Uses the same `<Button
- * variant="outline" size="sm" h-8>` shape as `<AttachmentList>` file cards
- * so the bag chip + file chips on a sent message read as one row of
- * attachments at identical sizing.
+ * the first message of a bag-attached scratchpad.
+ *
+ * Routes through the shared `<AttachmentPill>` primitive (the same one used
+ * by `<AttachmentList>` file cards and `<ContextRefStrip>` composer chips)
+ * so files + context-refs read as one row of "things attached to this
+ * message" at identical metrics, palette, and link/remove affordances.
  *
  * Reads synchronously from `useCachedStreamContextBag` (IDB-backed) so the
  * pill is present on first paint — matches how file attachments live on
  * the message payload and render without a fetch.
  *
- * The pill is a `<Link>` to the source thread, deep-linked to the
- * originating message via `?m=<messageId>` when set.
+ * Each pill deep-links to the source thread, anchored to the originating
+ * message via `?m=<messageId>` when set.
  */
 export function MessageContextBadge({ workspaceId, streamId }: MessageContextBadgeProps) {
   const data = useCachedStreamContextBag(workspaceId, streamId)
@@ -50,24 +49,14 @@ export function MessageContextBadge({ workspaceId, streamId }: MessageContextBad
           originMessageId: ref.originMessageId,
         })
         return (
-          <TooltipProvider
+          <AttachmentPill
             key={`${ref.kind}|${ref.streamId}|${ref.fromMessageId ?? ""}|${ref.toMessageId ?? ""}`}
-            delayDuration={300}
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button asChild variant="outline" size="sm" className={cn("h-8 gap-2 text-xs")}>
-                  <Link to={href}>
-                    <MessageSquareReply className="h-3.5 w-3.5" />
-                    <span className="max-w-[220px] truncate">{label}</span>
-                  </Link>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[260px]">
-                <p className="text-sm">Click to open the source thread</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+            icon={MessageSquareReply}
+            label={label}
+            labelMaxWidth="max-w-[220px]"
+            href={href}
+            tooltip="Click to open the source thread"
+          />
         )
       })}
     </div>

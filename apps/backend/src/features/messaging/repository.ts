@@ -473,6 +473,25 @@ export const MessageRepository = {
   },
 
   /**
+   * Batched variant of `countByStream` — returns a Map keyed by streamId so a
+   * caller fanning over N refs (context-bag, sidebar previews) can avoid an
+   * N-query loop. Streams with no messages are absent from the map; callers
+   * default to 0. INV-56.
+   */
+  async countByStreams(db: Querier, streamIds: string[]): Promise<Map<string, number>> {
+    if (streamIds.length === 0) return new Map()
+    const result = await db.query<{ stream_id: string; count: string }>(sql`
+      SELECT stream_id, COUNT(*)::text AS count FROM messages
+      WHERE stream_id = ANY(${streamIds})
+        AND deleted_at IS NULL
+      GROUP BY stream_id
+    `)
+    const out = new Map<string, number>()
+    for (const row of result.rows) out.set(row.stream_id, Number(row.count))
+    return out
+  },
+
+  /**
    * Update the embedding for a message.
    * Used by the embedding worker after generating embeddings.
    */

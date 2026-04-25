@@ -1,7 +1,6 @@
 import type { AI, CostContext } from "../../../lib/ai/ai"
 import type { RenderableMessage } from "./types"
-
-const SUMMARIZER_MODEL = "openrouter:openai/gpt-5.4-nano"
+import { SUMMARIZER_MAX_TOKENS, SUMMARIZER_MODEL_ID, SUMMARIZER_TEMPERATURE } from "./config"
 
 export interface SummarizeInput {
   refKey: string
@@ -28,7 +27,7 @@ export async function summarizeThread(
   deps: SummarizeDeps,
   input: SummarizeInput
 ): Promise<{ text: string; model: string }> {
-  const model = deps.model ?? SUMMARIZER_MODEL
+  const model = deps.model ?? SUMMARIZER_MODEL_ID
 
   const messages = input.items
     .map((m) => {
@@ -47,8 +46,8 @@ export async function summarizeThread(
       },
     },
     context: deps.costContext,
-    temperature: 0.2,
-    maxTokens: 600,
+    temperature: SUMMARIZER_TEMPERATURE,
+    maxTokens: SUMMARIZER_MAX_TOKENS,
     messages: [
       {
         role: "system",

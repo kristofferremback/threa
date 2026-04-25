@@ -63,6 +63,16 @@ export const ContextBagRepository = {
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
+  /**
+   * Race-safe upsert (INV-20). Two write paths can land here for the same
+   * `(stream_id, intent)`: the `createScratchpad` transaction and the
+   * standalone precompute endpoint. The unique index from
+   * `20260425130000_context_bag_unique_intent` makes the conflict explicit; we
+   * reconcile by replacing the refs payload (the latest writer wins on
+   * payload, which matches user intent — they just pressed "send" with this
+   * exact bag) and refreshing `updated_at`. `created_by`/`created_at` stay
+   * pinned to the original author so audit history isn't rewritten.
+   */
   async insert(db: Querier, params: InsertContextBagParams): Promise<StoredContextBag> {
     const id = streamContextAttachmentId()
     const refsJson = JSON.stringify(params.refs)
@@ -72,6 +82,9 @@ export const ContextBagRepository = {
       ) VALUES (
         ${id}, ${params.workspaceId}, ${params.streamId}, ${params.intent}, ${refsJson}::jsonb, ${params.createdBy}
       )
+      ON CONFLICT (stream_id, intent) DO UPDATE
+        SET refs = EXCLUDED.refs,
+            updated_at = NOW()
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
     return mapRow(result.rows[0])

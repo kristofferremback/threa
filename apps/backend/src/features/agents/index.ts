@@ -77,7 +77,12 @@ export {
   renderStable,
   renderDelta,
   buildSnapshot,
+  contextBagSchema,
+  contextRefSchema,
+  contextIntentSchema,
+  contextRefKindSchema,
 } from "./context-bag"
+export type { ContextBagInput, ContextRefInput } from "./context-bag"
 export type {
   StoredContextBag,
   SummaryInput,
@@ -161,6 +166,7 @@ export type { AgentAccessSpec, ComputeAccessSpecParams } from "./researcher"
 // Config (exported for static-config-resolver)
 export { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "./companion/config"
 export { COMPANION_SUMMARY_MODEL_ID, COMPANION_SUMMARY_TEMPERATURE } from "./companion/config"
+export { SUMMARIZER_MAX_TOKENS, SUMMARIZER_MODEL_ID, SUMMARIZER_TEMPERATURE } from "./context-bag/config"
 export { SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS, SUPERSEDE_RESPONSE_VALIDATOR_TEMPERATURE } from "./config"
 export { SUPERSEDE_RESPONSE_VALIDATOR_MODEL_ID } from "./config"
 export {

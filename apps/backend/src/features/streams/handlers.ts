@@ -5,42 +5,13 @@ import type { EventService } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { LinkPreviewService } from "../link-previews"
 import type { StreamEvent } from "./event-repository"
-import type { EventType, LinkPreviewSummary, StreamType, ContextIntent, ContextRefKind } from "@threa/types"
-import {
-  ARIADNE_PERSONA_SLUG,
-  StreamTypes,
-  SLUG_PATTERN,
-  ContextIntents,
-  ContextRefKinds,
-  CompanionModes,
-} from "@threa/types"
+import type { EventType, LinkPreviewSummary, StreamType } from "@threa/types"
+import { ARIADNE_PERSONA_SLUG, StreamTypes, SLUG_PATTERN, CompanionModes } from "@threa/types"
 import type { Pool } from "pg"
-import { PersonaRepository, getResolver, fetchStreamBag } from "../agents"
+import { PersonaRepository, getResolver, fetchStreamBag, contextBagSchema } from "../agents"
 import { serializeBigInt } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
-
-// Typed narrowings for the Zod enum: keep the parsed value as the concrete
-// union (`ContextIntent` / `ContextRefKind`) instead of a bare `string` so
-// downstream code doesn't have to re-cast at every call site.
-const contextIntentSchema = z.enum(Object.values(ContextIntents) as [ContextIntent, ...ContextIntent[]])
-const contextRefKindSchema = z.enum(Object.values(ContextRefKinds) as [ContextRefKind, ...ContextRefKind[]])
-
-const contextBagSchema = z.object({
-  intent: contextIntentSchema,
-  refs: z
-    .array(
-      z.object({
-        kind: contextRefKindSchema,
-        streamId: z.string().min(1),
-        fromMessageId: z.string().optional(),
-        toMessageId: z.string().optional(),
-        originMessageId: z.string().optional(),
-      })
-    )
-    .min(1)
-    .max(10),
-})
 
 const createStreamSchema = z
   .object({
