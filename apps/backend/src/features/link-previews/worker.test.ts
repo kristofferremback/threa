@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import { createLinkPreviewWorker, decodeHtmlBytes, detectCharset, parseHtmlMeta } from "./worker"
+import { createLinkPreviewWorker, decodeHtmlBytes, detectCharset, extractOEmbedDescription, parseHtmlMeta } from "./worker"
 import { GitHubPreviewTypes } from "@threa/types"
 
 /** Encode a string as ISO-8859-1 (Latin-1) bytes. Each char with code ≤ 0xFF becomes one byte. */
@@ -265,6 +265,19 @@ describe("parseHtmlMeta", () => {
     const result = await parseHtmlMeta(html, baseUrl)
     expect(result.title).toBe("OG Title")
     expect(result.description).toBe("OG Description")
+  })
+})
+
+describe("extractOEmbedDescription", () => {
+  test("extracts readable text from X/Twitter oEmbed blockquote HTML", () => {
+    const html =
+      '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">closing what&#39;s fixed was the pre-clean. <a href="https://t.co/YYNEbg7Q79">https://t.co/YYNEbg7Q79</a></p>&mdash; Peter</blockquote>'
+
+    const description = extractOEmbedDescription(html)
+
+    expect(description).toContain("closing what's fixed was the pre-clean.")
+    expect(description).toContain("https://t.co/YYNEbg7Q79")
+    expect(description).not.toContain("<a")
   })
 })
 

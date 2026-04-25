@@ -29,6 +29,7 @@ interface OEmbedResponse {
   author_name?: string
   provider_name?: string
   thumbnail_url?: string
+  html?: string
 }
 
 /**
@@ -55,6 +56,9 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
     }
 
     const data = (await response.json()) as OEmbedResponse
+    const oembedDescription = extractOEmbedDescription(data.html)
+    const isTwitterProvider = (data.provider_name ?? "").toLowerCase() === "twitter"
+    const fallbackTitle = isTwitterProvider ? data.author_name ?? null : null
 
     // Derive a favicon from the provider's origin
     let faviconUrl: string | null = null
@@ -65,8 +69,8 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
     }
 
     return {
-      title: data.title?.slice(0, MAX_TITLE_LENGTH) ?? null,
-      description: null,
+      title: (data.title ?? fallbackTitle)?.slice(0, MAX_TITLE_LENGTH) ?? null,
+      description: oembedDescription?.slice(0, MAX_DESCRIPTION_LENGTH) ?? null,
       imageUrl: data.thumbnail_url ?? null,
       faviconUrl,
       siteName: data.provider_name ?? null,
@@ -80,6 +84,21 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
   } finally {
     clearTimeout(timeout)
   }
+}
+
+/**
+ * Extract plain-text content from oEmbed HTML payloads (used by providers like X/Twitter
+ * where `title` may be omitted but tweet text is embedded in a blockquote).
+ */
+export function extractOEmbedDescription(html: string | undefined): string | null {
+  if (!html) return null
+
+  const paragraphMatch = html.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i)
+  const candidate = paragraphMatch?.[1] ?? html
+  const withoutTags = candidate.replace(/<[^>]+>/g, " ")
+  const decoded = decode(withoutTags)
+  const compact = decoded?.replace(/\s+/g, " ").trim() ?? null
+  return compact || null
 }
 
 // ── HTML metadata fetching ──────────────────────────────────────────
