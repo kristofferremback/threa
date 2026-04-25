@@ -1,5 +1,6 @@
 import type { Pool } from "pg"
 import { AgentSessionRepository, SessionStatuses } from "./session-repository"
+import { GeneralResearchRepository } from "./general-researcher"
 import { logger } from "../../lib/logger"
 
 export interface OrphanSessionCleanup {
@@ -39,6 +40,14 @@ export function createOrphanSessionCleanup(
 
       for (const session of orphaned) {
         try {
+          const hasActiveGeneralResearch = await GeneralResearchRepository.hasActiveRunForSession(pool, session.id)
+          if (hasActiveGeneralResearch) {
+            logger.info(
+              { sessionId: session.id, streamId: session.streamId },
+              "Leaving orphaned session running because resumable general research is active"
+            )
+            continue
+          }
           await AgentSessionRepository.updateStatus(pool, session.id, SessionStatuses.FAILED, {
             error: "Session orphaned (stale heartbeat)",
           })

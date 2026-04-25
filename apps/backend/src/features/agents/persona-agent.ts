@@ -1,4 +1,5 @@
 import type { Pool } from "pg"
+import crypto from "crypto"
 import { z } from "zod"
 import { withClient, type Querier } from "../../db"
 import {
@@ -29,6 +30,7 @@ import type { AttachmentService } from "../attachments"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
+import { GeneralResearcher } from "./general-researcher"
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
 import { resolveBagForStream, persistSnapshot, appendBagToSystemPrompt, type ResolvedBag } from "./context-bag"
@@ -54,6 +56,7 @@ export interface PersonaAgentDeps {
   sessionAbortRegistry: SessionAbortRegistry
   userPreferencesService: UserPreferencesService
   workspaceAgent: WorkspaceAgent
+  generalResearcher?: GeneralResearcher
   searchService: SearchService
   conversationSummaryService: ConversationSummaryService
   attachmentService: AttachmentService
@@ -132,6 +135,7 @@ export class PersonaAgent {
       sessionAbortRegistry,
       userPreferencesService,
       workspaceAgent,
+      generalResearcher,
       searchService,
       conversationSummaryService,
       attachmentService,
@@ -314,6 +318,50 @@ export class PersonaAgent {
         }
 
         const targetStreamId = sessionStreamId
+
+        const checkForNewResearchMessages = async (sinceSequence: bigint) => {
+          const events = await StreamEventRepository.list(db, targetStreamId, {
+            types: ["message_created", "message_edited", "message_deleted"],
+            afterSequence: sinceSequence,
+            limit: 50,
+          })
+          const filteredEvents = events.filter((event) => event.actorId !== persona.id)
+          if (filteredEvents.length === 0) {
+            return { messages: [], lastSeenSequence: sinceSequence }
+          }
+          const changedMessageIds = filteredEvents
+            .map((event) => (event.payload as { messageId?: string }).messageId)
+            .filter((id): id is string => typeof id === "string")
+          const messagesById = await MessageRepository.findByIds(db, changedMessageIds)
+          const maxSequence = filteredEvents.reduce(
+            (max, event) => (event.sequence > max ? event.sequence : max),
+            sinceSequence
+          )
+          await AgentSessionRepository.updateLastSeenSequence(db, session.id, maxSequence)
+          return {
+            lastSeenSequence: maxSequence,
+            messages: filteredEvents.flatMap((event) => {
+              const messageId = (event.payload as { messageId?: string }).messageId
+              if (!messageId) return []
+              const message = messagesById.get(messageId)
+              let content = `[${event.eventType}]`
+              if (event.eventType === "message_deleted") {
+                content = "[Message deleted]"
+              } else if (message?.contentMarkdown) {
+                content = message.contentMarkdown
+              }
+              return [
+                {
+                  sequence: event.sequence,
+                  authorName: message?.authorId ?? event.actorId ?? "unknown",
+                  changeType: event.eventType,
+                  content,
+                },
+              ]
+            }),
+          }
+        }
+
         const supersededMessagePlan = await this.loadSupersededMessagePlan(db, {
           supersedesSessionId,
           streamId: targetStreamId,
@@ -390,6 +438,37 @@ export class PersonaAgent {
           currentTime: agentContext.streamContext.temporal?.currentTime,
           timezone: agentContext.streamContext.temporal?.timezone,
           runWorkspaceAgent,
+          runGeneralResearch:
+            generalResearcher && agentContext.triggerMessage
+              ? (query, opts) =>
+                  generalResearcher.research({
+                    workspaceId,
+                    streamId: targetStreamId,
+                    sessionId: session.id,
+                    toolCallId: opts.toolCallId,
+                    invocationKey: `query:${crypto.createHash("sha256").update(query).digest("hex")}`,
+                    query,
+                    conversationSummary: agentContext.streamContext.conversationHistory
+                      .slice(-8)
+                      .map((m) => `${m.authorType}: ${m.contentMarkdown}`)
+                      .join("\n"),
+                    invokingUserId: agentContext.invokingUserId,
+                    signal: opts.signal,
+                    onSubstep: opts.onSubstep,
+                    deadlineAt: opts.deadlineAt,
+                    runWorkspaceAgent,
+                    github: githubDeps,
+                    tavilyApiKey,
+                    costContext: {
+                      workspaceId,
+                      userId: agentContext.invokingUserId,
+                      sessionId: session.id,
+                      origin: agentContext.invokingUserId ? "user" : "system",
+                    },
+                    checkForNewMessages: checkForNewResearchMessages,
+                    initialLastSeenSequence: session.lastSeenSequence ?? initialSequence,
+                  })
+              : undefined,
           workspace: workspaceDeps,
           github: githubDeps,
           supportsVision: modelRegistry.supportsVision(persona.model),
@@ -480,7 +559,7 @@ export class PersonaAgent {
             // Only wire graceful-abort for workspace_research in V1. Future long-running
             // tools can opt in here. The registry is lazily populated so sessions that
             // never invoke research don't allocate a controller.
-            if (toolName !== "workspace_research") return undefined
+            if (toolName !== "workspace_research" && toolName !== "general_research") return undefined
             const controller = sessionAbortRegistry.register(session.id, {
               workspaceId,
               streamId: sessionStreamId,

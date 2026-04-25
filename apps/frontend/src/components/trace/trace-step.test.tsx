@@ -213,4 +213,37 @@ describe("TraceStep", () => {
     // the object as already-parsed and pulled out the substeps.
     expect(screen.getByText("Planning queries…")).toBeInTheDocument()
   })
+
+  it("renders general research summary and stop button while running", () => {
+    const onAbortResearch = vi.fn()
+    render(
+      <MemoryRouter>
+        <TraceStep
+          step={createStep({
+            stepType: "general_research",
+            content: JSON.stringify({
+              status: "partial",
+              sourceCount: 3,
+              topicsCompleted: 1,
+              topicsPlanned: 2,
+              surfacesUsed: ["workspace", "github"],
+              reportStorageKey: "research-reports/ws_1/session_1/grun_1.md",
+              partialReason: "user_abort",
+              substeps: [{ text: "Researching: release blockers", at: "2026-04-25T12:00:00Z" }],
+            }),
+            completedAt: undefined,
+          })}
+          workspaceId="ws_1"
+          streamId="stream_1"
+          onAbortResearch={onAbortResearch}
+        />
+      </MemoryRouter>
+    )
+
+    expect(screen.getByText(/Researched 1 of 2 topics/)).toBeInTheDocument()
+    expect(screen.getByText(/workspace, github/)).toBeInTheDocument()
+    expect(screen.getByText(/Report saved:/)).toBeInTheDocument()
+    expect(screen.getByText("Researching: release blockers")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /stop research/i })).toBeInTheDocument()
+  })
 })

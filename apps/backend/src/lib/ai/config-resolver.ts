@@ -63,6 +63,15 @@ export interface ResearcherConfig extends ComponentConfig {
   maxResultsPerSearch?: number
 }
 
+/** Config for the general researcher orchestration components */
+export interface GeneralResearcherConfig extends ComponentConfig {
+  leadModelId: string
+  researcherModelId: string
+  writerModelId: string
+  referenceModelId: string
+  writerTemperature: number
+}
+
 /** Config for companion agent */
 export interface CompanionAgentConfig extends ComponentConfig {
   temperature: number
@@ -83,6 +92,7 @@ export const COMPONENT_PATHS = {
   MEMO_MEMORIZER: "memo:memorizer",
   COMPANION_AGENT: "companion:agent",
   COMPANION_RESEARCHER: "companion:researcher",
+  GENERAL_RESEARCHER: "general:researcher",
   EMBEDDING: "embedding",
 } as const
 
@@ -103,6 +113,7 @@ export interface PathConfigMap {
   "memo:memorizer": MemoMemorizerConfig
   "companion:agent": CompanionAgentConfig
   "companion:researcher": ResearcherConfig
+  "general:researcher": GeneralResearcherConfig
   embedding: ComponentConfig
 }
 

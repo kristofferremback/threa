@@ -53,7 +53,9 @@ export function TraceStep({ step, workspaceId, streamId, liveSubsteps, onAbortRe
     <>
       <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: hueColor }} />
       <span className="text-muted-foreground">Running…</span>
-      {step.stepType === "workspace_search" && onAbortResearch && <StopResearchButton onClick={onAbortResearch} />}
+      {(step.stepType === "workspace_search" || step.stepType === "general_research") && onAbortResearch && (
+        <StopResearchButton onClick={onAbortResearch} />
+      )}
     </>
   ) : undefined
 
@@ -332,7 +334,8 @@ function renderStepContent(
         </span>
       )
 
-    case "workspace_search": {
+    case "workspace_search":
+    case "general_research": {
       // Merge persisted substeps (from step.content JSON, written by the
       // session-trace-observer on each tool:progress event and baked in at
       // tool:complete by workspace-research-tool's formatContent) with live
@@ -352,6 +355,30 @@ function renderStepContent(
       const substepsToShow = mergeSubstepsByText(persistedSubsteps, liveSubsteps ?? [])
       const isPartial = structured?.partial === true
       const partialReason = typeof structured?.partialReason === "string" ? structured.partialReason : null
+
+      if (stepType === "general_research" && structured && "topicsCompleted" in structured) {
+        const topicsCompleted = Number(structured.topicsCompleted ?? 0)
+        const topicsPlanned = Number(structured.topicsPlanned ?? 0)
+        const sourceCount = Number(structured.sourceCount ?? 0)
+        const surfacesUsed = Array.isArray(structured.surfacesUsed)
+          ? structured.surfacesUsed.filter((s): s is string => typeof s === "string")
+          : []
+        const reportStorageKey = typeof structured.reportStorageKey === "string" ? structured.reportStorageKey : null
+        return (
+          <div className="space-y-2.5">
+            <div className="text-muted-foreground">
+              Researched {topicsCompleted} of {topicsPlanned} {topicsPlanned === 1 ? "topic" : "topics"} across{" "}
+              {surfacesUsed.length > 0 ? surfacesUsed.join(", ") : "available sources"} with {sourceCount}{" "}
+              {sourceCount === 1 ? "source" : "sources"}.
+            </div>
+            {reportStorageKey && <div className="text-xs text-muted-foreground">Report saved: {reportStorageKey}</div>}
+            {isPartial && <PartialResultBadge stepType={stepType} reason={partialReason} />}
+            {substepsToShow.length > 0 && (
+              <SubstepTimeline substeps={substepsToShow} stepType={stepType} isLive={isInProgress} />
+            )}
+          </div>
+        )
+      }
 
       // Full completed result: content has memoCount etc. Render counts + badges + timeline.
       if (structured && "memoCount" in structured) {

@@ -20,6 +20,8 @@ export {
   aiQuotaId,
   aiAlertId,
   researcherCacheId,
+  generalResearchRunId,
+  generalResearchStepId,
   queueId,
   tokenId,
   workerId,
