@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
-import type { WorkspaceBootstrap, WorkspaceRole } from "@threa/types"
+import { DEFAULT_WORKSPACE_ROLES, type WorkspaceBootstrap, type WorkspaceRole } from "@threa/types"
 import { invitationsApi } from "@/api/invitations"
 import { workspacesApi } from "@/api/workspaces"
 import { workspaceKeys } from "@/hooks/use-workspaces"
@@ -145,6 +145,22 @@ describe("UsersTab", () => {
       expect(inviteDialogRoles.at(-1)).toEqual(roles)
     })
     expect(screen.getByTestId("invite-dialog")).toHaveTextContent("Member, Support Admin")
+  })
+
+  it("falls back to built-in invite roles when cached role sources are empty", async () => {
+    mockListRoles.mockResolvedValue([])
+
+    renderUsersTab({
+      viewerPermissions: ["members:write"],
+      users: [],
+      roles: [],
+    })
+
+    await waitFor(() => {
+      expect(inviteDialogRoles.at(-1)?.map((role) => role.slug)).toEqual(
+        DEFAULT_WORKSPACE_ROLES.map((role) => role.slug)
+      )
+    })
   })
 
   it("updates a member role inline", async () => {

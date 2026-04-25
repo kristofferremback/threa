@@ -35,8 +35,9 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
     enabled: canManageRoles,
     initialData: bootstrapData?.roles,
   })
+  const bootstrapRoles = bootstrapData?.roles && bootstrapData.roles.length > 0 ? bootstrapData.roles : undefined
   const roles =
-    rolesQuery.data && rolesQuery.data.length > 0 ? rolesQuery.data : (bootstrapData?.roles ?? DEFAULT_WORKSPACE_ROLES)
+    rolesQuery.data && rolesQuery.data.length > 0 ? rolesQuery.data : (bootstrapRoles ?? DEFAULT_WORKSPACE_ROLES)
 
   const invitationsQuery = useQuery({
     queryKey: ["invitations", workspaceId],

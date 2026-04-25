@@ -1,9 +1,13 @@
 import type { Querier } from "../../db"
-import { compatibilityRoleFromPermissions, storedCompatibilityRole } from "../../middleware/authorization"
+import {
+  compatibilityRoleFromPermissions,
+  storedCompatibilityRole,
+  workosRoleSlugFromCompatibilityRole,
+} from "../../middleware/authorization"
 import { WorkspaceRepository, type Workspace } from "./repository"
 import { type User } from "./user-repository"
 import { WorkosAuthzMirrorRepository, type WorkspaceMembershipAssignment } from "./workos-authz-mirror-repository"
-import type { WorkspaceRole } from "@threa/types"
+import { DEFAULT_WORKSPACE_ROLES, type WorkspaceRole } from "@threa/types"
 
 export async function decorateUsersWithAuthzMirror(
   db: Querier,
@@ -30,18 +34,26 @@ export async function decorateUsersWithAuthzMirror(
       ? Promise.resolve(options.assignments)
       : WorkosAuthzMirrorRepository.listMembershipAssignments(db, workspaceId),
   ])
-  const rolesBySlug = new Map(roles.map((role) => [role.slug, role]))
+  const effectiveRoles = roles.length > 0 ? roles : DEFAULT_WORKSPACE_ROLES
+  const rolesBySlug = new Map(effectiveRoles.map((role) => [role.slug, role]))
   const assignmentsByWorkosUserId = new Map(assignments.map((assignment) => [assignment.workosUserId, assignment]))
 
   return users.map((user) => {
     const assignment = assignmentsByWorkosUserId.get(user.workosUserId)
-    const assignedRoles = (assignment?.roleSlugs ?? []).map((slug) => ({
+    let assignedRoles = (assignment?.roleSlugs ?? []).map((slug) => ({
       slug,
       name: rolesBySlug.get(slug)?.name ?? slug,
     }))
-    const permissions = new Set(assignedRoles.flatMap((role) => rolesBySlug.get(role.slug)?.permissions ?? []))
     const isOwner = resolvedWorkspace.createdBy === user.id
     const fallbackRole = user.role === "owner" ? "admin" : user.role
+
+    if (assignedRoles.length === 0) {
+      const fallbackRoleSlug = workosRoleSlugFromCompatibilityRole(user.role)
+      const role = rolesBySlug.get(fallbackRoleSlug)
+      assignedRoles = role ? [{ slug: role.slug, name: role.name }] : []
+    }
+
+    const permissions = new Set(assignedRoles.flatMap((role) => rolesBySlug.get(role.slug)?.permissions ?? []))
     const compatibilityRole = assignedRoles.length > 0 ? compatibilityRoleFromPermissions(permissions) : fallbackRole
 
     return {

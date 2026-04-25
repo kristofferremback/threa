@@ -250,6 +250,16 @@ describe("WorkspaceService.listAssignableRoles", () => {
     expect(roles.map((role) => role.slug)).toEqual(["admin", "member"])
     expect(roles.find((role) => role.slug === "admin")?.permissions).toContain("members:write")
   })
+
+  test("returns built-in roles when the workspace is not linked to WorkOS authorization yet", async () => {
+    mockGetWorkosOrganizationId.mockResolvedValue(null as never)
+    const service = createWorkspaceService(false, createMockWorkosOrgService())
+
+    const roles = await service.listAssignableRoles("ws_1")
+
+    expect(roles.map((role) => role.slug)).toEqual(["admin", "member"])
+    expect(mockListMirrorRoles).not.toHaveBeenCalled()
+  })
 })
 
 describe("WorkspaceService.updateUserRole", () => {

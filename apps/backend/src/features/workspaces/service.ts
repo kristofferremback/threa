@@ -309,10 +309,7 @@ export class WorkspaceService {
   async listAssignableRoles(workspaceId: string): Promise<WorkspaceRole[]> {
     const orgId = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
     if (!orgId) {
-      throw new HttpError("Workspace is not configured for WorkOS authorization", {
-        status: 500,
-        code: "WORKSPACE_AUTHORIZATION_NOT_CONFIGURED",
-      })
+      return DEFAULT_WORKSPACE_ROLES
     }
     const roles = await WorkosAuthzMirrorRepository.listRoles(this.pool, workspaceId)
     return roles.length > 0 ? roles : DEFAULT_WORKSPACE_ROLES
