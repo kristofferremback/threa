@@ -1383,38 +1383,5 @@ const x = 1
         })
       })
     })
-
-    describe("contextRefChip", () => {
-      it("strips context-ref chips from the outgoing markdown (metadata-only, not body content)", () => {
-        // The chip lives in the composer for UX reasons but the server receives
-        // refs via the `contextBag` payload on POST /streams, never in the body.
-        const doc = {
-          type: "doc",
-          content: [
-            {
-              type: "paragraph",
-              content: [
-                {
-                  type: "contextRefChip",
-                  attrs: {
-                    refKind: "thread",
-                    streamId: "stream_src",
-                    fromMessageId: null,
-                    toMessageId: null,
-                    label: "Thread from #intro",
-                    status: "ready",
-                    fingerprint: "fp_1",
-                    errorMessage: null,
-                  },
-                },
-                { type: "text", text: "what do you make of this?" },
-              ],
-            },
-          ],
-        }
-
-        expect(serializeToMarkdown(doc)).toBe("what do you make of this?")
-      })
-    })
   })
 })

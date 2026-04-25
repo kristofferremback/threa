@@ -3,7 +3,7 @@ import { useDraftMessage } from "./use-draft-message"
 import { useAttachments, type PendingAttachment, type UploadResult } from "./use-attachments"
 import type { JSONContent } from "@threa/types"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
-import { canSendContextBag } from "@/lib/context-bag/extract"
+import type { DraftContextRef } from "@/lib/context-bag/types"
 
 export interface UseDraftComposerOptions {
   workspaceId: string
@@ -45,6 +45,9 @@ export interface DraftComposerState {
   /** Current count of images (for sequential naming) */
   imageCount: number
 
+  /** Context refs attached to this draft (sidecar — populated by "Discuss with Ariadne"). */
+  contextRefs: DraftContextRef[]
+
   // Submission
   canSend: boolean
   isSending: boolean
@@ -78,6 +81,7 @@ export function useDraftComposer({
     isLoaded: isDraftLoaded,
     contentJson: savedDraft,
     attachments: savedAttachments,
+    contextRefs: savedContextRefs = [] as DraftContextRef[],
     saveDraftDebounced,
     addAttachment: addDraftAttachment,
     removeAttachment: removeDraftAttachment,
@@ -222,11 +226,15 @@ export function useDraftComposer({
   // be created before attachment IDs exist, leaving uploaded files unattached.
   // Failed uploads still don't block send; the user can send with whatever succeeded.
   //
-  // Context-ref chips follow the same model as uploads: `pending` must block
-  // send (precompute hasn't landed) and `error` must block send (we'd submit
-  // a ref the server can't resolve). `ready` and `inline` are safe.
-  const contextBagReady = canSendContextBag(content)
-  const canSend = (hasContent || uploadedIds.length > 0) && !isSending && !isUploading && contextBagReady
+  // Context-ref sidecar follows the same model: a `pending` ref means
+  // precompute is still in flight (sending now risks an inline-summarize
+  // delay on the first turn), and `error` means the server couldn't resolve
+  // the ref (we'd produce a turn without context). `ready` and `inline`
+  // are safe.
+  const contextRefsReady = savedContextRefs.every(
+    (ref: DraftContextRef) => ref.status === "ready" || ref.status === "inline"
+  )
+  const canSend = (hasContent || uploadedIds.length > 0) && !isSending && !isUploading && contextRefsReady
 
   return {
     // Content
@@ -245,6 +253,9 @@ export function useDraftComposer({
     handleRemoveAttachment,
     uploadFile,
     imageCount,
+
+    // Context refs (sidecar — populated by "Discuss with Ariadne")
+    contextRefs: savedContextRefs,
 
     // Submission
     canSend,

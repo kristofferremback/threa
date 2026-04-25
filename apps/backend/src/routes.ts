@@ -335,6 +335,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Context-bag standalone precompute (composer draft flow)
   app.post("/api/workspaces/:workspaceId/context-bag/precompute", ...authed, contextBag.precompute)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId/context-bag", ...authed, contextBag.getStreamBag)
 
   // Link Previews
   app.get("/api/workspaces/:workspaceId/messages/:messageId/link-previews", ...authed, linkPreview.getForMessage)

@@ -21,6 +21,15 @@ interface MockDraftState {
   isLoaded: boolean
   contentJson: JSONContent
   attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>
+  contextRefs?: Array<{
+    refKind: string
+    streamId: string
+    fromMessageId: string | null
+    toMessageId: string | null
+    status: "pending" | "ready" | "inline" | "error"
+    fingerprint: string | null
+    errorMessage: string | null
+  }>
 }
 
 let mockDraftIsLoaded = true
@@ -78,6 +87,7 @@ describe("useDraftComposer", () => {
           isLoaded: state.isLoaded,
           contentJson: state.contentJson,
           attachments: state.attachments,
+          contextRefs: state.contextRefs ?? [],
           saveDraftDebounced: mockSaveDraftDebounced,
           addAttachment: mockAddDraftAttachment,
           removeAttachment: mockRemoveDraftAttachment,
@@ -435,102 +445,69 @@ describe("useDraftComposer", () => {
       expect(result.current.canSend).toBe(false)
     })
 
-    it("should be false when a context-ref chip is still pending precompute", () => {
+    it("should be false when a context-ref sidecar entry is still pending precompute", () => {
+      mockDraftStateByKey[`stream:${scopeId}`] = {
+        isLoaded: true,
+        contentJson: makeDoc("Hello"),
+        attachments: [],
+        contextRefs: [
+          {
+            refKind: "thread",
+            streamId: "stream_src",
+            fromMessageId: null,
+            toMessageId: null,
+            status: "pending",
+            fingerprint: null,
+            errorMessage: null,
+          },
+        ],
+      }
+
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
-
-      act(() => {
-        result.current.setContent({
-          type: "doc",
-          content: [
-            {
-              type: "paragraph",
-              content: [
-                {
-                  type: "contextRefChip",
-                  attrs: {
-                    refKind: "thread",
-                    streamId: "stream_src",
-                    fromMessageId: null,
-                    toMessageId: null,
-                    label: "Thread",
-                    status: "pending",
-                    fingerprint: null,
-                    errorMessage: null,
-                  },
-                },
-                { type: "text", text: "what do you make of this?" },
-              ],
-            },
-          ],
-        })
-      })
-
       expect(result.current.canSend).toBe(false)
     })
 
-    it("should be false when a context-ref chip errored during precompute", () => {
+    it("should be false when a context-ref sidecar entry errored during precompute", () => {
+      mockDraftStateByKey[`stream:${scopeId}`] = {
+        isLoaded: true,
+        contentJson: makeDoc("Hello"),
+        attachments: [],
+        contextRefs: [
+          {
+            refKind: "thread",
+            streamId: "stream_src",
+            fromMessageId: null,
+            toMessageId: null,
+            status: "error",
+            fingerprint: null,
+            errorMessage: "403 forbidden",
+          },
+        ],
+      }
+
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
-
-      act(() => {
-        result.current.setContent({
-          type: "doc",
-          content: [
-            {
-              type: "paragraph",
-              content: [
-                {
-                  type: "contextRefChip",
-                  attrs: {
-                    refKind: "thread",
-                    streamId: "stream_src",
-                    fromMessageId: null,
-                    toMessageId: null,
-                    label: "Thread",
-                    status: "error",
-                    fingerprint: null,
-                    errorMessage: "403 forbidden",
-                  },
-                },
-                { type: "text", text: "hello" },
-              ],
-            },
-          ],
-        })
-      })
-
       expect(result.current.canSend).toBe(false)
     })
 
-    it("should be true when every context-ref chip is ready or inline", () => {
+    it("should be true when every context-ref sidecar entry is ready or inline", () => {
+      mockDraftStateByKey[`stream:${scopeId}`] = {
+        isLoaded: true,
+        contentJson: makeDoc("Hello"),
+        attachments: [],
+        contextRefs: [
+          {
+            refKind: "thread",
+            streamId: "stream_src",
+            fromMessageId: null,
+            toMessageId: null,
+            status: "ready",
+            fingerprint: "fp_1",
+            errorMessage: null,
+          },
+        ],
+      }
+
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
-
-      act(() => {
-        result.current.setContent({
-          type: "doc",
-          content: [
-            {
-              type: "paragraph",
-              content: [
-                {
-                  type: "contextRefChip",
-                  attrs: {
-                    refKind: "thread",
-                    streamId: "stream_src",
-                    fromMessageId: null,
-                    toMessageId: null,
-                    label: "Thread",
-                    status: "ready",
-                    fingerprint: "fp_1",
-                    errorMessage: null,
-                  },
-                },
-                { type: "text", text: "hello" },
-              ],
-            },
-          ],
-        })
-      })
-
       expect(result.current.canSend).toBe(true)
     })
   })

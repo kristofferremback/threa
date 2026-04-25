@@ -460,6 +460,19 @@ export const MessageRepository = {
   },
 
   /**
+   * Count non-deleted messages in a stream. Used by surfaces that label a
+   * stream by its size (e.g. context-bag chip strips: "12 messages in #intro").
+   */
+  async countByStream(db: Querier, streamId: string): Promise<number> {
+    const result = await db.query<{ count: string }>(sql`
+      SELECT COUNT(*)::text AS count FROM messages
+      WHERE stream_id = ${streamId}
+        AND deleted_at IS NULL
+    `)
+    return Number(result.rows[0]?.count ?? 0)
+  },
+
+  /**
    * Update the embedding for a message.
    * Used by the embedding worker after generating embeddings.
    */

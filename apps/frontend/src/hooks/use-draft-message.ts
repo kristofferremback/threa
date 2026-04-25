@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react"
 import { db, type DraftAttachment, type DraftMessage } from "@/db"
+import type { DraftContextRef } from "@/lib/context-bag/types"
 import {
   deleteDraftMessageFromCache,
   hasSeededDraftCache,
@@ -161,6 +162,8 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
     isLoaded: hasSeededDraftCache(workspaceId),
     contentJson: resolvedDraft?.contentJson ?? emptyDoc,
     attachments: resolvedDraft?.attachments ?? [],
+    /** Sidecar context refs attached to the draft (see DraftContextRef). */
+    contextRefs: (resolvedDraft?.contextRefs ?? []) as DraftContextRef[],
     saveDraft,
     saveDraftDebounced,
     addAttachment,

@@ -1,0 +1,26 @@
+/**
+ * Sidecar entry on a draft for an attached context ref. Lives next to
+ * `attachments` on the `DraftMessage` row so the composer surface (uploads
+ * + context refs) is atomic with the user's typed content.
+ *
+ * Status reflects the precompute lifecycle:
+ * - `pending` — `POST /context-bag/precompute` is in flight.
+ * - `ready`   — precompute returned a cached summary.
+ * - `inline`  — content fits under the inline threshold; no summary needed.
+ * - `error`   — precompute failed (e.g. lost access to source stream).
+ *
+ * `composer.canSend` blocks while any ref is `pending` or `error`.
+ *
+ * Defined here (rather than in `@/db`) so view layers can `import type` it
+ * without violating the "components must not import database" lint rule
+ * (INV-15).
+ */
+export interface DraftContextRef {
+  refKind: string
+  streamId: string
+  fromMessageId: string | null
+  toMessageId: string | null
+  status: "pending" | "ready" | "inline" | "error"
+  fingerprint: string | null
+  errorMessage: string | null
+}

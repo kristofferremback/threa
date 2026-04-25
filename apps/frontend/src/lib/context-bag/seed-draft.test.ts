@@ -1,17 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { ContextRefKinds } from "@threa/types"
-import { buildChipSeedDoc, seedDraftWithContextRefChip } from "./seed-draft"
+import { seedDraftWithContextRef } from "./seed-draft"
 import * as dbModule from "@/db"
 import * as draftStoreModule from "@/stores/draft-store"
-import type { ContextRefChipAttrs } from "@/components/editor/context-ref-chip-extension"
+import type { DraftContextRef } from "./types"
 
-function makeChip(overrides: Partial<ContextRefChipAttrs> = {}): ContextRefChipAttrs {
+function makeRef(overrides: Partial<DraftContextRef> = {}): DraftContextRef {
   return {
     refKind: ContextRefKinds.THREAD,
     streamId: "stream_src",
     fromMessageId: null,
     toMessageId: null,
-    label: "Thread from #intro",
     status: "ready",
     fingerprint: null,
     errorMessage: null,
@@ -19,24 +18,7 @@ function makeChip(overrides: Partial<ContextRefChipAttrs> = {}): ContextRefChipA
   }
 }
 
-describe("buildChipSeedDoc", () => {
-  it("produces a doc with the chip followed by a trailing space", () => {
-    const doc = buildChipSeedDoc(makeChip())
-    expect(doc.type).toBe("doc")
-    const para = doc.content?.[0]
-    expect(para?.type).toBe("paragraph")
-    expect(para?.content?.[0]?.type).toBe("contextRefChip")
-    expect(para?.content?.[0]?.attrs).toMatchObject({
-      refKind: "thread",
-      streamId: "stream_src",
-      label: "Thread from #intro",
-      status: "ready",
-    })
-    expect(para?.content?.[1]).toEqual({ type: "text", text: " " })
-  })
-})
-
-describe("seedDraftWithContextRefChip", () => {
+describe("seedDraftWithContextRef", () => {
   const put = vi.fn()
   const upsert = vi.fn()
 
@@ -51,12 +33,8 @@ describe("seedDraftWithContextRefChip", () => {
       upsert(...args)) as unknown as typeof draftStoreModule.upsertDraftMessageInCache)
   })
 
-  it("writes a DraftMessage with the chip doc under the stream draft key", async () => {
-    await seedDraftWithContextRefChip({
-      workspaceId: "ws_1",
-      streamId: "stream_new",
-      chip: makeChip(),
-    })
+  it("writes a DraftMessage with the ref under contextRefs and an empty body", async () => {
+    await seedDraftWithContextRef({ workspaceId: "ws_1", streamId: "stream_new", ref: makeRef() })
 
     expect(put).toHaveBeenCalledTimes(1)
     const [draft] = put.mock.calls[0] as [Record<string, unknown>]
@@ -65,16 +43,14 @@ describe("seedDraftWithContextRefChip", () => {
       workspaceId: "ws_1",
       attachments: [],
     })
-    const content = draft.contentJson as { content?: Array<{ content?: Array<{ type: string }> }> }
-    expect(content.content?.[0]?.content?.[0]?.type).toBe("contextRefChip")
+    const refs = draft.contextRefs as DraftContextRef[]
+    expect(refs).toHaveLength(1)
+    expect(refs[0].streamId).toBe("stream_src")
+    expect(refs[0].status).toBe("ready")
   })
 
-  it("also primes the in-memory draft cache so the composer picks it up without waiting on Dexie", async () => {
-    await seedDraftWithContextRefChip({
-      workspaceId: "ws_1",
-      streamId: "stream_new",
-      chip: makeChip(),
-    })
+  it("primes the in-memory draft cache so the composer picks it up without waiting on Dexie", async () => {
+    await seedDraftWithContextRef({ workspaceId: "ws_1", streamId: "stream_new", ref: makeRef() })
 
     expect(upsert).toHaveBeenCalledTimes(1)
     const [workspaceId, draft] = upsert.mock.calls[0] as [string, { id: string }]

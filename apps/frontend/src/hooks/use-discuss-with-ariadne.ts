@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useCreateStream } from "./use-streams"
 import { buildDiscussWithAriadneBag } from "@/lib/ariadne/discuss"
-import { seedDraftWithContextRefChip } from "@/lib/context-bag/seed-draft"
+import { seedDraftWithContextRef } from "@/lib/context-bag/seed-draft"
 import { ContextRefKinds } from "@threa/types"
 
 /**
@@ -28,7 +28,7 @@ export function useDiscussWithAriadne(workspaceId: string) {
   const navigate = useNavigate()
 
   return useCallback(
-    async (args: { sourceStreamId: string; sourceLabel?: string }) => {
+    async (args: { sourceStreamId: string }) => {
       try {
         const stream = await createStream.mutateAsync({
           type: "scratchpad",
@@ -36,23 +36,27 @@ export function useDiscussWithAriadne(workspaceId: string) {
           contextBag: buildDiscussWithAriadneBag({ sourceStreamId: args.sourceStreamId }),
         })
 
-        // Seed the new scratchpad's draft with a context-ref chip so the
-        // composer renders the attached thread reference as soon as the user
-        // lands. "Attachment-style" UX: visible chip without a nav-state
-        // round-trip (seed goes through IDB + in-memory draft cache, which
-        // the stream page's `useDraftComposer` picks up on first render).
-        // Status is optimistic `"ready"` — the backend's precompute handler
-        // is warming `context_summaries` on the `stream:created` outbox
-        // event in parallel, so by the time the user sends the cache hits.
-        await seedDraftWithContextRefChip({
+        // Seed the new scratchpad's draft with a context-ref sidecar so the
+        // composer's `<ContextRefStrip>` renders the attached thread the
+        // moment the user lands on the page — atomic with whatever they
+        // type next. The strip itself fetches `GET /streams/:id/context-bag`
+        // for rich label data (count + slug), so we don't need to plumb
+        // labels through here; the sidecar just signals "yes, this draft
+        // has a ref attached, it's ready to send."
+        //
+        // Status is optimistic `"ready"` because the backend's precompute
+        // handler is warming `context_summaries` in parallel via the
+        // `stream:created` outbox event. If the cache misses on the first
+        // turn, `resolveBagForStream` falls back to inline summarization —
+        // slower but correct.
+        await seedDraftWithContextRef({
           workspaceId,
           streamId: stream.id,
-          chip: {
+          ref: {
             refKind: ContextRefKinds.THREAD,
             streamId: args.sourceStreamId,
             fromMessageId: null,
             toMessageId: null,
-            label: args.sourceLabel ?? "Thread",
             status: "ready",
             fingerprint: null,
             errorMessage: null,

@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from "dexie"
 import type { AuthorType, CompanionMode, EventType, JSONContent, NotificationLevel, StreamType } from "@threa/types"
+import type { DraftContextRef } from "@/lib/context-bag/types"
 
 const WORKSPACE_USERS_STORE = "workspaceUsers"
 const LEGACY_WORKSPACE_USERS_STORE = "workspaceMembers"
@@ -224,6 +225,8 @@ export interface DraftMessage {
   contentJson: JSONContent
   /** Attachments that have been uploaded and are ready to attach to the message */
   attachments?: DraftAttachment[]
+  /** Context refs attached to this draft (populated by "Discuss with Ariadne"). */
+  contextRefs?: DraftContextRef[]
   updatedAt: number
 }
 

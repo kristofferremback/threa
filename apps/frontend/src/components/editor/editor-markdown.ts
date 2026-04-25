@@ -136,11 +136,6 @@ function getNodeText(node: JSONContent): string {
     const shortcode = node.attrs?.shortcode as string
     return shortcode ? `:${shortcode}:` : ""
   }
-  // Context-ref chips are composer-only metadata: the server receives the
-  // ref list via the `contextBag` payload on POST /streams, never in the
-  // message body. Stripping here keeps the chip label out of the outgoing
-  // markdown.
-  if (node.type === "contextRefChip") return ""
   if (node.type === "text") return node.text ?? ""
   return ""
 }
@@ -154,7 +149,6 @@ function isAtomNode(node: JSONContent): boolean {
     node.type === "channelLink" ||
     node.type === "slashCommand" ||
     node.type === "attachmentReference" ||
-    node.type === "contextRefChip" ||
     node.type === "emoji"
   )
 }
