@@ -84,19 +84,19 @@ export function WorkspaceSettingsDialog({ workspaceId }: WorkspaceSettingsDialog
             <ResponsiveSettingsNav tabs={ALL_TABS} items={TAB_CONFIG} value={activeTab} onValueChange={setTab} />
 
             <div data-slot="settings-content" className={SETTINGS_DIALOG_LAYOUT_CLASSNAMES.content}>
-              <TabsContent value="general" className="mt-0">
+              <TabsContent value="general" className="mt-0 focus-visible:ring-0 focus-visible:ring-offset-0">
                 <GeneralTab workspaceId={workspaceId} />
               </TabsContent>
-              <TabsContent value="users" className="mt-0">
+              <TabsContent value="users" className="mt-0 focus-visible:ring-0 focus-visible:ring-offset-0">
                 <UsersTab workspaceId={workspaceId} />
               </TabsContent>
-              <TabsContent value="integrations" className="mt-0">
+              <TabsContent value="integrations" className="mt-0 focus-visible:ring-0 focus-visible:ring-offset-0">
                 <IntegrationsTab workspaceId={workspaceId} />
               </TabsContent>
-              <TabsContent value="bots" className="mt-0">
+              <TabsContent value="bots" className="mt-0 focus-visible:ring-0 focus-visible:ring-offset-0">
                 <BotsTab workspaceId={workspaceId} />
               </TabsContent>
-              <TabsContent value="api-keys" className="mt-0">
+              <TabsContent value="api-keys" className="mt-0 focus-visible:ring-0 focus-visible:ring-offset-0">
                 <ApiKeysTab workspaceId={workspaceId} />
               </TabsContent>
             </div>

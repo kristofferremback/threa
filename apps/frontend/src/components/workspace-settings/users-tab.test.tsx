@@ -8,9 +8,11 @@ import { invitationsApi } from "@/api/invitations"
 import { workspacesApi } from "@/api/workspaces"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import { spyOnExport } from "@/test/spy"
+import * as authModule from "@/auth"
 import * as hooksModule from "@/hooks"
 import * as inviteDialogModule from "./invite-dialog"
 import * as selectModule from "@/components/ui/select"
+import * as sonnerModule from "sonner"
 import { UsersTab } from "./users-tab"
 
 const mockListRoles = vi.fn()
@@ -62,6 +64,13 @@ describe("UsersTab", () => {
     mockUpdateUserRole.mockResolvedValue({})
     mockListInvitations.mockResolvedValue([])
 
+    vi.spyOn(sonnerModule.toast, "success").mockImplementation(() => "toast_id")
+    vi.spyOn(sonnerModule.toast, "error").mockImplementation(() => "toast_id")
+    vi.spyOn(authModule, "useUser").mockReturnValue({
+      id: "wos_current",
+      email: "current@example.com",
+      name: "Current",
+    })
     vi.spyOn(workspacesApi, "listRoles").mockImplementation((...args) => mockListRoles(...args))
     vi.spyOn(workspacesApi, "updateUserRole").mockImplementation((...args) => mockUpdateUserRole(...args))
     vi.spyOn(invitationsApi, "list").mockImplementation((...args) => mockListInvitations(...args))
@@ -104,11 +113,17 @@ describe("UsersTab", () => {
     )
     spyOnExport(selectModule, "SelectItem").mockReturnValue((({
       value,
+      disabled,
       children,
     }: {
       value: string
+      disabled?: boolean
       children: ReactNode
-    }) => <option value={value}>{children}</option>) as unknown as typeof selectModule.SelectItem)
+    }) => (
+      <option value={value} disabled={disabled}>
+        {children}
+      </option>
+    )) as unknown as typeof selectModule.SelectItem)
   })
 
   it("shows owner badges and passes fetched roles to the invite dialog", async () => {
@@ -203,6 +218,71 @@ describe("UsersTab", () => {
     await waitFor(() => {
       expect(mockUpdateUserRole).toHaveBeenCalledWith("ws_1", "user_1", { roleSlug: "support-admin" })
     })
+    await waitFor(() => {
+      expect(sonnerModule.toast.success).toHaveBeenCalledWith("Role updated to Support Admin")
+    })
+  })
+
+  it("only disables the row currently being updated", async () => {
+    let resolveUpdate: (value: unknown) => void = () => {}
+    mockUpdateUserRole.mockReturnValue(new Promise((resolve) => (resolveUpdate = resolve)))
+    const user = userEvent.setup()
+
+    renderUsersTab({
+      viewerPermissions: ["members:write"],
+      users: [
+        createUser({ id: "user_1", workosUserId: "wos_1", assignedRole: { slug: "member", name: "Member" } }),
+        createUser({ id: "user_2", workosUserId: "wos_2", assignedRole: { slug: "member", name: "Member" } }),
+      ],
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("option", { name: "Support Admin" }).length).toBeGreaterThan(0)
+    })
+    const selects = await screen.findAllByDisplayValue("Member")
+    await user.selectOptions(selects[0], "support-admin")
+
+    await waitFor(() => {
+      expect(selects[0]).toBeDisabled()
+      expect(selects[1]).not.toBeDisabled()
+    })
+    resolveUpdate(
+      createUser({
+        id: "user_1",
+        workosUserId: "wos_1",
+        assignedRole: { slug: "support-admin", name: "Support Admin" },
+      })
+    )
+  })
+
+  it("prevents editing the current user's own role", async () => {
+    vi.spyOn(authModule, "useUser").mockReturnValue({ id: "wos_1", email: "current@example.com", name: "Current" })
+
+    renderUsersTab({
+      viewerPermissions: ["members:write"],
+      users: [createUser({ id: "user_1", workosUserId: "wos_1", assignedRole: { slug: "member", name: "Member" } })],
+    })
+
+    expect(await screen.findByDisplayValue("Member")).toBeDisabled()
+  })
+
+  it("disables demoting the last role manager", async () => {
+    renderUsersTab({
+      viewerPermissions: ["members:write"],
+      users: [
+        createUser({
+          id: "user_1",
+          workosUserId: "wos_1",
+          assignedRole: { slug: "support-admin", name: "Support Admin" },
+          assignedRoles: [{ slug: "support-admin", name: "Support Admin" }],
+        }),
+        createUser({ id: "user_2", workosUserId: "wos_2", assignedRole: { slug: "member", name: "Member" } }),
+      ],
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("option", { name: "Member" })[0]).toBeDisabled()
+    })
   })
 
   it("disables role management when the viewer lacks members:write", async () => {
@@ -238,3 +318,36 @@ describe("UsersTab", () => {
     expect(mockListRoles).not.toHaveBeenCalled()
   })
 })
+
+function createUser(
+  overrides: Partial<WorkspaceBootstrap["users"][number]> & {
+    id: string
+    workosUserId: string
+    assignedRole?: { slug: string; name: string } | null
+  }
+): WorkspaceBootstrap["users"][number] {
+  const assignedRole = overrides.assignedRole ?? { slug: "member", name: "Member" }
+  return {
+    workspaceId: "ws_1",
+    email: `${overrides.id}@example.com`,
+    role: assignedRole?.slug === "member" ? "user" : "admin",
+    isOwner: false,
+    assignedRole,
+    assignedRoles: assignedRole ? [assignedRole] : [],
+    canEditRole: true,
+    slug: overrides.id,
+    name: overrides.id,
+    description: null,
+    avatarUrl: null,
+    timezone: null,
+    locale: null,
+    pronouns: null,
+    phone: null,
+    githubUsername: null,
+    setupCompleted: true,
+    joinedAt: "2026-04-18T10:00:00Z",
+    ...overrides,
+    id: overrides.id,
+    workosUserId: overrides.workosUserId,
+  }
+}
