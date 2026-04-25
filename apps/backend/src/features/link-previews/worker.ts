@@ -16,6 +16,7 @@ import {
 import type { WorkspaceIntegrationService } from "../workspace-integrations"
 
 const log = logger.child({ module: "link-preview-worker" })
+const TWITTER_IMAGE_FETCH_USER_AGENT = "Twitterbot/1.0"
 
 interface WorkerDeps {
   linkPreviewService: LinkPreviewService
@@ -29,6 +30,7 @@ interface OEmbedResponse {
   author_name?: string
   provider_name?: string
   thumbnail_url?: string
+  html?: string
 }
 
 /**
@@ -55,6 +57,13 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
     }
 
     const data = (await response.json()) as OEmbedResponse
+    const oembedDescription = extractOEmbedDescription(data.html)
+    const isTwitterProvider = (data.provider_name ?? "").toLowerCase() === "twitter"
+    const fallbackTitle = isTwitterProvider ? data.author_name ?? null : null
+    let fallbackImageUrl = isTwitterProvider ? await fetchOEmbedFallbackImage(url) : null
+    if (!fallbackImageUrl && isTwitterProvider) {
+      fallbackImageUrl = await fetchLinkedOEmbedImage(data.html)
+    }
 
     // Derive a favicon from the provider's origin
     let faviconUrl: string | null = null
@@ -65,9 +74,9 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
     }
 
     return {
-      title: data.title?.slice(0, MAX_TITLE_LENGTH) ?? null,
-      description: null,
-      imageUrl: data.thumbnail_url ?? null,
+      title: (data.title ?? fallbackTitle)?.slice(0, MAX_TITLE_LENGTH) ?? null,
+      description: oembedDescription?.slice(0, MAX_DESCRIPTION_LENGTH) ?? null,
+      imageUrl: data.thumbnail_url ?? fallbackImageUrl,
       faviconUrl,
       siteName: data.provider_name ?? null,
       contentType: "website",
@@ -76,6 +85,97 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
     }
   } catch (err) {
     log.debug({ err, url }, "oEmbed fetch failed, falling back to HTML")
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+/**
+ * Extract plain-text content from oEmbed HTML payloads (used by providers like X/Twitter
+ * where `title` may be omitted but tweet text is embedded in a blockquote).
+ */
+export function extractOEmbedDescription(html: string | undefined): string | null {
+  if (!html) return null
+
+  const paragraphMatch = html.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i)
+  const candidate = paragraphMatch?.[1] ?? html
+  const withoutTags = candidate.replace(/<[^>]+>/g, " ")
+  const decoded = decode(withoutTags)
+  const compact = decoded?.replace(/\s+/g, " ").trim() ?? null
+  return compact || null
+}
+
+function extractOEmbedLinkHrefs(html: string | undefined): string[] {
+  if (!html) return []
+  const urls: string[] = []
+  const hrefRegex = /<a\b[^>]*href=(["'])(.*?)\1/gi
+  let match: RegExpExecArray | null
+  while ((match = hrefRegex.exec(html)) !== null) {
+    const href = match[2]?.trim()
+    if (href?.startsWith("http://") || href?.startsWith("https://")) {
+      urls.push(href)
+    }
+  }
+  return urls
+}
+
+async function fetchLinkedOEmbedImage(html: string | undefined): Promise<string | null> {
+  const urls = extractOEmbedLinkHrefs(html)
+  const seen = new Set<string>()
+  const supported = /^(https?:\/\/(?:t\.co|pic\.twitter\.com|x\.com|twitter\.com)\/)/i
+
+  for (const candidate of urls) {
+    if (seen.has(candidate)) continue
+    seen.add(candidate)
+    if (!supported.test(candidate)) continue
+
+    const imageUrl = await fetchOEmbedFallbackImage(candidate)
+    if (imageUrl) return imageUrl
+  }
+
+  return null
+}
+
+/**
+ * Some X/Twitter oEmbed responses omit `thumbnail_url` even when the tweet has media.
+ * In those cases, attempt one additional metadata fetch against the canonical URL and
+ * read `twitter:image` / `og:image` via the same HTML parser used for generic pages.
+ */
+async function fetchOEmbedFallbackImage(url: string): Promise<string | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": TWITTER_IMAGE_FETCH_USER_AGENT,
+        Accept: "text/html, application/xhtml+xml, */*",
+      },
+      signal: controller.signal,
+      redirect: "follow",
+    })
+
+    if (!response.ok) {
+      response.body?.cancel()
+      return null
+    }
+
+    const contentTypeHeader = response.headers.get("content-type") ?? ""
+    if (contentTypeHeader.startsWith("image/")) {
+      response.body?.cancel()
+      return response.url || url
+    }
+    if (!contentTypeHeader.includes("text/html") && !contentTypeHeader.includes("application/xhtml")) {
+      response.body?.cancel()
+      return null
+    }
+
+    const html = await response.text()
+    const metadata = await parseHtmlMeta(html.slice(0, MAX_HTML_BYTES), response.url || url)
+    return metadata.imageUrl ?? null
+  } catch {
     return null
   } finally {
     clearTimeout(timeout)
@@ -246,7 +346,8 @@ export async function parseHtmlMeta(html: string, url: string): Promise<UpdateLi
   const description =
     decode(meta["og:description"]) ?? decode(meta["twitter:description"]) ?? decode(meta["description"]) ?? null
   const imageUrl = decode(meta["og:image"]) ?? decode(meta["twitter:image"]) ?? null
-  const siteName = decode(meta["og:site_name"]) ?? null
+  const siteName = decode(meta["og:site_name"]) ?? fallbackSiteName(url)
+  const fallbackTitle = !title && !description && !imageUrl ? fallbackTitleFromUrl(url) : null
 
   // Resolve favicon
   let faviconUrl: string | null = null
@@ -261,7 +362,7 @@ export async function parseHtmlMeta(html: string, url: string): Promise<UpdateLi
   }
 
   return {
-    title: title?.slice(0, MAX_TITLE_LENGTH) ?? null,
+    title: (title ?? fallbackTitle)?.slice(0, MAX_TITLE_LENGTH) ?? null,
     description: description?.slice(0, MAX_DESCRIPTION_LENGTH) ?? null,
     imageUrl: imageUrl ? resolveUrl(imageUrl, url) : null,
     faviconUrl,
@@ -269,6 +370,28 @@ export async function parseHtmlMeta(html: string, url: string): Promise<UpdateLi
     contentType: "website",
     status: "completed",
     expiresAt: hoursFromNow(24),
+  }
+}
+
+function fallbackSiteName(url: string): string | null {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "")
+  } catch {
+    return null
+  }
+}
+
+function fallbackTitleFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const cleanedPath = parsed.pathname.replace(/\/+$/, "")
+    const lastSegment = cleanedPath.split("/").filter(Boolean).at(-1)
+    if (!lastSegment) return parsed.hostname.replace(/^www\./, "")
+
+    const decoded = decodeURIComponent(lastSegment).replace(/[-_]+/g, " ").trim()
+    return decoded || parsed.hostname.replace(/^www\./, "")
+  } catch {
+    return null
   }
 }
 
