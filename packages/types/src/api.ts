@@ -72,6 +72,8 @@ export interface StreamContextRef {
   streamId: string
   fromMessageId: string | null
   toMessageId: string | null
+  /** Cosmetic deep-link anchor; resolver ignores it. See `ContextRef.originMessageId`. */
+  originMessageId: string | null
   source: StreamContextRefSource
 }
 

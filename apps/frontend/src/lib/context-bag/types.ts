@@ -18,8 +18,15 @@
 export interface DraftContextRef {
   refKind: string
   streamId: string
+  /**
+   * Lower slice anchor for the resolver. Setting this narrows the AI's
+   * view of the thread; UI labels show "Slice of …". Leave null for
+   * whole-thread context (the "Discuss with Ariadne" default).
+   */
   fromMessageId: string | null
   toMessageId: string | null
+  /** Cosmetic deep-link anchor — chip's link target. Resolver ignores it. */
+  originMessageId: string | null
   status: "pending" | "ready" | "inline" | "error"
   fingerprint: string | null
   errorMessage: string | null

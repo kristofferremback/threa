@@ -22,6 +22,7 @@ const threadRefSchema = z.object({
   streamId: z.string().min(1),
   fromMessageId: z.string().min(1).optional(),
   toMessageId: z.string().min(1).optional(),
+  originMessageId: z.string().min(1).optional(),
 })
 
 const refSchema = z.discriminatedUnion("kind", [threadRefSchema])

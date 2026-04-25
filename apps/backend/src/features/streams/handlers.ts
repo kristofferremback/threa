@@ -35,6 +35,7 @@ const contextBagSchema = z.object({
         streamId: z.string().min(1),
         fromMessageId: z.string().optional(),
         toMessageId: z.string().optional(),
+        originMessageId: z.string().optional(),
       })
     )
     .min(1)

@@ -5,10 +5,13 @@ import { ContextIntents, ContextRefKinds, type ContextBag } from "@threa/types"
  * stream. Extracted as a helper so both the message context-menu action and
  * the `/discuss-with-ariadne` slash command emit the same shape.
  *
- * `sourceMessageId` is optional and threads through `fromMessageId` on the
- * ref so the chip in the new scratchpad can deep-link back to the exact
- * message the user shared from. When omitted (slash command from an empty
- * composer), the chip falls back to a stream-level link.
+ * `sourceMessageId` is threaded through `originMessageId` (purely cosmetic,
+ * resolver ignores it) so the chip can deep-link back to the exact message
+ * the user shared from. We deliberately do NOT set `fromMessageId` — that
+ * would slice the thread server-side and Ariadne would only see messages
+ * from the clicked one onward, missing the conversation that led up to it.
+ * Bag content stays whole-thread for the AI; navigation still hits the
+ * specific message.
  */
 export function buildDiscussWithAriadneBag(args: { sourceStreamId: string; sourceMessageId?: string }): ContextBag {
   return {
@@ -17,7 +20,7 @@ export function buildDiscussWithAriadneBag(args: { sourceStreamId: string; sourc
       {
         kind: ContextRefKinds.THREAD,
         streamId: args.sourceStreamId,
-        ...(args.sourceMessageId ? { fromMessageId: args.sourceMessageId } : {}),
+        ...(args.sourceMessageId ? { originMessageId: args.sourceMessageId } : {}),
       },
     ],
   }

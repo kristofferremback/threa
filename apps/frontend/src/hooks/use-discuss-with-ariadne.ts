@@ -68,8 +68,11 @@ export function useDiscussWithAriadne(workspaceId: string) {
           ref: {
             refKind: ContextRefKinds.THREAD,
             streamId: args.sourceStreamId,
-            fromMessageId: args.sourceMessageId ?? null,
+            // Whole-thread context (don't slice). Source message stored as
+            // a navigation hint via `originMessageId`.
+            fromMessageId: null,
             toMessageId: null,
+            originMessageId: args.sourceMessageId ?? null,
             status: "ready",
             fingerprint: null,
             errorMessage: null,

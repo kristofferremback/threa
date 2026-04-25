@@ -19,6 +19,8 @@ export interface EnrichedContextRef {
   streamId: string
   fromMessageId: string | null
   toMessageId: string | null
+  /** Cosmetic deep-link anchor; resolver ignores it. */
+  originMessageId: string | null
   source: ContextRefSource
 }
 
@@ -101,6 +103,7 @@ export async function fetchStreamBag(
       streamId: ref.streamId,
       fromMessageId: ref.fromMessageId ?? null,
       toMessageId: ref.toMessageId ?? null,
+      originMessageId: ref.originMessageId ?? null,
       source: {
         streamId: sourceStream.id,
         displayName: sourceStream.displayName ?? null,

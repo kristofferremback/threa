@@ -25,8 +25,24 @@ export const CONTEXT_REF_KINDS = Object.values(ContextRefKinds) as ContextRefKin
 export type ContextRef = {
   kind: typeof ContextRefKinds.THREAD
   streamId: string
+  /**
+   * Optional lower slice anchor. When set, the resolver narrows the thread
+   * to messages from this id onward. Triggers `formatContextRefLabel`'s
+   * "Slice of …" framing. NOT used for navigation — see `originMessageId`.
+   */
   fromMessageId?: string
+  /** Optional upper slice anchor (inclusive). Same slicing semantics as `fromMessageId`. */
   toMessageId?: string
+  /**
+   * Originating message id for deep-linking back to the source — purely
+   * cosmetic, the resolver ignores it. Lets a chip render "Click to open
+   * the source thread" → `?m=<originMessageId>` without the resolver
+   * slicing the thread to that one message.
+   *
+   * Set by "Discuss with Ariadne" so the chip jumps back to the message
+   * the user right-clicked on; bag content stays whole-thread for the AI.
+   */
+  originMessageId?: string
 }
 
 export interface ContextBag {

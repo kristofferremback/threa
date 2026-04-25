@@ -11,6 +11,7 @@ function makeRef(overrides: Partial<DraftContextRef> = {}): DraftContextRef {
     streamId: "stream_src",
     fromMessageId: null,
     toMessageId: null,
+    originMessageId: null,
     status: "ready",
     fingerprint: null,
     errorMessage: null,

@@ -94,7 +94,7 @@ export function ContextRefStrip({ workspaceId, streamId, draftRefs }: ContextRef
                 : buildContextRefSourceHref({
                     workspaceId,
                     sourceStreamId: ref.streamId,
-                    fromMessageId: ref.fromMessageId,
+                    originMessageId: ref.originMessageId,
                   })
             }
             labelMaxWidth="max-w-[200px]"

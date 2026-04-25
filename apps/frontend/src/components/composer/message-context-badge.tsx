@@ -47,7 +47,7 @@ export function MessageContextBadge({ workspaceId, streamId }: MessageContextBad
         const href = buildContextRefSourceHref({
           workspaceId,
           sourceStreamId: ref.streamId,
-          fromMessageId: ref.fromMessageId,
+          originMessageId: ref.originMessageId,
         })
         return (
           <TooltipProvider

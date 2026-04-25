@@ -11,8 +11,9 @@
 export function buildContextRefSourceHref(args: {
   workspaceId: string
   sourceStreamId: string
-  fromMessageId?: string | null
+  /** Cosmetic deep-link target (`originMessageId`). Falls back to the stream URL when null. */
+  originMessageId?: string | null
 }): string {
   const base = `/w/${args.workspaceId}/s/${args.sourceStreamId}`
-  return args.fromMessageId ? `${base}?m=${args.fromMessageId}` : base
+  return args.originMessageId ? `${base}?m=${args.originMessageId}` : base
 }

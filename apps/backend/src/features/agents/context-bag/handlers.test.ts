@@ -178,6 +178,7 @@ describe("createContextBagHandlers.getStreamBag", () => {
           streamId: "stream_src",
           fromMessageId: null,
           toMessageId: null,
+          originMessageId: null,
           source: {
             streamId: "stream_src",
             displayName: "Intro",
