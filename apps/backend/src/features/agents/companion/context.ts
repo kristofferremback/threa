@@ -18,6 +18,7 @@ import { resolveQuoteReplies, renderMessageWithQuoteContext, DEFAULT_MAX_QUOTE_D
 import { computeAgentAccessSpec } from "../researcher/access-spec"
 import { SearchRepository } from "../../search"
 import { logger } from "../../../lib/logger"
+import { escapeXmlAttr } from "../../../lib/xml"
 
 export interface ContextDeps {
   db: Pool
@@ -316,8 +317,4 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     streamContext,
     accessibleStreamIds,
   }
-}
-
-function escapeXmlAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }

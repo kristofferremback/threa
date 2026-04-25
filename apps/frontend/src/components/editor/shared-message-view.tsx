@@ -2,9 +2,8 @@ import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react"
 import { X, Share2 } from "lucide-react"
 import { useParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
-import { Skeleton } from "@/components/ui/skeleton"
-import { useSharedMessageSource, type SharedMessageSource } from "@/hooks/use-shared-message-source"
-import { MarkdownContent } from "@/components/ui/markdown-content"
+import { useSharedMessageSource } from "@/hooks/use-shared-message-source"
+import { SharedMessageCardBody } from "@/components/shared-messages/card-body"
 import type { SharedMessageAttrs } from "./shared-message-extension"
 
 /**
@@ -12,10 +11,16 @@ import type { SharedMessageAttrs } from "./shared-message-extension"
  * from the server-provided hydration map first, falls back to the viewer's
  * local IndexedDB cache, and shows a staggered skeleton only if neither has
  * landed within the usual 300ms loading threshold.
+ *
+ * The body / status rendering is shared with `SharedMessagePointerBlock`
+ * (the markdown-renderer counterpart) via `SharedMessageCardBody`. This
+ * file only owns the NodeView frame: wrapper styling, the trailing
+ * remove-button, and selection highlighting — not the per-state body
+ * rendering.
  */
 export function SharedMessageView({ node, deleteNode, selected }: NodeViewProps) {
   const attrs = node.attrs as SharedMessageAttrs
-  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { workspaceId: _workspaceId } = useParams<{ workspaceId: string }>()
   const source = useSharedMessageSource(attrs.messageId, attrs.streamId)
 
   return (
@@ -28,7 +33,9 @@ export function SharedMessageView({ node, deleteNode, selected }: NodeViewProps)
       data-type="shared-message"
     >
       <Share2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <div className="min-w-0 flex-1">{renderBody(attrs, source, workspaceId)}</div>
+      <div className="min-w-0 flex-1">
+        <SharedMessageCardBody source={source} fallbackAuthor={attrs.authorName ?? ""} />
+      </div>
       <button
         type="button"
         onClick={deleteNode}
@@ -39,57 +46,4 @@ export function SharedMessageView({ node, deleteNode, selected }: NodeViewProps)
       </button>
     </NodeViewWrapper>
   )
-}
-
-function renderBody(attrs: SharedMessageAttrs, source: SharedMessageSource, _workspaceId: string | undefined) {
-  if (source.status === "deleted") {
-    return (
-      <>
-        <AuthorLabel name={attrs.authorName || "—"} />
-        <p className="mt-0.5 italic text-muted-foreground">Message deleted by author</p>
-      </>
-    )
-  }
-
-  if (source.status === "missing") {
-    return (
-      <>
-        <AuthorLabel name={attrs.authorName || "—"} />
-        <p className="mt-0.5 italic text-muted-foreground">Message no longer available</p>
-      </>
-    )
-  }
-
-  if (source.status === "pending") {
-    return (
-      <>
-        <AuthorLabel name={attrs.authorName || "—"} />
-        {source.showSkeleton ? (
-          <Skeleton className="mt-1 h-3 w-48" />
-        ) : (
-          // Before the staggered-skeleton threshold, leave the body blank so
-          // the common fast-path (content resolves within 300ms) doesn't flash
-          // a loading state. The row still shows the author for layout stability.
-          <p className="mt-0.5 h-3" aria-hidden="true" />
-        )}
-      </>
-    )
-  }
-
-  return (
-    <>
-      <AuthorLabel name={source.authorName || attrs.authorName || "—"} />
-      {/* The card is a real inline rendering of the source message, not a
-          single-line preview, so it gets full markdown (emoji, mentions,
-          formatting) rather than the strip-to-inline used by sidebar
-          surfaces. INV-60 doesn't apply here. */}
-      <div className="mt-0.5">
-        <MarkdownContent content={source.contentMarkdown} className="text-sm leading-relaxed" />
-      </div>
-    </>
-  )
-}
-
-function AuthorLabel({ name }: { name: string }) {
-  return <span className="text-xs font-medium text-foreground/80">{name}</span>
 }
