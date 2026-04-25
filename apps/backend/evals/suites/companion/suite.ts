@@ -34,6 +34,7 @@ import {
   brevityEvaluator,
   asksQuestionEvaluator,
   webSearchUsageEvaluator,
+  webSearchQueryEvaluator,
   createResponseQualityEvaluator,
   createToneEvaluator,
   accuracyEvaluator,
@@ -173,14 +174,25 @@ async function setupTestData(
   // Create event service for message creation
   const eventService = new EventService(pool)
 
+  const userPreferencesService = new UserPreferencesService(pool)
+  await userPreferencesService.updatePreferences(ctx.workspaceId, ctx.userId, { timezone: input.timezone ?? "UTC" })
+
+  const setMessageCreatedAt = async (messageId: string, createdAt: string): Promise<void> => {
+    const date = new Date(createdAt)
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`Invalid eval message createdAt: ${createdAt}`)
+    }
+    await pool.query(`UPDATE messages SET created_at = $1 WHERE id = $2`, [date, messageId])
+  }
+
   const seedConversationHistory = async (
     targetStreamId: string,
-    history: Array<{ role: "user" | "assistant"; content: string }>
+    history: Array<{ role: "user" | "assistant"; content: string; createdAt?: string }>
   ): Promise<void> => {
     for (const msg of history) {
       const authorId = msg.role === "user" ? ctx.userId : testPersonaId
       const authorType = msg.role === "user" ? AuthorTypes.USER : AuthorTypes.PERSONA
-      await eventService.createMessage({
+      const message = await eventService.createMessage({
         workspaceId: ctx.workspaceId,
         streamId: targetStreamId,
         authorId,
@@ -188,6 +200,9 @@ async function setupTestData(
         contentJson: parseMarkdown(msg.content),
         contentMarkdown: msg.content,
       })
+      if (msg.createdAt) {
+        await setMessageCreatedAt(message.id, msg.createdAt)
+      }
     }
   }
 
@@ -226,6 +241,9 @@ async function setupTestData(
     contentJson: parseMarkdown(input.message),
     contentMarkdown: input.message,
   })
+  if (input.currentTime) {
+    await setMessageCreatedAt(triggerMessage.id, input.currentTime)
+  }
 
   return {
     personaId: testPersonaId,
@@ -385,6 +403,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       personaId,
       serverId: `eval-server-${ulid()}`,
       trigger: input.trigger === "mention" ? AgentTriggers.MENTION : undefined,
+      currentTime: input.currentTime ? new Date(input.currentTime) : undefined,
     }
 
     // Run the agent!
@@ -445,6 +464,7 @@ export const companionSuite: EvalSuite<CompanionInput, CompanionOutput, Companio
     brevityEvaluator,
     asksQuestionEvaluator,
     webSearchUsageEvaluator,
+    webSearchQueryEvaluator,
     createResponseQualityEvaluator(),
     createToneEvaluator(),
   ],

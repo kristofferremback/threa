@@ -168,6 +168,8 @@ export function buildTemporalPromptSection(temporal: TemporalContext, participan
   const formatExample = temporal.timeFormat === "12h" ? "2:30 PM" : "14:30"
   const formatInstruction = `When referencing times, use ${temporal.timeFormat === "12h" ? "12-hour" : "24-hour"} format (e.g., ${formatExample}).`
   const timestampInstruction = `User messages are prefixed with their send time, e.g., (${formatExample}). Do not include timestamps in your responses.`
+  const groundingInstruction =
+    "Treat the current time above as the invocation-time definition of now for relative terms like today, tomorrow, yesterday, this week, recently, latest, and current. It is not your training cutoff date and not the stream creation date. Resolve relative times silently while reasoning; mention the current time only when the user asks for it."
 
   if (hasMixedTimezones && participants) {
     // Different offsets: state offsets once in system prompt
@@ -182,12 +184,12 @@ export function buildTemporalPromptSection(temporal: TemporalContext, participan
       }
     }
 
-    section += `\n${formatInstruction}\n${timestampInstruction}`
+    section += `\n${groundingInstruction}\n${formatInstruction}\n${timestampInstruction}`
     return section
   }
 
   // Same offset: simple format
-  return `\n\n## Current Time\n\nCurrent time: ${currentTimeFormatted}\n\n${formatInstruction}\n${timestampInstruction}`
+  return `\n\n## Current Time\n\nCurrent time: ${currentTimeFormatted}\n\n${groundingInstruction}\n${formatInstruction}\n${timestampInstruction}`
 }
 
 /**

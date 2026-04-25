@@ -181,7 +181,7 @@ export async function buildStreamContext(
       break
 
     case StreamTypes.CHANNEL:
-      context = await buildChannelContext(db, stream, temporal)
+      context = await buildChannelContext(db, stream, temporal, options?.currentTime)
       break
 
     case StreamTypes.THREAD:
@@ -189,7 +189,7 @@ export async function buildStreamContext(
       break
 
     case StreamTypes.DM:
-      context = await buildDmContext(db, stream, temporal)
+      context = await buildDmContext(db, stream, temporal, options?.currentTime)
       break
 
     default:
@@ -244,7 +244,12 @@ async function buildScratchpadContext(db: Querier, stream: Stream, temporal?: Te
 /**
  * Channel context: collaborative. Includes members, slug, and conversation.
  */
-async function buildChannelContext(db: Querier, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
+async function buildChannelContext(
+  db: Querier,
+  stream: Stream,
+  temporal?: TemporalContext,
+  currentTime?: Date
+): Promise<StreamContext> {
   const [messages, members] = await Promise.all([
     MessageRepository.list(db, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
     StreamMemberRepository.list(db, { streamId: stream.id }),
@@ -255,7 +260,8 @@ async function buildChannelContext(db: Querier, stream: Stream, temporal?: Tempo
     db,
     stream.workspaceId,
     userIds,
-    temporal !== undefined
+    temporal !== undefined,
+    currentTime
   )
 
   return {
@@ -275,7 +281,12 @@ async function buildChannelContext(db: Querier, stream: Stream, temporal?: Tempo
 /**
  * DM context: two-party. Like channels but focused.
  */
-async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
+async function buildDmContext(
+  db: Querier,
+  stream: Stream,
+  temporal?: TemporalContext,
+  currentTime?: Date
+): Promise<StreamContext> {
   const [messages, members] = await Promise.all([
     MessageRepository.list(db, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
     StreamMemberRepository.list(db, { streamId: stream.id }),
@@ -286,7 +297,8 @@ async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalCo
     db,
     stream.workspaceId,
     userIds,
-    temporal !== undefined
+    temporal !== undefined,
+    currentTime
   )
 
   return {
@@ -392,7 +404,8 @@ async function resolveParticipantsWithTimezones(
   db: Querier,
   workspaceId: string,
   userIds: string[],
-  includeTimezones: boolean
+  includeTimezones: boolean,
+  currentTime?: Date
 ): Promise<{ participants: Participant[]; participantTimezones?: ParticipantTemporal[] }> {
   if (userIds.length === 0) {
     return { participants: [], participantTimezones: includeTimezones ? [] : undefined }
@@ -409,7 +422,7 @@ async function resolveParticipantsWithTimezones(
   // Build timezone info from the same member data if needed
   let participantTimezones: ParticipantTemporal[] | undefined
   if (includeTimezones) {
-    const now = new Date()
+    const now = currentTime ?? new Date()
     participantTimezones = members.map((member) => {
       const timezone = member.timezone ?? "UTC"
       return {

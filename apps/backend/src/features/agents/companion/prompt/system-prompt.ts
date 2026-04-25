@@ -120,6 +120,7 @@ You have a \`web_search\` tool to search the web for current information.
 When using web search:
 - Search when you need up-to-date information not in your training data
 - Search for facts, current events, or specific details you're uncertain about
+- For latest/recent/current/news questions, ground your search and answer against the Current Time section; do not mix stale search results or training-cutoff facts into a "recent" answer
 - Cite sources in your responses using markdown links: [Title](URL)
 - Use the snippets to answer accurately`
   }

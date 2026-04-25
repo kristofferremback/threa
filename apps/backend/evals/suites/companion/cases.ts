@@ -18,14 +18,18 @@ export interface CompanionInput {
   streamType: StreamType
   /** Invocation trigger */
   trigger: AgentTrigger
+  /** Invocation time override for deterministic temporal evals */
+  currentTime?: string
+  /** Invoking user's timezone override */
+  timezone?: string
   /** Conversation history (if any) */
-  conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>
+  conversationHistory?: Array<{ role: "user" | "assistant"; content: string; createdAt?: string }>
   /** Additional workspace context from other streams for cross-stream memory tests */
   workspaceContext?: Array<{
     streamType?: StreamType
     name?: string
     description?: string
-    conversationHistory: Array<{ role: "user" | "assistant"; content: string }>
+    conversationHistory: Array<{ role: "user" | "assistant"; content: string; createdAt?: string }>
   }>
   /** Additional context about the stream */
   streamContext?: {
@@ -57,6 +61,8 @@ export interface CompanionExpected {
     shouldAskQuestion?: boolean
     /** Should use web search */
     shouldUseWebSearch?: boolean
+    /** Web search query should include these terms */
+    webSearchQueryShouldContain?: string[]
   }
   /** Reason for this expected behavior */
   reason: string
@@ -212,6 +218,88 @@ const scratchpadCases: EvalCase<CompanionInput, CompanionExpected>[] = [
         shouldAskQuestion: true,
       },
       reason: "Vague request should prompt for clarification rather than guessing",
+    }
+  ),
+]
+
+// =============================================================================
+// Temporal Grounding Cases
+// =============================================================================
+
+const temporalGroundingCases: EvalCase<CompanionInput, CompanionExpected>[] = [
+  createCase(
+    "temporal-now-001",
+    "Temporal: Tomorrow should resolve from invocation time",
+    {
+      message: "What is tomorrow's date? Answer with the YYYY-MM-DD date only.",
+      streamType: "scratchpad",
+      trigger: "companion",
+      currentTime: "2026-11-15T10:00:00.000Z",
+      timezone: "UTC",
+    },
+    {
+      shouldRespond: true,
+      responseCharacteristics: {
+        brief: true,
+        shouldContain: ["2026-11-16"],
+        shouldNotContain: ["2025", "2024", "knowledge cutoff"],
+      },
+      reason:
+        "Relative dates must resolve from the invocation time, not model training cutoff or wall-clock assumptions",
+    }
+  ),
+
+  createCase(
+    "temporal-long-lived-001",
+    "Temporal: Recent should use November invocation time in an old stream",
+    {
+      message: "Which of these decisions is more recent, and what did we decide?",
+      streamType: "scratchpad",
+      trigger: "companion",
+      currentTime: "2026-11-15T10:00:00.000Z",
+      timezone: "UTC",
+      conversationHistory: [
+        {
+          role: "user",
+          content: "Decision log: In April we chose Redis for the short-lived cache.",
+          createdAt: "2026-04-20T09:00:00.000Z",
+        },
+        {
+          role: "user",
+          content: "Decision log: This week we replaced that with Postgres advisory locks for coordination.",
+          createdAt: "2026-11-12T14:00:00.000Z",
+        },
+      ],
+    },
+    {
+      shouldRespond: true,
+      responseCharacteristics: {
+        shouldContain: ["Postgres", "advisory"],
+        shouldNotContain: ["Redis is more recent"],
+      },
+      reason:
+        "Long-lived streams must interpret recent relative to the current November invocation, while preserving historical message dates",
+    }
+  ),
+
+  createCase(
+    "temporal-news-001",
+    "Temporal: Latest AI news should search with the current year",
+    {
+      message: "What's the most recent news in AI?",
+      streamType: "scratchpad",
+      trigger: "companion",
+      currentTime: "2026-11-15T10:00:00.000Z",
+      timezone: "UTC",
+    },
+    {
+      shouldRespond: true,
+      responseCharacteristics: {
+        shouldUseWebSearch: true,
+        webSearchQueryShouldContain: ["2026"],
+        shouldNotContain: ["knowledge cutoff", "last update"],
+      },
+      reason: "Open-ended recent-news questions should be grounded with web search against the invocation year",
     }
   ),
 ]
@@ -633,6 +721,7 @@ const consistencyCases: EvalCase<CompanionInput, CompanionExpected>[] = [
 
 export const companionCases: EvalCase<CompanionInput, CompanionExpected>[] = [
   ...scratchpadCases,
+  ...temporalGroundingCases,
   ...channelCases,
   ...threadCases,
   ...dmCases,
@@ -642,4 +731,13 @@ export const companionCases: EvalCase<CompanionInput, CompanionExpected>[] = [
 ]
 
 // Export case subsets for targeted testing
-export { scratchpadCases, channelCases, threadCases, dmCases, workspaceMemoryCases, edgeCases, consistencyCases }
+export {
+  scratchpadCases,
+  temporalGroundingCases,
+  channelCases,
+  threadCases,
+  dmCases,
+  workspaceMemoryCases,
+  edgeCases,
+  consistencyCases,
+}
