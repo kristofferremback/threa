@@ -8,8 +8,6 @@ export const DOUBLE_ZOOM = 2
 interface UseZoomPanOptions {
   containerRef: RefObject<HTMLElement | null>
   contentRef: RefObject<HTMLElement | null>
-  minScale?: number
-  maxScale?: number
   onZoomChange?: (zoomed: boolean) => void
 }
 
@@ -72,13 +70,7 @@ export function fitContain(
 
 const TRANSITION_EASE = "transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)"
 
-export function useZoomPan({
-  containerRef,
-  contentRef,
-  minScale = ZOOM_MIN,
-  maxScale = ZOOM_MAX,
-  onZoomChange,
-}: UseZoomPanOptions) {
+export function useZoomPan({ containerRef, contentRef, onZoomChange }: UseZoomPanOptions) {
   const stateRef = useRef<ZoomPanState>(IDENTITY)
   const containerSizeRef = useRef({ w: 0, h: 0 })
   const baseSizeRef = useRef({ w: 0, h: 0 })
@@ -113,15 +105,15 @@ export function useZoomPan({
         baseSizeRef.current.h
       )
       // At scale 1, translate collapses to 0 — prevents stuck offsets after zoom-out.
-      if (clamped.scale <= minScale + 1e-6) {
-        clamped.scale = minScale
+      if (clamped.scale <= ZOOM_MIN + 1e-6) {
+        clamped.scale = ZOOM_MIN
         clamped.tx = 0
         clamped.ty = 0
       }
       stateRef.current = clamped
       applyTransform(opts?.transition ?? false)
 
-      const zoomed = clamped.scale > minScale + 1e-6
+      const zoomed = clamped.scale > ZOOM_MIN + 1e-6
       if (zoomed !== isZoomedRef.current) {
         isZoomedRef.current = zoomed
         setIsZoomed(zoomed)
@@ -129,7 +121,7 @@ export function useZoomPan({
       }
       setScale(clamped.scale)
     },
-    [applyTransform, minScale]
+    [applyTransform]
   )
 
   const reset = useCallback(
@@ -191,11 +183,11 @@ export function useZoomPan({
       const px = (localX ?? cx) - cx
       const py = (localY ?? cy) - cy
       const current = stateRef.current
-      const target = Math.max(minScale, Math.min(maxScale, current.scale * factor))
+      const target = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, current.scale * factor))
       if (target === current.scale) return
       commit(zoomToPoint(current, target, px, py), { transition: true })
     },
-    [commit, minScale, maxScale]
+    [commit]
   )
 
   const zoomIn = useCallback(() => zoomBy(ZOOM_STEP), [zoomBy])
@@ -217,7 +209,7 @@ export function useZoomPan({
         const intensity = e.deltaMode === 0 ? 0.01 : 0.3
         const factor = Math.exp(-e.deltaY * intensity)
         const current = stateRef.current
-        const target = Math.max(minScale, Math.min(maxScale, current.scale * factor))
+        const target = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, current.scale * factor))
         if (target === current.scale) return
         const cx = container!.clientWidth / 2
         const cy = container!.clientHeight / 2
@@ -232,7 +224,7 @@ export function useZoomPan({
 
     container.addEventListener("wheel", onWheel, { passive: false })
     return () => container.removeEventListener("wheel", onWheel)
-  }, [containerRef, commit, minScale, maxScale])
+  }, [containerRef, commit])
 
   // ── Desktop: pointer-drag pan (plain drag when zoomed, or meta/ctrl+drag) ─
   useEffect(() => {
@@ -353,7 +345,7 @@ export function useZoomPan({
         const cx = cw / 2
         const cy = ch / 2
         const rawScale = startState.scale * (m.d / startDist)
-        const target = Math.max(minScale, Math.min(maxScale, rawScale))
+        const target = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, rawScale))
         // Zoom anchored at the *initial* midpoint (Figma-like: point under your fingers stays put),
         // plus pan by the midpoint delta so two-finger drag-during-pinch feels natural.
         const zoomed = zoomToPoint(startState, target, startMidLocalX - cx, startMidLocalY - cy)
@@ -391,7 +383,7 @@ export function useZoomPan({
       container.removeEventListener("touchend", onTouchEnd)
       container.removeEventListener("touchcancel", onTouchEnd)
     }
-  }, [containerRef, commit, minScale, maxScale])
+  }, [containerRef, commit])
 
   // ── Double-click / double-tap: toggle zoom ────────────────────────────────
   useEffect(() => {

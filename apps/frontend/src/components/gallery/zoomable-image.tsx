@@ -5,8 +5,6 @@ export interface ZoomableImageHandle {
   reset: () => void
   zoomIn: () => void
   zoomOut: () => void
-  getScale: () => number
-  isZoomed: () => boolean
 }
 
 interface ZoomableImageProps {
@@ -39,10 +37,8 @@ export const ZoomableImage = forwardRef<ZoomableImageHandle, ZoomableImageProps>
       reset: () => reset({ transition: true }),
       zoomIn,
       zoomOut,
-      getScale: () => scale,
-      isZoomed: () => isZoomed,
     }),
-    [reset, zoomIn, zoomOut, scale, isZoomed]
+    [reset, zoomIn, zoomOut]
   )
 
   return (
