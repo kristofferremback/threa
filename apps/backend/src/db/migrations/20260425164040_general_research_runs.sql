@@ -29,9 +29,6 @@ CREATE TABLE IF NOT EXISTS general_research_runs (
 CREATE INDEX IF NOT EXISTS idx_general_research_runs_workspace_status
     ON general_research_runs (workspace_id, status, updated_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_general_research_runs_session
-    ON general_research_runs (agent_session_id);
-
 CREATE INDEX IF NOT EXISTS idx_general_research_runs_recovery
     ON general_research_runs (status, lease_expires_at)
     WHERE status IN ('running', 'pending');

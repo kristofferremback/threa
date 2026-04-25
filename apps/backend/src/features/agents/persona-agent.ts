@@ -4,6 +4,7 @@ import { z } from "zod"
 import { withClient, type Querier } from "../../db"
 import {
   AgentStepTypes,
+  AgentToolNames,
   AgentTriggers,
   AuthorTypes,
   StreamTypes,
@@ -333,6 +334,27 @@ export class PersonaAgent {
             .map((event) => (event.payload as { messageId?: string }).messageId)
             .filter((id): id is string => typeof id === "string")
           const messagesById = await MessageRepository.findByIds(db, changedMessageIds)
+          const userIds = [
+            ...new Set(
+              filteredEvents
+                .filter((event) => event.actorType === "user" && event.actorId)
+                .map((event) => event.actorId!)
+            ),
+          ]
+          const personaIds = [
+            ...new Set(
+              filteredEvents
+                .filter((event) => event.actorType === "persona" && event.actorId)
+                .map((event) => event.actorId!)
+            ),
+          ]
+          const [members, personas] = await Promise.all([
+            userIds.length > 0 ? UserRepository.findByIds(db, workspaceId, userIds) : Promise.resolve([]),
+            personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+          ])
+          const names = new Map<string, string>()
+          for (const member of members) names.set(member.id, member.name)
+          for (const eventPersona of personas) names.set(eventPersona.id, eventPersona.name)
           const maxSequence = filteredEvents.reduce(
             (max, event) => (event.sequence > max ? event.sequence : max),
             sinceSequence
@@ -344,16 +366,23 @@ export class PersonaAgent {
               const messageId = (event.payload as { messageId?: string }).messageId
               if (!messageId) return []
               const message = messagesById.get(messageId)
-              let content = `[${event.eventType}]`
+              const authorId = event.actorId ?? message?.authorId ?? "system"
+              const authorType = event.actorType ?? message?.authorType ?? AuthorTypes.SYSTEM
+              const authorName = names.get(authorId) ?? (authorType === AuthorTypes.SYSTEM ? "System" : "Unknown")
+              let content = "[Message updated]"
               if (event.eventType === "message_deleted") {
                 content = "[Message deleted]"
+              } else if (event.eventType === "message_created" && !message?.contentMarkdown) {
+                content = "[Message created]"
+              } else if (event.eventType === "message_edited" && !message?.contentMarkdown) {
+                content = "[Message edited]"
               } else if (message?.contentMarkdown) {
                 content = message.contentMarkdown
               }
               return [
                 {
                   sequence: event.sequence,
-                  authorName: message?.authorId ?? event.actorId ?? "unknown",
+                  authorName,
                   changeType: event.eventType,
                   content,
                 },
@@ -556,10 +585,11 @@ export class PersonaAgent {
             return null
           },
           toolSignalProvider: (_toolCallId, toolName) => {
-            // Only wire graceful-abort for workspace_research in V1. Future long-running
-            // tools can opt in here. The registry is lazily populated so sessions that
-            // never invoke research don't allocate a controller.
-            if (toolName !== "workspace_research" && toolName !== "general_research") return undefined
+            // The registry is lazily populated so sessions that never invoke
+            // long-running research tools do not allocate a controller.
+            if (toolName !== AgentToolNames.WORKSPACE_RESEARCH && toolName !== AgentToolNames.GENERAL_RESEARCH) {
+              return undefined
+            }
             const controller = sessionAbortRegistry.register(session.id, {
               workspaceId,
               streamId: sessionStreamId,
@@ -732,8 +762,8 @@ export class PersonaAgent {
           }
         } finally {
           // Release the graceful-abort controller (if any was registered by the
-          // toolSignalProvider during workspace_research tool invocation). Safe to
-          // call when nothing is registered.
+          // toolSignalProvider during workspace_research or general_research).
+          // Safe to call when nothing is registered.
           sessionAbortRegistry.unregister(session.id)
         }
       }

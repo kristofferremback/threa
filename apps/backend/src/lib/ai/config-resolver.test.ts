@@ -32,8 +32,15 @@ describe("StaticConfigResolver", () => {
     expect(researcherConfig.temperature).toBe(0.1)
 
     const generalResearcherConfig = await resolver.resolve(COMPONENT_PATHS.GENERAL_RESEARCHER)
-    expect(generalResearcherConfig.modelId).toBe("openrouter:anthropic/claude-haiku-4.5")
-    expect(generalResearcherConfig.temperature).toBe(0.2)
+    expect(generalResearcherConfig).toMatchObject({
+      modelId: "openrouter:anthropic/claude-haiku-4.5",
+      temperature: 0.2,
+      leadModelId: "openrouter:anthropic/claude-haiku-4.5",
+      researcherModelId: "openrouter:anthropic/claude-haiku-4.5",
+      writerModelId: "openrouter:anthropic/claude-sonnet-4.5",
+      referenceModelId: "openrouter:anthropic/claude-haiku-4.5",
+      writerTemperature: 0.3,
+    })
 
     const embeddingConfig = await resolver.resolve(COMPONENT_PATHS.EMBEDDING)
     expect(embeddingConfig.modelId).toBe("openrouter:openai/text-embedding-3-small")

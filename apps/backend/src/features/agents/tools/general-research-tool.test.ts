@@ -24,7 +24,7 @@ describe("createGeneralResearchTool", () => {
     const progress: string[] = []
     const result = await tool.config.execute(
       { query: "What changed?" },
-      { toolCallId: "tool_1", onProgress: (substep) => progress.push(substep) }
+      { toolCallId: "tool_1", signal: new AbortController().signal, onProgress: (substep) => progress.push(substep) }
     )
     const parsed = JSON.parse(result.output)
 
@@ -41,5 +41,20 @@ describe("createGeneralResearchTool", () => {
       topicsPlanned: 1,
     })
     expect(tool.config.trace.formatContent({ query: "What changed?" }, result)).toBe(result.output)
+    expect(tool.config.trace.extractSources?.({ query: "What changed?" }, result)).toEqual([
+      { type: "web", title: "Source", url: "https://example.com", snippet: undefined },
+    ])
+  })
+
+  it("fails loudly when the runtime does not provide an abort signal", async () => {
+    const tool = createGeneralResearchTool({
+      runGeneralResearch: async () => {
+        throw new Error("should not run without a signal")
+      },
+    })
+
+    await expect(tool.config.execute({ query: "What changed?" }, { toolCallId: "tool_1" })).rejects.toThrow(
+      "general_research tool requires an AbortSignal"
+    )
   })
 })

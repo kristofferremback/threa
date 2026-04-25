@@ -6,6 +6,7 @@ import { logger } from "../../lib/logger"
 export interface OrphanSessionCleanup {
   start(): void
   stop(): void
+  runOnce(): Promise<void>
 }
 
 /**
@@ -40,6 +41,8 @@ export function createOrphanSessionCleanup(
 
       for (const session of orphaned) {
         try {
+          // Keep this check inside the fail-safe block: if research state cannot
+          // be read, do not mark the session FAILED; the next tick can retry.
           const hasActiveGeneralResearch = await GeneralResearchRepository.hasActiveRunForSession(pool, session.id)
           if (hasActiveGeneralResearch) {
             logger.info(
@@ -77,5 +80,7 @@ export function createOrphanSessionCleanup(
         logger.info("Stopped orphan session cleanup")
       }
     },
+
+    runOnce: cleanup,
   }
 }

@@ -226,7 +226,7 @@ export const GeneralResearchRepository = {
     return result.rows[0]?.exists === true
   },
 
-  async listStaleActiveRuns(db: Querier, staleBefore: Date): Promise<GeneralResearchRun[]> {
+  async listStaleActiveRuns(db: Querier, staleBefore: Date, limit = 100): Promise<GeneralResearchRun[]> {
     const result = await db.query<GeneralResearchRunRow>(
       sql`
         SELECT ${RUN_SELECT_FIELDS}
@@ -234,6 +234,7 @@ export const GeneralResearchRepository = {
         WHERE status IN (${GeneralResearchRunStatuses.PENDING}, ${GeneralResearchRunStatuses.RUNNING})
           AND (lease_expires_at IS NULL OR lease_expires_at < ${staleBefore})
         ORDER BY updated_at ASC
+        LIMIT ${limit}
       `
     )
     return result.rows.map(mapRun)
@@ -293,6 +294,7 @@ export const GeneralResearchRepository = {
       reportStorageKey?: string | null
       outputJson?: unknown
       sources?: SourceItem[]
+      leaseOwner: string
     }
   ): Promise<GeneralResearchRun | null> {
     const result = await db.query<GeneralResearchRunRow>(
@@ -309,6 +311,8 @@ export const GeneralResearchRepository = {
             completed_at = NOW(),
             updated_at = NOW()
         WHERE id = ${params.runId}
+          AND lease_owner = ${params.leaseOwner}
+          AND status IN (${GeneralResearchRunStatuses.PENDING}, ${GeneralResearchRunStatuses.RUNNING})
         RETURNING ${RUN_SELECT_FIELDS}
       `
     )
@@ -360,7 +364,10 @@ export const GeneralResearchRepository = {
         RETURNING ${STEP_SELECT_FIELDS}
       `
     )
-    return mapStep(result.rows[0])
+    if (result.rows[0]) return mapStep(result.rows[0])
+    const existing = await this.findStep(db, params.runId, params.stepKey)
+    if (existing?.completedAt) return existing
+    throw new Error(`General research step ${params.stepKey} for run ${params.runId} could not be started`)
   },
 
   async completeStep(

@@ -2,7 +2,6 @@ import crypto from "crypto"
 import type { Pool } from "pg"
 import { z } from "zod"
 import type { SourceItem } from "@threa/types"
-import { withClient } from "../../../db"
 import { isAbortError, type AI, type CostContext } from "../../../lib/ai/ai"
 import type { StorageProvider } from "../../../lib/storage/s3-client"
 import type { WorkspaceAgent, WorkspaceAgentResult } from "../researcher"
@@ -16,6 +15,7 @@ import {
   GENERAL_RESEARCH_WRITER_MODEL_ID,
   GENERAL_RESEARCH_REFERENCE_MODEL_ID,
   GENERAL_RESEARCH_SYSTEM_PROMPT,
+  GENERAL_RESEARCH_REFERENCE_SYSTEM_PROMPT,
   GENERAL_RESEARCH_TEMPERATURE,
   GENERAL_RESEARCH_WRITER_TEMPERATURE,
   GENERAL_RESEARCH_PHASE_TIMEOUT_MS,
@@ -71,6 +71,22 @@ const ReferenceSchema = z.object({
   answer: z.string().max(GENERAL_RESEARCH_MAX_ANSWER_CHARS),
   reportMarkdown: z.string().max(GENERAL_RESEARCH_MAX_REPORT_CHARS),
 })
+
+const GeneralResearchResultSchema: z.ZodType<GeneralResearchResult> = z.object({
+  status: z.enum(["ok", "needs_clarification", "partial"]),
+  answer: z.string(),
+  reportStorageKey: z.string().optional(),
+  sources: z.array(z.custom<SourceItem>()),
+  substeps: z.array(z.object({ text: z.string(), at: z.string() })),
+  effort: z.enum(["quick", "standard", "thorough"]).optional(),
+  topicsCompleted: z.number(),
+  topicsPlanned: z.number(),
+  surfacesUsed: z.array(z.string()),
+  partialReason: z.enum(["user_abort", "timeout"]).optional(),
+  clarificationQuestion: z.string().optional(),
+})
+
+const S3ReportSchema = z.object({ key: z.string() })
 
 type ResearchPlan = z.infer<typeof ResearchPlanSchema>
 type TopicPlan = ResearchPlan["topics"][number]
@@ -140,27 +156,15 @@ function isTerminal(run: GeneralResearchRun): boolean {
   return (
     run.status === GeneralResearchRunStatuses.COMPLETED ||
     run.status === GeneralResearchRunStatuses.PARTIAL ||
-    run.status === GeneralResearchRunStatuses.NEEDS_CLARIFICATION
+    run.status === GeneralResearchRunStatuses.NEEDS_CLARIFICATION ||
+    run.status === GeneralResearchRunStatuses.FAILED
   )
 }
 
 function makeTimeoutSignal(signal: AbortSignal | undefined, deadlineAt: number | undefined): AbortSignal {
-  const controller = new AbortController()
-  const abort = () => controller.abort()
-  if (signal?.aborted) controller.abort()
-  signal?.addEventListener("abort", abort, { once: true })
-
   const deadlineDelay = deadlineAt ? Math.max(0, deadlineAt - Date.now()) : GENERAL_RESEARCH_PHASE_TIMEOUT_MS
-  const timeout = setTimeout(() => controller.abort(), Math.min(deadlineDelay, GENERAL_RESEARCH_PHASE_TIMEOUT_MS))
-  controller.signal.addEventListener(
-    "abort",
-    () => {
-      clearTimeout(timeout)
-      signal?.removeEventListener("abort", abort)
-    },
-    { once: true }
-  )
-  return controller.signal
+  const timeoutSignal = AbortSignal.timeout(Math.min(deadlineDelay, GENERAL_RESEARCH_PHASE_TIMEOUT_MS))
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
 }
 
 function normalizeSources(sources: SourceItem[]): SourceItem[] {
@@ -189,31 +193,35 @@ export class GeneralResearcher {
   constructor(private readonly deps: GeneralResearcherDeps) {}
 
   async research(input: GeneralResearchInput): Promise<GeneralResearchResult> {
-    const run = await withClient(this.deps.pool, (db) =>
-      GeneralResearchRepository.findOrCreateRun(db, {
-        workspaceId: input.workspaceId,
-        agentSessionId: input.sessionId,
-        invocationKey: input.invocationKey,
-        toolCallId: input.toolCallId,
-        query: input.query,
-        inputHash: hashInput({ query: input.query, conversationSummary: input.conversationSummary }),
-        initialPhase: "lead_plan",
-      })
-    )
+    const run = await GeneralResearchRepository.findOrCreateRun(this.deps.pool, {
+      workspaceId: input.workspaceId,
+      agentSessionId: input.sessionId,
+      invocationKey: input.invocationKey,
+      toolCallId: input.toolCallId,
+      query: input.query,
+      inputHash: hashInput({ query: input.query, conversationSummary: input.conversationSummary }),
+      initialPhase: "lead_plan",
+    })
 
     if (isTerminal(run) && run.outputJson) {
-      return run.outputJson as GeneralResearchResult
+      if (run.status === GeneralResearchRunStatuses.FAILED) {
+        throw new Error(`General research run ${run.id} is in failed state`)
+      }
+      return this.parseCheckpoint(GeneralResearchResultSchema, run.outputJson, {
+        runId: run.id,
+        stepKey: "run_output",
+      })
     }
 
-    const claimed = await withClient(this.deps.pool, (db) =>
-      GeneralResearchRepository.claimRun(db, {
-        runId: run.id,
-        leaseOwner: this.deps.leaseOwner,
-        leaseExpiresAt: new Date(Date.now() + GENERAL_RESEARCH_LEASE_MS),
-      })
-    )
+    const claimed = await GeneralResearchRepository.claimRun(this.deps.pool, {
+      runId: run.id,
+      leaseOwner: this.deps.leaseOwner,
+      leaseExpiresAt: new Date(Date.now() + GENERAL_RESEARCH_LEASE_MS),
+    })
     if (!claimed) {
-      throw new Error(`General research run ${run.id} is leased by another worker`)
+      const reason =
+        run.status === GeneralResearchRunStatuses.FAILED ? "is in failed state" : "is leased by another worker"
+      throw new Error(`General research run ${run.id} ${reason}`)
     }
 
     const state: ExecutionState = {
@@ -223,10 +231,17 @@ export class GeneralResearcher {
     }
 
     try {
-      const plan = await this.runCheckpointed(state, "lead_plan", "lead_plan", { query: input.query }, async () => {
-        this.emit(state, input, "Planning research")
-        return this.plan(input)
-      })
+      const plan = await this.runCheckpointed(
+        state,
+        "lead_plan",
+        "lead_plan",
+        { query: input.query },
+        ResearchPlanSchema,
+        async () => {
+          this.emit(state, input, "Planning research")
+          return this.plan(input)
+        }
+      )
 
       if (plan.clarificationQuestion) {
         return this.complete(state, {
@@ -245,10 +260,27 @@ export class GeneralResearcher {
       const activePlan = reconsidered ?? plan
 
       const topicResults: Array<TopicSynthesis & { topic: TopicPlan; sources: SourceItem[]; rawContext: string }> = []
-      for (const topic of activePlan.topics.slice(0, GENERAL_RESEARCH_MAX_TOPICS)) {
+      const webSearchTool = input.tavilyApiKey ? createWebSearchTool({ tavilyApiKey: input.tavilyApiKey }) : null
+      const githubTools = input.github
+        ? {
+            listRepos: createGithubListReposTool(input.github),
+            searchIssues: createGithubSearchIssuesTool(input.github),
+          }
+        : null
+      for (let i = 0; i < activePlan.topics.length && topicResults.length < GENERAL_RESEARCH_MAX_TOPICS; i++) {
+        const topic = activePlan.topics[i]
+        if (!topic) continue
         if (this.shouldStop(input)) return this.partial(state, input, activePlan, topicResults, "user_abort")
-        const result = await this.runCheckpointed(state, `topic:${topic.id}`, "topic_research", { topic }, async () =>
-          this.researchTopic(state, input, topic)
+        const result = await this.runCheckpointed(
+          state,
+          `topic:${topic.id}`,
+          "topic_research",
+          { topic },
+          TopicSynthesisSchema.extend({
+            sources: z.array(z.custom<SourceItem>()),
+            rawContext: z.string(),
+          }),
+          async () => this.researchTopic(state, input, topic, { webSearchTool, githubTools })
         )
         topicResults.push({ topic, ...result })
 
@@ -271,15 +303,23 @@ export class GeneralResearcher {
         })
       }
 
-      const report = await this.runCheckpointed(state, "report_writer", "report_writer", { activePlan }, async () => {
-        this.emit(state, input, "Writing concise research report")
-        return this.writeReport(input, activePlan, topicResults)
-      })
+      const report = await this.runCheckpointed(
+        state,
+        "report_writer",
+        "report_writer",
+        { activePlan },
+        ReportSchema,
+        async () => {
+          this.emit(state, input, "Writing concise research report")
+          return this.writeReport(input, activePlan, topicResults)
+        }
+      )
       const referenced = await this.runCheckpointed(
         state,
         "reference_agent",
         "reference_agent",
         { report },
+        ReferenceSchema,
         async () => {
           this.emit(state, input, "Checking references")
           return this.annotateReferences(input, report, normalizeSources(topicResults.flatMap((r) => r.sources)))
@@ -291,6 +331,7 @@ export class GeneralResearcher {
         "s3_report",
         "s3_report",
         { sessionId: input.sessionId },
+        S3ReportSchema,
         async () => {
           this.emit(state, input, "Saving report")
           const key = `research-reports/${input.workspaceId}/${input.sessionId}/${run.id}.md`
@@ -312,7 +353,9 @@ export class GeneralResearcher {
     } catch (error) {
       if (this.shouldStop(input) || isAbortError(error)) {
         const planStep = await GeneralResearchRepository.findStep(this.deps.pool, run.id, "lead_plan")
-        const plan = planStep?.outputJson as ResearchPlan | undefined
+        const plan = planStep?.outputJson
+          ? this.parseCheckpoint(ResearchPlanSchema, planStep.outputJson, { runId: run.id, stepKey: "lead_plan" })
+          : null
         return this.partial(state, input, plan ?? null, [], input.signal?.aborted ? "user_abort" : "timeout")
       }
       logger.error({ error, runId: run.id }, "General research failed")
@@ -325,18 +368,24 @@ export class GeneralResearcher {
     stepKey: string,
     phase: string,
     inputJson: unknown,
+    schema: z.ZodType<T>,
     fn: () => Promise<T>
   ): Promise<T> {
     const existing = await GeneralResearchRepository.findStep(this.deps.pool, state.run.id, stepKey)
-    if (existing?.completedAt) return existing.outputJson as T
+    if (existing?.completedAt) {
+      return this.parseCheckpoint(schema, existing.outputJson, { runId: state.run.id, stepKey })
+    }
 
-    await GeneralResearchRepository.startStep(this.deps.pool, {
+    const started = await GeneralResearchRepository.startStep(this.deps.pool, {
       workspaceId: state.run.workspaceId,
       runId: state.run.id,
       stepKey,
       phase,
       inputJson,
     })
+    if (started.completedAt) {
+      return this.parseCheckpoint(schema, started.outputJson, { runId: state.run.id, stepKey })
+    }
     await GeneralResearchRepository.updateRunPhase(this.deps.pool, state.run.id, phase)
     await GeneralResearchRepository.renewRunLease(this.deps.pool, {
       runId: state.run.id,
@@ -394,31 +443,45 @@ export class GeneralResearcher {
     if (checked.messages.length === 0) return null
 
     const stepKey = `reconsider:${checked.lastSeenSequence.toString()}`
-    return this.runCheckpointed(state, stepKey, "lead_reconsider", { messages: checked.messages }, async () => {
-      this.emit(state, input, "Reconsidering research plan after new context")
-      const { value } = await this.deps.ai.generateObject({
-        model: GENERAL_RESEARCH_LEAD_MODEL_ID,
-        schema: ReconsiderPlanSchema,
-        temperature: GENERAL_RESEARCH_TEMPERATURE,
-        abortSignal: makeTimeoutSignal(input.signal, input.deadlineAt),
-        telemetry: { functionId: "general-research-reconsider", metadata: { session_id: input.sessionId } },
-        context: input.costContext,
-        messages: [
-          { role: "system", content: GENERAL_RESEARCH_SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: `Original question:\n${input.query}\n\nCurrent plan:\n${JSON.stringify(plan)}\n\nCompleted topic summaries:\n${JSON.stringify(topicResults)}\n\nNew or edited messages:\n${JSON.stringify(checked.messages)}\n\nUpdate the plan only if the new context changes the research goal.`,
-          },
-        ],
-      })
-      return value.changed ? value.plan : null
-    })
+    return this.runCheckpointed(
+      state,
+      stepKey,
+      "lead_reconsider",
+      { messages: checked.messages },
+      ResearchPlanSchema.nullable(),
+      async () => {
+        this.emit(state, input, "Reconsidering research plan after new context")
+        const { value } = await this.deps.ai.generateObject({
+          model: GENERAL_RESEARCH_LEAD_MODEL_ID,
+          schema: ReconsiderPlanSchema,
+          temperature: GENERAL_RESEARCH_TEMPERATURE,
+          abortSignal: makeTimeoutSignal(input.signal, input.deadlineAt),
+          telemetry: { functionId: "general-research-reconsider", metadata: { session_id: input.sessionId } },
+          context: input.costContext,
+          messages: [
+            { role: "system", content: GENERAL_RESEARCH_SYSTEM_PROMPT },
+            {
+              role: "user",
+              content: `Original question:\n${input.query}\n\nCurrent plan:\n${JSON.stringify(plan)}\n\nCompleted topic summaries:\n${JSON.stringify(topicResults)}\n\nNew or edited messages:\n${JSON.stringify(checked.messages)}\n\nUpdate the plan only if the new context changes the research goal.`,
+            },
+          ],
+        })
+        return value.changed ? value.plan : null
+      }
+    )
   }
 
   private async researchTopic(
     state: ExecutionState,
     input: GeneralResearchInput,
-    topic: TopicPlan
+    topic: TopicPlan,
+    tools: {
+      webSearchTool: ReturnType<typeof createWebSearchTool> | null
+      githubTools: {
+        listRepos: ReturnType<typeof createGithubListReposTool>
+        searchIssues: ReturnType<typeof createGithubSearchIssuesTool>
+      } | null
+    }
   ): Promise<TopicSynthesis & { sources: SourceItem[]; rawContext: string }> {
     this.emit(state, input, `Researching: ${topic.title}`)
     const contextBlocks: string[] = []
@@ -441,15 +504,17 @@ export class GeneralResearcher {
       )
     }
 
-    if (topic.surfaces.includes("web") && input.tavilyApiKey) {
-      const tool = createWebSearchTool({ tavilyApiKey: input.tavilyApiKey })
-      const result = await tool.config.execute({ query: `${input.query} ${topic.title}` }, { toolCallId: topic.id })
+    if (topic.surfaces.includes("web") && tools.webSearchTool) {
+      const result = await tools.webSearchTool.config.execute(
+        { query: `${input.query} ${topic.title}` },
+        { toolCallId: topic.id }
+      )
       contextBlocks.push(`Web findings:\n${result.output}`)
       sources.push(...((result.sources ?? []) as SourceItem[]))
     }
 
-    if (topic.surfaces.includes("github") && input.github) {
-      const githubText = await this.readGithub(topic, input.github)
+    if (topic.surfaces.includes("github") && tools.githubTools) {
+      const githubText = await this.readGithub(topic, tools.githubTools)
       if (githubText.output) contextBlocks.push(`GitHub findings:\n${githubText.output}`)
       sources.push(...githubText.sources)
     }
@@ -475,18 +540,19 @@ export class GeneralResearcher {
 
   private async readGithub(
     topic: TopicPlan,
-    github: GitHubToolDeps
+    github: {
+      listRepos: ReturnType<typeof createGithubListReposTool>
+      searchIssues: ReturnType<typeof createGithubSearchIssuesTool>
+    }
   ): Promise<{ output: string; sources: SourceItem[] }> {
-    const listRepos = createGithubListReposTool(github)
-    const reposResult = await listRepos.config.execute({}, { toolCallId: `${topic.id}:repos` })
+    const reposResult = await github.listRepos.config.execute({}, { toolCallId: `${topic.id}:repos` })
     const repos = safeJsonParse<{ repositories?: Array<{ fullName?: string }> }>(reposResult.output)
     const repoName = repos?.repositories?.find((repo) => repo.fullName)?.fullName
     if (!repoName) return { output: reposResult.output, sources: (reposResult.sources ?? []) as SourceItem[] }
     const [owner, repo] = repoName.split("/")
     if (!owner || !repo) return { output: reposResult.output, sources: (reposResult.sources ?? []) as SourceItem[] }
 
-    const searchIssues = createGithubSearchIssuesTool(github)
-    const issuesResult = await searchIssues.config.execute(
+    const issuesResult = await github.searchIssues.config.execute(
       { owner, repo, query: topic.title, sort: "best-match", order: "desc", perPage: 10, page: 1 },
       { toolCallId: `${topic.id}:issues` }
     )
@@ -534,7 +600,7 @@ export class GeneralResearcher {
       messages: [
         {
           role: "system",
-          content: "Annotate the report using only the provided source list. Do not invent citations.",
+          content: GENERAL_RESEARCH_REFERENCE_SYSTEM_PROMPT,
         },
         {
           role: "user",
@@ -556,7 +622,7 @@ export class GeneralResearcher {
     } else if (result.status === "needs_clarification") {
       runStatus = GeneralResearchRunStatuses.NEEDS_CLARIFICATION
     }
-    await GeneralResearchRepository.completeRun(this.deps.pool, {
+    const completed = await GeneralResearchRepository.completeRun(this.deps.pool, {
       runId: state.run.id,
       status: runStatus,
       finalAnswer: result.answer,
@@ -564,8 +630,22 @@ export class GeneralResearcher {
       reportStorageKey: result.reportStorageKey ?? null,
       outputJson: fullResult,
       sources: result.sources,
+      leaseOwner: this.deps.leaseOwner,
     })
+    if (!completed) {
+      throw new Error(`General research run ${state.run.id} completion lost lease ownership`)
+    }
     return fullResult
+  }
+
+  private parseCheckpoint<T>(schema: z.ZodType<T>, value: unknown, context: { runId: string; stepKey: string }): T {
+    const parsed = schema.safeParse(value)
+    if (parsed.success) return parsed.data
+    logger.error(
+      { error: parsed.error, runId: context.runId, stepKey: context.stepKey },
+      "Invalid general research checkpoint payload"
+    )
+    throw new Error(`Invalid general research checkpoint payload for ${context.stepKey}`)
   }
 
   private partial(

@@ -27,3 +27,6 @@ export const GENERAL_RESEARCH_SYSTEM_PROMPT = `You are Threa's general purpose r
 Research across available surfaces to answer the user's question directly. Prefer concise, evidence-backed answers over exhaustive reports. Use workspace context for internal decisions and history, GitHub for code/issues/PRs when connected, and web search for public/current information. If the question is under-specified in a way that would make the answer misleading, ask for clarification instead of guessing.
 
 Keep the work bounded. Choose the smallest effort level that can answer the question well.`
+
+export const GENERAL_RESEARCH_REFERENCE_SYSTEM_PROMPT =
+  "Annotate the report using only the provided source list. Do not invent citations."

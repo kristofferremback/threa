@@ -32,30 +32,29 @@ describe("createOrphanSessionCleanup", () => {
   })
 
   it("does not fail stale sessions that have an active resumable general research run", async () => {
+    const pool = {} as never
     spyOn(AgentSessionRepository, "findOrphaned").mockResolvedValue([runningSession()])
-    spyOn(GeneralResearchRepository, "hasActiveRunForSession").mockResolvedValue(true)
+    const hasActiveRun = spyOn(GeneralResearchRepository, "hasActiveRunForSession").mockResolvedValue(true)
     const updateStatus = spyOn(AgentSessionRepository, "updateStatus").mockResolvedValue(runningSession())
 
-    const cleanup = createOrphanSessionCleanup({} as never, { intervalMs: 60_000, staleThresholdSeconds: 1 })
-    cleanup.start()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    cleanup.stop()
+    const cleanup = createOrphanSessionCleanup(pool, { intervalMs: 60_000, staleThresholdSeconds: 1 })
+    await cleanup.runOnce()
 
+    expect(hasActiveRun).toHaveBeenCalledWith(pool, "session_1")
     expect(updateStatus).not.toHaveBeenCalled()
   })
 
   it("still fails stale sessions without active resumable research", async () => {
+    const pool = {} as never
     spyOn(AgentSessionRepository, "findOrphaned").mockResolvedValue([runningSession()])
     spyOn(GeneralResearchRepository, "hasActiveRunForSession").mockResolvedValue(false)
     const updateStatus = spyOn(AgentSessionRepository, "updateStatus").mockResolvedValue(runningSession())
 
-    const cleanup = createOrphanSessionCleanup({} as never, { intervalMs: 60_000, staleThresholdSeconds: 1 })
-    cleanup.start()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    cleanup.stop()
+    const cleanup = createOrphanSessionCleanup(pool, { intervalMs: 60_000, staleThresholdSeconds: 1 })
+    await cleanup.runOnce()
 
     expect(updateStatus).toHaveBeenCalledWith(
-      {},
+      pool,
       "session_1",
       SessionStatuses.FAILED,
       expect.objectContaining({ error: "Session orphaned (stale heartbeat)" })

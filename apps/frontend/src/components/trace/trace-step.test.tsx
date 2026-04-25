@@ -214,7 +214,7 @@ describe("TraceStep", () => {
     expect(screen.getByText("Planning queries…")).toBeInTheDocument()
   })
 
-  it("renders general research summary and stop button while running", () => {
+  it("renders general research summary and stop button while running", async () => {
     const onAbortResearch = vi.fn()
     render(
       <MemoryRouter>
@@ -228,7 +228,6 @@ describe("TraceStep", () => {
               topicsPlanned: 2,
               surfacesUsed: ["workspace", "github"],
               reportStorageKey: "research-reports/ws_1/session_1/grun_1.md",
-              partialReason: "user_abort",
               substeps: [{ text: "Researching: release blockers", at: "2026-04-25T12:00:00Z" }],
             }),
             completedAt: undefined,
@@ -244,6 +243,11 @@ describe("TraceStep", () => {
     expect(screen.getByText(/workspace, github/)).toBeInTheDocument()
     expect(screen.getByText(/Report saved:/)).toBeInTheDocument()
     expect(screen.getByText("Researching: release blockers")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /stop research/i })).toBeInTheDocument()
+    const stopButton = screen.getByRole("button", { name: /stop research/i })
+    expect(stopButton).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.click(stopButton)
+    expect(onAbortResearch).toHaveBeenCalledTimes(1)
   })
 })
