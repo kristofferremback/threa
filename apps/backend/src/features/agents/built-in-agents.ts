@@ -1,5 +1,7 @@
 import { z } from "zod"
-import { AgentToolNames } from "@threa/types"
+import { AGENT_TOOL_NAMES, AgentToolNames } from "@threa/types"
+
+const agentToolNameSchema = z.enum(AGENT_TOOL_NAMES)
 
 export const ARIADNE_AGENT_ID = "persona_system_ariadne"
 export const EMPTY_AGENT_ID = "persona_system_empty"
@@ -18,7 +20,7 @@ export const builtInAgentConfigSchema = z.object({
   model: z.string().min(1),
   temperature: z.number().nullable(),
   maxTokens: z.number().int().positive().nullable(),
-  enabledTools: z.array(z.string()),
+  enabledTools: z.array(agentToolNameSchema),
   managedBy: z.literal("system"),
   status: agentStatusSchema,
   visibility: agentVisibilitySchema,
@@ -101,14 +103,27 @@ Keep responses short and direct. Default to a few sentences unless the user asks
 
 const BUILT_IN_AGENT_CONFIGS: Record<string, BuiltInAgentConfig> = BUILT_IN_AGENTS
 
+/**
+ * Return the static built-in agent config for a known `persona_system_*` id, or `null` if unknown.
+ */
 export function getBuiltInAgentConfig(agentId: string): BuiltInAgentConfig | null {
   return BUILT_IN_AGENT_CONFIGS[agentId] ?? null
 }
 
+/**
+ * List built-in agents that are product-visible (excludes `internal` agents such as the empty shell).
+ */
 export function listVisibleBuiltInAgentConfigs(): BuiltInAgentConfig[] {
-  return Object.values(BUILT_IN_AGENTS).filter((agent) => agent.visibility === "visible")
+  return Object.values(BUILT_IN_AGENT_CONFIGS).filter((agent) => agent.visibility === "visible")
 }
 
+/**
+ * Apply and validate a workspace override patch for a code-backed built-in.
+ *
+ * This is the only supported path to merge `agent_config_overrides.patch` into built-in defaults: it
+ * validates the patch, merges with `base`, then re-parses the full config so invalid end states
+ * fail loudly.
+ */
 export function applyBuiltInAgentPatch(
   base: BuiltInAgentConfig,
   rawPatch: unknown,

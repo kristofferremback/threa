@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { AgentToolNames } from "@threa/types"
 import { ARIADNE_AGENT_ID, EMPTY_AGENT_ID } from "./built-in-agents"
-import { PersonaRepository } from "./persona-repository"
+import { BUILT_IN_AGENT_CONFIG_TIMESTAMP, PersonaRepository } from "./persona-repository"
 
 function createDb(rowsByQuery: unknown[][]) {
   const queries: unknown[] = []
@@ -46,7 +46,7 @@ describe("PersonaRepository built-in agent config", () => {
     })
     expect(persona?.systemPrompt).toContain("You are Ariadne")
     expect(persona?.enabledTools).toContain(AgentToolNames.GITHUB_GET_PULL_REQUEST)
-    expect(persona?.createdAt.toISOString()).toBe("2026-04-25T00:00:00.000Z")
+    expect(persona?.createdAt.toISOString()).toBe(BUILT_IN_AGENT_CONFIG_TIMESTAMP.toISOString())
   })
 
   test("applies workspace override patches to built-ins", async () => {
@@ -81,6 +81,33 @@ describe("PersonaRepository built-in agent config", () => {
     await expect(PersonaRepository.findById(db, ARIADNE_AGENT_ID, "workspace_1")).rejects.toThrow(
       "Invalid agent config override"
     )
+  })
+
+  test("rejects workspace override patches with unknown tool names", async () => {
+    const db = createDb([
+      [
+        {
+          agent_id: ARIADNE_AGENT_ID,
+          patch: { enabledTools: ["not_a_real_tool"] },
+        },
+      ],
+    ])
+
+    await expect(PersonaRepository.findById(db, ARIADNE_AGENT_ID, "workspace_1")).rejects.toThrow(
+      "Invalid agent config override"
+    )
+  })
+
+  test("scopes DB persona reads to the caller workspace (and global system rows) when workspaceId is provided", async () => {
+    const db = createDb([[]])
+
+    await PersonaRepository.findById(db, "persona_workspace_helper", "workspace_1")
+
+    const query = db.queries[0] as { text: string; values: unknown[] }
+    const nested = query.values[1] as { text: string; values: unknown[] }
+    expect(nested.text).toContain("workspace_id = $1")
+    expect(nested.text).toContain("workspace_id IS NULL")
+    expect(nested.values).toEqual(["workspace_1"])
   })
 
   test("does not return Ariadne as default when a workspace disables it", async () => {

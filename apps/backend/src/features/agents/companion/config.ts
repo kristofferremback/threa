@@ -4,7 +4,11 @@ import { BUILT_IN_AGENTS, ARIADNE_AGENT_ID } from "../built-in-agents"
 export const COMPANION_MODEL_ID = BUILT_IN_AGENTS[ARIADNE_AGENT_ID].model
 
 // Temperature for response generation
-export const COMPANION_TEMPERATURE = BUILT_IN_AGENTS[ARIADNE_AGENT_ID].temperature ?? 0.7
+const ariadneTemperature = BUILT_IN_AGENTS[ARIADNE_AGENT_ID].temperature
+if (ariadneTemperature == null) {
+  throw new Error("Built-in Ariadne configuration is missing temperature (expected a number).")
+}
+export const COMPANION_TEMPERATURE = ariadneTemperature
 
 // Model for rolling long-context summaries of dropped history
 export const COMPANION_SUMMARY_MODEL_ID = "openrouter:anthropic/claude-haiku-4.5"

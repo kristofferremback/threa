@@ -1,3 +1,14 @@
+// Metadata (export before heavier modules so barrels can import schemas without TDZ cycles)
+export {
+  messageMetadataSchema,
+  messageMetadataFilterSchema,
+  MESSAGE_METADATA_MAX_KEYS,
+  MESSAGE_METADATA_MAX_KEY_LENGTH,
+  MESSAGE_METADATA_MAX_VALUE_LENGTH,
+  MESSAGE_METADATA_MAX_SERIALIZED_BYTES,
+  MESSAGE_METADATA_RESERVED_PREFIX,
+} from "./metadata-schema"
+
 // Repository
 export { MessageRepository } from "./repository"
 export type { Message, InsertMessageParams } from "./repository"
@@ -25,17 +36,6 @@ export type {
 // Handlers
 export { createMessageHandlers } from "./handlers"
 export { createMessageSchema, updateMessageSchema, addReactionSchema } from "./handlers"
-
-// Metadata
-export {
-  messageMetadataSchema,
-  messageMetadataFilterSchema,
-  MESSAGE_METADATA_MAX_KEYS,
-  MESSAGE_METADATA_MAX_KEY_LENGTH,
-  MESSAGE_METADATA_MAX_VALUE_LENGTH,
-  MESSAGE_METADATA_MAX_SERIALIZED_BYTES,
-  MESSAGE_METADATA_RESERVED_PREFIX,
-} from "./metadata-schema"
 
 // Sharing sub-feature
 export {

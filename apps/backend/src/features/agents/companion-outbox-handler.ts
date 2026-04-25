@@ -153,11 +153,15 @@ export class CompanionHandler implements OutboxHandler {
           }
 
           let persona = companionSource.companionPersonaId
-            ? await PersonaRepository.findById(this.db, companionSource.companionPersonaId!, stream.workspaceId)
+            ? await PersonaRepository.findById(
+                this.db,
+                companionSource.companionPersonaId!,
+                companionSource.workspaceId
+              )
             : null
 
           if (!persona || persona.status !== "active") {
-            persona = await PersonaRepository.getSystemDefault(this.db, stream.workspaceId)
+            persona = await PersonaRepository.getSystemDefault(this.db, companionSource.workspaceId)
           }
 
           if (!persona) {

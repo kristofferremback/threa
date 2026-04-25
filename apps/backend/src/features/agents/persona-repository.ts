@@ -67,7 +67,15 @@ function mapRowToPersona(row: PersonaRow): Persona {
   }
 }
 
-const BUILT_IN_AGENT_CONFIG_TIMESTAMP = new Date("2026-04-25T00:00:00.000Z")
+export const BUILT_IN_AGENT_CONFIG_TIMESTAMP = new Date("2026-04-25T00:00:00.000Z")
+
+function dbPersonaWorkspaceFilter(workspaceId: string | null | undefined) {
+  if (workspaceId === null || workspaceId === undefined) return sql``
+
+  // INV-8: when a caller scopes to a workspace, only return that workspace's rows or global system
+  // rows (`workspace_id IS NULL`), never another workspace's persona by id.
+  return sql`AND (workspace_id = ${workspaceId} OR workspace_id IS NULL)`
+}
 
 function mapBuiltInToPersona(agent: BuiltInAgentConfig): Persona {
   return {
@@ -130,6 +138,7 @@ export const PersonaRepository = {
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
         WHERE id = ${id}
+          ${dbPersonaWorkspaceFilter(workspaceId)}
       `
     )
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
@@ -159,6 +168,7 @@ export const PersonaRepository = {
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
         WHERE id = ANY(${dbIds})
+          ${dbPersonaWorkspaceFilter(workspaceId)}
       `
     )
     return [...builtIns, ...result.rows.map(mapRowToPersona)]
