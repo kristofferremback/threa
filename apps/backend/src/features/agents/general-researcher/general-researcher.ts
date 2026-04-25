@@ -192,6 +192,10 @@ function safeJsonParse<T>(value: string): T | null {
 export class GeneralResearcher {
   constructor(private readonly deps: GeneralResearcherDeps) {}
 
+  async releaseLeases(): Promise<void> {
+    await GeneralResearchRepository.releaseActiveLeasesForOwner(this.deps.pool, this.deps.leaseOwner)
+  }
+
   async research(input: GeneralResearchInput): Promise<GeneralResearchResult> {
     const run = await GeneralResearchRepository.findOrCreateRun(this.deps.pool, {
       workspaceId: input.workspaceId,

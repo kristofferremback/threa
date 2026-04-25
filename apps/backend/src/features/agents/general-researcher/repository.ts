@@ -273,6 +273,19 @@ export const GeneralResearchRepository = {
     )
   },
 
+  async releaseActiveLeasesForOwner(db: Querier, leaseOwner: string): Promise<void> {
+    await db.query(
+      sql`
+        UPDATE general_research_runs
+        SET lease_owner = NULL,
+            lease_expires_at = NULL,
+            updated_at = NOW()
+        WHERE lease_owner = ${leaseOwner}
+          AND status IN (${GeneralResearchRunStatuses.PENDING}, ${GeneralResearchRunStatuses.RUNNING})
+      `
+    )
+  },
+
   async updateRunPhase(db: Querier, runId: string, currentPhase: string): Promise<void> {
     await db.query(
       sql`

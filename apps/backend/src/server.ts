@@ -867,6 +867,7 @@ export async function startServer(): Promise<ServerInstance> {
     await outboxRetentionWorker.stop()
     await outboxDispatcher.stop()
     await jobQueue.stop()
+    await generalResearcher.releaseLeases()
     logger.info("Closing socket.io...")
 
     // Close socket.io with callback - add timeout since it can hang with postgres adapter
