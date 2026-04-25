@@ -437,7 +437,7 @@ async function emitRunningSessionBootstrap(
 
   const [steps, persona] = await Promise.all([
     AgentSessionRepository.findStepsBySession(pool, session.id),
-    PersonaRepository.findById(pool, session.personaId),
+    PersonaRepository.findById(pool, session.personaId, wsId),
   ])
 
   const stepCount = steps.length

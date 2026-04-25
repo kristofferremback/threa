@@ -43,6 +43,8 @@ export interface AgentRuntimeConfig {
   systemPrompt: string
   messages: ModelMessage[]
   tools: AgentTool[]
+  maxTokens?: number | null
+  temperature?: number | null
   maxIterations?: number
   observers?: AgentObserver[]
   telemetry?: { functionId: string; metadata?: Record<string, string | number | boolean> }
@@ -235,6 +237,8 @@ export class AgentRuntime {
           system: fullSystemPrompt,
           messages: truncatedMessages,
           tools: this.toolDefs,
+          maxTokens: this.config.maxTokens ?? undefined,
+          temperature: this.config.temperature ?? undefined,
           telemetry: this.config.telemetry,
           context: this.config.costContext,
         })

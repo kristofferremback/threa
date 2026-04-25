@@ -147,7 +147,7 @@ export class PersonaAgent {
 
     // Step 1: Load and validate persona + stream
     const precheck = await withClient(pool, async (client) => {
-      const persona = await PersonaRepository.findById(client, personaId)
+      const persona = await PersonaRepository.findById(client, personaId, workspaceId)
       if (!persona || persona.status !== "active") {
         return { skip: true as const, reason: "persona not found or inactive" }
       }
@@ -416,6 +416,8 @@ export class PersonaAgent {
           ),
           messages: agentContext.messages,
           tools,
+          maxTokens: persona.maxTokens,
+          temperature: persona.temperature,
           sendMessage: doSendMessage,
           allowNoMessageOutput: isSupersedeRerun,
           validateFinalResponse: isSupersedeRerun
@@ -505,7 +507,7 @@ export class PersonaAgent {
 
               const [members, personas] = await Promise.all([
                 userIds.length > 0 ? UserRepository.findByIds(db, workspaceId, userIds) : Promise.resolve([]),
-                personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+                personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds, workspaceId) : Promise.resolve([]),
               ])
 
               const names = new Map<string, string>()

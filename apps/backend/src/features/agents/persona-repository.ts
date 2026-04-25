@@ -1,5 +1,13 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
+import { AgentConfigOverrideRepository } from "./agent-config-override-repository"
+import {
+  ARIADNE_AGENT_ID,
+  applyBuiltInAgentPatch,
+  getBuiltInAgentConfig,
+  listVisibleBuiltInAgentConfigs,
+  type BuiltInAgentConfig,
+} from "./built-in-agents"
 
 // Internal row type (snake_case)
 interface PersonaRow {
@@ -49,7 +57,7 @@ function mapRowToPersona(row: PersonaRow): Persona {
     avatarEmoji: row.avatar_emoji,
     systemPrompt: row.system_prompt,
     model: row.model,
-    temperature: row.temperature ? Number(row.temperature) : null,
+    temperature: row.temperature === null ? null : Number(row.temperature),
     maxTokens: row.max_tokens,
     enabledTools: row.enabled_tools,
     managedBy: row.managed_by as "system" | "workspace",
@@ -59,6 +67,41 @@ function mapRowToPersona(row: PersonaRow): Persona {
   }
 }
 
+function mapBuiltInToPersona(agent: BuiltInAgentConfig): Persona {
+  return {
+    id: agent.id,
+    workspaceId: agent.workspaceId,
+    slug: agent.slug,
+    name: agent.name,
+    description: agent.description,
+    avatarEmoji: agent.avatarEmoji,
+    systemPrompt: agent.systemPrompt,
+    model: agent.model,
+    temperature: agent.temperature,
+    maxTokens: agent.maxTokens,
+    enabledTools: agent.enabledTools,
+    managedBy: agent.managedBy,
+    status: agent.status,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  }
+}
+
+async function resolveBuiltInPersona(
+  db: Querier,
+  agentId: string,
+  workspaceId?: string | null
+): Promise<Persona | null> {
+  const base = getBuiltInAgentConfig(agentId)
+  if (!base) return null
+
+  if (!workspaceId) return mapBuiltInToPersona(base)
+
+  const override = await AgentConfigOverrideRepository.findActiveByWorkspaceAndAgent(db, workspaceId, agentId)
+  const resolved = override ? applyBuiltInAgentPatch(base, override.patch, { workspaceId, agentId }) : base
+  return mapBuiltInToPersona(resolved)
+}
+
 const SELECT_FIELDS = `
   id, workspace_id, slug, name, description, avatar_emoji,
   system_prompt, model, temperature, max_tokens, enabled_tools,
@@ -66,7 +109,10 @@ const SELECT_FIELDS = `
 `
 
 export const PersonaRepository = {
-  async findById(db: Querier, id: string): Promise<Persona | null> {
+  async findById(db: Querier, id: string, workspaceId?: string | null): Promise<Persona | null> {
+    const builtIn = await resolveBuiltInPersona(db, id, workspaceId)
+    if (builtIn) return builtIn
+
     const result = await db.query<PersonaRow>(
       sql`
         SELECT ${sql.raw(SELECT_FIELDS)}
@@ -77,22 +123,35 @@ export const PersonaRepository = {
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
   },
 
-  async findByIds(db: Querier, ids: string[]): Promise<Persona[]> {
+  async findByIds(db: Querier, ids: string[], workspaceId?: string | null): Promise<Persona[]> {
     if (ids.length === 0) return []
+
+    const builtIns = (await Promise.all(ids.map((id) => resolveBuiltInPersona(db, id, workspaceId)))).filter(
+      (persona): persona is Persona => persona !== null
+    )
+    const dbIds = ids.filter((id) => !getBuiltInAgentConfig(id))
+
+    if (dbIds.length === 0) return builtIns
 
     const result = await db.query<PersonaRow>(
       sql`
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
-        WHERE id = ANY(${ids})
+        WHERE id = ANY(${dbIds})
       `
     )
-    return result.rows.map(mapRowToPersona)
+    return [...builtIns, ...result.rows.map(mapRowToPersona)]
   },
 
   async findBySlug(db: Querier, slug: string, workspaceId?: string | null): Promise<Persona | null> {
+    const builtInBySlug = listVisibleBuiltInAgentConfigs().find((agent) => agent.slug === slug)
+
     // System personas have null workspace_id
     if (workspaceId === null || workspaceId === undefined) {
+      if (builtInBySlug) {
+        return resolveBuiltInPersona(db, builtInBySlug.id)
+      }
+
       const result = await db.query<PersonaRow>(
         sql`
           SELECT ${sql.raw(SELECT_FIELDS)}
@@ -104,47 +163,64 @@ export const PersonaRepository = {
     }
 
     // Look for workspace-specific first, fall back to system
-    const result = await db.query<PersonaRow>(
+    const workspaceResult = await db.query<PersonaRow>(
       sql`
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
-        WHERE slug = ${slug} AND (workspace_id = ${workspaceId} OR workspace_id IS NULL)
-        ORDER BY workspace_id NULLS LAST
+        WHERE slug = ${slug} AND workspace_id = ${workspaceId}
+          AND status = 'active'
         LIMIT 1
       `
     )
-    return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
+    if (workspaceResult.rows[0]) return mapRowToPersona(workspaceResult.rows[0])
+
+    if (builtInBySlug) {
+      return resolveBuiltInPersona(db, builtInBySlug.id, workspaceId)
+    }
+
+    const systemResult = await db.query<PersonaRow>(
+      sql`
+        SELECT ${sql.raw(SELECT_FIELDS)}
+        FROM personas
+        WHERE slug = ${slug} AND workspace_id IS NULL
+          AND status = 'active'
+        LIMIT 1
+      `
+    )
+    return systemResult.rows[0] ? mapRowToPersona(systemResult.rows[0]) : null
   },
 
   /**
    * Get the default system persona (Ariadne).
    */
-  async getSystemDefault(db: Querier): Promise<Persona | null> {
-    const result = await db.query<PersonaRow>(
-      sql`
-        SELECT ${sql.raw(SELECT_FIELDS)}
-        FROM personas
-        WHERE managed_by = 'system' AND status = 'active'
-        ORDER BY created_at ASC
-        LIMIT 1
-      `
-    )
-    return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
+  async getSystemDefault(db: Querier, workspaceId?: string | null): Promise<Persona | null> {
+    const persona = await resolveBuiltInPersona(db, ARIADNE_AGENT_ID, workspaceId)
+    return persona?.status === "active" ? persona : null
   },
 
   /**
    * List all personas available to a workspace (system + workspace-specific).
    */
   async listForWorkspace(db: Querier, workspaceId: string): Promise<Persona[]> {
+    const overrides = await AgentConfigOverrideRepository.listActiveByWorkspace(db, workspaceId)
+    const overridesByAgentId = new Map(overrides.map((override) => [override.agentId, override.patch]))
+    const builtIns = listVisibleBuiltInAgentConfigs()
+      .map((agent) => {
+        const patch = overridesByAgentId.get(agent.id)
+        return patch ? applyBuiltInAgentPatch(agent, patch, { workspaceId, agentId: agent.id }) : agent
+      })
+      .filter((agent) => agent.status === "active")
+      .map(mapBuiltInToPersona)
+
     const result = await db.query<PersonaRow>(
       sql`
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
-        WHERE (workspace_id = ${workspaceId} OR workspace_id IS NULL)
+        WHERE workspace_id = ${workspaceId}
           AND status = 'active'
         ORDER BY managed_by ASC, name ASC
       `
     )
-    return result.rows.map(mapRowToPersona)
+    return [...builtIns, ...result.rows.map(mapRowToPersona)]
   },
 }
