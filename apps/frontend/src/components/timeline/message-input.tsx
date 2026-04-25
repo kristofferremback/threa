@@ -22,7 +22,7 @@ import { hasCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
-import { consumeShareHandoff } from "@/stores/share-handoff-store"
+import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
 import { StreamTypes, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
@@ -301,49 +301,66 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   // positioning lands atomically with the content change — going through the
   // useState path meant setContent committed one frame after the focus call,
   // and TipTap would reset the selection to 0 in the process.
+  //
+  // Two trigger paths: (a) on mount / streamId change, pick up any handoff
+  // queued before this composer existed; (b) subscribe to the store so a
+  // share queued while we're already mounted (e.g. share-to-parent fired
+  // from a thread panel of the parent we're already viewing) reaches us
+  // without a remount.
   useEffect(() => {
-    const pending = consumeShareHandoff(streamId)
-    if (!pending) return
+    let pendingRaf: number | null = null
 
-    const shareNode: JSONContent = {
-      type: "sharedMessage",
-      attrs: pending as unknown as Record<string, unknown>,
-    }
+    const tryConsume = () => {
+      const pending = consumeShareHandoff(streamId)
+      if (!pending) return
 
-    const insert = (): boolean => {
-      const editor = composerFocusRef.current?.getEditor?.()
-      if (!editor || editor.isDestroyed) return false
-
-      const currentDoc = editor.getJSON() as JSONContent
-      const existingBlocks = currentDoc.content ?? []
-      const trimmedBlocks = [...existingBlocks]
-      while (
-        trimmedBlocks.length > 0 &&
-        trimmedBlocks[trimmedBlocks.length - 1].type === "paragraph" &&
-        (trimmedBlocks[trimmedBlocks.length - 1].content?.length ?? 0) === 0
-      ) {
-        trimmedBlocks.pop()
+      const shareNode: JSONContent = {
+        type: "sharedMessage",
+        attrs: pending as unknown as Record<string, unknown>,
       }
 
-      editor
-        .chain()
-        .setContent({
-          type: "doc",
-          content: [...trimmedBlocks, shareNode, { type: "paragraph" }],
-        })
-        .focus("end")
-        .run()
-      return true
+      const insert = (): boolean => {
+        const editor = composerFocusRef.current?.getEditor?.()
+        if (!editor || editor.isDestroyed) return false
+
+        const currentDoc = editor.getJSON() as JSONContent
+        const existingBlocks = currentDoc.content ?? []
+        const trimmedBlocks = [...existingBlocks]
+        while (
+          trimmedBlocks.length > 0 &&
+          trimmedBlocks[trimmedBlocks.length - 1].type === "paragraph" &&
+          (trimmedBlocks[trimmedBlocks.length - 1].content?.length ?? 0) === 0
+        ) {
+          trimmedBlocks.pop()
+        }
+
+        editor
+          .chain()
+          .setContent({
+            type: "doc",
+            content: [...trimmedBlocks, shareNode, { type: "paragraph" }],
+          })
+          .focus("end")
+          .run()
+        return true
+      }
+
+      if (insert()) return
+
+      // Editor not mounted yet on the first tick after a route change — retry
+      // on the next frame until it's ready. One-shot handoff; second read is null.
+      pendingRaf = requestAnimationFrame(function retry() {
+        if (!insert()) pendingRaf = requestAnimationFrame(retry)
+      })
     }
 
-    if (insert()) return
+    tryConsume()
+    const unsubscribe = subscribeShareHandoff(streamId, tryConsume)
 
-    // Editor not mounted yet on the first tick after a route change — retry
-    // on the next frame until it's ready. One-shot handoff; second read is null.
-    let raf = requestAnimationFrame(function retry() {
-      if (!insert()) raf = requestAnimationFrame(retry)
-    })
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      unsubscribe()
+      if (pendingRaf !== null) cancelAnimationFrame(pendingRaf)
+    }
   }, [streamId])
 
   const [error, setError] = useState<string | null>(null)

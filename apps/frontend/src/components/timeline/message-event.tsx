@@ -52,7 +52,7 @@ import { MessageReactions } from "./message-reactions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 import { useQuoteReply } from "./quote-reply-context"
 import { useSwipeAction } from "@/hooks/use-swipe-action"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useStreamFromStore } from "@/stores/stream-store"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
 
@@ -482,6 +482,7 @@ function SentMessageEvent({
   const { getTraceUrl } = useTrace()
   const quoteReplyCtx = useQuoteReply()
   const navigate = useNavigate()
+  const location = useLocation()
   const currentStream = useStreamFromStore(streamId)
   const parentStream = useStreamFromStore(currentStream?.parentStreamId ?? undefined)
   const replyCount = payload.replyCount ?? 0
@@ -714,7 +715,15 @@ function SentMessageEvent({
               authorId: event.actorId ?? "",
               actorType: event.actorType ?? "user",
             })
-            navigate(`/w/${workspaceId}/s/${parentStream.id}`)
+            // Preserve the current query string so a thread panel (?panel=…)
+            // stays open across the share. When the user is already viewing
+            // the parent in the main view, skip navigation entirely — the
+            // existing composer subscribes to the handoff store and picks
+            // the share up in place; an unnecessary navigate() would strip
+            // params and close the open panel.
+            const targetPathname = `/w/${workspaceId}/s/${parentStream.id}`
+            if (location.pathname === targetPathname) return
+            navigate(`${targetPathname}${location.search}`)
           }
         : undefined,
       shareToParentLabel: parentStream ? buildShareToParentLabel(parentStream) : undefined,

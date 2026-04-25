@@ -4,6 +4,7 @@ import {
   consumeShareHandoff,
   peekShareHandoff,
   queueShareHandoff,
+  subscribeShareHandoff,
 } from "./share-handoff-store"
 
 const sampleAttrs = {
@@ -52,5 +53,31 @@ describe("share handoff store", () => {
     expect(peekShareHandoff("stream_a")).toEqual(sampleAttrs)
     expect(consumeShareHandoff("stream_a")).toEqual(sampleAttrs)
     expect(peekShareHandoff("stream_a")).toBeNull()
+  })
+
+  it("notifies subscribers when a share is queued for the matching stream", () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeShareHandoff("stream_a", listener)
+
+    queueShareHandoff("stream_a", sampleAttrs)
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    queueShareHandoff("stream_a", { ...sampleAttrs, messageId: "msg_2" })
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    unsubscribe()
+    queueShareHandoff("stream_a", sampleAttrs)
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it("scopes notifications by stream — listeners on other streams are not called", () => {
+    const onA = vi.fn()
+    const onB = vi.fn()
+    subscribeShareHandoff("stream_a", onA)
+    subscribeShareHandoff("stream_b", onB)
+
+    queueShareHandoff("stream_a", sampleAttrs)
+    expect(onA).toHaveBeenCalledTimes(1)
+    expect(onB).not.toHaveBeenCalled()
   })
 })
