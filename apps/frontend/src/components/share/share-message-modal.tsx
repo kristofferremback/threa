@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { StreamTypes, Visibilities, type StreamType } from "@threa/types"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer"
@@ -7,6 +7,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
 import { getStreamName, streamFallbackLabel, STREAM_ICONS } from "@/lib/streams"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
+import { navigateAfterShareHandoff } from "@/lib/share-navigation"
 import { useIsMobile } from "@/hooks/use-mobile"
 import type { SharedMessageAttrs } from "@/components/editor/shared-message-extension"
 
@@ -42,6 +43,7 @@ interface ShareMessageModalProps {
 export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: ShareMessageModalProps) {
   const [search, setSearch] = useState("")
   const navigate = useNavigate()
+  const location = useLocation()
   const streams = useWorkspaceStreams(workspaceId)
   const memberships = useWorkspaceStreamMemberships(workspaceId)
   const isMobile = useIsMobile()
@@ -91,7 +93,10 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
   const handleSelect = (targetStreamId: string) => {
     queueShareHandoff(targetStreamId, attrs)
     handleOpenChange(false)
-    navigate(`/w/${workspaceId}/s/${targetStreamId}`)
+    // Same navigation contract as the fast-path entries in
+    // `message-event.tsx` — strip search params on mobile so the panel
+    // doesn't shadow the parent composer, no-op when target === current.
+    navigateAfterShareHandoff({ workspaceId, targetStreamId, location, navigate, isMobile })
   }
 
   const picker = (
