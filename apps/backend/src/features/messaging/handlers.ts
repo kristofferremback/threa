@@ -15,57 +15,51 @@ import { parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 import { messageMetadataSchema } from "./metadata-schema"
 
-// Schema for JSON input to an existing stream (from rich clients)
-const createMessageJsonToStreamSchema = z.object({
-  streamId: z.string().min(1, "streamId is required"),
-  contentJson: z.object({
-    type: z.literal("doc"),
-    content: z.array(z.any()),
-  }),
-  contentMarkdown: z.string().optional(),
+// Fields shared by every create/update variant. Defining once keeps the
+// six schemas from drifting when a per-message option is added.
+// `confirmedPrivacyWarning` is required when a share node crosses a privacy
+// boundary; the service returns 409 + `SHARE_PRIVACY_CONFIRMATION_REQUIRED`
+// otherwise.
+const commonMessageOptionsSchema = {
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
   metadata: messageMetadataSchema.optional(),
-  // Flag the user has already seen the privacy warning for any private-source
-  // share node in this content. Required by `ShareService` whenever a share
-  // crosses a privacy boundary; otherwise the call returns 409 with code
-  // `SHARE_PRIVACY_CONFIRMATION_REQUIRED`. Optional on the wire so non-share
-  // sends don't have to set it.
   confirmedPrivacyWarning: z.boolean().optional(),
+}
+
+const contentJsonSchema = z.object({
+  type: z.literal("doc"),
+  content: z.array(z.any()),
+})
+
+// Schema for JSON input to an existing stream (from rich clients)
+const createMessageJsonToStreamSchema = z.object({
+  streamId: z.string().min(1, "streamId is required"),
+  contentJson: contentJsonSchema,
+  contentMarkdown: z.string().optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Schema for markdown input to an existing stream (from AI/external)
 const createMessageMarkdownToStreamSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
   content: z.string().min(1, "content is required"),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
-  confirmedPrivacyWarning: z.boolean().optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Schema for JSON input to a DM target user (lazy stream creation on first message)
 const createMessageJsonToDmSchema = z.object({
   dmUserId: z.string().min(1, "dmUserId is required"),
-  contentJson: z.object({
-    type: z.literal("doc"),
-    content: z.array(z.any()),
-  }),
+  contentJson: contentJsonSchema,
   contentMarkdown: z.string().optional(),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
-  confirmedPrivacyWarning: z.boolean().optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Schema for markdown input to a DM target user (lazy stream creation on first message)
 const createMessageMarkdownToDmSchema = z.object({
   dmUserId: z.string().min(1, "dmUserId is required"),
   content: z.string().min(1, "content is required"),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
-  confirmedPrivacyWarning: z.boolean().optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Union schema - accepts either format
@@ -78,10 +72,7 @@ const createMessageSchema = z.union([
 
 // Update can also be either format
 const updateMessageJsonSchema = z.object({
-  contentJson: z.object({
-    type: z.literal("doc"),
-    content: z.array(z.any()),
-  }),
+  contentJson: contentJsonSchema,
   contentMarkdown: z.string().optional(),
   confirmedPrivacyWarning: z.boolean().optional(),
 })

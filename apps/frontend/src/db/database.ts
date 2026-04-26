@@ -189,8 +189,8 @@ export interface PendingMessage {
    *   drain loop skips this entry until the user either sends or cancels.
    * - `blocked-privacy` — backend rejected with
    *   `SHARE_PRIVACY_CONFIRMATION_REQUIRED` on a share that crosses a
-   *   privacy boundary (plan D2). Not auto-retried — surfaces a toast so
-   *   the user explicitly confirms or aborts. On confirm the toast clears
+   *   privacy boundary. Not auto-retried — surfaces a toast so the user
+   *   explicitly confirms or aborts. On confirm the toast clears
    *   `status` and sets `confirmedPrivacyWarning: true`.
    */
   status?: "editing" | "blocked-privacy"

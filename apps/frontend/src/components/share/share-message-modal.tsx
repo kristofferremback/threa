@@ -1,21 +1,12 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Hash, MessageSquare, FileText } from "lucide-react"
-import { StreamTypes, type StreamType } from "@threa/types"
+import { StreamTypes, Visibilities, type StreamType } from "@threa/types"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
-import { getStreamName, streamFallbackLabel } from "@/lib/streams"
+import { getStreamName, streamFallbackLabel, STREAM_ICONS } from "@/lib/streams"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
 import type { SharedMessageAttrs } from "@/components/editor/shared-message-extension"
-
-const PICKER_ICONS: Record<StreamType, React.ComponentType<{ className?: string }>> = {
-  [StreamTypes.SCRATCHPAD]: FileText,
-  [StreamTypes.CHANNEL]: Hash,
-  [StreamTypes.DM]: MessageSquare,
-  [StreamTypes.THREAD]: MessageSquare,
-  [StreamTypes.SYSTEM]: MessageSquare,
-}
 
 const TARGET_GROUPS: { id: "channel" | "dm" | "scratchpad"; heading: string; type: StreamType }[] = [
   { id: "channel", heading: "Channels", type: StreamTypes.CHANNEL },
@@ -31,26 +22,16 @@ interface ShareMessageModalProps {
 }
 
 /**
- * Slice 2 share-to-anywhere picker. Reuses the pointer hand-off pattern from
- * Slice 1's share-to-parent: on select we queue the share node for the target
- * stream's composer (`queueShareHandoff`) and navigate. The user types optional
- * commentary in the target stream and sends via the normal send button — no
- * second editor surface is introduced (D-Alt-1 rejected).
+ * Cross-stream picker for sharing a message as a pointer. Filters the
+ * workspace's accessible top-level streams (channel / dm / scratchpad,
+ * not archived) — same access semantics as backend `checkStreamAccess`.
+ * On select, queues the share node for the target's composer via
+ * `queueShareHandoff` and navigates; commentary + send happen in the
+ * target's normal composer rather than a modal-owned editor.
  *
- * Privacy boundary handling lives in the message queue (`use-message-queue` →
- * `surfacePrivacyBlockToast`): when the backend rejects with
- * `SHARE_PRIVACY_CONFIRMATION_REQUIRED`, the queue surfaces a toast offering
- * "Share anyway" / "Cancel". Slice 3 lifts that into a step-2 confirm step
- * inside this modal, with a pre-flight `share-preview` endpoint.
- *
- * Filter rules:
- * - Top-level streams only (no threads, no system) — plan target scope.
- * - Streams the user can read: public visibility OR direct member. Same
- *   semantics as backend `checkStreamAccess`.
- * - Same-stream targets are allowed (D5): if the user picks the stream
- *   they're already viewing, the hand-off lands in the current composer.
- * - Archived streams are excluded — sharing into an archive feels like a
- *   gesture mismatch, and Slice 3 will revisit if users ask.
+ * Privacy boundaries are enforced at send time: the backend rejects with
+ * `SHARE_PRIVACY_CONFIRMATION_REQUIRED` and the queue surfaces a
+ * "Share anyway / Cancel" toast (`surfacePrivacyBlockToast`).
  */
 export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: ShareMessageModalProps) {
   const [search, setSearch] = useState("")
@@ -70,7 +51,7 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
       if (s.archivedAt) return false
       if (s.rootStreamId) return false
       if (s.type === StreamTypes.THREAD || s.type === StreamTypes.SYSTEM) return false
-      const accessible = s.visibility === "public" || memberStreamIds.has(s.id)
+      const accessible = s.visibility === Visibilities.PUBLIC || memberStreamIds.has(s.id)
       if (!accessible) return false
       if (!lower) return true
       const name = (getStreamName(s) ?? streamFallbackLabel(s.type, "generic")).toLowerCase()
@@ -116,7 +97,7 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
               return (
                 <CommandGroup key={group.id} heading={group.heading}>
                   {list.map((stream) => {
-                    const Icon = PICKER_ICONS[stream.type]
+                    const Icon = STREAM_ICONS[stream.type]
                     const label = getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")
                     return (
                       <CommandItem key={stream.id} value={stream.id} onSelect={() => handleSelect(stream.id)}>

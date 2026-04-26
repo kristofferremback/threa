@@ -154,6 +154,7 @@ export {
   SHARE_FLAVORS,
   type ShareFlavor,
   ShareFlavors,
+  ShareErrorCodes,
   // Inter-service authentication
   INTERNAL_API_KEY_HEADER,
 } from "./constants"

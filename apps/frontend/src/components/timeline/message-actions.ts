@@ -81,7 +81,7 @@ export interface MessageActionContext {
   /**
    * Open the cross-stream picker modal (`ShareMessageModal`) for this message.
    * Always visible alongside the fast-path share-to-root / share-to-parent
-   * entries. Slice 3 will add a `share-as-quote` sibling for the quote flavor.
+   * entries.
    */
   onShare?: () => void
   /** Callback to save or unsave the message */

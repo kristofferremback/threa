@@ -8,16 +8,9 @@ import { SharedMessageRepository } from "./repository"
 
 /**
  * Hard cap on how many nested pointer levels we'll resolve in one read.
- * Realistically chains rarely exceed 1–2 hops; the cap exists to keep the
- * cost of pathological data bounded. Pointers beyond the cap render as a
- * `truncated` placeholder linking to the source stream so the viewer can
- * keep reading there. See `docs/plans/message-sharing-streams.md` (Pointer
- * hydration on message fetch).
- *
- * Inlined as a module-local literal (rather than imported from a separate
- * config module) because the messaging↔streams barrel cycle leaves a
- * cross-module re-export of this binding in TDZ when this file is
- * partially evaluated as part of the cycle's eval graph.
+ * Realistically chains rarely exceed 1–2 hops; the cap protects against
+ * pathological data. Pointers beyond the cap render as a `truncated`
+ * placeholder linking to the source stream.
  */
 export const MAX_HYDRATION_DEPTH = 3
 
@@ -33,7 +26,7 @@ export const MAX_HYDRATION_DEPTH = 3
  * - `private`: viewer has no read path to the source — reveals only the
  *   source stream's `kind` + `visibility`, never content/author/name. Used
  *   for re-share chains where a downstream viewer can see the outer
- *   pointer but not an inner one (plan D8).
+ *   pointer but not an inner one.
  * - `truncated`: hydration stopped at `MAX_HYDRATION_DEPTH` for an
  *   accessible chain; viewer can navigate to `streamId` to keep reading.
  */
@@ -60,48 +53,56 @@ export type HydratedSharedMessage =
     }
   | { state: "truncated"; messageId: string; streamId: string }
 
+interface SharedMessageNodeAttrs {
+  messageId?: string
+  streamId?: string
+}
+
 /**
- * Walk a ProseMirror content tree and add every `sharedMessage` node's
- * referenced `messageId` to `into`. Exported so stream event projections
- * can scan `message_created` / `message_edited` payload content alongside
- * direct Message[] inputs.
+ * Walk a ProseMirror content tree and invoke `visit` for every
+ * `sharedMessage` node's `attrs`. The two `collect*` helpers below are
+ * thin specialisations around this single walker so the recursion stays
+ * defined in one place.
  */
-export function collectSharedMessageIds(node: JSONContent | undefined, into: Set<string>): void {
+function walkSharedMessageNodes(node: JSONContent | undefined, visit: (attrs: SharedMessageNodeAttrs) => void): void {
   if (!node) return
   if (node.type === "sharedMessage") {
-    const messageId = (node.attrs as { messageId?: string } | undefined)?.messageId
-    if (messageId) into.add(messageId)
+    visit((node.attrs ?? {}) as SharedMessageNodeAttrs)
   }
   if (node.content) {
     for (const child of node.content) {
-      collectSharedMessageIds(child, into)
+      walkSharedMessageNodes(child, visit)
     }
   }
 }
 
 /**
- * Like {@link collectSharedMessageIds} but also captures each ref's
- * cached `streamId` from the node attrs. Used during recursive hydration
- * so a pointer beyond the depth cap can render a "Open in source stream"
- * link without a per-ref DB lookup.
+ * Collect every `sharedMessage` node's `messageId` from a content tree.
+ * Exported so stream event projections can scan `message_created` /
+ * `message_edited` payload content alongside direct Message[] inputs.
+ */
+export function collectSharedMessageIds(node: JSONContent | undefined, into: Set<string>): void {
+  walkSharedMessageNodes(node, (attrs) => {
+    if (attrs.messageId) into.add(attrs.messageId)
+  })
+}
+
+/**
+ * Like {@link collectSharedMessageIds} but also captures each ref's cached
+ * `streamId` from the node attrs. Used during recursive hydration so a
+ * pointer past the depth cap can render a "Open in source stream" link
+ * without a per-ref DB lookup.
  */
 function collectSharedMessageRefs(node: JSONContent | undefined, into: Map<string, string>): void {
-  if (!node) return
-  if (node.type === "sharedMessage") {
-    const attrs = node.attrs as { messageId?: string; streamId?: string } | undefined
-    if (attrs?.messageId && attrs.streamId) into.set(attrs.messageId, attrs.streamId)
-  }
-  if (node.content) {
-    for (const child of node.content) {
-      collectSharedMessageRefs(child, into)
-    }
-  }
+  walkSharedMessageNodes(node, (attrs) => {
+    if (attrs.messageId && attrs.streamId) into.set(attrs.messageId, attrs.streamId)
+  })
 }
 
 /**
  * Resolve the (kind, visibility) the `private` placeholder should report.
  * For thread sources we surface the parent's kind/visibility so the
- * placeholder vocabulary stays in {channel, dm, scratchpad} per plan D8 —
+ * placeholder vocabulary stays in {channel, dm, scratchpad} —
  * "thread" by itself wouldn't tell the viewer what kind of stream sits
  * behind the wall.
  */
@@ -139,12 +140,7 @@ export async function hydrateSharedMessageIds(
   db: Querier,
   workspaceId: string,
   viewerId: string,
-  sourceMessageIds: Iterable<string>,
-  // Default-arg evaluation reads the module-scope const at call time, by
-  // which point any cross-feature barrel cycle that delayed this file's
-  // initialization has resolved. A direct reference inside the loop body
-  // hits TDZ when the cycle leaves the binding un-init mid-eval.
-  maxDepth: number = MAX_HYDRATION_DEPTH
+  sourceMessageIds: Iterable<string>
 ): Promise<Record<string, HydratedSharedMessage>> {
   const seedIds = Array.from(new Set(sourceMessageIds))
   if (seedIds.length === 0) return {}
@@ -152,16 +148,16 @@ export async function hydrateSharedMessageIds(
   const result: Record<string, HydratedSharedMessage> = {}
   const visited = new Set<string>()
   const okMessages = new Map<string, Message>()
-  // messageId → streamId of the source (for batched stream lookup at the end).
   const privateBuckets = new Map<string, string>()
 
-  // Frontier holds (messageId → streamId-from-attrs); seed level has no
-  // attrs streamId so we leave it empty — these get populated for nested
-  // levels via `collectSharedMessageRefs`.
+  // Seed level has no attrs streamId since the seeds came in as bare ids;
+  // nested levels populate it via `collectSharedMessageRefs` so truncated
+  // entries past the cap can link to the right stream without an extra
+  // DB hit.
   let frontier = new Map<string, string>(seedIds.map((id) => [id, ""]))
   let depth = 0
 
-  while (frontier.size > 0 && depth < maxDepth) {
+  while (frontier.size > 0 && depth < MAX_HYDRATION_DEPTH) {
     const ids = [...frontier.keys()].filter((id) => !visited.has(id))
     if (ids.length === 0) break
     for (const id of ids) visited.add(id)

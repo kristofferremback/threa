@@ -8,7 +8,7 @@ import { emitDraftPromoted } from "@/lib/draft-promotions"
 import { setParentThreadId } from "@/sync/stream-sync"
 import { deleteDraftScratchpadFromCache, deleteDraftMessageFromCache } from "@/stores/draft-store"
 import { workspaceKeys } from "./use-workspaces"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, ShareErrorCodes } from "@threa/types"
 import type { PendingMessage } from "@/db"
 import type { CreateStreamInput, Stream, StreamWithPreview } from "@threa/types"
 import { ApiError } from "@/api/client"
@@ -166,7 +166,7 @@ export function useMessageQueue(): void {
   const streamService = useStreamService()
   const syncEngine = useSyncEngine()
   const queryClient = useQueryClient()
-  const { markPending, markFailed, markSent, registerQueueNotify } = usePendingMessages()
+  const { markPending, markFailed, markSent, registerQueueNotify, retryMessage, deleteMessage } = usePendingMessages()
 
   const isProcessing = useRef(false)
   const hasPendingWork = useRef(false)
@@ -239,16 +239,22 @@ export function useMessageQueue(): void {
         // auto-retry — surface a toast offering "Share anyway" / "Cancel"
         // so the user explicitly confirms or aborts. INV-32: the API
         // contract surfaces this as 409 + a stable error code.
-        if (ApiError.isApiError(err) && err.status === 409 && err.code === "SHARE_PRIVACY_CONFIRMATION_REQUIRED") {
+        if (
+          ApiError.isApiError(err) &&
+          err.status === 409 &&
+          err.code === ShareErrorCodes.PRIVACY_CONFIRMATION_REQUIRED
+        ) {
           // Dexie's deep KeyPaths inference hits a circular type on JSONContent.
           type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-          await (db.pendingMessages.update as unknown as UpdateFn)(next.clientId, {
-            status: "blocked-privacy",
-            retryAfter: undefined,
-          })
-          await db.events.update(next.clientId, { _status: "failed" })
+          await Promise.all([
+            (db.pendingMessages.update as unknown as UpdateFn)(next.clientId, {
+              status: "blocked-privacy",
+              retryAfter: undefined,
+            }),
+            db.events.update(next.clientId, { _status: "failed" }),
+          ])
           markFailed(next.clientId)
-          surfacePrivacyBlockToast(next.clientId)
+          surfacePrivacyBlockToast(next.clientId, { retryMessage, deleteMessage })
           skippedIds.add(next.clientId)
           continue
         }
@@ -272,7 +278,17 @@ export function useMessageQueue(): void {
         skippedIds.add(next.clientId)
       }
     }
-  }, [messageService, streamService, syncEngine, queryClient, markPending, markFailed, markSent])
+  }, [
+    messageService,
+    streamService,
+    syncEngine,
+    queryClient,
+    markPending,
+    markFailed,
+    markSent,
+    retryMessage,
+    deleteMessage,
+  ])
 
   const processQueue = useCallback(async () => {
     if (isProcessing.current) {
