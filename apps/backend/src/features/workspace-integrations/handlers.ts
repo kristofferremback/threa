@@ -1,9 +1,15 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
+import type { WorkspaceIntegrationProvider } from "@threa/types"
 import { WorkspaceIntegrationService } from "./service"
 
 const githubCallbackSchema = z.object({
   installation_id: z.string().min(1, "installation_id is required"),
+  state: z.string().min(1, "state is required"),
+})
+
+const linearCallbackSchema = z.object({
+  code: z.string().min(1, "code is required"),
   state: z.string().min(1, "state is required"),
 })
 
@@ -20,12 +26,21 @@ interface Dependencies {
   allowedFrontendOrigins: string[]
 }
 
-export function buildGithubCallbackRedirectUrl(
+/**
+ * Build a post-callback redirect to the frontend settings page for `provider`.
+ *
+ * Forwarded host validation prevents an attacker-controlled `x-forwarded-host`
+ * from turning the callback into an open redirect if the backend is ever
+ * reached without going through the trusted Cloudflare → control-plane proxy
+ * chain. Outside the allowlist we fall back to a relative redirect.
+ */
+export function buildProviderCallbackRedirectUrl(
   req: Pick<Request, "headers" | "protocol">,
   workspaceId: string,
+  provider: WorkspaceIntegrationProvider,
   allowedFrontendOrigins: string[]
 ): string {
-  const path = `/w/${workspaceId}?ws-settings=integrations&provider=github`
+  const path = `/w/${workspaceId}?ws-settings=integrations&provider=${provider}`
   const forwardedHost = getFirstHeaderValue(req.headers["x-forwarded-host"])
   if (!forwardedHost) {
     return path
@@ -82,7 +97,47 @@ export function createWorkspaceIntegrationHandlers({
         workosUserId,
       })
 
-      res.redirect(buildGithubCallbackRedirectUrl(req, workspaceId, allowedFrontendOrigins))
+      res.redirect(buildProviderCallbackRedirectUrl(req, workspaceId, "github", allowedFrontendOrigins))
+    },
+
+    async getLinear(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const integration = await workspaceIntegrationService.getLinearIntegration(workspaceId)
+      res.json({
+        configured: workspaceIntegrationService.isLinearEnabled(),
+        integration,
+      })
+    },
+
+    async connectLinear(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const connectUrl = workspaceIntegrationService.getLinearConnectUrl(workspaceId)
+      res.redirect(connectUrl)
+    },
+
+    async disconnectLinear(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      await workspaceIntegrationService.disconnectLinearIntegration(workspaceId)
+      res.status(204).send()
+    },
+
+    async linearCallback(req: Request, res: Response) {
+      const parsed = linearCallbackSchema.safeParse(req.query)
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(parsed.error).fieldErrors,
+        })
+      }
+
+      const workosUserId = req.workosUserId!
+      const { workspaceId } = await workspaceIntegrationService.handleLinearCallback({
+        state: parsed.data.state,
+        code: parsed.data.code,
+        workosUserId,
+      })
+
+      res.redirect(buildProviderCallbackRedirectUrl(req, workspaceId, "linear", allowedFrontendOrigins))
     },
   }
 }

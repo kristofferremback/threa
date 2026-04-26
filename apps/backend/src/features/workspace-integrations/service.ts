@@ -3,21 +3,48 @@ import { App, Octokit } from "octokit"
 import { logger } from "../../lib/logger"
 import { HttpError } from "../../lib/errors"
 import { workspaceIntegrationId } from "../../lib/id"
-import type { GitHubAppConfig } from "../../lib/env"
+import type { GitHubAppConfig, LinearOAuthConfig } from "../../lib/env"
 import { UserRepository } from "../workspaces"
 import {
   WorkspaceIntegrationProviders,
   WorkspaceIntegrationStatuses,
   type GitHubInstalledRepository,
   type GitHubWorkspaceIntegration,
+  type LinearAuthorizedUser,
+  type LinearRateLimit,
+  type LinearWorkspaceIntegration,
 } from "@threa/types"
-import { decryptJson, encryptJson, createGithubInstallState, verifyGithubInstallState } from "./crypto"
+import {
+  decryptJson,
+  encryptJson,
+  createGithubInstallState,
+  createLinearInstallState,
+  verifyGithubInstallState,
+  verifyLinearInstallState,
+} from "./crypto"
 import { WorkspaceIntegrationRepository, type WorkspaceIntegrationRecord } from "./repository"
+import {
+  LinearClient,
+  LinearGraphQLEndpoint,
+  type LinearIntegrationCredentials,
+  type LinearIntegrationMetadata,
+} from "./linear-client"
+import {
+  buildLinearAuthorizationUrl,
+  exchangeLinearCode,
+  expiresAtFromNow,
+  refreshLinearToken,
+  revokeLinearToken,
+  type LinearOAuthTokenResponse,
+} from "./linear-oauth"
 
 const log = logger.child({ module: "workspace-integrations" })
 
 const GITHUB_RATE_LIMIT_NEAR_THRESHOLD = 100
 const GITHUB_TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000
+const LINEAR_REQUESTS_NEAR_THRESHOLD = 100
+const LINEAR_COMPLEXITY_NEAR_THRESHOLD = 50_000
+const LINEAR_TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000
 
 interface GitHubIntegrationCredentials {
   installationId: number
@@ -106,9 +133,16 @@ export class GitHubClient {
   }
 }
 
+interface LinearRefreshResult {
+  record: WorkspaceIntegrationRecord
+  credentials: LinearIntegrationCredentials
+  metadata: LinearIntegrationMetadata
+}
+
 interface WorkspaceIntegrationServiceDeps {
   pool: Pool
   github: GitHubAppConfig
+  linear: LinearOAuthConfig
 }
 
 export class WorkspaceIntegrationService {
@@ -123,6 +157,10 @@ export class WorkspaceIntegrationService {
 
   isGitHubEnabled(): boolean {
     return this.app !== null
+  }
+
+  isLinearEnabled(): boolean {
+    return this.deps.linear.enabled
   }
 
   async getGithubIntegration(workspaceId: string): Promise<GitHubWorkspaceIntegration | null> {
@@ -445,6 +483,369 @@ export class WorkspaceIntegrationService {
     this.requireGitHubEnabled()
     return this.app!.octokit
   }
+
+  // ── Linear ────────────────────────────────────────────────────────────
+
+  async getLinearIntegration(workspaceId: string): Promise<LinearWorkspaceIntegration | null> {
+    const record = await WorkspaceIntegrationRepository.findByWorkspaceAndProvider(
+      this.deps.pool,
+      workspaceId,
+      WorkspaceIntegrationProviders.LINEAR
+    )
+    if (!record) return null
+
+    const metadata = this.parseLinearMetadata(record.metadata)
+    let scope: string | null = null
+    try {
+      scope = this.parseLinearCredentials(workspaceId, record.credentials).scope || null
+    } catch {
+      scope = null
+    }
+
+    return {
+      id: record.id,
+      workspaceId: record.workspaceId,
+      provider: "linear",
+      status: record.status,
+      installedBy: record.installedBy,
+      organizationId: metadata.organizationId,
+      organizationName: metadata.organizationName,
+      organizationUrlKey: metadata.organizationUrlKey,
+      authorizedUser: metadata.authorizedUser,
+      scope,
+      rateLimit: metadata.rateLimit,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    }
+  }
+
+  getLinearConnectUrl(workspaceId: string): string {
+    this.requireLinearEnabled()
+    const state = createLinearInstallState(this.deps.linear.integrationSecret, workspaceId)
+    return buildLinearAuthorizationUrl({
+      clientId: this.deps.linear.clientId,
+      redirectUri: this.deps.linear.redirectUri,
+      state,
+    })
+  }
+
+  async disconnectLinearIntegration(workspaceId: string): Promise<void> {
+    const record = await WorkspaceIntegrationRepository.findByWorkspaceAndProvider(
+      this.deps.pool,
+      workspaceId,
+      WorkspaceIntegrationProviders.LINEAR
+    )
+
+    if (record) {
+      try {
+        const credentials = this.parseLinearCredentials(workspaceId, record.credentials)
+        await revokeLinearToken({ accessToken: credentials.accessToken })
+      } catch (error) {
+        log.warn({ err: error, workspaceId }, "Linear token revocation failed; continuing with local disconnect")
+      }
+    }
+
+    await WorkspaceIntegrationRepository.update(this.deps.pool, workspaceId, WorkspaceIntegrationProviders.LINEAR, {
+      status: WorkspaceIntegrationStatuses.INACTIVE,
+      credentials: {},
+      metadata: {},
+    })
+  }
+
+  async handleLinearCallback(params: {
+    state: string
+    code: string
+    workosUserId: string
+  }): Promise<{ workspaceId: string }> {
+    this.requireLinearEnabled()
+
+    let workspaceId: string
+    try {
+      workspaceId = verifyLinearInstallState(this.deps.linear.integrationSecret, params.state).workspaceId
+    } catch (error) {
+      throw new HttpError((error as Error).message, { status: 400, code: "INVALID_LINEAR_INSTALL_STATE" })
+    }
+
+    const access = await UserRepository.findWorkspaceUserAccess(this.deps.pool, workspaceId, params.workosUserId)
+    if (!access.workspaceExists) {
+      throw new HttpError("Workspace not found", { status: 404, code: "WORKSPACE_NOT_FOUND" })
+    }
+    if (!access.user) {
+      throw new HttpError("Not a member of this workspace", { status: 403, code: "FORBIDDEN" })
+    }
+    if (access.user.role !== "admin" && access.user.role !== "owner") {
+      throw new HttpError("Only admins can connect Linear", { status: 403, code: "FORBIDDEN" })
+    }
+
+    await this.completeLinearInstallation(workspaceId, access.user.id, params.code)
+    return { workspaceId }
+  }
+
+  async getLinearClient(workspaceId: string): Promise<LinearClient | null> {
+    if (!this.isLinearEnabled()) return null
+
+    const record = await WorkspaceIntegrationRepository.findByWorkspaceAndProvider(
+      this.deps.pool,
+      workspaceId,
+      WorkspaceIntegrationProviders.LINEAR
+    )
+    if (!record || record.status !== WorkspaceIntegrationStatuses.ACTIVE) {
+      return null
+    }
+
+    const metadata = this.parseLinearMetadata(record.metadata)
+    if (this.isNearLinearRateLimit(metadata)) {
+      return null
+    }
+
+    let credentials: LinearIntegrationCredentials
+    try {
+      credentials = this.parseLinearCredentials(workspaceId, record.credentials)
+    } catch (error) {
+      log.warn({ err: error, workspaceId }, "Linear integration credentials could not be decrypted")
+      return null
+    }
+
+    if (this.shouldRefreshLinearToken(credentials.tokenExpiresAt)) {
+      const refreshed = await this.refreshLinearCredentialsForPreview(workspaceId, record)
+      if (!refreshed) return null
+      return new LinearClient(this, workspaceId, refreshed.record, refreshed.credentials, refreshed.metadata)
+    }
+
+    return new LinearClient(this, workspaceId, record, credentials, metadata)
+  }
+
+  async updateLinearRateLimitMetadata(
+    workspaceId: string,
+    metadata: LinearIntegrationMetadata,
+    rateLimit: LinearRateLimit
+  ): Promise<LinearIntegrationMetadata> {
+    const nextMetadata: LinearIntegrationMetadata = { ...metadata, rateLimit }
+
+    await WorkspaceIntegrationRepository.update(this.deps.pool, workspaceId, WorkspaceIntegrationProviders.LINEAR, {
+      metadata: nextMetadata,
+    })
+
+    return nextMetadata
+  }
+
+  async refreshLinearCredentialsForPreview(
+    workspaceId: string,
+    record: WorkspaceIntegrationRecord
+  ): Promise<LinearRefreshResult | null> {
+    let credentials: LinearIntegrationCredentials
+    try {
+      credentials = this.parseLinearCredentials(workspaceId, record.credentials)
+    } catch (error) {
+      log.warn({ err: error, workspaceId }, "Failed to parse Linear credentials during refresh")
+      return null
+    }
+
+    if (!credentials.refreshToken) {
+      log.warn({ workspaceId }, "Linear credentials have no refresh token; marking integration as error state")
+      await WorkspaceIntegrationRepository.update(this.deps.pool, workspaceId, WorkspaceIntegrationProviders.LINEAR, {
+        status: WorkspaceIntegrationStatuses.ERROR,
+      })
+      return null
+    }
+
+    const metadata = this.parseLinearMetadata(record.metadata)
+
+    let tokens: LinearOAuthTokenResponse
+    try {
+      tokens = await refreshLinearToken({
+        clientId: this.deps.linear.clientId,
+        clientSecret: this.deps.linear.clientSecret,
+        refreshToken: credentials.refreshToken,
+      })
+    } catch (error) {
+      log.warn({ err: error, workspaceId }, "Linear token refresh failed")
+      await WorkspaceIntegrationRepository.update(this.deps.pool, workspaceId, WorkspaceIntegrationProviders.LINEAR, {
+        status: WorkspaceIntegrationStatuses.ERROR,
+      })
+      return null
+    }
+
+    return this.persistLinearCredentials(workspaceId, record, tokens, metadata)
+  }
+
+  private async completeLinearInstallation(
+    workspaceId: string,
+    installedByUserId: string,
+    code: string
+  ): Promise<void> {
+    let tokens: LinearOAuthTokenResponse
+    try {
+      tokens = await exchangeLinearCode({
+        clientId: this.deps.linear.clientId,
+        clientSecret: this.deps.linear.clientSecret,
+        redirectUri: this.deps.linear.redirectUri,
+        code,
+      })
+    } catch (error) {
+      throw new HttpError(`Linear token exchange failed: ${(error as Error).message}`, {
+        status: 502,
+        code: "LINEAR_TOKEN_EXCHANGE_FAILED",
+      })
+    }
+
+    const viewer = await fetchLinearViewer(tokens.accessToken)
+    if (!viewer) {
+      throw new HttpError("Failed to fetch Linear viewer/organization", {
+        status: 502,
+        code: "LINEAR_VIEWER_FETCH_FAILED",
+      })
+    }
+
+    const existing = await WorkspaceIntegrationRepository.findByWorkspaceAndProvider(
+      this.deps.pool,
+      workspaceId,
+      WorkspaceIntegrationProviders.LINEAR
+    )
+
+    const metadata: LinearIntegrationMetadata = {
+      organizationId: viewer.organization.id,
+      organizationName: viewer.organization.name,
+      organizationUrlKey: viewer.organization.urlKey,
+      authorizedUser: viewer.user,
+      rateLimit: {
+        requestsRemaining: null,
+        requestsResetAt: null,
+        complexityRemaining: null,
+        complexityResetAt: null,
+      },
+    }
+
+    const baseRecord: WorkspaceIntegrationRecord = existing ?? {
+      id: workspaceIntegrationId(),
+      workspaceId,
+      provider: WorkspaceIntegrationProviders.LINEAR,
+      status: WorkspaceIntegrationStatuses.INACTIVE,
+      credentials: {},
+      metadata: {},
+      installedBy: installedByUserId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    await this.persistLinearCredentials(workspaceId, baseRecord, tokens, metadata, installedByUserId)
+  }
+
+  private async persistLinearCredentials(
+    workspaceId: string,
+    record: WorkspaceIntegrationRecord,
+    tokens: LinearOAuthTokenResponse,
+    metadata: LinearIntegrationMetadata,
+    installedByOverride?: string
+  ): Promise<LinearRefreshResult> {
+    const credentials: LinearIntegrationCredentials = {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      tokenType: tokens.tokenType,
+      tokenExpiresAt: expiresAtFromNow(tokens.expiresIn),
+      scope: tokens.scope,
+      actor: "app",
+    }
+
+    const updated = await WorkspaceIntegrationRepository.upsert(this.deps.pool, {
+      id: record.id,
+      workspaceId,
+      provider: WorkspaceIntegrationProviders.LINEAR,
+      status: WorkspaceIntegrationStatuses.ACTIVE,
+      credentials: encryptJson(this.deps.linear.integrationSecret, credentials, {
+        workspaceId,
+        provider: WorkspaceIntegrationProviders.LINEAR,
+      }),
+      metadata,
+      installedBy: installedByOverride ?? record.installedBy,
+    })
+
+    return { record: updated, credentials, metadata }
+  }
+
+  private parseLinearCredentials(workspaceId: string, payload: Record<string, unknown>): LinearIntegrationCredentials {
+    const decrypted = decryptJson<Partial<LinearIntegrationCredentials>>(this.deps.linear.integrationSecret, payload, {
+      workspaceId,
+      provider: WorkspaceIntegrationProviders.LINEAR,
+    })
+    if (
+      !decrypted ||
+      typeof decrypted.accessToken !== "string" ||
+      typeof decrypted.tokenExpiresAt !== "string" ||
+      decrypted.actor !== "app"
+    ) {
+      throw new Error("Malformed Linear integration credentials")
+    }
+    return {
+      accessToken: decrypted.accessToken,
+      refreshToken: typeof decrypted.refreshToken === "string" ? decrypted.refreshToken : null,
+      tokenType: typeof decrypted.tokenType === "string" ? decrypted.tokenType : "Bearer",
+      tokenExpiresAt: decrypted.tokenExpiresAt,
+      scope: typeof decrypted.scope === "string" ? decrypted.scope : "",
+      actor: "app",
+    }
+  }
+
+  private parseLinearMetadata(payload: Record<string, unknown>): LinearIntegrationMetadata {
+    const authorizedUserRaw = (payload.authorizedUser as Record<string, unknown> | null | undefined) ?? null
+    const authorizedUser: LinearAuthorizedUser | null =
+      authorizedUserRaw && typeof authorizedUserRaw.id === "string" && typeof authorizedUserRaw.name === "string"
+        ? {
+            id: authorizedUserRaw.id,
+            name: authorizedUserRaw.name,
+            email: typeof authorizedUserRaw.email === "string" ? authorizedUserRaw.email : null,
+          }
+        : null
+
+    const rateLimitRaw = (payload.rateLimit as Record<string, unknown> | null | undefined) ?? null
+    const rateLimit: LinearRateLimit = {
+      requestsRemaining:
+        rateLimitRaw && typeof rateLimitRaw.requestsRemaining === "number" ? rateLimitRaw.requestsRemaining : null,
+      requestsResetAt:
+        rateLimitRaw && typeof rateLimitRaw.requestsResetAt === "string" ? rateLimitRaw.requestsResetAt : null,
+      complexityRemaining:
+        rateLimitRaw && typeof rateLimitRaw.complexityRemaining === "number" ? rateLimitRaw.complexityRemaining : null,
+      complexityResetAt:
+        rateLimitRaw && typeof rateLimitRaw.complexityResetAt === "string" ? rateLimitRaw.complexityResetAt : null,
+    }
+
+    return {
+      organizationId: typeof payload.organizationId === "string" ? payload.organizationId : null,
+      organizationName: typeof payload.organizationName === "string" ? payload.organizationName : null,
+      organizationUrlKey: typeof payload.organizationUrlKey === "string" ? payload.organizationUrlKey : null,
+      authorizedUser,
+      rateLimit,
+    }
+  }
+
+  private isNearLinearRateLimit(metadata: LinearIntegrationMetadata): boolean {
+    const { requestsRemaining, requestsResetAt, complexityRemaining, complexityResetAt } = metadata.rateLimit
+    const now = new Date()
+    const requestsLow =
+      requestsRemaining !== null &&
+      requestsResetAt !== null &&
+      requestsRemaining <= LINEAR_REQUESTS_NEAR_THRESHOLD &&
+      new Date(requestsResetAt) > now
+    const complexityLow =
+      complexityRemaining !== null &&
+      complexityResetAt !== null &&
+      complexityRemaining <= LINEAR_COMPLEXITY_NEAR_THRESHOLD &&
+      new Date(complexityResetAt) > now
+    return requestsLow || complexityLow
+  }
+
+  private shouldRefreshLinearToken(tokenExpiresAt: string): boolean {
+    return new Date(tokenExpiresAt).getTime() - Date.now() <= LINEAR_TOKEN_REFRESH_SKEW_MS
+  }
+
+  private requireLinearEnabled(): void {
+    if (!this.isLinearEnabled()) {
+      throw new HttpError("Linear integration is not configured", {
+        status: 503,
+        code: "LINEAR_INTEGRATION_NOT_CONFIGURED",
+      })
+    }
+  }
 }
 
 async function listInstallationRepositories(octokit: Octokit): Promise<GitHubInstalledRepository[]> {
@@ -523,4 +924,62 @@ function getErrorStatus(error: unknown): number | null {
 function getErrorHeaders(error: unknown): GitHubApiHeaders | undefined {
   if (!error || typeof error !== "object") return undefined
   return (error as { response?: { headers?: GitHubApiHeaders } }).response?.headers
+}
+
+interface LinearViewerResponse {
+  organization: { id: string; name: string; urlKey: string }
+  user: LinearAuthorizedUser
+}
+
+/**
+ * One-shot GraphQL fetch used during install/callback to capture organization
+ * identity. Does not go through `LinearClient` because no integration record
+ * exists yet at this point.
+ */
+async function fetchLinearViewer(accessToken: string): Promise<LinearViewerResponse | null> {
+  const response = await fetch(LinearGraphQLEndpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      query: `query InstallViewer {
+        organization { id name urlKey }
+        viewer { id name email }
+      }`,
+    }),
+  })
+
+  if (!response.ok) return null
+
+  const body = (await response.json().catch(() => null)) as {
+    data?: {
+      organization?: { id?: unknown; name?: unknown; urlKey?: unknown }
+      viewer?: { id?: unknown; name?: unknown; email?: unknown }
+    }
+  } | null
+
+  const org = body?.data?.organization
+  const viewer = body?.data?.viewer
+  if (
+    !org ||
+    typeof org.id !== "string" ||
+    typeof org.name !== "string" ||
+    typeof org.urlKey !== "string" ||
+    !viewer ||
+    typeof viewer.id !== "string" ||
+    typeof viewer.name !== "string"
+  ) {
+    return null
+  }
+
+  return {
+    organization: { id: org.id, name: org.name, urlKey: org.urlKey },
+    user: {
+      id: viewer.id,
+      name: viewer.name,
+      email: typeof viewer.email === "string" ? viewer.email : null,
+    },
+  }
 }

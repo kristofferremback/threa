@@ -3,8 +3,9 @@ import type { Job, JobHandler } from "../../lib/queue"
 import type { LinkPreviewExtractJobData } from "../../lib/queue/job-queue"
 import type { LinkPreviewService } from "./service"
 import type { LinkPreview, UpdateLinkPreviewParams } from "./repository"
-import { detectContentType, isBlockedUrl, parseGitHubUrl } from "./url-utils"
+import { detectContentType, isBlockedUrl, parseGitHubUrl, parseLinearUrl } from "./url-utils"
 import { fetchGitHubPreview } from "./github-preview"
+import { fetchLinearPreview } from "./linear-preview"
 import {
   FETCH_TIMEOUT_MS,
   FETCH_USER_AGENT,
@@ -512,21 +513,29 @@ export function createLinkPreviewWorker(deps: WorkerDeps): JobHandler<LinkPrevie
           return { id: p.id, skipped: true }
         }
         const isGitHubUrl = parseGitHubUrl(p.url) !== null
-        const shouldAttemptGitHubUpgrade = isGitHubUrl && existing.previewType === null
+        const isLinearUrl = !isGitHubUrl && parseLinearUrl(p.url) !== null
+        const isProviderUrl = isGitHubUrl || isLinearUrl
+        const shouldAttemptProviderUpgrade = isProviderUrl && existing.previewType === null
 
-        if (isPreviewCacheFresh(existing) && !shouldAttemptGitHubUpgrade) {
+        if (isPreviewCacheFresh(existing) && !shouldAttemptProviderUpgrade) {
           return { id: p.id, skipped: true }
         }
 
-        const githubMetadata = await fetchGitHubPreview(workspaceId, p.url, deps.workspaceIntegrationService)
-        if (existing.previewType && githubMetadata === null) {
+        let providerMetadata = null
+        if (isGitHubUrl) {
+          providerMetadata = await fetchGitHubPreview(workspaceId, p.url, deps.workspaceIntegrationService)
+        } else if (isLinearUrl) {
+          providerMetadata = await fetchLinearPreview(workspaceId, p.url, deps.workspaceIntegrationService)
+        }
+
+        if (existing.previewType && providerMetadata === null) {
           return { id: p.id, skipped: true }
         }
-        if (shouldAttemptGitHubUpgrade && githubMetadata === null && isPreviewCacheFresh(existing)) {
+        if (shouldAttemptProviderUpgrade && providerMetadata === null && isPreviewCacheFresh(existing)) {
           return { id: p.id, skipped: true }
         }
 
-        const metadata = githubMetadata ?? (await fetchGenericMetadata(p.url))
+        const metadata = providerMetadata ?? (await fetchGenericMetadata(p.url))
 
         return { id: p.id, metadata, skipped: false, overwrite: existing.status !== "pending" }
       })

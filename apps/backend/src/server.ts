@@ -396,7 +396,11 @@ export async function startServer(): Promise<ServerInstance> {
   const botApiKeyService = new BotApiKeyService(pool)
 
   // Link preview service — created early for route registration
-  const workspaceIntegrationService = new WorkspaceIntegrationService({ pool, github: config.github })
+  const workspaceIntegrationService = new WorkspaceIntegrationService({
+    pool,
+    github: config.github,
+    linear: config.linear,
+  })
   const linkPreviewService = new LinkPreviewService({ pool, streamService })
 
   const isProduction = process.env.NODE_ENV === "production"

@@ -6,6 +6,7 @@ import {
   isBlockedUrl,
   parseMessagePermalink,
   parseGitHubUrl,
+  parseLinearUrl,
 } from "./url-utils"
 
 describe("normalizeUrl", () => {
@@ -413,5 +414,92 @@ describe("parseGitHubUrl", () => {
 
   test("returns null for non-GitHub URLs", () => {
     expect(parseGitHubUrl("https://example.com/octocat/hello-world/pull/12")).toBeNull()
+  })
+})
+
+describe("parseLinearUrl", () => {
+  test("parses issue URLs with a slug suffix", () => {
+    expect(parseLinearUrl("https://linear.app/threa/issue/ENG-123/some-title")).toEqual({
+      type: "linear_issue",
+      workspaceSlug: "threa",
+      identifier: "ENG-123",
+    })
+  })
+
+  test("parses issue URLs without a slug suffix", () => {
+    expect(parseLinearUrl("https://linear.app/threa/issue/ENG-123")).toEqual({
+      type: "linear_issue",
+      workspaceSlug: "threa",
+      identifier: "ENG-123",
+    })
+  })
+
+  test("upcases lowercase team keys into a canonical identifier", () => {
+    expect(parseLinearUrl("https://linear.app/threa/issue/eng-123")).toEqual({
+      type: "linear_issue",
+      workspaceSlug: "threa",
+      identifier: "ENG-123",
+    })
+  })
+
+  test("parses comment fragments into a comment match carrying the parent identifier", () => {
+    expect(
+      parseLinearUrl("https://linear.app/threa/issue/ENG-123/title#comment-a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+    ).toEqual({
+      type: "linear_comment",
+      workspaceSlug: "threa",
+      identifier: "ENG-123",
+      commentId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    })
+  })
+
+  test("parses project URLs with trailing slug-id", () => {
+    expect(parseLinearUrl("https://linear.app/threa/project/ship-the-thing-abc123")).toEqual({
+      type: "linear_project",
+      workspaceSlug: "threa",
+      slugId: "ship-the-thing-abc123",
+    })
+  })
+
+  test("discards trailing overview/updates segments on project URLs", () => {
+    expect(parseLinearUrl("https://linear.app/threa/project/ship-the-thing-abc123/overview")).toEqual({
+      type: "linear_project",
+      workspaceSlug: "threa",
+      slugId: "ship-the-thing-abc123",
+    })
+  })
+
+  test("parses document URLs", () => {
+    expect(parseLinearUrl("https://linear.app/threa/document/design-doc-xyz789")).toEqual({
+      type: "linear_document",
+      workspaceSlug: "threa",
+      slugId: "design-doc-xyz789",
+    })
+  })
+
+  test("returns null for unknown kinds", () => {
+    expect(parseLinearUrl("https://linear.app/threa/team/eng")).toBeNull()
+  })
+
+  test("returns null for invalid identifiers", () => {
+    expect(parseLinearUrl("https://linear.app/threa/issue/not-an-identifier")).toBeNull()
+  })
+
+  test("returns null for non-Linear URLs", () => {
+    expect(parseLinearUrl("https://example.com/threa/issue/ENG-123")).toBeNull()
+  })
+})
+
+describe("normalizeUrl — Linear fragments", () => {
+  test("preserves comment fragment on Linear issue URLs", () => {
+    const normalized = normalizeUrl(
+      "https://linear.app/threa/issue/ENG-123/title#comment-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    )
+    expect(normalized).toContain("#comment-a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+  })
+
+  test("strips non-comment fragments from Linear URLs", () => {
+    const normalized = normalizeUrl("https://linear.app/threa/issue/ENG-123/title#section")
+    expect(normalized).not.toContain("#section")
   })
 })

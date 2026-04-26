@@ -370,8 +370,28 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     workspaceIntegration.disconnectGithub
   )
 
-  // Fixed callback target for provider installation flows (workspace resolved from signed state)
+  app.get(
+    "/api/workspaces/:workspaceId/integrations/linear",
+    ...authed,
+    requireRole("admin"),
+    workspaceIntegration.getLinear
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/integrations/linear/connect",
+    ...authed,
+    requireRole("admin"),
+    workspaceIntegration.connectLinear
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/integrations/linear",
+    ...authed,
+    requireRole("admin"),
+    workspaceIntegration.disconnectLinear
+  )
+
+  // Fixed callback targets for provider installation flows (workspace resolved from signed state)
   app.get("/api/integrations/github/callback", auth, workspaceIntegration.githubCallback)
+  app.get("/api/integrations/linear/callback", auth, workspaceIntegration.linearCallback)
 
   // User API key management (any authenticated user)
   const userApiKeys = createUserApiKeyHandlers({ userApiKeyService })
