@@ -1080,6 +1080,8 @@ function VirtuosoMessageList({
 // Spacer reserving room for the floating composer pill, so the most recent
 // message sits visually offset above the pill at rest and `atBottom` accounts
 // for the composer's height (Virtuoso treats Footer as content).
+const StreamHeaderSpacer = () => <div className="h-3 sm:h-6" aria-hidden />
+
 const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--composer-height, 0px)" }} />
 
-const virtuosoComponents = { Footer: ComposerFooterSpacer }
+const virtuosoComponents = { Header: StreamHeaderSpacer, Footer: ComposerFooterSpacer }
