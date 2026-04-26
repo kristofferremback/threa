@@ -311,6 +311,13 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   // without a remount.
   useEffect(() => {
     let pendingRaf: number | null = null
+    // Buffer of share nodes consumed from the store but not yet inserted
+    // into the editor (editor not mounted, RAF retry pending). A second
+    // handoff arriving mid-retry appends to this buffer and the RAF inserts
+    // both in one chain — previously, cancelling the retry dropped the
+    // first share's already-consumed payload from the closure. Order is
+    // preserved: first queued ends up first in the doc.
+    const buffered: JSONContent[] = []
 
     const cancelPendingRaf = () => {
       if (pendingRaf !== null) {
@@ -320,20 +327,20 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     }
 
     const tryConsume = () => {
-      // A second handoff can arrive (subscriber notification) while the
-      // previous one's retry loop is still waiting for the editor to mount.
-      // Cancel the in-flight chain first so the two retries don't race to
-      // setContent — the second pending share carries the freshest payload
-      // and should win without the cleanup-only-cancels-latest leak.
-      cancelPendingRaf()
-
       const pending = consumeShareHandoff(streamId)
-      if (!pending) return
-
-      const shareNode: JSONContent = {
-        type: "sharedMessage",
-        attrs: pending as unknown as Record<string, unknown>,
+      if (pending) {
+        buffered.push({
+          type: "sharedMessage",
+          attrs: pending as unknown as Record<string, unknown>,
+        })
       }
+      if (buffered.length === 0) return
+
+      // Reset any in-flight retry — we'll restart it below covering the
+      // updated buffer. Safe because the retry's only side-effect is
+      // requestAnimationFrame; the editor write only happens inside
+      // `insert()` which we re-run on the new RAF.
+      cancelPendingRaf()
 
       const insert = (): boolean => {
         const editor = composerFocusRef.current?.getEditor?.()
@@ -350,11 +357,14 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           trimmedBlocks.pop()
         }
 
+        // Drain the buffer atomically with the setContent so a notification
+        // arriving between getJSON and setContent doesn't double-insert.
+        const nodesToInsert = buffered.splice(0)
         editor
           .chain()
           .setContent({
             type: "doc",
-            content: [...trimmedBlocks, shareNode, { type: "paragraph" }],
+            content: [...trimmedBlocks, ...nodesToInsert, { type: "paragraph" }],
           })
           .focus("end")
           .run()

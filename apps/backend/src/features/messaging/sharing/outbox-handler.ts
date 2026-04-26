@@ -13,16 +13,23 @@ import { SharedMessageRepository } from "./repository"
 export const POINTER_INVALIDATED_EVENT = "pointer:invalidated"
 
 /**
- * Extract the source messageId from a message:edited, message:deleted, or
- * message:updated outbox event. Returns null when the event is for a
- * different type or when the payload shape is unexpected.
+ * Extract the source messageId from an outbox event that signals the source
+ * has changed. Returns null when the event is for a different type or when
+ * the payload shape is unexpected.
+ *
+ * Only `message:edited` (content change) and `message:deleted` (tombstone)
+ * affect what a hydrated pointer renders. `message:updated` is reserved for
+ * thread-reply-count bumps (`event-service.ts:163`) and never carries a
+ * content delta, so including it here would fan out a `pointer:invalidated`
+ * to every target stream of every shared parent message on every reply —
+ * a pure cache-bust with nothing to re-fetch.
  */
 function extractMessageIdForInvalidation(event: OutboxEvent): string | null {
   if (event.eventType === "message:edited") {
     const inner = (event.payload as { event?: { payload?: { messageId?: string } } }).event
     return inner?.payload?.messageId ?? null
   }
-  if (event.eventType === "message:deleted" || event.eventType === "message:updated") {
+  if (event.eventType === "message:deleted") {
     return (event.payload as { messageId?: string }).messageId ?? null
   }
   return null

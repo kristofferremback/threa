@@ -21,7 +21,6 @@ export type HydratedSharedMessage =
     }
   | { state: "deleted"; messageId: string; deletedAt: string }
   | { state: "missing"; messageId: string }
-  | { state: "pending"; messageId: string }
 
 interface SharedMessagesContextValue {
   get: (messageId: string) => HydratedSharedMessage | null
