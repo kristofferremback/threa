@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import {
   AlertDialog,
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -1136,13 +1137,21 @@ export function StreamContent({
                   <MoveStatusRow phase={movePhase} />
                   <div className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-2">
                     <AlertDialogCancel disabled={movePhase === "moving"}>Cancel</AlertDialogCancel>
-                    <Button
-                      onClick={confirmPendingMove}
+                    {/* `preventDefault` keeps the dialog open through the
+                      moving phase so the inline status row can transition
+                      to "Moving…" — Radix's default Action behavior would
+                      auto-close on click. confirmPendingMove closes the
+                      dialog itself on success via cancelBatchMode. */}
+                    <AlertDialogAction
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void confirmPendingMove()
+                      }}
                       disabled={movePhase !== "validated"}
                       aria-busy={movePhase === "moving"}
                     >
                       Move
-                    </Button>
+                    </AlertDialogAction>
                   </div>
                 </div>
               </AlertDialogContent>

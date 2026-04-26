@@ -1,6 +1,7 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
 import type { AuthorType, JSONContent } from "@threa/types"
+import type { MoveEventSequenceUpdate } from "../streams"
 
 // Internal row type (snake_case, not exported)
 interface MessageRow {
@@ -59,10 +60,11 @@ export interface InsertMessageParams {
   metadata?: Record<string, string>
 }
 
-export interface MoveMessageSequenceUpdate {
-  messageId: string
-  sequence: bigint
-}
+// Alias for the canonical move-by-messageId+sequence shape defined alongside
+// `moveMessageCreatedEvents` in the streams feature. Keeping the local name
+// preserved so message-side callers (`MessageRepository.moveByIds`) read in
+// the messaging vocabulary while the underlying type stays canonical.
+export type MoveMessageSequenceUpdate = MoveEventSequenceUpdate
 
 function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = {}): Message {
   return {

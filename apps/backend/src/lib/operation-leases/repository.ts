@@ -1,4 +1,4 @@
-import { ulid } from "ulid"
+import { leaseId } from "@threa/backend-common"
 import type { Querier } from "../../db"
 import { sql } from "../../db"
 
@@ -58,7 +58,7 @@ export const OperationLeaseRepository = {
       ttlSeconds?: number
     }
   ): Promise<OperationLease> {
-    const id = `lease_${ulid()}`
+    const id = leaseId()
     const ttlSeconds = params.ttlSeconds ?? 300
     const result = await db.query<OperationLeaseRow>(sql`
       INSERT INTO batch_operation_leases (id, workspace_id, user_id, operation_type, payload, expires_at)
