@@ -78,6 +78,12 @@ export interface MessageActionContext {
   onShareToParent?: () => void
   /** Label text for the share-to-parent entry, e.g. "Share to ⌐ thread-name" */
   shareToParentLabel?: string
+  /**
+   * Open the cross-stream picker modal (`ShareMessageModal`) for this message.
+   * Always visible alongside the fast-path share-to-root / share-to-parent
+   * entries. Slice 3 will add a `share-as-quote` sibling for the quote flavor.
+   */
+  onShare?: () => void
   /** Callback to save or unsave the message */
   onToggleSave?: () => void
   /** Callback to open the reminder picker (mobile: bottom sheet) */
@@ -234,6 +240,17 @@ export const messageActions: MessageAction[] = [
     groupId: "share",
     when: (ctx) => !!ctx.onShareToParent,
     action: (ctx) => ctx.onShareToParent?.(),
+  },
+  {
+    // Cross-stream picker — opens the share-message modal. Always visible
+    // when callable; share-to-root / share-to-parent ride alongside as group
+    // alternatives in nested-thread cases.
+    id: "share",
+    label: "Share to another stream…",
+    icon: Share2,
+    groupId: "share",
+    when: (ctx) => !!ctx.onShare,
+    action: (ctx) => ctx.onShare?.(),
   },
   {
     // Split into two rows (save / unsave) so the menu entry always matches

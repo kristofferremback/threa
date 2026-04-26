@@ -11,6 +11,8 @@ import { workspaceKeys } from "./use-workspaces"
 import { StreamTypes } from "@threa/types"
 import type { PendingMessage } from "@/db"
 import type { CreateStreamInput, Stream, StreamWithPreview } from "@threa/types"
+import { ApiError } from "@/api/client"
+import { surfacePrivacyBlockToast } from "@/lib/share-privacy-toast"
 
 /**
  * Exponential backoff delay based on retry count.
@@ -182,7 +184,14 @@ export function useMessageQueue(): void {
 
       const candidates = await db.pendingMessages.orderBy("createdAt").toArray()
       const next = candidates.find(
-        (m) => !skippedIds.has(m.clientId) && m.status !== "editing" && (m.retryAfter ?? 0) <= now
+        (m) =>
+          !skippedIds.has(m.clientId) &&
+          m.status !== "editing" &&
+          // Privacy-blocked sends wait for the user to click "Share anyway"
+          // (which clears the status); the drain loop must skip them so they
+          // don't churn through retries the user hasn't authorized yet.
+          m.status !== "blocked-privacy" &&
+          (m.retryAfter ?? 0) <= now
       )
       if (!next) break
 
@@ -214,6 +223,7 @@ export function useMessageQueue(): void {
           contentMarkdown: next.content,
           attachmentIds: next.attachmentIds,
           clientMessageId: next.clientId,
+          confirmedPrivacyWarning: next.confirmedPrivacyWarning,
         })
 
         await db.pendingMessages.delete(next.clientId)
@@ -223,7 +233,26 @@ export function useMessageQueue(): void {
         // swaps the optimistic event for the real server event in a single
         // Dexie transaction.
         markSent(next.clientId)
-      } catch {
+      } catch (err) {
+        // Privacy boundary block: the user authored a share that would
+        // expose its source to people outside the source stream. Don't
+        // auto-retry — surface a toast offering "Share anyway" / "Cancel"
+        // so the user explicitly confirms or aborts. INV-32: the API
+        // contract surfaces this as 409 + a stable error code.
+        if (ApiError.isApiError(err) && err.status === 409 && err.code === "SHARE_PRIVACY_CONFIRMATION_REQUIRED") {
+          // Dexie's deep KeyPaths inference hits a circular type on JSONContent.
+          type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
+          await (db.pendingMessages.update as unknown as UpdateFn)(next.clientId, {
+            status: "blocked-privacy",
+            retryAfter: undefined,
+          })
+          await db.events.update(next.clientId, { _status: "failed" })
+          markFailed(next.clientId)
+          surfacePrivacyBlockToast(next.clientId)
+          skippedIds.add(next.clientId)
+          continue
+        }
+
         // Increment retry count and set backoff delay.
         // Only genuine send failures (while connected) reach here —
         // the offline check at the top of the loop prevents transient

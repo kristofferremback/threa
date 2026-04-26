@@ -56,6 +56,7 @@ import { useQuoteReply } from "./quote-reply-context"
 import { useSwipeAction } from "@/hooks/use-swipe-action"
 import { useStreamFromStore } from "@/stores/stream-store"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
+import { ShareMessageModal } from "@/components/share/share-message-modal"
 
 interface MessagePayload {
   messageId: string
@@ -563,6 +564,7 @@ function SentMessageEvent({
   const [mobilePickerOpen, setMobilePickerOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [shareModalOpen, setShareModalOpen] = useState(false)
 
   // Mobile: long-press opens action drawer instead of dropdown
   const isMobile = useIsMobile()
@@ -824,6 +826,7 @@ function SentMessageEvent({
             }
           : undefined,
       shareToParentLabel: showParentEntry && parentStream ? buildShareToStreamLabel(parentStream) : undefined,
+      onShare: () => setShareModalOpen(true),
     }),
     [
       payload.contentMarkdown,
@@ -1025,6 +1028,20 @@ function SentMessageEvent({
           currentContent={{
             contentMarkdown: payload.contentMarkdown,
             editedAt: payload.editedAt,
+          }}
+        />
+      )}
+      {shareModalOpen && (
+        <ShareMessageModal
+          open={shareModalOpen}
+          onOpenChange={setShareModalOpen}
+          workspaceId={workspaceId}
+          attrs={{
+            messageId: payload.messageId,
+            streamId,
+            authorName: actorName,
+            authorId: event.actorId ?? "",
+            actorType: event.actorType ?? "user",
           }}
         />
       )}
