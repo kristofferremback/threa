@@ -208,6 +208,18 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
   const sessionVersionById = new Map<string, number>()
   const nextVersionBySlot = new Map<string, number>()
 
+  // Discover all trigger-message mappings up front so out-of-order reconnect
+  // windows (e.g. completed arrives before started) still route every session
+  // event to the same slot key.
+  for (const event of events) {
+    if (event.eventType !== "agent_session:started") continue
+    const sessionId = getSessionId(event)
+    const triggerMessageId = getTriggerMessageId(event)
+    if (sessionId && triggerMessageId) {
+      triggerBySessionId.set(sessionId, triggerMessageId)
+    }
+  }
+
   for (const event of events) {
     const commandId = getCommandId(event)
     const agentSessionId = getSessionId(event)
@@ -223,11 +235,6 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
       }
       commandGroups.get(commandId)!.push(event)
     } else if (agentSessionId) {
-      const triggerMessageId = getTriggerMessageId(event)
-      if (triggerMessageId) {
-        triggerBySessionId.set(agentSessionId, triggerMessageId)
-      }
-
       const knownTriggerMessageId = triggerBySessionId.get(agentSessionId) ?? null
       const sessionSlotKey = getSessionSlotKey(agentSessionId, knownTriggerMessageId)
       if (event.eventType === "agent_session:started") {
