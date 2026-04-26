@@ -623,7 +623,7 @@ export function StreamContent({
         <SharedMessagesProvider map={mergedSharedMessages}>
           <TextSelectionQuote streamId={streamId} />
           <div className="relative h-full">
-            <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute inset-0 overflow-hidden sm:overflow-visible">
               {isSearchOpen && (
                 <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
               )}
