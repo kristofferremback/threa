@@ -106,6 +106,25 @@ describe("groupTimelineItems", () => {
     expect(sessionGroups.map((group) => group.sessionId)).toEqual(["session_1", "session_2"])
     expect(sessionGroups.map((group) => group.sessionVersion)).toEqual([1, 1])
   })
+
+  it("keeps completed/failed session events in one card when started arrives later in the window", () => {
+    const events: StreamEvent[] = [
+      createSessionCompletedEvent("event_s1_completed", "2", "session_1"),
+      createSessionStartedEvent("event_s1_started_late", "3", "session_1", "msg_1"),
+      createSessionFailedEvent("event_s1_failed", "4", "session_1"),
+    ]
+
+    const items = groupTimelineItems(events, "member_123")
+    const sessionGroups = items.filter((item) => item.type === "session_group")
+
+    expect(sessionGroups).toHaveLength(1)
+    expect(sessionGroups[0]!.sessionId).toBe("session_1")
+    expect(sessionGroups[0]!.events.map((event) => event.id)).toEqual([
+      "event_s1_completed",
+      "event_s1_started_late",
+      "event_s1_failed",
+    ])
+  })
 })
 
 interface CreateMessageEventParams {
