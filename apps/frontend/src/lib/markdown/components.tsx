@@ -8,6 +8,7 @@ import { useAttachmentContext } from "./attachment-context"
 import { useLinkPreviewContext } from "./link-preview-context"
 import { QuoteReplyBlock } from "./quote-reply-block"
 import { BlockquoteBlock } from "./blockquote-block"
+import { SharedMessagePointerBlock } from "./shared-message-block"
 
 const CodeBlock = lazy(() => import("./code-block"))
 
@@ -27,6 +28,66 @@ function parseQuoteHref(
     authorId: parts[2] ?? "",
     actorType: parts[3] ?? "user",
   }
+}
+
+/**
+ * Parse shared-message: protocol href into streamId and messageId.
+ * Format: shared-message:streamId/messageId
+ */
+function parseSharedMessageHref(href: string): { streamId: string; messageId: string } | null {
+  if (!href.startsWith("shared-message:")) return null
+  const parts = href.slice("shared-message:".length).split("/")
+  if (parts.length < 2) return null
+  return { streamId: parts[0], messageId: parts[1] }
+}
+
+interface SharedMessageLinkInfo {
+  streamId: string
+  messageId: string
+  authorName: string
+}
+
+/**
+ * Walk a React element tree for a link with the shared-message: protocol.
+ * Returns the parsed metadata (including the link text, which is the author
+ * name from the markdown serializer) or null if none is present.
+ */
+function findSharedMessageLinkInElement(element: ReactNode): SharedMessageLinkInfo | null {
+  if (!isValidElement(element)) return null
+
+  const props = element.props as Record<string, unknown>
+  if (props.href && typeof props.href === "string") {
+    const parsed = parseSharedMessageHref(props.href)
+    if (parsed) {
+      const authorName = extractTextFromChildren(props.children as ReactNode)
+      return { ...parsed, authorName }
+    }
+  }
+
+  if (props.children) {
+    const childArray = Children.toArray(props.children as ReactNode)
+    for (const child of childArray) {
+      const result = findSharedMessageLinkInElement(child)
+      if (result) return result
+    }
+  }
+
+  return null
+}
+
+/**
+ * Detects whether a paragraph's children contain a shared-message pointer
+ * link. The serializer produces a single-line paragraph containing exactly
+ * one `shared-message:` anchor, so any paragraph carrying that link is
+ * treated as a pointer.
+ */
+function findSharedMessageInChildren(children: ReactNode): SharedMessageLinkInfo | null {
+  const childArray = Children.toArray(children)
+  for (const child of childArray) {
+    const match = findSharedMessageLinkInElement(child)
+    if (match) return match
+  }
+  return null
 }
 
 /**
@@ -236,12 +297,27 @@ export const markdownComponents: Components = {
     </h6>
   ),
 
-  // Paragraphs - process @mentions, #channels, and :emoji:
-  p: ({ children }) => (
-    <p className="mb-2 last:mb-0">
-      <ProcessedChildren>{children}</ProcessedChildren>
-    </p>
-  ),
+  // Paragraphs - process @mentions, #channels, and :emoji:. If the paragraph
+  // carries a shared-message: anchor, swap the whole paragraph for the pointer
+  // card (the serializer emits a single-line paragraph for each share, so
+  // this lossless swap is always correct).
+  p: ({ children }) => {
+    const share = findSharedMessageInChildren(children)
+    if (share) {
+      return (
+        <SharedMessagePointerBlock
+          streamId={share.streamId}
+          messageId={share.messageId}
+          authorName={share.authorName}
+        />
+      )
+    }
+    return (
+      <p className="mb-2 last:mb-0">
+        <ProcessedChildren>{children}</ProcessedChildren>
+      </p>
+    )
+  },
 
   // Links - handles both regular links and attachment:// URLs
   // [&_span] ensures inline-flex elements like TriggerChips inherit underline decoration

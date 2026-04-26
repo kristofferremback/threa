@@ -35,6 +35,14 @@ export { conversationsApi, type ListConversationsParams } from "./conversations"
 export { preferencesApi } from "./preferences"
 export { aiUsageApi } from "./ai-usage"
 export { agentSessionsApi } from "./agent-sessions"
+export {
+  contextBagApi,
+  type PrecomputedRefResult,
+  type PrecomputeInput,
+  type ContextRefSource,
+  type EnrichedContextRef,
+  type StreamContextBagResponse,
+} from "./context-bag"
 export { activityApi, type ListActivityParams } from "./activity"
 export { savedApi, type ListSavedParams } from "./saved"
 export { linkPreviewsApi, type LinkPreviewWithDismissed } from "./link-previews"

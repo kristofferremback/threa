@@ -178,6 +178,28 @@ export function filterVisibleItems(items: TimelineItem[], hideSessionCards?: boo
   })
 }
 
+/**
+ * Find the messageId of the first user-authored message in the timeline
+ * (smallest sequence). Used to anchor the context-bag attachment badge on
+ * the conversation's opening message — null when the timeline has no user
+ * messages yet (so the badge stays in the composer strip).
+ *
+ * Restricted to `message_created` (user authored) on purpose: in a bag-
+ * attached scratchpad the conversation always opens with the user's first
+ * question. If a `companion_response` ever lands first in render order
+ * (offline-reconnect ordering glitch, agent edge case), we'd rather hide
+ * the badge than mis-anchor it to Ariadne's reply.
+ */
+export function findFirstMessageId(items: TimelineItem[]): string | undefined {
+  for (const item of items) {
+    if (item.type !== "event") continue
+    if (item.event.eventType !== "message_created") continue
+    const messageId = (item.event.payload as { messageId?: string })?.messageId
+    if (messageId) return messageId
+  }
+  return undefined
+}
+
 /** Returns a stable key string for a timeline item */
 export function getTimelineItemKey(item: TimelineItem): string {
   switch (item.type) {
@@ -204,6 +226,18 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
   const sessionVersionById = new Map<string, number>()
   const nextVersionBySlot = new Map<string, number>()
 
+  // Discover all trigger-message mappings up front so out-of-order reconnect
+  // windows (e.g. completed arrives before started) still route every session
+  // event to the same slot key.
+  for (const event of events) {
+    if (event.eventType !== "agent_session:started") continue
+    const sessionId = getSessionId(event)
+    const triggerMessageId = getTriggerMessageId(event)
+    if (sessionId && triggerMessageId) {
+      triggerBySessionId.set(sessionId, triggerMessageId)
+    }
+  }
+
   for (const event of events) {
     const commandId = getCommandId(event)
     const agentSessionId = getSessionId(event)
@@ -219,11 +253,6 @@ export function groupTimelineItems(events: StreamEvent[], currentUserId: string 
       }
       commandGroups.get(commandId)!.push(event)
     } else if (agentSessionId) {
-      const triggerMessageId = getTriggerMessageId(event)
-      if (triggerMessageId) {
-        triggerBySessionId.set(agentSessionId, triggerMessageId)
-      }
-
       const knownTriggerMessageId = triggerBySessionId.get(agentSessionId) ?? null
       const sessionSlotKey = getSessionSlotKey(agentSessionId, knownTriggerMessageId)
       if (event.eventType === "agent_session:started") {
@@ -288,6 +317,14 @@ export interface TimelineItemRenderContext {
   agentActivity?: Map<string, MessageAgentActivity>
   hideSessionCards?: boolean
   newMessageIds?: Set<string>
+  /**
+   * messageId of the first message in the stream. Drives the "context attached"
+   * badge on the user's first message in a bag-attached scratchpad — same
+   * mental model as a file upload that lives on the composer pre-send and
+   * moves onto the message after send. Undefined when the stream has no
+   * messages yet.
+   */
+  firstMessageId?: string
   sessionLiveCounts: Map<string, { stepCount: number; messageCount: number }>
   /** Live substep text per session (e.g. "Evaluating results…"). */
   sessionLiveSubsteps: Map<string, string | null>
@@ -344,6 +381,10 @@ export function TimelineItemContent({ item, ctx }: { item: TimelineItem; ctx: Ti
           // the first unread message in a run still reads as a fresh turn for the
           // viewer (fixes the "continuation starting an unread block" edge case).
           groupContinuation={item.groupContinuation && !showUnreadDivider}
+          isFirstMessage={
+            ctx.firstMessageId != null &&
+            (item.event.payload as { messageId?: string })?.messageId === ctx.firstMessageId
+          }
         />
       )}
     </>
@@ -417,6 +458,13 @@ export function EventList({
     )
   }
 
+  // First-message lookup for the context-bag attachment badge. We render the
+  // chip on whichever message sits at the top of the stream (smallest
+  // sequence) so it visually anchors the conversation's source — matches the
+  // file-attachment UX where uploads on the composer "move" onto the message
+  // at send. `timelineItems` is already in render order (oldest first).
+  const firstMessageId = findFirstMessageId(timelineItems)
+
   if (timelineItems.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -437,6 +485,7 @@ export function EventList({
     agentActivity,
     hideSessionCards,
     newMessageIds,
+    firstMessageId,
     sessionLiveCounts,
     sessionLiveSubsteps,
     sessionCanAbort,

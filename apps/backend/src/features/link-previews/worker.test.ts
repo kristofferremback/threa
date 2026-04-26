@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import { createLinkPreviewWorker, decodeHtmlBytes, detectCharset, extractOEmbedDescription, parseHtmlMeta } from "./worker"
+import {
+  createLinkPreviewWorker,
+  decodeHtmlBytes,
+  detectCharset,
+  extractOEmbedDescription,
+  parseHtmlMeta,
+} from "./worker"
 import { GitHubPreviewTypes } from "@threa/types"
 
 /** Encode a string as ISO-8859-1 (Latin-1) bytes. Each char with code ≤ 0xFF becomes one byte. */

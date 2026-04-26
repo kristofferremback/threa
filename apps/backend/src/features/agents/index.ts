@@ -46,9 +46,61 @@ export { MentionInvokeHandler } from "./mention-invoke-outbox-handler"
 export type { MentionInvokeHandlerConfig } from "./mention-invoke-outbox-handler"
 export { AgentMessageMutationHandler } from "./message-mutation-outbox-handler"
 export type { AgentMessageMutationHandlerConfig } from "./message-mutation-outbox-handler"
+export {
+  ContextBagPrecomputeHandler,
+  createContextBagPrecomputeWorker,
+  CONTEXT_BAG_PRECOMPUTE_QUEUE,
+} from "./context-bag-precompute-handler"
+export type {
+  ContextBagPrecomputeHandlerConfig,
+  ContextBagPrecomputeWorkerDeps,
+} from "./context-bag-precompute-handler"
+
+// Context-bag primitive
+export {
+  ContextBagRepository,
+  SummaryRepository,
+  resolveBagForStream,
+  persistSnapshot,
+  loadOrCreateSummary,
+  precomputeRefSummaries,
+  createContextBagHandlers,
+  fetchStreamBag,
+  appendBagToSystemPrompt,
+  getIntentConfig,
+  getResolver,
+  DiscussThreadIntent,
+  ThreadResolver,
+  fingerprintContent,
+  fingerprintManifest,
+  diffInputs,
+  renderStable,
+  renderDelta,
+  buildSnapshot,
+  contextBagSchema,
+  contextRefSchema,
+  contextIntentSchema,
+  contextRefKindSchema,
+} from "./context-bag"
+export type { ContextBagInput, ContextRefInput } from "./context-bag"
+export type {
+  StoredContextBag,
+  SummaryInput,
+  LastRenderedSnapshot,
+  RenderableMessage,
+  ResolvedBag,
+  DiffResult,
+  IntentConfig,
+  PrecomputeRefsDeps,
+  PrecomputeRefsParams,
+  PrecomputedRefResult,
+  ContextRefSource,
+  EnrichedContextRef,
+  StreamContextBagResponse,
+} from "./context-bag"
 
 // Workers
-export { createPersonaAgentWorker } from "./persona-agent-worker"
+export { createPersonaAgentWorker, checkForUnseenMessages } from "./persona-agent-worker"
 export type { PersonaAgentLike, PersonaAgentWorkerDeps } from "./persona-agent-worker"
 export { createOrphanSessionCleanup } from "./orphan-session-cleanup"
 export type { OrphanSessionCleanup } from "./orphan-session-cleanup"
@@ -84,6 +136,10 @@ export {
 } from "./quote-resolver"
 export type { ResolveQuoteRepliesInput, ResolveQuoteRepliesResult } from "./quote-resolver"
 
+// Actor name resolution (users + personas) — shared across companion,
+// researcher, and context-bag thread resolution.
+export { resolveActorNames } from "./actor-names"
+
 // Context builder
 export { buildStreamContext, enrichMessagesWithAttachments } from "./context-builder"
 export type {
@@ -110,6 +166,7 @@ export type { AgentAccessSpec, ComputeAccessSpecParams } from "./researcher"
 // Config (exported for static-config-resolver)
 export { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "./companion/config"
 export { COMPANION_SUMMARY_MODEL_ID, COMPANION_SUMMARY_TEMPERATURE } from "./companion/config"
+export { SUMMARIZER_MAX_TOKENS, SUMMARIZER_MODEL_ID, SUMMARIZER_TEMPERATURE } from "./context-bag/config"
 export { SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS, SUPERSEDE_RESPONSE_VALIDATOR_TEMPERATURE } from "./config"
 export { SUPERSEDE_RESPONSE_VALIDATOR_MODEL_ID } from "./config"
 export {

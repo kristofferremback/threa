@@ -1,0 +1,78 @@
+import { Node, mergeAttributes } from "@tiptap/core"
+import { ReactNodeViewRenderer } from "@tiptap/react"
+import { SharedMessageView } from "./shared-message-view"
+
+export interface SharedMessageAttrs {
+  /** The ID of the referenced source message */
+  messageId: string
+  /** The stream containing the referenced message (for backend access validation) */
+  streamId: string
+  /** Display name of the source author, cached so the node can render before hydration completes */
+  authorName: string
+  /** The ID of the source author, cached for the same reason */
+  authorId: string
+  /** The actor type of the source author, cached for the same reason */
+  actorType: string
+}
+
+/**
+ * Atomic block node that references a message in another stream. The body is
+ * hydrated at render time from a `sharedMessages` map returned alongside the
+ * stream's events. Updates to the source message propagate automatically on
+ * the next fetch; the `pointer:invalidated` realtime event triggers a refetch
+ * so live edits surface without page reload.
+ */
+export const SharedMessageExtension = Node.create({
+  name: "sharedMessage",
+  group: "block",
+  selectable: true,
+  draggable: false,
+  atom: true,
+
+  addAttributes() {
+    return {
+      messageId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-message-id"),
+        renderHTML: (attrs) => ({ "data-message-id": attrs.messageId }),
+      },
+      streamId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-stream-id"),
+        renderHTML: (attrs) => ({ "data-stream-id": attrs.streamId }),
+      },
+      authorName: {
+        default: "",
+        parseHTML: (element) => element.getAttribute("data-author-name"),
+        renderHTML: (attrs) => ({ "data-author-name": attrs.authorName }),
+      },
+      authorId: {
+        default: "",
+        parseHTML: (element) => element.getAttribute("data-author-id"),
+        renderHTML: (attrs) => ({ "data-author-id": attrs.authorId }),
+      },
+      actorType: {
+        default: "user",
+        parseHTML: (element) => element.getAttribute("data-actor-type"),
+        renderHTML: (attrs) => ({ "data-actor-type": attrs.actorType }),
+      },
+    }
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="shared-message"]' }]
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ["div", mergeAttributes(HTMLAttributes, { "data-type": "shared-message" })]
+  },
+
+  renderText({ node }) {
+    const attrs = node.attrs as SharedMessageAttrs
+    return `[shared message ${attrs.messageId}]\n`
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(SharedMessageView)
+  },
+})

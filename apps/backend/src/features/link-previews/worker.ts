@@ -59,7 +59,7 @@ async function tryOEmbed(url: string): Promise<UpdateLinkPreviewParams | null> {
     const data = (await response.json()) as OEmbedResponse
     const oembedDescription = extractOEmbedDescription(data.html)
     const isTwitterProvider = (data.provider_name ?? "").toLowerCase() === "twitter"
-    const fallbackTitle = isTwitterProvider ? data.author_name ?? null : null
+    const fallbackTitle = isTwitterProvider ? (data.author_name ?? null) : null
     let fallbackImageUrl = isTwitterProvider ? await fetchOEmbedFallbackImage(url) : null
     if (!fallbackImageUrl && isTwitterProvider) {
       fallbackImageUrl = await fetchLinkedOEmbedImage(data.html)

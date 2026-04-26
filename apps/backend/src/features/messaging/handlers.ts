@@ -267,17 +267,13 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Read-access gate (visibility + workspace + thread inheritance), not
+      // a plain stream_members check — public channels and inherited thread
+      // access need to allow the message author through. The author-only
+      // restriction below still enforces "edit your own".
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       if (existing.authorId !== userId) {
@@ -380,17 +376,11 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Same read-access reasoning as `update`: gate on tryAccess (visibility
+      // + workspace + thread inheritance), then enforce author-only below.
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       if (existing.authorId !== userId) {
@@ -430,17 +420,13 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Reactions are participation by anyone who can read the message.
+      // Plain `isMember` would reject workspace members reacting in a public
+      // channel they haven't joined and threads they're reading via root
+      // inheritance — neither is the intent.
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.addReaction({
@@ -473,17 +459,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Mirror addReaction: read-access gate so users can un-react in any
+      // stream they can read, including public channels and inherited
+      // thread access.
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.removeReaction({
@@ -511,17 +492,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Edit-history is a pure read of a message the viewer can see.
+      // Same read-access semantics as the message itself — gate on
+      // tryAccess, not bare membership.
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const versions = await eventService.getMessageVersions(messageId)

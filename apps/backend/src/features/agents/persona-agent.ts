@@ -31,6 +31,7 @@ import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
+import { resolveBagForStream, persistSnapshot, appendBagToSystemPrompt, type ResolvedBag } from "./context-bag"
 import { createMemoizedGithubClient } from "./tools"
 import { AgentRuntime, SessionTraceObserver, OtelObserver, type NewMessageInfo } from "./runtime"
 import {
@@ -228,6 +229,24 @@ export class PersonaAgent {
           { workspaceId, streamId, stream, messageId, persona, trigger }
         )
 
+        // Resolve an attached ContextBag (if any) so `stable + delta` flow into
+        // the system prompt for this turn. Live-follow: the bag is re-resolved
+        // every turn, so edits/deletes on the source thread surface in the
+        // "Since last turn" delta block. Runs after `buildAgentContext` so we
+        // can fold its output into the same systemPrompt the AgentRuntime sees.
+        // INV-41: `resolveBagForStream` releases the DB connection before any
+        // summarization AI call runs.
+        const bagCostContext: CostContext = {
+          workspaceId,
+          userId: agentContext.invokingUserId,
+          sessionId: session.id,
+          origin: agentContext.invokingUserId ? "user" : "system",
+        }
+        const resolvedBag: ResolvedBag | null = await resolveBagForStream(
+          { pool, ai, costContext: bagCostContext },
+          streamId
+        )
+
         // Persist which message IDs are in the agent's context window
         // so edit-triggered reruns can check exact membership
         const contextMessageIds = agentContext.streamContext.conversationHistory.map((m) => m.id)
@@ -389,9 +408,12 @@ export class PersonaAgent {
             sessionId: session.id,
             origin: agentContext.invokingUserId ? "user" : "system",
           },
-          systemPrompt: isSupersedeRerun
-            ? buildSupersedeRerunSystemPrompt(agentContext.systemPrompt, rerunContext)
-            : agentContext.systemPrompt,
+          systemPrompt: appendBagToSystemPrompt(
+            isSupersedeRerun
+              ? buildSupersedeRerunSystemPrompt(agentContext.systemPrompt, rerunContext)
+              : agentContext.systemPrompt,
+            resolvedBag
+          ),
           messages: agentContext.messages,
           tools,
           sendMessage: doSendMessage,
@@ -597,6 +619,15 @@ export class PersonaAgent {
               retainedMessageIds,
               deleteMessage,
             })
+          }
+
+          // Persist the render snapshot so the next turn's diff is anchored
+          // against the state we just rendered. Idempotent UPDATE; safe if a
+          // retry re-runs the turn body. Written after `runtime.run()` settles
+          // to match the crash-window semantics of `persistSnapshot` itself
+          // (INV-41: no DB connection held across the AI call).
+          if (resolvedBag) {
+            await persistSnapshot(pool, workspaceId, resolvedBag.bagId, resolvedBag.nextSnapshot)
           }
 
           return {

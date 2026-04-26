@@ -10,6 +10,8 @@ import * as workspaceStoreModule from "@/stores/workspace-store"
 import * as authModule from "@/auth"
 import * as quoteReplyModule from "./quote-reply-context"
 import * as composerModule from "@/components/composer"
+import * as discussModule from "@/hooks/use-discuss-with-ariadne"
+import * as streamContextBagModule from "@/hooks/use-stream-context-bag"
 import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
 import type { JSONContent } from "@threa/types"
 
@@ -158,6 +160,21 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useStreamOrDraft").mockReturnValue({
     sendMessage: mockSendMessage,
   } as unknown as ReturnType<typeof hooksModule.useStreamOrDraft>)
+  // `useDiscussWithAriadne` internally pulls in `useCreateStream` → services
+  // context + query client, none of which the test wrapper provides. Stub it
+  // out; the command-routing branch is exercised by its own dedicated tests
+  // further down (rather than via render()-level assertions).
+  vi.spyOn(discussModule, "useDiscussWithAriadne").mockImplementation(
+    () => vi.fn() as unknown as ReturnType<typeof discussModule.useDiscussWithAriadne>
+  )
+  // `useStreamContextBag` calls `useQuery` which the wrapper doesn't provide
+  // a client for. Stub to an empty bag so the strip renders nothing — the
+  // strip's own behavior is covered by its dedicated tests.
+  vi.spyOn(streamContextBagModule, "useStreamContextBag").mockReturnValue({
+    data: { bag: null, refs: [] },
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof streamContextBagModule.useStreamContextBag>)
   vi.spyOn(hooksModule, "getDraftMessageKey").mockImplementation(() => "test-draft-key")
   vi.spyOn(hooksModule, "useDraftComposer").mockImplementation(
     () =>

@@ -69,6 +69,8 @@ import {
   CompanionHandler,
   MentionInvokeHandler,
   AgentMessageMutationHandler,
+  ContextBagPrecomputeHandler,
+  createContextBagPrecomputeWorker,
   createOrphanSessionCleanup,
   createPersonaAgentWorker,
   WorkspaceAgent,
@@ -303,6 +305,8 @@ export async function startServer(): Promise<ServerInstance> {
     content: string
     sources?: { title: string; url: string }[]
     sessionId?: string
+    /** Idempotency key forwarded to `event-service.createMessage` so retried writes dedup via ON CONFLICT. */
+    clientMessageId?: string
   }) => {
     const contentMarkdown = normalizeMessage(params.content)
     const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
@@ -315,6 +319,7 @@ export async function startServer(): Promise<ServerInstance> {
       contentMarkdown,
       sources: params.sources,
       sessionId: params.sessionId,
+      clientMessageId: params.clientMessageId,
     })
   }
   const editMessage = async (params: {
@@ -428,6 +433,7 @@ export async function startServer(): Promise<ServerInstance> {
     userApiKeyService,
     botApiKeyService,
     storage,
+    ai,
   })
 
   app.use(errorHandler)
@@ -500,6 +506,16 @@ export async function startServer(): Promise<ServerInstance> {
   // so a single workspace burst can use the full tier budget.
   const personaAgentWorker = createPersonaAgentWorker({ agent: personaAgent, serverId, pool, jobQueue })
   jobQueue.registerHandler(JobQueues.PERSONA_AGENT, personaAgentWorker, {
+    tier: QueueTiers.INTERACTIVE,
+    fairness: QueueFairness.NONE,
+  })
+
+  // Context-bag pre-compute worker — warms the shared summary cache and
+  // persists the initial render snapshot for newly-created bag-attached
+  // scratchpads so the first real user turn hits the cache. Posts no
+  // messages and runs without a persona or session.
+  const contextBagPrecomputeWorker = createContextBagPrecomputeWorker({ pool, ai })
+  jobQueue.registerHandler(JobQueues.CONTEXT_BAG_PRECOMPUTE, contextBagPrecomputeWorker, {
     tier: QueueTiers.INTERACTIVE,
     fairness: QueueFairness.NONE,
   })
@@ -749,6 +765,7 @@ export async function startServer(): Promise<ServerInstance> {
   // use the main pool — they enqueue jobs and can tolerate back-pressure.
   const broadcastHandler = new BroadcastHandler(pools.realtime, io)
   const companionHandler = new CompanionHandler(pool, jobQueue)
+  const contextBagPrecomputeHandler = new ContextBagPrecomputeHandler(pool, jobQueue)
   const namingHandler = new NamingHandler(pool, jobQueue)
   const emojiUsageHandler = new EmojiUsageHandler(pool)
   const embeddingHandler = new EmbeddingHandler(pool, jobQueue)
@@ -771,6 +788,7 @@ export async function startServer(): Promise<ServerInstance> {
   const outboxHandlers: (OutboxHandler & { ensureListener(): Promise<void> })[] = [
     broadcastHandler,
     companionHandler,
+    contextBagPrecomputeHandler,
     namingHandler,
     emojiUsageHandler,
     embeddingHandler,

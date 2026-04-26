@@ -3,10 +3,10 @@ import type { ModelMessage } from "ai"
 import type { UserPreferences } from "@threa/types"
 import { AgentTriggers, AuthorTypes, StreamTypes } from "@threa/types"
 import type { UserPreferencesService } from "../../user-preferences"
-import { MessageRepository, type Message } from "../../messaging"
+import { MessageRepository, SharedMessageRepository, collectSharedMessageIds, type Message } from "../../messaging"
 import { UserRepository } from "../../workspaces"
-import { PersonaRepository } from "../persona-repository"
 import type { Persona } from "../persona-repository"
+import { resolveActorNames } from "../actor-names"
 import { AttachmentRepository } from "../../attachments"
 import { StreamRepository, type Stream } from "../../streams"
 import { awaitAttachmentProcessing } from "../../attachments"
@@ -18,6 +18,7 @@ import { resolveQuoteReplies, renderMessageWithQuoteContext, DEFAULT_MAX_QUOTE_D
 import { computeAgentAccessSpec } from "../researcher/access-spec"
 import { SearchRepository } from "../../search"
 import { logger } from "../../../lib/logger"
+import { escapeXmlAttr } from "../../../lib/xml"
 
 export interface ContextDeps {
   db: Pool
@@ -137,7 +138,9 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     keptMessages: streamScopedMessages,
   })
 
-  // Build author names from participants + repo lookups
+  // Build author names from participants + a single batched user+persona lookup.
+  // `resolveActorNames` handles the user/persona split (INV-56: batched, never
+  // per-row) so we don't reimplement it inline per surface.
   const authorNames = new Map<string, string>()
   if (streamContext.participants) {
     for (const p of streamContext.participants) {
@@ -145,27 +148,11 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     }
   }
 
-  const memberAuthorIds = [
-    ...new Set(
-      streamContext.conversationHistory
-        .filter((m) => m.authorType === AuthorTypes.USER && !authorNames.has(m.authorId))
-        .map((m) => m.authorId)
-    ),
-  ]
-  if (memberAuthorIds.length > 0) {
-    const members = await UserRepository.findByIds(db, workspaceId, memberAuthorIds)
-    for (const m of members) authorNames.set(m.id, m.name)
-  }
-
-  const personaAuthorIds = [
-    ...new Set(
-      streamContext.conversationHistory.filter((m) => m.authorType === AuthorTypes.PERSONA).map((m) => m.authorId)
-    ),
-  ]
-  if (personaAuthorIds.length > 0) {
-    const personas = await PersonaRepository.findByIds(db, personaAuthorIds)
-    for (const p of personas) authorNames.set(p.id, p.name)
-  }
+  const missingAuthorIds = streamContext.conversationHistory
+    .filter((m) => !authorNames.has(m.authorId))
+    .map((m) => m.authorId)
+  const resolvedNames = await resolveActorNames(db, workspaceId, missingAuthorIds)
+  for (const [id, name] of resolvedNames) authorNames.set(id, name)
 
   let mentionerName: string | undefined
   if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === AuthorTypes.USER) {
@@ -191,6 +178,90 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
       const expanded = renderMessageWithQuoteContext(m, resolvedQuotes, authorNames, 0, DEFAULT_MAX_QUOTE_DEPTH)
       if (expanded === m.contentMarkdown) return m
       return { ...m, contentMarkdown: expanded }
+    })
+  }
+
+  // Inline cross-stream shared-message sources for the agent. The wire-format
+  // markdown for a `sharedMessage` node is just an opaque `shared-message:`
+  // link, so without this expansion the model only sees "Shared a message
+  // from X" and never the actual content. Append a `<shared-message-source>`
+  // block per resolved source so the body, author, and origin are dead-clear.
+  //
+  // Access rule (D6): include a source if its own stream is reachable to the
+  // viewer OR any of its share-grant `target_stream_id`s is reachable. Bot
+  // turns fall back to "current stream only" so cross-stream sources only
+  // surface via an explicit share grant into this stream.
+  const sharedAccessibleStreamIds = accessibleStreamIds ?? new Set([stream.id])
+  const seedMessageIds = new Set(streamContext.conversationHistory.map((m) => m.id))
+  const sharedRefIds = new Set<string>()
+  const collected = new Set<string>()
+  for (const m of streamContext.conversationHistory) {
+    collectSharedMessageIds(m.contentJson, collected)
+  }
+  for (const id of collected) {
+    if (!seedMessageIds.has(id)) sharedRefIds.add(id)
+  }
+
+  if (sharedRefIds.size > 0) {
+    const refIdArray = [...sharedRefIds]
+    const [sourceCandidates, grants] = await Promise.all([
+      MessageRepository.findByIdsInWorkspace(db, workspaceId, refIdArray),
+      SharedMessageRepository.listBySourceMessageIds(db, workspaceId, refIdArray),
+    ])
+
+    // sourceMessageId -> targets it has been shared into
+    const grantTargetsBySource = new Map<string, Set<string>>()
+    for (const g of grants) {
+      let set = grantTargetsBySource.get(g.sourceMessageId)
+      if (!set) {
+        set = new Set()
+        grantTargetsBySource.set(g.sourceMessageId, set)
+      }
+      set.add(g.targetStreamId)
+    }
+
+    const allowedSources = new Map<string, Message>()
+    for (const id of refIdArray) {
+      const source = sourceCandidates.get(id)
+      if (!source || source.deletedAt) continue
+      const sourceVisibleByMembership = sharedAccessibleStreamIds.has(source.streamId)
+      const grantTargets = grantTargetsBySource.get(id)
+      const sourceVisibleByGrant = !!grantTargets && [...grantTargets].some((t) => sharedAccessibleStreamIds.has(t))
+      if (sourceVisibleByMembership || sourceVisibleByGrant) {
+        allowedSources.set(id, source)
+      } else {
+        logger.debug(
+          { sharedSourceId: id, reason: "not_accessible" },
+          "Shared-message source skipped during agent context build"
+        )
+      }
+    }
+
+    // Resolve any author names we don't already have for the new sources.
+    // `resolveActorNames` handles the user/persona split internally, so the
+    // share-source enrichment uses the same batched helper as the main
+    // history pass — no parallel implementation per surface.
+    const missingSourceAuthorIds = [
+      ...new Set([...allowedSources.values()].filter((m) => !authorNames.has(m.authorId)).map((m) => m.authorId)),
+    ]
+    const sourceAuthorNames = await resolveActorNames(db, workspaceId, missingSourceAuthorIds)
+    for (const [id, name] of sourceAuthorNames) authorNames.set(id, name)
+
+    streamContext.conversationHistory = streamContext.conversationHistory.map((m) => {
+      const ids = new Set<string>()
+      collectSharedMessageIds(m.contentJson, ids)
+      if (ids.size === 0) return m
+      const blocks: string[] = []
+      for (const id of ids) {
+        const source = allowedSources.get(id)
+        if (!source) continue
+        const author = authorNames.get(source.authorId) ?? "Unknown"
+        blocks.push(
+          `<shared-message-source sourceMessageId="${escapeXmlAttr(source.id)}" author="${escapeXmlAttr(author)}" sourceStreamId="${escapeXmlAttr(source.streamId)}" createdAt="${source.createdAt.toISOString()}">\n${source.contentMarkdown}\n</shared-message-source>`
+        )
+      }
+      if (blocks.length === 0) return m
+      return { ...m, contentMarkdown: [m.contentMarkdown, ...blocks].join("\n\n") }
     })
   }
 

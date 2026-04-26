@@ -316,17 +316,14 @@ async function buildThreadContext(db: Querier, stream: Stream, temporal?: Tempor
   // Build thread path from current thread up to root
   const threadPath = await buildThreadPath(db, stream)
 
-  // Include the parent message that spawned this thread as context.
-  // This is critical because the parent message may contain attachments (images, files)
-  // and context that the thread discussion is about.
-  let conversationHistory = messages
-  if (stream.parentMessageId) {
-    const parentMessage = await MessageRepository.findById(db, stream.parentMessageId)
-    if (parentMessage) {
-      // Prepend parent message to conversation history
-      conversationHistory = [parentMessage, ...messages]
-    }
-  }
+  // Include the parent (root) message that spawned this thread — the reply
+  // chain is unintelligible without it, and the parent often carries
+  // attachments / context the thread is about. `findThreadRoot` is the
+  // canonical helper: filters soft-deleted roots + returns null for
+  // non-threads. Every new thread-context code path MUST use this helper
+  // rather than hand-rolling a `findById` + prepend (recurring bug class).
+  const parentMessage = await MessageRepository.findThreadRoot(db, stream)
+  const conversationHistory = parentMessage ? [parentMessage, ...messages] : messages
 
   return {
     streamType: stream.type,
@@ -355,16 +352,18 @@ async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathE
   while (current) {
     let anchorMessage: AnchorMessage | null = null
 
-    // If this is a thread spawned from a message, get that message
-    if (current.parentMessageId) {
-      const message = await MessageRepository.findById(db, current.parentMessageId)
-      if (message) {
-        const authorName = await resolveAuthorName(db, current.workspaceId, message.authorId, message.authorType)
-        anchorMessage = {
-          id: message.id,
-          content: message.contentMarkdown.slice(0, 200), // Truncate for context
-          authorName,
-        }
+    // If this is a thread spawned from a message, get that message. Use the
+    // canonical `findThreadRoot` helper so the same soft-delete filter that
+    // protects `conversationHistory` also scrubs `threadPath[*].anchorMessage`
+    // — otherwise a user-deleted root would be absent from the AI's
+    // conversation but still reach the prompt via the breadcrumb path.
+    const message = await MessageRepository.findThreadRoot(db, current)
+    if (message) {
+      const authorName = await resolveAuthorName(db, current.workspaceId, message.authorId, message.authorType)
+      anchorMessage = {
+        id: message.id,
+        content: message.contentMarkdown.slice(0, 200), // Truncate for context
+        authorName,
       }
     }
 

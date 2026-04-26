@@ -213,6 +213,39 @@ export const MessageRepository = {
   },
 
   /**
+   * Fetch messages by ID scoped to a workspace. The messages table has no
+   * direct `workspace_id` column so the filter joins through `streams`. Used
+   * by callers whose input ids come from untrusted sources (e.g. a pointer
+   * messageId pulled from contentJson) where trusting the caller's implicit
+   * workspace boundary would violate INV-8.
+   */
+  async findByIdsInWorkspace(db: Querier, workspaceId: string, ids: string[]): Promise<Map<string, Message>> {
+    if (ids.length === 0) return new Map()
+
+    const result = await db.query<MessageRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)}
+      FROM messages
+      WHERE id = ANY(${ids})
+        AND stream_id IN (SELECT id FROM streams WHERE workspace_id = ${workspaceId})
+    `)
+
+    if (result.rows.length === 0) return new Map()
+
+    const foundIds = result.rows.map((r) => r.id)
+    const reactionsResult = await db.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${foundIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    const map = new Map<string, Message>()
+    for (const row of result.rows) {
+      map.set(row.id, mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+    }
+    return map
+  },
+
+  /**
    * Fetch messages by ID, restricted to a set of accessible streams and excluding
    * soft-deleted rows. Used by quote-reply resolution where the quoted message ID
    * comes from untrusted client content (`content_json.attrs.messageId`) and must
@@ -242,6 +275,28 @@ export const MessageRepository = {
       map.set(row.id, mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
     }
     return map
+  },
+
+  /**
+   * Return the parent ("root") message of a stream — the message that spawned
+   * the thread — or null when the stream has no parent (channel / scratchpad /
+   * DM / hard-deleted root / soft-deleted root).
+   *
+   * Canonical helper for the recurring "thread root forgotten" bug class:
+   * every context-building path that fetches a thread's messages must also
+   * include the root so the reply chain stays intelligible. Callers that use
+   * `MessageRepository.list(streamId)` on a thread stream miss the root by
+   * default (it lives in the parent stream). This helper centralises:
+   *   1. The `parentMessageId` presence check
+   *   2. The `findById` lookup
+   *   3. The soft-delete filter — `findById` doesn't filter `deletedAt IS NULL`,
+   *      so without this guard a user's deleted root would still reach the AI.
+   */
+  async findThreadRoot(db: Querier, stream: { parentMessageId: string | null }): Promise<Message | null> {
+    if (!stream.parentMessageId) return null
+    const parent = await MessageRepository.findById(db, stream.parentMessageId)
+    if (!parent || parent.deletedAt) return null
+    return parent
   },
 
   async list(
@@ -604,6 +659,38 @@ export const MessageRepository = {
       map.set(row.id, row.reply_count)
     }
     return map
+  },
+
+  /**
+   * Count non-deleted messages in a stream. Used by surfaces that label a
+   * stream by its size (e.g. context-bag chip strips: "12 messages in #intro").
+   */
+  async countByStream(db: Querier, streamId: string): Promise<number> {
+    const result = await db.query<{ count: string }>(sql`
+      SELECT COUNT(*)::text AS count FROM messages
+      WHERE stream_id = ${streamId}
+        AND deleted_at IS NULL
+    `)
+    return Number(result.rows[0]?.count ?? 0)
+  },
+
+  /**
+   * Batched variant of `countByStream` — returns a Map keyed by streamId so a
+   * caller fanning over N refs (context-bag, sidebar previews) can avoid an
+   * N-query loop. Streams with no messages are absent from the map; callers
+   * default to 0. INV-56.
+   */
+  async countByStreams(db: Querier, streamIds: string[]): Promise<Map<string, number>> {
+    if (streamIds.length === 0) return new Map()
+    const result = await db.query<{ stream_id: string; count: string }>(sql`
+      SELECT stream_id, COUNT(*)::text AS count FROM messages
+      WHERE stream_id = ANY(${streamIds})
+        AND deleted_at IS NULL
+      GROUP BY stream_id
+    `)
+    const out = new Map<string, number>()
+    for (const row of result.rows) out.set(row.stream_id, Number(row.count))
+    return out
   },
 
   /**

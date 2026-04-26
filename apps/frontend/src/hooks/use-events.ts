@@ -6,7 +6,7 @@ import { db, sequenceToNum } from "@/db"
 import { EVENT_PAGE_SIZE } from "@/lib/constants"
 import { useStreamEvents } from "@/stores/stream-store"
 import { shouldSuppressBootstrapError } from "@/lib/query-load-state"
-import type { StreamEvent, EventsAroundResponse } from "@threa/types"
+import type { StreamEvent, EventsAroundResponse, SharedMessageHydration } from "@threa/types"
 
 export const eventKeys = {
   all: ["events"] as const,
@@ -22,6 +22,13 @@ interface JumpState {
   oldestSequence: string
   /** Sequence of the newest event in the jump window — cursor for forward pagination */
   newestSequence: string
+  /**
+   * Hydration map for `sharedMessage` pointers landing in the jump window.
+   * Merged with bootstrap + paginated maps via `useEvents().pagedSharedMessages`
+   * so jumping to a message containing a pointer renders content immediately
+   * instead of falling back to the IDB / skeleton path.
+   */
+  sharedMessages?: Record<string, SharedMessageHydration>
 }
 
 type SequencedEvent = Pick<StreamEvent, "sequence">
@@ -223,15 +230,25 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     queryKey: eventKeys.list(workspaceId, streamId),
     queryFn: async ({ pageParam }) => {
       if (!pageParam) {
-        return { events: [] as StreamEvent[], hasMore: false, cursor: undefined }
+        return {
+          events: [] as StreamEvent[],
+          hasMore: false,
+          cursor: undefined,
+          sharedMessages: undefined as Record<string, SharedMessageHydration> | undefined,
+        }
       }
-      const events = await streamService.getEvents(workspaceId, streamId, {
+      const result = await streamService.getEvents(workspaceId, streamId, {
         before: pageParam,
         limit: EVENT_PAGE_SIZE,
       })
       // Write fetched events to IDB — they become available via useStreamEvents
-      await cacheToIndexedDB(workspaceId, events)
-      return { events, hasMore: events.length === EVENT_PAGE_SIZE, cursor: undefined }
+      await cacheToIndexedDB(workspaceId, result.events)
+      return {
+        events: result.events,
+        hasMore: result.events.length === EVENT_PAGE_SIZE,
+        cursor: undefined,
+        sharedMessages: result.sharedMessages,
+      }
     },
     getNextPageParam: (lastPage) => {
       if (!lastPage.hasMore) return undefined
@@ -252,14 +269,24 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     queryKey: eventKeys.newer(workspaceId, streamId),
     queryFn: async ({ pageParam }) => {
       if (!pageParam) {
-        return { events: [] as StreamEvent[], hasMore: false, cursor: undefined }
+        return {
+          events: [] as StreamEvent[],
+          hasMore: false,
+          cursor: undefined,
+          sharedMessages: undefined as Record<string, SharedMessageHydration> | undefined,
+        }
       }
-      const events = await streamService.getEvents(workspaceId, streamId, {
+      const result = await streamService.getEvents(workspaceId, streamId, {
         after: pageParam,
         limit: EVENT_PAGE_SIZE,
       })
-      await cacheToIndexedDB(workspaceId, events)
-      return { events, hasMore: events.length === EVENT_PAGE_SIZE, cursor: undefined }
+      await cacheToIndexedDB(workspaceId, result.events)
+      return {
+        events: result.events,
+        hasMore: result.events.length === EVENT_PAGE_SIZE,
+        cursor: undefined,
+        sharedMessages: result.sharedMessages,
+      }
     },
     getNextPageParam: (lastPage) => {
       if (!lastPage.hasMore) return undefined
@@ -466,6 +493,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
         hasNewer: result.hasNewer,
         oldestSequence: sorted[0].sequence,
         newestSequence: sorted[sorted.length - 1].sequence,
+        sharedMessages: result.sharedMessages,
       })
 
       // Reset pagination caches for this stream
@@ -503,11 +531,30 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return idbEvents[idbEvents.length - 1].sequence
   }, [idbEvents, bootstrap?.latestSequence])
 
+  // Aggregated `sharedMessages` hydration entries from every page fetched
+  // beyond the bootstrap window — older pages, jump-to results, forward
+  // pagination. Bootstrap's own map is merged at the consumer (stream-content)
+  // since it lives on a different query. Without this aggregation, pointers
+  // in pages older than the bootstrap window render as skeletons even
+  // though the backend ships the hydration data on each response.
+  const pagedSharedMessages = useMemo<Record<string, SharedMessageHydration>>(() => {
+    const merged: Record<string, SharedMessageHydration> = {}
+    for (const page of olderData?.pages ?? []) {
+      if (page.sharedMessages) Object.assign(merged, page.sharedMessages)
+    }
+    for (const page of newerData?.pages ?? []) {
+      if (page.sharedMessages) Object.assign(merged, page.sharedMessages)
+    }
+    if (jumpState?.sharedMessages) Object.assign(merged, jumpState.sharedMessages)
+    return merged
+  }, [olderData, newerData, jumpState])
+
   return {
     events,
     isLoading,
     isConfirmedEmpty,
     error: suppressBootstrapError ? null : error,
+    pagedSharedMessages,
     fetchOlderEvents,
     hasOlderEvents,
     isFetchingOlder,

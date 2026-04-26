@@ -36,6 +36,7 @@ export const JobQueues = {
   VIDEO_TRANSCODE_SUBMIT: "video.transcode_submit",
   VIDEO_TRANSCODE_CHECK: "video.transcode_check",
   SAVED_REMINDER_FIRE: "saved.reminder_fire",
+  CONTEXT_BAG_PRECOMPUTE: "context_bag.precompute",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -185,6 +186,18 @@ export interface SavedReminderFireJobData {
   savedMessageId: string
 }
 
+/**
+ * Context-bag pre-compute job. Warms the shared `context_summaries` cache and
+ * persists the initial render snapshot for a newly-created bag-attached
+ * scratchpad — see `context-bag-precompute-handler.ts` for the flow. No
+ * kickoff message is posted; the first real turn happens when the user sends.
+ */
+export interface ContextBagPrecomputeJobData {
+  workspaceId: string
+  streamId: string
+  bagId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -206,6 +219,7 @@ export interface JobDataMap {
   [JobQueues.VIDEO_TRANSCODE_SUBMIT]: VideoTranscodeSubmitJobData
   [JobQueues.VIDEO_TRANSCODE_CHECK]: VideoTranscodeCheckJobData
   [JobQueues.SAVED_REMINDER_FIRE]: SavedReminderFireJobData
+  [JobQueues.CONTEXT_BAG_PRECOMPUTE]: ContextBagPrecomputeJobData
 }
 
 /**

@@ -529,5 +529,14 @@ export const GitHubPreviewTypes = {
   COMMENT: "github_comment",
 } as const satisfies Record<string, GitHubPreviewType>
 
+// Share flavors (cross-stream message sharing)
+export const SHARE_FLAVORS = ["pointer", "quote"] as const
+export type ShareFlavor = (typeof SHARE_FLAVORS)[number]
+
+export const ShareFlavors = {
+  POINTER: "pointer",
+  QUOTE: "quote",
+} as const satisfies Record<string, ShareFlavor>
+
 // Inter-service authentication header (control-plane ↔ regional backend ↔ workspace-router)
 export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"

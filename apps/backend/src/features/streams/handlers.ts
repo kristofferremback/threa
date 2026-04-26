@@ -2,11 +2,14 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { StreamService } from "./service"
 import type { EventService } from "../messaging"
+import { collectSharedMessageIds, hydrateSharedMessageIds, type HydratedSharedMessage } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { LinkPreviewService } from "../link-previews"
 import type { StreamEvent } from "./event-repository"
-import type { EventType, LinkPreviewSummary, StreamType } from "@threa/types"
-import { StreamTypes, SLUG_PATTERN } from "@threa/types"
+import type { EventType, JSONContent, LinkPreviewSummary, StreamType } from "@threa/types"
+import { ARIADNE_PERSONA_SLUG, StreamTypes, SLUG_PATTERN, CompanionModes } from "@threa/types"
+import type { Pool } from "pg"
+import { PersonaRepository, getResolver, fetchStreamBag, contextBagSchema } from "../agents"
 import { serializeBigInt } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 import { streamTypeSchema, visibilitySchema, companionModeSchema, notificationLevelSchema } from "../../lib/schemas"
@@ -28,6 +31,18 @@ const createStreamSchema = z
     parentStreamId: z.string().optional(),
     parentMessageId: z.string().optional(),
     memberIds: z.array(z.string().min(1)).max(50).optional(),
+    /**
+     * Optional context-bag attached at creation time. Powers "Discuss with
+     * Ariadne": when present on a scratchpad, the pre-compute handler warms
+     * the shared summary cache so the first real user turn is fast.
+     *
+     * `z.lazy` defers dereferencing `contextBagSchema` until parse time. The
+     * agents-barrel re-export lives behind a transitive cycle
+     * (streams/handlers → messaging/sharing → agents → streams → handlers),
+     * so without lazy evaluation the binding is in TDZ at module-eval and
+     * the backend crashes on boot.
+     */
+    contextBag: z.lazy(() => contextBagSchema).optional(),
   })
   .refine((data) => data.type !== "channel" || data.slug, {
     message: "Slug is required for channels",
@@ -36,6 +51,10 @@ const createStreamSchema = z
   .refine((data) => data.type !== "thread" || (data.parentStreamId && data.parentMessageId), {
     message: "parentStreamId and parentMessageId are required for threads",
     path: ["parentStreamId"],
+  })
+  .refine((data) => !data.contextBag || data.type === "scratchpad", {
+    message: "contextBag is only supported on scratchpad creation",
+    path: ["contextBag"],
   })
 
 const updateStreamSchema = z.object({
@@ -155,10 +174,33 @@ export {
 }
 
 interface Dependencies {
+  pool: Pool
   streamService: StreamService
   eventService: EventService
   activityService?: ActivityService
   linkPreviewService: LinkPreviewService
+}
+
+/**
+ * Scan event payloads for `sharedMessage` node references and fetch the
+ * hydrated content + metadata for each source message. Returned as a
+ * `sourceMessageId → payload` map that the frontend overlays onto pointer
+ * node renders.
+ */
+async function hydrateSharedMessagesForEvents(
+  pool: Pool,
+  workspaceId: string,
+  events: StreamEvent[]
+): Promise<Record<string, HydratedSharedMessage>> {
+  const ids = new Set<string>()
+  for (const event of events) {
+    if (event.eventType === "message_created" || event.eventType === "message_edited") {
+      const payload = event.payload as { contentJson?: JSONContent }
+      if (payload.contentJson) collectSharedMessageIds(payload.contentJson, ids)
+    }
+  }
+  if (ids.size === 0) return {}
+  return hydrateSharedMessageIds(pool, workspaceId, ids)
 }
 
 function serializeEvent(event: StreamEvent) {
@@ -242,6 +284,7 @@ async function enrichEventsWithLinkPreviews(
 }
 
 export function createStreamHandlers({
+  pool,
   streamService,
   eventService,
   activityService,
@@ -288,7 +331,45 @@ export function createStreamHandlers({
         parentStreamId,
         parentMessageId,
         memberIds,
+        contextBag,
       } = result.data
+
+      // When a contextBag is attached, the stream must be a companion-mode
+      // scratchpad with Ariadne as the persona — otherwise subsequent user
+      // turns against the bag have no persona to respond as. The client never
+      // sends Ariadne's id directly; we resolve it server-side so the persona
+      // id stays an implementation detail. INV-33: persona slug is the source
+      // of truth.
+      let resolvedCompanionMode = companionMode
+      let resolvedPersonaId = companionPersonaId
+      if (contextBag) {
+        // Verify the caller can read every referenced ref BEFORE we persist
+        // the bag. INV-8 workspace scoping plus per-kind access checks
+        // (membership / visibility) — bag creators can only point at streams
+        // they could already see. Bag resolution at render time re-enforces
+        // the check, but rejecting at create time gives the user a crisp
+        // error instead of a silent empty-context scratchpad.
+        for (const ref of contextBag.refs) {
+          const resolver = getResolver(ref.kind)
+          await resolver.assertAccess(pool, ref, userId, workspaceId)
+        }
+
+        const ariadne = await PersonaRepository.findBySlug(pool, ARIADNE_PERSONA_SLUG, workspaceId)
+        if (!ariadne) {
+          // Workspace-config state, not an internal error: 503 + a domain
+          // code so dashboards can filter without flagging this as a server
+          // fault. Surfaces clearly to the client during onboarding races
+          // (workspace created but Ariadne seed not yet run).
+          return res.status(503).json({
+            error: {
+              code: "ARIADNE_PERSONA_MISSING",
+              message: "Ariadne persona not yet provisioned in this workspace",
+            },
+          })
+        }
+        resolvedCompanionMode = CompanionModes.ON
+        resolvedPersonaId = ariadne.id
+      }
 
       const stream = await streamService.create({
         workspaceId,
@@ -297,12 +378,13 @@ export function createStreamHandlers({
         displayName,
         description,
         visibility,
-        companionMode,
-        companionPersonaId,
+        companionMode: resolvedCompanionMode,
+        companionPersonaId: resolvedPersonaId,
         parentStreamId,
         parentMessageId,
         memberIds,
         createdBy: userId,
+        contextBag,
       })
 
       res.status(201).json({ stream })
@@ -370,8 +452,9 @@ export function createStreamHandlers({
       })
 
       const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(linkPreviewService, workspaceId, userId, events)
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
 
-      res.json({ events: eventsWithLinkPreviews.map(serializeEvent) })
+      res.json({ events: eventsWithLinkPreviews.map(serializeEvent), sharedMessages })
     },
 
     async listEventsAround(req: Request, res: Response) {
@@ -404,9 +487,11 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
 
       res.json({
         events: eventsWithLinkPreviews.map(serializeEvent),
+        sharedMessages,
         hasOlder: result.hasOlder,
         hasNewer: result.hasNewer,
       })
@@ -601,11 +686,21 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
+
+      // Fold the stream's persisted ContextBag into the bootstrap so the
+      // timeline message-context badge renders synchronously from cached
+      // data (no second fetch, no layout shift on first render). Access
+      // check is skipped because `validateStreamAccess` above already
+      // verified it. INV-8: per-ref read access is still re-verified inside
+      // `fetchStreamBag` via the resolver.
+      const contextBag = await fetchStreamBag(pool, { workspaceId, streamId, userId }, { skipAccessCheck: true })
 
       res.json({
         data: {
           stream,
           events: eventsWithLinkPreviews.map(serializeEvent),
+          sharedMessages,
           members,
           botMemberIds,
           membership,
@@ -615,6 +710,7 @@ export function createStreamHandlers({
           unreadCount,
           mentionCount: activityCounts?.mentionCount ?? 0,
           activityCount: activityCounts?.totalCount ?? 0,
+          contextBag,
         },
       })
     },

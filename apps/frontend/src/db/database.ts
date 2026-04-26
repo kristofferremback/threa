@@ -1,5 +1,14 @@
 import Dexie, { type EntityTable } from "dexie"
-import type { AuthorType, CompanionMode, EventType, JSONContent, NotificationLevel, StreamType } from "@threa/types"
+import type {
+  AuthorType,
+  CompanionMode,
+  EventType,
+  JSONContent,
+  NotificationLevel,
+  StreamContextBagPayload,
+  StreamType,
+} from "@threa/types"
+import type { DraftContextRef } from "@/lib/context-bag/types"
 
 const WORKSPACE_USERS_STORE = "workspaceUsers"
 const LEGACY_WORKSPACE_USERS_STORE = "workspaceMembers"
@@ -58,6 +67,14 @@ export interface CachedStream {
   pinned?: boolean
   notificationLevel?: string | null
   lastReadEventId?: string | null
+  /**
+   * Persisted ContextBag attached to this stream. Mirrored into IDB by
+   * `applyStreamBootstrap` so the timeline message-context badge can render
+   * synchronously on first paint — no fetch, no layout shift. Always present
+   * shape-wise (`{bag: null, refs: []}` for streams without an attached bag);
+   * optional on the type so older cached records still parse.
+   */
+  contextBag?: StreamContextBagPayload
   _cachedAt: number
 }
 
@@ -224,6 +241,8 @@ export interface DraftMessage {
   contentJson: JSONContent
   /** Attachments that have been uploaded and are ready to attach to the message */
   attachments?: DraftAttachment[]
+  /** Context refs attached to this draft (populated by "Discuss with Ariadne"). */
+  contextRefs?: DraftContextRef[]
   updatedAt: number
 }
 
@@ -345,7 +364,17 @@ export interface CachedWorkspaceMetadata {
   workspaceId: string
   emojis: Array<{ shortcode: string; emoji: string; type: string; group: string; order: number; aliases: string[] }>
   emojiWeights: Record<string, number>
-  commands: Array<{ name: string; description: string }>
+  /**
+   * Commands surfaced in the slash-command menu. `kind` defaults to "server"
+   * for backwards compatibility with older cached rows; "client-action" items
+   * carry a `clientActionId` the frontend dispatches on locally.
+   */
+  commands: Array<{
+    name: string
+    description: string
+    kind?: "server" | "client-action"
+    clientActionId?: string
+  }>
   _cachedAt: number
 }
 

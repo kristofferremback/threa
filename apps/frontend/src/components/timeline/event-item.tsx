@@ -27,6 +27,12 @@ interface EventItemProps {
    */
   groupContinuation?: boolean
   batch?: BatchTimelineState
+  /**
+   * True when this event renders the first message in the stream. Drives the
+   * `<MessageContextBadge>` attachment-style chip on bag-attached scratchpads
+   * — only the opening message gets the breadcrumb.
+   */
+  isFirstMessage?: boolean
 }
 
 export function EventItem({
@@ -40,6 +46,7 @@ export function EventItem({
   deferSecondaryHydration = false,
   groupContinuation = false,
   batch,
+  isFirstMessage = false,
 }: EventItemProps) {
   // Check if this event's message should be highlighted
   const messageId = (event.payload as { messageId?: string })?.messageId
@@ -69,6 +76,7 @@ export function EventItem({
             deferSecondaryHydration={deferSecondaryHydration}
             groupContinuation={groupContinuation}
             batch={batch}
+            isFirstMessage={isFirstMessage}
           />
         </div>
       )

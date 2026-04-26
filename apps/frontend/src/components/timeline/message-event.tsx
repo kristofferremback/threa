@@ -12,6 +12,7 @@ import { enqueueOperation } from "@/sync/operation-queue"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
+import { MessageContextBadge } from "@/components/composer"
 import { RelativeTime } from "@/components/relative-time"
 import { ActorAvatar } from "@/components/actor-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
@@ -28,7 +29,7 @@ import {
   type MessageAgentActivity,
 } from "@/hooks"
 import { Quote, MessageSquareReply } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -39,6 +40,7 @@ import { MessageContextMenu } from "./message-context-menu"
 import { SaveMessageButton } from "./save-message-button"
 import { ReminderPickerSheet } from "./reminder-picker-sheet"
 import { useSavedForMessage, useSaveMessage, useDeleteSaved } from "@/hooks/use-saved"
+import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
 import { MessageActionDrawer } from "./message-action-drawer"
 import { ThreadSlot } from "./thread-slot"
 import { DeleteMessageDialog } from "./delete-message-dialog"
@@ -54,6 +56,8 @@ import { useQuoteReply } from "./quote-reply-context"
 import { useSwipeAction } from "@/hooks/use-swipe-action"
 import { Checkbox } from "@/components/ui/checkbox"
 import type { BatchTimelineState } from "./event-list"
+import { useStreamFromStore } from "@/stores/stream-store"
+import { queueShareHandoff } from "@/stores/share-handoff-store"
 
 interface MessagePayload {
   messageId: string
@@ -96,13 +100,23 @@ interface MessageEventProps {
    */
   groupContinuation?: boolean
   batch?: BatchTimelineState
+  /**
+   * True when this is the first message in the stream. Anchors the
+   * `<MessageContextBadge>` for bag-attached scratchpads — same UX pattern
+   * as a file-attachment chip that lived on the composer pre-send and now
+   * lives on the message that "carried" it.
+   */
+  isFirstMessage?: boolean
 }
 
 interface MessageLayoutProps {
   event: StreamEvent
   payload: MessagePayload
   workspaceId: string
+  streamId: string
   actorName: string
+  /** True when this is the first message in the stream — renders `<MessageContextBadge>` for bag-attached scratchpads. */
+  isFirstMessage?: boolean
   /** Persona slug for SVG icon support (e.g., "ariadne") */
   /** User avatar image URL */
   statusIndicator: ReactNode
@@ -232,6 +246,7 @@ function MessageLayout({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   statusIndicator,
   actions,
@@ -243,6 +258,7 @@ function MessageLayout({
   isNew,
   isEditing,
   isGroupContinuation,
+  isFirstMessage,
   containerRef,
   deferSecondaryHydration,
   touchHandlers,
@@ -280,6 +296,7 @@ function MessageLayout({
             deferHydration={deferSecondaryHydration}
           />
         )}
+        {isFirstMessage && <MessageContextBadge workspaceId={workspaceId} streamId={streamId} />}
         <MessageLinkPreviews
           messageId={payload.messageId}
           workspaceId={workspaceId}
@@ -480,6 +497,69 @@ interface MessageEventInnerProps {
    */
   groupContinuation?: boolean
   batch?: BatchTimelineState
+  /** True when this is the first message in the stream — drives the context-bag attachment badge. */
+  isFirstMessage?: boolean
+}
+
+/**
+ * Decide what to do after `queueShareHandoff` for a share-to-parent /
+ * share-to-root entry. The behavior diverges by viewport because the
+ * meaning of the panel query (`?panel=…`) differs:
+ *
+ * - **Desktop two-pane:** the panel renders alongside the main view, so
+ *   the parent composer is mounted and visible. Preserve `location.search`
+ *   so the panel stays open across the navigation. Skip `navigate()` when
+ *   pathname + search are unchanged — the existing composer subscribes to
+ *   the handoff store and picks the share up in place.
+ *
+ * - **Mobile fullscreen:** the panel TAKES OVER the screen, so the parent
+ *   composer is NOT visible even when the URL pathname matches the share
+ *   target. Drop the search on mobile so navigating to the bare pathname
+ *   swaps the view back to the parent's main composer. Without this, the
+ *   share queues but the user is still looking at the thread and nothing
+ *   visible happens.
+ */
+function navigateAfterShareHandoff({
+  workspaceId,
+  targetStreamId,
+  location,
+  navigate,
+  isMobile,
+}: {
+  workspaceId: string
+  targetStreamId: string
+  location: ReturnType<typeof useLocation>
+  navigate: ReturnType<typeof useNavigate>
+  isMobile: boolean
+}): void {
+  const targetPathname = `/w/${workspaceId}/s/${targetStreamId}`
+  const search = isMobile ? "" : location.search
+  if (location.pathname === targetPathname && location.search === search) return
+  navigate(`${targetPathname}${search}`)
+}
+
+/**
+ * Produce a user-facing label for the share-to-parent / share-to-root menu
+ * entry based on the target stream's type. Channels read naturally as
+ * "#slug"; DMs and scratchpads get a generic label to avoid awkward
+ * display-name phrasing ("Share to Untitled scratchpad" etc.) in slice 1.
+ * Thread parents (only reachable from a nested thread) include the display
+ * name so the user can tell the root + parent entries apart in the menu.
+ */
+function buildShareToStreamLabel(target: { type: string; displayName: string | null; slug: string | null }): string {
+  if (target.type === "channel") {
+    const tag = target.slug ? `#${target.slug}` : (target.displayName ?? "channel")
+    return `Share to ${tag}`
+  }
+  if (target.type === "dm") return "Share to DM"
+  if (target.type === "scratchpad") return "Share to scratchpad"
+  // Thread parent — only reachable from a nested thread. Use the display name
+  // when available so the user can tell the two entries apart in the menu.
+  if (target.type === "thread") {
+    const name = target.displayName ?? target.slug ?? "thread"
+    return `Share to thread (${name})`
+  }
+  return "Share to parent"
 }
 
 function SentMessageEvent({
@@ -495,12 +575,24 @@ function SentMessageEvent({
   deferSecondaryHydration,
   groupContinuation,
   batch,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const messageService = useMessageService()
   const currentUserId = useWorkspaceUserId(workspaceId)
   const { getTraceUrl } = useTrace()
   const quoteReplyCtx = useQuoteReply()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const currentStream = useStreamFromStore(streamId)
+  const parentStream = useStreamFromStore(currentStream?.parentStreamId ?? undefined)
+  const rootStream = useStreamFromStore(currentStream?.rootStreamId ?? undefined)
+  // For one-level threads, parent === root, so we only show the root entry to
+  // avoid two identical menu items. For nested threads (parent is itself a
+  // thread), we show both: root for the most useful target (the channel/dm/
+  // scratchpad), parent for the intermediate thread when that's what the
+  // user actually wants.
+  const showParentEntry = parentStream && rootStream && parentStream.id !== rootStream.id
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -670,6 +762,21 @@ function SentMessageEvent({
 
   const handleRequestReminder = useCallback(() => setReminderSheetOpen(true), [])
 
+  const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
+  const handleDiscussWithAriadne = useCallback(
+    // `useDiscussWithAriadne` rethrows after toasting so the surrounding
+    // mutation pipeline can see failures. The action menu invokes us
+    // fire-and-forget without awaiting, so we swallow here to keep the
+    // failure out of the unhandled-rejection log — the user already saw
+    // the toast. INV-11: failing loud means the toast, not the console.
+    () => {
+      void startDiscussWithAriadne({ sourceStreamId: streamId, sourceMessageId: payload.messageId }).catch(() => {
+        /* toast already surfaced inside the hook */
+      })
+    },
+    [startDiscussWithAriadne, streamId, payload.messageId]
+  )
+
   // Shared action context for both desktop dropdown and mobile drawer
   const actionContext = useMemo(
     () => ({
@@ -700,6 +807,7 @@ function SentMessageEvent({
       isSaved,
       onToggleSave: handleToggleSave,
       onRequestReminder: handleRequestReminder,
+      onDiscussWithAriadne: handleDiscussWithAriadne,
       onQuoteReply: quoteReplyCtx
         ? () =>
             quoteReplyCtx.triggerQuoteReply({
@@ -722,6 +830,39 @@ function SentMessageEvent({
               snippet,
             })
         : undefined,
+      onShareToRoot: rootStream
+        ? () => {
+            queueShareHandoff(rootStream.id, {
+              messageId: payload.messageId,
+              streamId,
+              authorName: actorName,
+              authorId: event.actorId ?? "",
+              actorType: event.actorType ?? "user",
+            })
+            navigateAfterShareHandoff({ workspaceId, targetStreamId: rootStream.id, location, navigate, isMobile })
+          }
+        : undefined,
+      shareToRootLabel: rootStream ? buildShareToStreamLabel(rootStream) : undefined,
+      onShareToParent:
+        showParentEntry && parentStream
+          ? () => {
+              queueShareHandoff(parentStream.id, {
+                messageId: payload.messageId,
+                streamId,
+                authorName: actorName,
+                authorId: event.actorId ?? "",
+                actorType: event.actorType ?? "user",
+              })
+              navigateAfterShareHandoff({
+                workspaceId,
+                targetStreamId: parentStream.id,
+                location,
+                navigate,
+                isMobile,
+              })
+            }
+          : undefined,
+      shareToParentLabel: showParentEntry && parentStream ? buildShareToStreamLabel(parentStream) : undefined,
     }),
     [
       payload.contentMarkdown,
@@ -748,6 +889,13 @@ function SentMessageEvent({
       isSaved,
       handleToggleSave,
       handleRequestReminder,
+      parentStream,
+      rootStream,
+      showParentEntry,
+      navigate,
+      location,
+      isMobile,
+      handleDiscussWithAriadne,
     ]
   )
 
@@ -778,7 +926,10 @@ function SentMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
+        batch={batch}
         statusIndicator={
           <>
             <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
@@ -791,9 +942,9 @@ function SentMessageEvent({
         isEditing={isEditing && !isMobile}
         isGroupContinuation={groupContinuation}
         hoverActions={
+          // Desktop-only hover toolbar floated above the row. Mobile users reach
+          // these actions via the long-press drawer (MessageActionDrawer).
           batch?.enabled ? undefined : (
-            // Desktop-only hover toolbar floated above the row. Mobile users reach
-            // these actions via the long-press drawer (MessageActionDrawer).
             <>
               <ReactionEmojiPicker
                 workspaceId={workspaceId}
@@ -819,11 +970,11 @@ function SentMessageEvent({
                 </Tooltip>
               )}
               {/* Reply-in-thread sits adjacent to the overflow menu so it mirrors
-                the top entry of the expanded context menu — the two thread
-                actions read as one visual neighborhood. Kept visible even when
-                the thread panel is already open (clicking is a harmless re-nav
-                to the same panel) so the toolbar never shuffles buttons in and
-                out as the user opens/closes the thread. */}
+                  the top entry of the expanded context menu — the two thread
+                  actions read as one visual neighborhood. Kept visible even when
+                  the thread panel is already open (clicking is a harmless re-nav
+                  to the same panel) so the toolbar never shuffles buttons in and
+                  out as the user opens/closes the thread. */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -856,7 +1007,7 @@ function SentMessageEvent({
         swipeOffset={isMobile ? swipe.offset : undefined}
         swipeLocked={isMobile ? swipe.isLocked : undefined}
         touchHandlers={
-          isMobile && !batch?.enabled
+          isMobile
             ? {
                 onTouchStart: (e: React.TouchEvent) => {
                   longPress.handlers.onTouchStart(e)
@@ -874,7 +1025,6 @@ function SentMessageEvent({
               }
             : undefined
         }
-        batch={batch}
       >
         {/* Desktop: inline edit replaces message content. Mobile: drawer handles editing. */}
         {isEditing && !isMobile ? (
@@ -962,9 +1112,12 @@ function PendingMessageEvent({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   deferSecondaryHydration,
   groupContinuation,
+  batch,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const { markEditing, deleteMessage } = usePendingMessages()
   const isMobile = useIsMobile()
@@ -978,7 +1131,10 @@ function PendingMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
+        batch={batch}
         deferSecondaryHydration={deferSecondaryHydration}
         isGroupContinuation={groupContinuation}
         containerClassName={cn(
@@ -1025,8 +1181,11 @@ function FailedMessageEvent({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   deferSecondaryHydration,
+  batch,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const { retryMessage, markEditing, deleteMessage } = usePendingMessages()
   const isMobile = useIsMobile()
@@ -1040,7 +1199,10 @@ function FailedMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
+        batch={batch}
         deferSecondaryHydration={deferSecondaryHydration}
         containerClassName={cn(
           "border-l-2 border-destructive pl-2",
@@ -1088,8 +1250,11 @@ function EditingMessageEvent({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   deferSecondaryHydration,
+  batch,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1106,7 +1271,10 @@ function EditingMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
+        batch={batch}
         deferSecondaryHydration={deferSecondaryHydration}
         isEditing={!isMobile}
         containerRef={containerRef}
@@ -1139,6 +1307,7 @@ export function MessageEvent({
   deferSecondaryHydration = false,
   groupContinuation = false,
   batch,
+  isFirstMessage = false,
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
@@ -1160,6 +1329,7 @@ export function MessageEvent({
           deferSecondaryHydration={deferSecondaryHydration}
           groupContinuation={groupContinuation}
           batch={batch}
+          isFirstMessage={isFirstMessage}
         />
       )
     case "failed":
@@ -1173,6 +1343,7 @@ export function MessageEvent({
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
           batch={batch}
+          isFirstMessage={isFirstMessage}
         />
       )
     case "editing":
@@ -1185,6 +1356,7 @@ export function MessageEvent({
           actorName={actorName}
           deferSecondaryHydration={deferSecondaryHydration}
           batch={batch}
+          isFirstMessage={isFirstMessage}
         />
       )
     default:
@@ -1202,6 +1374,7 @@ export function MessageEvent({
           deferSecondaryHydration={deferSecondaryHydration}
           groupContinuation={groupContinuation}
           batch={batch}
+          isFirstMessage={isFirstMessage}
         />
       )
   }

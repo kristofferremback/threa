@@ -16,6 +16,7 @@ import {
   isUniqueViolation,
 } from "../../lib/errors"
 import { formatParticipantNames } from "./display-name"
+import { checkStreamAccess } from "./access"
 import { UserRepository } from "../workspaces"
 import { BotChannelAccessRepository } from "../api-keys"
 import {
@@ -27,7 +28,9 @@ import {
   type CompanionMode,
   type NotificationLevel,
   type ThreadSummary,
+  type ContextBag,
 } from "@threa/types"
+import { ContextBagRepository } from "../agents"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../../lib/schemas"
 import { isAllowedLevel } from "./notification-config"
 
@@ -42,7 +45,10 @@ const createScratchpadParamsSchema = z.object({
   companionPersonaId: z.string().optional(),
 })
 
-export type CreateScratchpadParams = z.infer<typeof createScratchpadParamsSchema>
+export type CreateScratchpadParams = z.infer<typeof createScratchpadParamsSchema> & {
+  /** Optional context-bag to attach to the new scratchpad. */
+  contextBag?: ContextBag
+}
 
 const createChannelParamsSchema = z.object({
   workspaceId: z.string(),
@@ -121,29 +127,7 @@ export class StreamService {
   }
 
   private async checkAccess(streamId: string, workspaceId: string, userId: string): Promise<Stream | null> {
-    return withClient(this.pool, async (client) => {
-      const stream = await StreamRepository.findById(client, streamId)
-      if (!stream || stream.workspaceId !== workspaceId) return null
-
-      if (stream.rootStreamId) {
-        const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
-        if (!rootStream) return null
-
-        if (rootStream.visibility !== Visibilities.PUBLIC) {
-          const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
-          if (!isRootMember) return null
-        }
-
-        return stream
-      }
-
-      if (stream.visibility !== Visibilities.PUBLIC) {
-        const isMember = await StreamMemberRepository.isMember(client, streamId, userId)
-        if (!isMember) return null
-      }
-
-      return stream
-    })
+    return withClient(this.pool, async (client) => checkStreamAccess(client, streamId, workspaceId, userId))
   }
 
   async getScratchpadsByUser(workspaceId: string, userId: string): Promise<Stream[]> {
@@ -326,7 +310,7 @@ export class StreamService {
     })
   }
 
-  async create(params: CreateStreamParams): Promise<Stream> {
+  async create(params: CreateStreamParams & { contextBag?: ContextBag }): Promise<Stream> {
     switch (params.type) {
       case StreamTypes.SCRATCHPAD:
         return this.createScratchpad({
@@ -336,6 +320,7 @@ export class StreamService {
           companionMode: params.companionMode,
           companionPersonaId: params.companionPersonaId,
           createdBy: params.createdBy,
+          contextBag: params.contextBag,
         })
       case StreamTypes.CHANNEL:
         if (!params.slug) {
@@ -382,6 +367,19 @@ export class StreamService {
 
       // Add creator as member
       await StreamMemberRepository.insert(client, id, params.createdBy)
+
+      // Attach optional context bag in the same transaction as the stream +
+      // outbox event so the pre-compute handler (which fires on stream:created)
+      // always sees a fully-wired bag by the time it processes the event. INV-7.
+      if (params.contextBag) {
+        await ContextBagRepository.insert(client, {
+          workspaceId: params.workspaceId,
+          streamId: stream.id,
+          intent: params.contextBag.intent,
+          refs: params.contextBag.refs,
+          createdBy: params.createdBy,
+        })
+      }
 
       // Publish to outbox for real-time delivery
       await OutboxRepository.insert(client, "stream:created", {

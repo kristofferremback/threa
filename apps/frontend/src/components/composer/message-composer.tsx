@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
+import { ContextRefStrip } from "./context-ref-strip"
+import type { DraftContextRef } from "@/lib/context-bag/types"
 import { cn } from "@/lib/utils"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 import type { MessageSendMode, JSONContent } from "@threa/types"
@@ -61,6 +63,11 @@ function getPreviewText(doc: JSONContent): string {
       return `Replying to ${author}`
     }
 
+    if (node.type === "sharedMessage") {
+      const author = typeof node.attrs?.authorName === "string" ? node.attrs.authorName : ""
+      return author ? `Sharing message from ${author}` : "Sharing a message"
+    }
+
     if (node.type === "codeBlock") {
       const text = (node.content ?? []).map((c) => c.text ?? "").join("")
       return text.split("\n")[0] ?? ""
@@ -94,6 +101,12 @@ function getPreviewText(doc: JSONContent): string {
 const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
 const MOD_KEY_NAME = navigator.platform?.toLowerCase().includes("mac") ? "Command" : "Control"
 
+export interface ComposerControlHandle {
+  focus(): void
+  focusAfterQuoteReply(): void
+  getEditor(): Editor | null
+}
+
 export interface MessageComposerProps {
   // Content (controlled)
   content: JSONContent
@@ -102,6 +115,18 @@ export interface MessageComposerProps {
   // Attachments (controlled)
   pendingAttachments: PendingAttachment[]
   onRemoveAttachment: (id: string) => void
+  /**
+   * Context refs attached to the current draft (sidecar). Rendered inline
+   * with `pendingAttachments` as one unified attachment row using the same
+   * `<AttachmentPill>` primitive — matches the user mental model that both
+   * are "things attached to this message" and preps for an eventual
+   * unified bag where attachments live as another ref kind.
+   */
+  contextRefs?: DraftContextRef[]
+  /** Stream id; required only when `contextRefs` is non-empty so the strip can build deep-links. */
+  streamId?: string
+  /** Workspace id; required only when `contextRefs` is non-empty so the strip can fetch source metadata. */
+  workspaceId?: string
   fileInputRef: RefObject<HTMLInputElement | null>
   onFileSelect: (e: ChangeEvent<HTMLInputElement>) => void
   /** Called when files are pasted or dropped into the editor */
@@ -146,7 +171,7 @@ export interface MessageComposerProps {
   /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
   streamContext?: MentionStreamContext
   /** Imperative handle ref for programmatic focus from parent */
-  composerRef?: React.MutableRefObject<{ focus: () => void; focusAfterQuoteReply: () => void } | null>
+  composerRef?: React.MutableRefObject<ComposerControlHandle | null>
 
   /**
    * Triggered when the user presses Cmd/Ctrl+S with focus inside the composer,
@@ -179,6 +204,9 @@ export function MessageComposer({
   onContentChange,
   pendingAttachments,
   onRemoveAttachment,
+  contextRefs,
+  streamId,
+  workspaceId,
   fileInputRef,
   onFileSelect,
   onFileUpload,
@@ -335,6 +363,7 @@ export function MessageComposer({
         setMobileFocused(true)
         requestAnimationFrame(() => richEditorRef.current?.focusAfterQuoteReply())
       },
+      getEditor: () => richEditorRef.current?.getEditor() ?? null,
     }
     return () => {
       composerRef.current = null
@@ -509,9 +538,17 @@ export function MessageComposer({
               onEscapeBlur={focusExpandedShell}
               streamContext={streamContext}
               belowToolbarContent={
-                pendingAttachments.length > 0 ? (
+                pendingAttachments.length > 0 || (contextRefs && contextRefs.length > 0) ? (
                   <div className="pt-1 pb-2 border-b border-border/50 [&>div]:mb-0">
-                    <PendingAttachments attachments={pendingAttachments} onRemove={onRemoveAttachment} />
+                    <PendingAttachments
+                      attachments={pendingAttachments}
+                      onRemove={onRemoveAttachment}
+                      beforePills={
+                        contextRefs && contextRefs.length > 0 && streamId && workspaceId ? (
+                          <ContextRefStrip workspaceId={workspaceId} streamId={streamId} draftRefs={contextRefs} />
+                        ) : null
+                      }
+                    />
                   </div>
                 ) : undefined
               }
@@ -679,7 +716,15 @@ export function MessageComposer({
           {screenReaderInstructions}
         </p>
         {/* Attachment bar - shown above input */}
-        <PendingAttachments attachments={pendingAttachments} onRemove={onRemoveAttachment} />
+        <PendingAttachments
+          attachments={pendingAttachments}
+          onRemove={onRemoveAttachment}
+          beforePills={
+            contextRefs && contextRefs.length > 0 && streamId && workspaceId ? (
+              <ContextRefStrip workspaceId={workspaceId} streamId={streamId} draftRefs={contextRefs} />
+            ) : null
+          }
+        />
 
         {/* Hidden file input */}
         <input
