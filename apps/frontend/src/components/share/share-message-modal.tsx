@@ -80,10 +80,17 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
     return byType
   }, [streams, memberStreamIds, search])
 
+  // Wrap the parent's open-change so search resets on every close path
+  // (Esc, backdrop, X, programmatic). Without this, dismissing without
+  // selecting leaves the previous query in place when the modal reopens.
+  const handleOpenChange = (next: boolean) => {
+    if (!next) setSearch("")
+    onOpenChange(next)
+  }
+
   const handleSelect = (targetStreamId: string) => {
     queueShareHandoff(targetStreamId, attrs)
-    onOpenChange(false)
-    setSearch("")
+    handleOpenChange(false)
     navigate(`/w/${workspaceId}/s/${targetStreamId}`)
   }
 
@@ -116,7 +123,7 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
 
   if (isMobile) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
+      <Drawer open={open} onOpenChange={handleOpenChange}>
         <DrawerContent>
           <DrawerHeader className="px-4 pb-2 text-left">
             <DrawerTitle className="text-base">Share message</DrawerTitle>
@@ -129,7 +136,7 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="overflow-hidden p-0 sm:max-w-lg">
         <DialogHeader className="border-b px-4 py-3">
           <DialogTitle className="text-base">Share message</DialogTitle>

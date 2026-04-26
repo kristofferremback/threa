@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
+import type { ReactNode } from "react"
 import { SharedMessageCardBody } from "./card-body"
 import type { SharedMessageSource } from "@/hooks/use-shared-message-source"
 
-function renderUnderRoute(node: React.ReactNode, initialPath = "/w/ws_1/s/current") {
+function renderUnderRoute(node: ReactNode, initialPath = "/w/ws_1/s/current") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>

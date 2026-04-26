@@ -79,8 +79,10 @@ export async function checkStreamAccess(
 
   const effective = await resolveEffectiveAccessStream(db, stream)
   // A thread whose root is missing collapses back to the thread itself —
-  // not accessible without the root present.
-  if (effective === stream && stream.rootStreamId) return null
+  // not accessible without the root present. Compare ids rather than
+  // object identity so this stays correct if the resolver ever returns a
+  // copy on the dangling-root fallback.
+  if (stream.rootStreamId && effective.id !== stream.rootStreamId) return null
 
   if (effective.visibility !== Visibilities.PUBLIC) {
     const isMember = await StreamMemberRepository.isMember(db, effective.id, userId)
