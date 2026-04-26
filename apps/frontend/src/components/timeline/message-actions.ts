@@ -226,6 +226,18 @@ export const messageActions: MessageAction[] = [
     action: (ctx) => ctx.onQuoteReply?.(),
   },
   {
+    // Default share entry — opens the cross-stream picker modal. Listed
+    // first in the group so `groupVisibleActions` makes it the primary
+    // tap target; the share-to-root / share-to-parent fast paths ride
+    // alongside as alternatives reachable via the chevron dropdown.
+    id: "share",
+    label: "Share message",
+    icon: Share2,
+    groupId: "share",
+    when: (ctx) => !!ctx.onShare,
+    action: (ctx) => ctx.onShare?.(),
+  },
+  {
     id: "share-to-root",
     label: (ctx) => ctx.shareToRootLabel ?? "Share to channel",
     icon: Share2,
@@ -240,17 +252,6 @@ export const messageActions: MessageAction[] = [
     groupId: "share",
     when: (ctx) => !!ctx.onShareToParent,
     action: (ctx) => ctx.onShareToParent?.(),
-  },
-  {
-    // Cross-stream picker — opens the share-message modal. Always visible
-    // when callable; share-to-root / share-to-parent ride alongside as group
-    // alternatives in nested-thread cases.
-    id: "share",
-    label: "Share to another stream…",
-    icon: Share2,
-    groupId: "share",
-    when: (ctx) => !!ctx.onShare,
-    action: (ctx) => ctx.onShare?.(),
   },
   {
     // Split into two rows (save / unsave) so the menu entry always matches

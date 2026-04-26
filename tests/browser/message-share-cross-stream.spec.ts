@@ -78,10 +78,8 @@ test.describe("Message share — cross-stream picker modal (Slice 2)", () => {
     await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible()
 
     await openMessageContextMenu(page, sourceText)
-    // The new "Share to another stream…" entry. Group share-to-* may collapse
-    // it inside a chevron dropdown, so account for both surfaces by matching
-    // any visible menuitem with the share verb.
-    await page.getByRole("menuitem", { name: /share to another stream/i }).click()
+    // The default "Share message" entry — opens the picker modal.
+    await page.getByRole("menuitem", { name: /^share message$/i }).click()
 
     // Picker dialog opens. The scratchpad we just created is selectable.
     const dialog = page.getByRole("dialog", { name: /share message/i })
@@ -123,7 +121,7 @@ test.describe("Message share — cross-stream picker modal (Slice 2)", () => {
     await sendChannelMessageViaApi(page, sourceText)
 
     await openMessageContextMenu(page, sourceText)
-    await page.getByRole("menuitem", { name: /share to another stream/i }).click()
+    await page.getByRole("menuitem", { name: /^share message$/i }).click()
 
     const dialog = page.getByRole("dialog", { name: /share message/i })
     await expect(dialog).toBeVisible()

@@ -316,6 +316,45 @@ describe("share-to-parent action", () => {
   })
 })
 
+describe("share action (modal)", () => {
+  it("is hidden when onShare is not supplied", () => {
+    const actions = getVisibleActions(createContext())
+    expect(actions.find((a) => a.id === "share")).toBeUndefined()
+  })
+
+  it("is visible when onShare is supplied", () => {
+    const actions = getVisibleActions(createContext({ onShare: () => {} }))
+    expect(actions.find((a) => a.id === "share")).toBeDefined()
+  })
+
+  it("renders 'Share message' as the label", () => {
+    const ctx = createContext({ onShare: () => {} })
+    const action = getVisibleActions(ctx).find((a) => a.id === "share")!
+    expect(resolveActionLabel(action, ctx)).toBe("Share message")
+  })
+
+  it("invokes the onShare callback when run", () => {
+    const onShare = vi.fn()
+    const ctx = createContext({ onShare })
+    const action = getVisibleActions(ctx).find((a) => a.id === "share")!
+    action.action!(ctx)
+    expect(onShare).toHaveBeenCalledOnce()
+  })
+
+  it("is the primary (default) entry in the share group when all three callbacks are present", () => {
+    const ctx = createContext({
+      onShare: () => {},
+      onShareToRoot: () => {},
+      onShareToParent: () => {},
+    })
+    const items = groupVisibleActions(getVisibleActions(ctx))
+    const shareGroup = items.find((i) => i.kind === "group" && i.members[0]?.id === "share")
+    expect(shareGroup).toBeDefined()
+    if (shareGroup?.kind !== "group") throw new Error("expected group")
+    expect(shareGroup.members.map((m) => m.id)).toEqual(["share", "share-to-root", "share-to-parent"])
+  })
+})
+
 describe("groupVisibleActions", () => {
   it("returns single items for ungrouped actions and groups same-id ones", () => {
     const ctx = createContext()
