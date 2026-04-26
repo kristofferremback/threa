@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { render, fireEvent } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { ShareMessageModal } from "./share-message-modal"
 import * as workspaceStoreModule from "@/stores/workspace-store"
 import * as shareHandoffStoreModule from "@/stores/share-handoff-store"
+import * as useMobileModule from "@/hooks/use-mobile"
 
 const SAMPLE_ATTRS = {
   messageId: "msg_a",
@@ -25,6 +26,12 @@ function mountModal({ initialPath = "/w/ws_1/s/current" }: { initialPath?: strin
     </MemoryRouter>
   )
 }
+
+beforeEach(() => {
+  // Default to desktop unless a test overrides — keeps the picker-rendering
+  // tests pinned to one surface so cmdk-item assertions are stable.
+  vi.spyOn(useMobileModule, "useIsMobile").mockReturnValue(false)
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -153,5 +160,37 @@ describe("ShareMessageModal — picker filtering", () => {
     fireEvent.click(item!)
 
     expect(queue).toHaveBeenCalledWith("ch_target", SAMPLE_ATTRS)
+  })
+})
+
+describe("ShareMessageModal — surface selection", () => {
+  it("renders as a centered Dialog on desktop", () => {
+    vi.spyOn(useMobileModule, "useIsMobile").mockReturnValue(false)
+    vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockReturnValue(
+      [] as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceStreams>
+    )
+    vi.spyOn(workspaceStoreModule, "useWorkspaceStreamMemberships").mockReturnValue(
+      [] as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceStreamMemberships>
+    )
+    mountModal()
+    // Radix Dialog wraps content in a portal with role=dialog.
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog).not.toBeNull()
+    // Vaul's drawer adds a vaul-* attribute set; assert no drawer root present.
+    expect(document.querySelector("[vaul-drawer-wrapper]")).toBeNull()
+  })
+
+  it("renders as a bottom-sheet Drawer on mobile", () => {
+    vi.spyOn(useMobileModule, "useIsMobile").mockReturnValue(true)
+    vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockReturnValue(
+      [] as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceStreams>
+    )
+    vi.spyOn(workspaceStoreModule, "useWorkspaceStreamMemberships").mockReturnValue(
+      [] as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceStreamMemberships>
+    )
+    mountModal()
+    // Vaul exposes data-vaul-drawer attributes on its content surface.
+    const drawerContent = document.querySelector("[data-vaul-drawer]")
+    expect(drawerContent).not.toBeNull()
   })
 })
