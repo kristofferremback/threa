@@ -5,6 +5,43 @@ import { StreamRepository, type Stream } from "./repository"
 import { StreamMemberRepository } from "./member-repository"
 
 /**
+ * Minimal structural shape this helper needs: the stream's id and a
+ * (possibly null) `rootStreamId`. Generic so callers with subset types
+ * (e.g. the sharing feature's `SharingStream`) can route through without
+ * forcing a full `Stream` instantiation.
+ */
+export interface AccessResolvable {
+  id: string
+  rootStreamId: string | null
+}
+
+/**
+ * Resolves the stream whose `visibility` and `stream_members` rows are
+ * authoritative for access decisions. Top-level streams are their own
+ * authoritative source; threads inherit from their root.
+ *
+ * Single source of truth for the "thread → root" access pattern. Every
+ * helper that decides "can user X read stream Y?" or "is this stream
+ * effectively private?" routes through here, so subtle drifts (stale
+ * thread visibility, sparse thread member sets) can't reintroduce holes.
+ *
+ * Falls back to the input stream when the root row is missing — the
+ * FK-less schema (INV-1) means a dangling `root_stream_id` is possible
+ * and we shouldn't crash on it. Generic in `T extends AccessResolvable`
+ * so the callback returns the same shape it was given (a thread → its
+ * root will lose row-level extras the caller wasn't tracking, which is
+ * fine — only id/visibility/membership matter for access).
+ */
+export async function resolveEffectiveAccessStream<T extends AccessResolvable>(
+  db: Querier,
+  stream: T
+): Promise<T | Stream> {
+  if (!stream.rootStreamId) return stream
+  const root = await StreamRepository.findById(db, stream.rootStreamId)
+  return root ?? stream
+}
+
+/**
  * Canonical "does this user have access to this stream?" check.
  *
  * Returns the stream when access is granted; `null` otherwise. Handles all
@@ -40,22 +77,13 @@ export async function checkStreamAccess(
   const stream = await StreamRepository.findById(db, streamId)
   if (!stream || stream.workspaceId !== workspaceId) return null
 
-  // Threads inherit access from their root: the thread itself usually has
-  // no `stream_members` row, so a membership check on the thread id would
-  // always 403 even for users with full access to the surrounding channel.
-  if (stream.rootStreamId) {
-    const rootStream = await StreamRepository.findById(db, stream.rootStreamId)
-    if (!rootStream) return null
+  const effective = await resolveEffectiveAccessStream(db, stream)
+  // A thread whose root is missing collapses back to the thread itself —
+  // not accessible without the root present.
+  if (effective === stream && stream.rootStreamId) return null
 
-    if (rootStream.visibility !== Visibilities.PUBLIC) {
-      const isRootMember = await StreamMemberRepository.isMember(db, stream.rootStreamId, userId)
-      if (!isRootMember) return null
-    }
-    return stream
-  }
-
-  if (stream.visibility !== Visibilities.PUBLIC) {
-    const isMember = await StreamMemberRepository.isMember(db, streamId, userId)
+  if (effective.visibility !== Visibilities.PUBLIC) {
+    const isMember = await StreamMemberRepository.isMember(db, effective.id, userId)
     if (!isMember) return null
   }
   return stream
@@ -65,15 +93,12 @@ export async function checkStreamAccess(
  * Batched equivalent of {@link checkStreamAccess}. Given a candidate set
  * of stream ids in a workspace, returns the subset the viewer can read.
  *
- * Mirrors the per-id helper's three rules in a single SQL round-trip so
+ * Encodes the same three rules as `checkStreamAccess` /
+ * {@link resolveEffectiveAccessStream} in one SQL round-trip so
  * cross-cutting features (pointer hydration, search, activity feeds) can
- * filter many stream ids at once without an N+1:
- *
- * 1. **Workspace boundary** — only streams in `workspaceId` are considered.
- * 2. **Threads inherit** — a thread is accessible iff its `root_stream_id`
- *    is public OR the viewer is a member of that root.
- * 3. **Top-level streams** — accessible iff `visibility = 'public'` OR the
- *    viewer is a direct member.
+ * filter many stream ids at once without an N+1. Keep the predicate in
+ * sync with the per-id helpers — when the rule for thread → root
+ * resolution changes, both code paths update together.
  *
  * Empty input → empty Set; missing/cross-workspace ids are silently dropped
  * exactly like the per-id helper returning `null`.

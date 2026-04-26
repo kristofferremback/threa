@@ -92,6 +92,7 @@ describe("ShareService.validateAndRecordShares", () => {
     id: "stream_source",
     workspaceId: "ws_1",
     visibility: "private" as const,
+    rootStreamId: null,
   }
 
   function findStreamStub(overrides: Partial<typeof sourceStream> = {}) {
@@ -101,6 +102,9 @@ describe("ShareService.validateAndRecordShares", () => {
   const isAncestorStub = async () => false
   const countExposedMembersStub = async () => 0
   const canReadStreamStub = async () => true
+  // Default resolver — no-op: returns the source as-is. Tests covering
+  // thread → root resolution semantics live in `access-check.test.ts`.
+  const resolveEffectiveStreamStub = async (_db: unknown, source: any) => source
 
   function baseParams(extras: Partial<Parameters<typeof ShareService.validateAndRecordShares>[0]> = {}) {
     return {
@@ -110,6 +114,7 @@ describe("ShareService.validateAndRecordShares", () => {
       shareMessageId: "msg_share",
       sharerId: "usr_1",
       findStream: findStreamStub(),
+      resolveEffectiveStream: resolveEffectiveStreamStub,
       isAncestor: isAncestorStub,
       countExposedMembers: countExposedMembersStub,
       canReadStream: canReadStreamStub,

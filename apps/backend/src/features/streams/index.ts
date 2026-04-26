@@ -6,7 +6,7 @@ export { StreamService } from "./service"
 export type { CreateScratchpadParams, CreateChannelParams, CreateThreadParams } from "./service"
 
 // Access (canonical "can this user read this stream?" check — INV-8)
-export { checkStreamAccess, listAccessibleStreamIds } from "./access"
+export { checkStreamAccess, listAccessibleStreamIds, resolveEffectiveAccessStream } from "./access"
 
 // Naming
 export { StreamNamingService } from "./naming-service"

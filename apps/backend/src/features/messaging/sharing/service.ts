@@ -9,6 +9,7 @@ import {
   type CountExposedMembers,
   type FindStreamForSharing,
   type IsAncestorStream,
+  type ResolveEffectiveStream,
 } from "./access-check"
 import { SharedMessageRepository } from "./repository"
 
@@ -75,6 +76,12 @@ export interface ValidateAndRecordSharesParams {
    * between messaging and streams.
    */
   findStream: FindStreamForSharing
+  /**
+   * Resolves a source stream to its effective access stream (root for
+   * threads). Wraps the canonical helper in `streams/access.ts` so the
+   * thread→root rule lives in one place. See `ResolveEffectiveStream`.
+   */
+  resolveEffectiveStream: ResolveEffectiveStream
   /**
    * Ancestor check injected by the caller (same barrel-cycle reason as
    * {@link findStream}). Expected to resolve the chain in the DB layer via
@@ -213,6 +220,7 @@ export const ShareService = {
         boundary = await crossesPrivacyBoundary(
           params.client,
           params.findStream,
+          params.resolveEffectiveStream,
           params.isAncestor,
           params.countExposedMembers,
           ref.sourceStreamId,

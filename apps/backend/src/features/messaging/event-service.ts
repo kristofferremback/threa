@@ -3,7 +3,7 @@ import { withTransaction, withClient } from "../../db"
 import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
-import { checkStreamAccess } from "../streams"
+import { checkStreamAccess, resolveEffectiveAccessStream } from "../streams"
 import { MessageRepository, Message } from "./repository"
 import { ShareService } from "./sharing"
 import { AttachmentRepository, isVideoAttachment } from "../attachments"
@@ -339,6 +339,18 @@ export class EventService {
         sharerId: params.authorId,
         contentJson: params.contentJson,
         findStream: (db, id) => StreamRepository.findById(db, id),
+        resolveEffectiveStream: async (db, source) => {
+          // The canonical helper returns the input shape OR a full Stream;
+          // narrow back to SharingStream so the sharing module stays
+          // ignorant of the streams-feature row shape (INV-52).
+          const resolved = await resolveEffectiveAccessStream(db, source)
+          return {
+            id: resolved.id,
+            workspaceId: resolved.workspaceId,
+            visibility: resolved.visibility,
+            rootStreamId: resolved.rootStreamId,
+          }
+        },
         isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
         countExposedMembers: (db, targetStreamId, sourceStreamId) =>
           StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
@@ -439,6 +451,18 @@ export class EventService {
           sharerId: params.actorId,
           contentJson: params.contentJson,
           findStream: (db, id) => StreamRepository.findById(db, id),
+          resolveEffectiveStream: async (db, source) => {
+            // The canonical helper returns the input shape OR a full Stream;
+            // narrow back to SharingStream so the sharing module stays
+            // ignorant of the streams-feature row shape (INV-52).
+            const resolved = await resolveEffectiveAccessStream(db, source)
+            return {
+              id: resolved.id,
+              workspaceId: resolved.workspaceId,
+              visibility: resolved.visibility,
+              rootStreamId: resolved.rootStreamId,
+            }
+          },
           isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
           countExposedMembers: (db, targetStreamId, sourceStreamId) =>
             StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
