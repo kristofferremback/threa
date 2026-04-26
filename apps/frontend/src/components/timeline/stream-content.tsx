@@ -623,13 +623,13 @@ export function StreamContent({
         <SharedMessagesProvider map={mergedSharedMessages}>
           <TextSelectionQuote streamId={streamId} />
           <div className="relative h-full">
-            <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute inset-0 overflow-hidden sm:overflow-visible">
               {isSearchOpen && (
                 <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
               )}
               {isDraft && (
                 <div
-                  className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain"
+                  className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain pt-2"
                   style={{ paddingBottom: "var(--composer-height, 0px)" }}
                 >
                   {hasDraftPendingEvents ? (
@@ -717,6 +717,7 @@ export function StreamContent({
                   ref={plainScrollRef}
                   className={cn(
                     "h-full overflow-y-auto overflow-x-hidden overscroll-y-contain",
+                    !isSearchOpen && "pt-2",
                     isSearchOpen && "pt-11"
                   )}
                   style={{ paddingBottom: "var(--composer-height, 0px)" }}
@@ -1077,9 +1078,13 @@ function VirtuosoMessageList({
   )
 }
 
+// Spacer giving the first message breathing room at the top of the list so
+// the desktop hover toolbar isn't clipped by the container edge.
+const ListHeaderSpacer = () => <div className="h-2" />
+
 // Spacer reserving room for the floating composer pill, so the most recent
 // message sits visually offset above the pill at rest and `atBottom` accounts
 // for the composer's height (Virtuoso treats Footer as content).
 const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--composer-height, 0px)" }} />
 
-const virtuosoComponents = { Footer: ComposerFooterSpacer }
+const virtuosoComponents = { Header: ListHeaderSpacer, Footer: ComposerFooterSpacer }
