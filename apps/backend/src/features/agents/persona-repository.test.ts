@@ -104,10 +104,9 @@ describe("PersonaRepository built-in agent config", () => {
     await PersonaRepository.findById(db, "persona_workspace_helper", "workspace_1")
 
     const query = db.queries[0] as { text: string; values: unknown[] }
-    const nested = query.values[1] as { text: string; values: unknown[] }
-    expect(nested.text).toContain("workspace_id = $1")
-    expect(nested.text).toContain("workspace_id IS NULL")
-    expect(nested.values).toEqual(["workspace_1"])
+    expect(query.text).toContain("workspace_id = $2")
+    expect(query.text).toContain("workspace_id IS NULL")
+    expect(query.values).toEqual(["persona_workspace_helper", "workspace_1"])
   })
 
   test("does not return Ariadne as default when a workspace disables it", async () => {

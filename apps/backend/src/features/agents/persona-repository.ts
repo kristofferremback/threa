@@ -69,13 +69,11 @@ function mapRowToPersona(row: PersonaRow): Persona {
 
 export const BUILT_IN_AGENT_CONFIG_TIMESTAMP = new Date("2026-04-25T00:00:00.000Z")
 
-function dbPersonaWorkspaceFilter(workspaceId: string | null | undefined) {
-  if (workspaceId === null || workspaceId === undefined) return sql``
-
-  // INV-8: when a caller scopes to a workspace, only return that workspace's rows or global system
-  // rows (`workspace_id IS NULL`), never another workspace's persona by id.
-  return sql`AND (workspace_id = ${workspaceId} OR workspace_id IS NULL)`
-}
+// Do not return a nested `sql`...`` fragment from a helper and embed it in another
+// `sql` template: squid 0.5 flattens placeholders incorrectly (sub-fragment object in
+// `values`), which yields invalid SQL ("syntax error at or near $2"). Inline the
+// optional workspace filter in each query (INV-8: scoped reads see only the caller
+// workspace or global system rows).
 
 function mapBuiltInToPersona(agent: BuiltInAgentConfig): Persona {
   return {
@@ -134,12 +132,18 @@ export const PersonaRepository = {
     if (builtIn) return builtIn
 
     const result = await db.query<PersonaRow>(
-      sql`
-        SELECT ${sql.raw(SELECT_FIELDS)}
-        FROM personas
-        WHERE id = ${id}
-          ${dbPersonaWorkspaceFilter(workspaceId)}
-      `
+      workspaceId == null
+        ? sql`
+            SELECT ${sql.raw(SELECT_FIELDS)}
+            FROM personas
+            WHERE id = ${id}
+          `
+        : sql`
+            SELECT ${sql.raw(SELECT_FIELDS)}
+            FROM personas
+            WHERE id = ${id}
+              AND (workspace_id = ${workspaceId} OR workspace_id IS NULL)
+          `
     )
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
   },
@@ -164,12 +168,18 @@ export const PersonaRepository = {
     if (dbIds.length === 0) return builtIns
 
     const result = await db.query<PersonaRow>(
-      sql`
-        SELECT ${sql.raw(SELECT_FIELDS)}
-        FROM personas
-        WHERE id = ANY(${dbIds})
-          ${dbPersonaWorkspaceFilter(workspaceId)}
-      `
+      workspaceId == null
+        ? sql`
+            SELECT ${sql.raw(SELECT_FIELDS)}
+            FROM personas
+            WHERE id = ANY(${dbIds})
+          `
+        : sql`
+            SELECT ${sql.raw(SELECT_FIELDS)}
+            FROM personas
+            WHERE id = ANY(${dbIds})
+              AND (workspace_id = ${workspaceId} OR workspace_id IS NULL)
+          `
     )
     return [...builtIns, ...result.rows.map(mapRowToPersona)]
   },
