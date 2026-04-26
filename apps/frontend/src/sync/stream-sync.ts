@@ -513,7 +513,7 @@ export function registerStreamSocketHandlers(
           threadId: payload.thread.id,
           replyCount:
             typeof p.replyCount === "number"
-              ? Math.max(p.replyCount, payload.movedMessageIds.length)
+              ? p.replyCount + payload.movedMessageIds.length
               : payload.movedMessageIds.length,
         }))
       }

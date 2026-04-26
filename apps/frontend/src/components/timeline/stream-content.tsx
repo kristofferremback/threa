@@ -22,12 +22,12 @@ import {
   workspaceKeys,
 } from "@/hooks"
 import { useSocket, useCoordinatedLoading } from "@/contexts"
+import { useMessageService } from "@/contexts"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
-import { messagesApi } from "@/api"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -72,6 +72,8 @@ import { TextSelectionQuote } from "./text-selection-quote"
 import { StreamSearchBar } from "./stream-search-bar"
 import { useStreamSearch } from "@/hooks/use-stream-search"
 import { useSearchHighlight } from "@/hooks/use-search-highlight"
+import { stripMarkdownToInline } from "@/lib/markdown"
+import { addStartBatchSelectListener } from "@/lib/batch-selection-events"
 
 interface StreamContentProps {
   workspaceId: string
@@ -94,6 +96,7 @@ export function StreamContent({
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
   const socket = useSocket()
+  const messageService = useMessageService()
   const jumpTriggeredRef = useRef<string | null>(null)
   const user = useUser()
   const [isSearchOpen, setIsSearchOpen] = useState(false)
@@ -110,6 +113,7 @@ export function StreamContent({
   const [isMoveValidating, setIsMoveValidating] = useState(false)
   const [isMoveConfirming, setIsMoveConfirming] = useState(false)
   const suppressNextBatchClickRef = useRef(false)
+  const suppressNextBatchClickTimerRef = useRef<number | null>(null)
   const batchPointerRef = useRef<{
     id: number
     messageId: string
@@ -366,21 +370,23 @@ export function StreamContent({
     setDragGhost(null)
     setPendingMove(null)
     batchPointerRef.current = null
+    suppressNextBatchClickRef.current = false
+    if (suppressNextBatchClickTimerRef.current !== null) {
+      window.clearTimeout(suppressNextBatchClickTimerRef.current)
+      suppressNextBatchClickTimerRef.current = null
+    }
   }, [])
 
   useEffect(() => {
-    const handleStartBatchSelect = (event: Event) => {
-      const detail = (event as CustomEvent<{ streamId?: string }>).detail
-      if (detail?.streamId && detail.streamId !== streamId) return
+    return addStartBatchSelectListener((detail) => {
+      if (detail.streamId !== streamId) return
       startBatchSelect()
-    }
-
-    document.addEventListener("threa:start-batch-select", handleStartBatchSelect)
-    return () => document.removeEventListener("threa:start-batch-select", handleStartBatchSelect)
+    })
   }, [startBatchSelect, streamId])
 
   useEffect(() => {
     cancelBatchMode()
+    suppressNextBatchClickRef.current = false
   }, [streamId, cancelBatchMode])
 
   const batchState = useMemo<BatchTimelineState | undefined>(
@@ -405,7 +411,7 @@ export function StreamContent({
       if (messageIds.length === 0 || isMoveValidating) return
       setIsMoveValidating(true)
       try {
-        const validation = await messagesApi.validateMoveToThread(workspaceId, {
+        const validation = await messageService.validateMoveToThread(workspaceId, {
           sourceStreamId: streamId,
           targetMessageId,
           messageIds,
@@ -416,20 +422,21 @@ export function StreamContent({
           leaseKey: validation.leaseKey,
           messageCount: validation.messageCount,
         })
-      } catch {
-        toast.error("Could not validate this move")
+      } catch (error) {
+        console.error("validateMoveToThread failed", { error, streamId, targetMessageId, messageIds })
+        toast.error(error instanceof Error ? error.message : "Could not validate this move")
       } finally {
         setIsMoveValidating(false)
       }
     },
-    [isMoveValidating, selectedMessageIds, streamId, workspaceId]
+    [isMoveValidating, messageService, selectedMessageIds, streamId, workspaceId]
   )
 
   const confirmPendingMove = useCallback(async () => {
     if (!pendingMove || isMoveConfirming) return
     setIsMoveConfirming(true)
     try {
-      await messagesApi.moveToThread(workspaceId, {
+      await messageService.moveToThread(workspaceId, {
         sourceStreamId: streamId,
         targetMessageId: pendingMove.targetMessageId,
         messageIds: pendingMove.messageIds,
@@ -437,12 +444,13 @@ export function StreamContent({
       })
       toast.success(`Moved ${pendingMove.messageCount} message${pendingMove.messageCount === 1 ? "" : "s"} to thread`)
       cancelBatchMode()
-    } catch {
-      toast.error("Could not move messages")
+    } catch (error) {
+      console.error("moveToThread failed", { error, streamId, pendingMove })
+      toast.error(error instanceof Error ? error.message : "Could not move messages")
     } finally {
       setIsMoveConfirming(false)
     }
-  }, [cancelBatchMode, isMoveConfirming, pendingMove, streamId, workspaceId])
+  }, [cancelBatchMode, isMoveConfirming, messageService, pendingMove, streamId, workspaceId])
 
   const closePendingMove = useCallback(() => {
     if (isMoveConfirming) return
@@ -500,8 +508,12 @@ export function StreamContent({
           if (!pointer || pointer.id !== event.pointerId) return
           event.preventDefault()
           suppressNextBatchClickRef.current = true
-          window.setTimeout(() => {
+          if (suppressNextBatchClickTimerRef.current !== null) {
+            window.clearTimeout(suppressNextBatchClickTimerRef.current)
+          }
+          suppressNextBatchClickTimerRef.current = window.setTimeout(() => {
             suppressNextBatchClickRef.current = false
+            suppressNextBatchClickTimerRef.current = null
           }, 350)
           const targetId = hoveredBatchTargetId
           const wasDragging = pointer.dragging
@@ -528,6 +540,11 @@ export function StreamContent({
           batchPointerRef.current = null
           setDragGhost(null)
           setHoveredBatchTargetId(null)
+          suppressNextBatchClickRef.current = false
+          if (suppressNextBatchClickTimerRef.current !== null) {
+            window.clearTimeout(suppressNextBatchClickTimerRef.current)
+            suppressNextBatchClickTimerRef.current = null
+          }
         },
         onClickCapture: (event: React.MouseEvent<HTMLElement>) => {
           if (!suppressNextBatchClickRef.current) return
@@ -1085,7 +1102,10 @@ export function StreamContent({
                 <div className="font-medium">{selectedMessageIds.size} selected</div>
                 <div className="line-clamp-1 text-xs text-muted-foreground">
                   {Array.from(selectedMessageIds)
-                    .map((messageId) => messageEventMeta.get(messageId)?.content)
+                    .map((messageId) => {
+                      const content = messageEventMeta.get(messageId)?.content
+                      return content ? stripMarkdownToInline(content) : null
+                    })
                     .filter(Boolean)
                     .slice(0, 1)
                     .join("")}

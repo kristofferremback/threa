@@ -809,6 +809,8 @@ export const StreamRepository = {
   ): Promise<void> {
     if (params.parentMessageIds.length === 0) return
 
+    // Batch moves only reparent threads inside the same root stream; callers
+    // must keep source and destination roots aligned so root_stream_id remains valid.
     await db.query(sql`
       UPDATE streams
       SET parent_stream_id = ${params.destinationParentStreamId}, updated_at = NOW()

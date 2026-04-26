@@ -5,6 +5,7 @@ import type { User } from "../../features/workspaces"
 import type { ConversationWithStaleness } from "../../features/conversations"
 import type {
   Memo as WireMemo,
+  StreamEvent as WireStreamEvent,
   UserPreferences,
   LastMessagePreview,
   Bot as WireBot,
@@ -138,7 +139,7 @@ export interface MessagesMovedOutboxPayload extends StreamScopedPayload {
   targetMessageId: string
   movedMessageIds: string[]
   thread: Stream
-  events: StreamEvent[]
+  events: WireStreamEvent[]
   removedEventIds: string[]
 }
 

@@ -18,6 +18,7 @@ import {
   getBootstrap,
   listEvents,
   moveMessagesToThread,
+  validateMoveMessagesToThread,
 } from "../client"
 
 // Generate unique identifier for this test run to avoid collisions
@@ -246,11 +247,8 @@ describe("Thread E2E Tests", () => {
       expect(new Set(result.movedMessageIds)).toEqual(new Set([movedA.id, movedB.id]))
 
       const sourceEvents = await listEvents(client, workspace.id, scratchpad.id, ["message_created"])
-      const sourceMessageIds = sourceEvents.map((event) => (event.payload as MessageCreatedPayload).messageId)
-      expect(sourceMessageIds).toContain(target.id)
-      expect(sourceMessageIds).toContain(keep.id)
-      expect(sourceMessageIds).not.toContain(movedA.id)
-      expect(sourceMessageIds).not.toContain(movedB.id)
+      const sourceMessageIds = new Set(sourceEvents.map((event) => (event.payload as MessageCreatedPayload).messageId))
+      expect(sourceMessageIds).toEqual(new Set([target.id, keep.id]))
 
       const threadEvents = await listEvents(client, workspace.id, result.thread.id, ["message_created"])
       const threadMessageIds = threadEvents.map((event) => (event.payload as MessageCreatedPayload).messageId)
@@ -274,13 +272,12 @@ describe("Thread E2E Tests", () => {
       const selected = await sendMessage(client, workspace.id, scratchpad.id, "Selected")
       const following = await sendMessage(client, workspace.id, scratchpad.id, "Following")
 
-      const response = await client.post(`/api/workspaces/${workspace.id}/messages/move-to-thread/validate`, {
-        sourceStreamId: scratchpad.id,
-        targetMessageId: following.id,
-        messageIds: [selected.id],
-      })
+      const response = await validateMoveMessagesToThread(client, workspace.id, scratchpad.id, following.id, [
+        selected.id,
+      ])
 
       expect(response.status).toBe(400)
+      expect(JSON.stringify(response.data)).toContain("TARGET_MUST_PRECEDE_SELECTION")
     })
   })
 })

@@ -25,6 +25,7 @@ import { useUser } from "@/auth"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { onDraftPromoted } from "@/lib/draft-promotions"
+import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
 import { StreamLoadingIndicator } from "@/components/loading"
 import {
   StreamContent,
@@ -182,7 +183,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
 
   const handleSelectMessages = useCallback(() => {
     if (!panelId) return
-    document.dispatchEvent(new CustomEvent("threa:start-batch-select", { detail: { streamId: panelId } }))
+    dispatchStartBatchSelect(panelId)
   }, [panelId])
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
     draftPortalTargetRef.current = el
@@ -365,7 +366,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
           </Button>
         )}
         {headerContent}
-        {!isDraft && stream && (
+        {!isDraft && stream && !stream.archivedAt && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
