@@ -278,9 +278,21 @@ describe("findFirstMessageId", () => {
     expect(findFirstMessageId(items)).toBe("msg_first")
   })
 
-  it("treats companion_response events as messages too", () => {
+  it("ignores companion_response events so the badge can't anchor on Ariadne's reply", () => {
+    // Restricted to user-authored messages on purpose: in a bag-attached
+    // scratchpad the conversation always opens with the user's question.
+    // Hide rather than mis-anchor when an offline-reconnect ordering glitch
+    // (or some agent edge case) puts a companion_response first.
+    const items: TimelineItem[] = [
+      eventItem("evt_1", "1", "companion_response", "msg_companion"),
+      eventItem("evt_2", "2", "message_created", "msg_user"),
+    ]
+    expect(findFirstMessageId(items)).toBe("msg_user")
+  })
+
+  it("returns undefined when only companion_response events exist (no user message yet)", () => {
     const items: TimelineItem[] = [eventItem("evt_1", "1", "companion_response", "msg_companion")]
-    expect(findFirstMessageId(items)).toBe("msg_companion")
+    expect(findFirstMessageId(items)).toBeUndefined()
   })
 
   it("skips command_group / session_group items and finds the first underlying message", () => {

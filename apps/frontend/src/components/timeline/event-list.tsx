@@ -161,15 +161,21 @@ export function filterVisibleItems(items: TimelineItem[], hideSessionCards?: boo
 }
 
 /**
- * Find the messageId of the first message-rendering event in the timeline
+ * Find the messageId of the first user-authored message in the timeline
  * (smallest sequence). Used to anchor the context-bag attachment badge on
- * the conversation's opening message — null when the timeline has no
- * message events yet (so the badge stays in the composer strip).
+ * the conversation's opening message — null when the timeline has no user
+ * messages yet (so the badge stays in the composer strip).
+ *
+ * Restricted to `message_created` (user authored) on purpose: in a bag-
+ * attached scratchpad the conversation always opens with the user's first
+ * question. If a `companion_response` ever lands first in render order
+ * (offline-reconnect ordering glitch, agent edge case), we'd rather hide
+ * the badge than mis-anchor it to Ariadne's reply.
  */
 export function findFirstMessageId(items: TimelineItem[]): string | undefined {
   for (const item of items) {
     if (item.type !== "event") continue
-    if (item.event.eventType !== "message_created" && item.event.eventType !== "companion_response") continue
+    if (item.event.eventType !== "message_created") continue
     const messageId = (item.event.payload as { messageId?: string })?.messageId
     if (messageId) return messageId
   }
