@@ -1,5 +1,6 @@
 import type { StreamEvent } from "@threa/types"
 import type { MessageAgentActivity } from "@/hooks"
+import type { BatchTimelineState } from "./event-list"
 import { MessageEvent } from "./message-event"
 import { MembershipEvent } from "./membership-event"
 import { SystemEvent } from "./system-event"
@@ -31,6 +32,7 @@ interface EventItemProps {
    * — only the opening message gets the breadcrumb.
    */
   isFirstMessage?: boolean
+  batch?: BatchTimelineState
 }
 
 export function EventItem({
@@ -44,6 +46,7 @@ export function EventItem({
   deferSecondaryHydration = false,
   groupContinuation = false,
   isFirstMessage = false,
+  batch,
 }: EventItemProps) {
   // Check if this event's message should be highlighted
   const messageId = (event.payload as { messageId?: string })?.messageId
@@ -73,6 +76,7 @@ export function EventItem({
             deferSecondaryHydration={deferSecondaryHydration}
             groupContinuation={groupContinuation}
             isFirstMessage={isFirstMessage}
+            batch={batch}
           />
         </div>
       )

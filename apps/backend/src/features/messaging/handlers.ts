@@ -88,7 +88,22 @@ const addReactionSchema = z.object({
   emoji: z.string().min(1, "emoji is required"),
 })
 
-export { createMessageSchema, updateMessageSchema, addReactionSchema }
+const moveMessagesToThreadSchema = z.object({
+  sourceStreamId: z.string().min(1, "sourceStreamId is required"),
+  targetMessageId: z.string().min(1, "targetMessageId is required"),
+  messageIds: z.array(z.string().min(1)).min(1).max(100),
+  leaseKey: z.string().min(1, "leaseKey is required"),
+})
+
+const validateMoveMessagesToThreadSchema = moveMessagesToThreadSchema.omit({ leaseKey: true })
+
+export {
+  createMessageSchema,
+  updateMessageSchema,
+  addReactionSchema,
+  moveMessagesToThreadSchema,
+  validateMoveMessagesToThreadSchema,
+}
 
 /**
  * Normalize input to both JSON and markdown formats.
@@ -286,6 +301,73 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       }
 
       res.json({ message: serializeMessage(message) })
+    },
+
+    async moveToThread(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+
+      const result = moveMessagesToThreadSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      await streamService.resolveWritableMessageStream({
+        workspaceId,
+        userId,
+        target: { streamId: result.data.sourceStreamId },
+      })
+
+      const moveResult = await eventService.moveMessagesToThread({
+        workspaceId,
+        sourceStreamId: result.data.sourceStreamId,
+        targetMessageId: result.data.targetMessageId,
+        messageIds: result.data.messageIds,
+        actorId: userId,
+        leaseKey: result.data.leaseKey,
+      })
+
+      res.json({
+        sourceStreamId: moveResult.sourceStreamId,
+        destinationStreamId: moveResult.destinationStreamId,
+        targetMessageId: moveResult.targetMessageId,
+        movedMessageIds: moveResult.movedMessageIds,
+        thread: moveResult.thread,
+        events: moveResult.events,
+        removedEventIds: moveResult.removedEventIds,
+      })
+    },
+
+    async validateMoveToThread(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+
+      const result = validateMoveMessagesToThreadSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      await streamService.resolveWritableMessageStream({
+        workspaceId,
+        userId,
+        target: { streamId: result.data.sourceStreamId },
+      })
+
+      const validation = await eventService.validateMoveMessagesToThread({
+        workspaceId,
+        sourceStreamId: result.data.sourceStreamId,
+        targetMessageId: result.data.targetMessageId,
+        messageIds: result.data.messageIds,
+        actorId: userId,
+      })
+
+      res.json(validation)
     },
 
     async delete(req: Request, res: Response) {

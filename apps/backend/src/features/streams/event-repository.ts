@@ -39,6 +39,16 @@ export interface InsertEventParams {
   actorType?: AuthorType
 }
 
+export interface MoveEventSequenceUpdate {
+  messageId: string
+  sequence: bigint
+}
+
+export interface MoveEventIdSequenceUpdate {
+  eventId: string
+  sequence: bigint
+}
+
 function mapRowToEvent(row: StreamEventRow): StreamEvent {
   return {
     id: row.id,
@@ -281,6 +291,91 @@ export const StreamEventRepository = {
       LIMIT 1
     `)
     return result.rows[0] ? mapRowToEvent(result.rows[0]) : null
+  },
+
+  async findMessageCreatedByMessageIdsForUpdate(
+    db: Querier,
+    streamId: string,
+    messageIds: string[]
+  ): Promise<StreamEvent[]> {
+    if (messageIds.length === 0) return []
+
+    const result = await db.query<StreamEventRow>(sql`
+      SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+      FROM stream_events
+      WHERE stream_id = ${streamId}
+        AND event_type = 'message_created'
+        AND payload->>'messageId' = ANY(${messageIds})
+      ORDER BY sequence ASC
+      FOR UPDATE
+    `)
+    return result.rows.map(mapRowToEvent)
+  },
+
+  async moveMessageCreatedEvents(
+    db: Querier,
+    params: { sourceStreamId: string; destinationStreamId: string; updates: MoveEventSequenceUpdate[] }
+  ): Promise<StreamEvent[]> {
+    if (params.updates.length === 0) return []
+
+    const messageIds = params.updates.map((update) => update.messageId)
+    const sequences = params.updates.map((update) => update.sequence.toString())
+
+    const result = await db.query<StreamEventRow>(
+      `UPDATE stream_events e
+       SET stream_id = $1, sequence = updates.new_sequence
+       FROM (
+         SELECT * FROM unnest($2::text[], $3::bigint[]) AS u(message_id, new_sequence)
+       ) updates
+       WHERE e.stream_id = $4
+         AND e.event_type = 'message_created'
+         AND e.payload->>'messageId' = updates.message_id
+       RETURNING id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at`,
+      [params.destinationStreamId, messageIds, sequences, params.sourceStreamId]
+    )
+    return result.rows.map(mapRowToEvent)
+  },
+
+  async findAgentSessionEventsBySessionIdsForUpdate(
+    db: Querier,
+    streamId: string,
+    sessionIds: string[]
+  ): Promise<StreamEvent[]> {
+    if (sessionIds.length === 0) return []
+
+    const result = await db.query<StreamEventRow>(sql`
+      SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+      FROM stream_events
+      WHERE stream_id = ${streamId}
+        AND event_type = ANY(${["agent_session:started", "agent_session:completed", "agent_session:failed", "agent_session:deleted"]})
+        AND payload->>'sessionId' = ANY(${sessionIds})
+      ORDER BY sequence ASC
+      FOR UPDATE
+    `)
+    return result.rows.map(mapRowToEvent)
+  },
+
+  async moveEventsById(
+    db: Querier,
+    params: { sourceStreamId: string; destinationStreamId: string; updates: MoveEventIdSequenceUpdate[] }
+  ): Promise<StreamEvent[]> {
+    if (params.updates.length === 0) return []
+
+    const eventIds = params.updates.map((update) => update.eventId)
+    const sequences = params.updates.map((update) => update.sequence.toString())
+
+    const result = await db.query<StreamEventRow>(
+      `UPDATE stream_events e
+       SET stream_id = $1, sequence = updates.new_sequence
+       FROM (
+         SELECT * FROM unnest($2::text[], $3::bigint[]) AS u(event_id, new_sequence)
+       ) updates
+       WHERE e.stream_id = $4
+         AND e.id = updates.event_id
+       RETURNING id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at`,
+      [params.destinationStreamId, eventIds, sequences, params.sourceStreamId]
+    )
+    return result.rows.map(mapRowToEvent)
   },
 
   async getLatestSequence(db: Querier, streamId: string): Promise<bigint | null> {

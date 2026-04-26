@@ -264,6 +264,10 @@ export type {
   UpdateMessageInput,
   UpdateMessageInputJson,
   UpdateMessageInputMarkdown,
+  MoveMessagesToThreadInput,
+  MoveMessagesToThreadResponse,
+  ValidateMoveMessagesToThreadInput,
+  ValidateMoveMessagesToThreadResponse,
   // Workspaces
   CreateWorkspaceInput,
   WorkspaceBootstrap,

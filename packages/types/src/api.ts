@@ -255,6 +255,36 @@ export interface UpdateMessageInputMarkdown {
  */
 export type UpdateMessageInput = UpdateMessageInputJson | UpdateMessageInputMarkdown
 
+export interface MoveMessagesToThreadInput {
+  sourceStreamId: string
+  targetMessageId: string
+  messageIds: string[]
+  leaseKey: string
+}
+
+export interface MoveMessagesToThreadResponse {
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: Stream
+  events: StreamEvent[]
+  removedEventIds: string[]
+}
+
+export interface ValidateMoveMessagesToThreadInput {
+  sourceStreamId: string
+  targetMessageId: string
+  messageIds: string[]
+}
+
+export interface ValidateMoveMessagesToThreadResponse {
+  leaseKey: string
+  expiresAt: string
+  destinationStreamId: string | null
+  messageCount: number
+}
+
 // ============================================================================
 // Workspaces API
 // ============================================================================

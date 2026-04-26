@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, Search } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, Search, CheckSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -150,6 +150,10 @@ export function StreamPage() {
     await unarchive?.()
   }
 
+  const handleSelectMessages = () => {
+    document.dispatchEvent(new CustomEvent("threa:start-batch-select", { detail: { streamId } }))
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       handleSaveRename()
@@ -240,7 +244,7 @@ export function StreamPage() {
               <MessageCircle className="h-4 w-4" />
             </Button>
           )}
-          {isScratchpad && (
+          {stream && !isDraft && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -248,21 +252,30 @@ export function StreamPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={handleStartRename}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Rename
+                <DropdownMenuItem onClick={handleSelectMessages} disabled={isArchived}>
+                  <CheckSquare className="mr-2 h-4 w-4" />
+                  Select messages
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {isArchived ? (
-                  <DropdownMenuItem onClick={handleUnarchive}>
-                    <Archive className="mr-2 h-4 w-4" />
-                    Unarchive
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-                    <Archive className="mr-2 h-4 w-4" />
-                    {isDraft ? "Delete" : "Archive"}
-                  </DropdownMenuItem>
+                {isScratchpad && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleStartRename}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {isArchived ? (
+                      <DropdownMenuItem onClick={handleUnarchive}>
+                        <Archive className="mr-2 h-4 w-4" />
+                        Unarchive
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onClick={handleArchive} className="text-destructive">
+                        <Archive className="mr-2 h-4 w-4" />
+                        Archive
+                      </DropdownMenuItem>
+                    )}
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>

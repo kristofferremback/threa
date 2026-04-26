@@ -19,6 +19,7 @@ export type OutboxEventType =
   | "message:created"
   | "message:edited"
   | "message:deleted"
+  | "messages:moved"
   | "message:updated"
   | "reaction:added"
   | "reaction:removed"
@@ -68,6 +69,7 @@ export type StreamScopedEventType =
   | "message:created"
   | "message:edited"
   | "message:deleted"
+  | "messages:moved"
   | "message:updated"
   | "reaction:added"
   | "reaction:removed"
@@ -128,6 +130,16 @@ export interface MessageEditedOutboxPayload extends StreamScopedPayload {
 export interface MessageDeletedOutboxPayload extends StreamScopedPayload {
   messageId: string
   deletedAt: string
+}
+
+export interface MessagesMovedOutboxPayload extends StreamScopedPayload {
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: Stream
+  events: StreamEvent[]
+  removedEventIds: string[]
 }
 
 export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
@@ -404,6 +416,7 @@ export interface OutboxEventPayloadMap {
   "message:created": MessageCreatedOutboxPayload
   "message:edited": MessageEditedOutboxPayload
   "message:deleted": MessageDeletedOutboxPayload
+  "messages:moved": MessagesMovedOutboxPayload
   "message:updated": MessageUpdatedOutboxPayload
   "reaction:added": ReactionOutboxPayload
   "reaction:removed": ReactionOutboxPayload
@@ -482,6 +495,7 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "message:created",
   "message:edited",
   "message:deleted",
+  "messages:moved",
   "message:updated",
   "reaction:added",
   "reaction:removed",

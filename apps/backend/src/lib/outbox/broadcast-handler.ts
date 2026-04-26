@@ -14,6 +14,7 @@ import {
   type ActivityCreatedOutboxPayload,
   type StreamDisplayNameUpdatedPayload,
   type AttachmentTranscodedOutboxPayload,
+  type MessagesMovedOutboxPayload,
 } from "./repository"
 import { logger } from "../logger"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
@@ -179,6 +180,13 @@ export class BroadcastHandler implements OutboxHandler {
       if (payload.parentStreamId) {
         this.io.to(`ws:${workspaceId}:stream:${payload.parentStreamId}`).emit(event.eventType, event.payload)
       }
+      return
+    }
+
+    if (isOutboxEventType(event, "messages:moved")) {
+      const payload = event.payload as MessagesMovedOutboxPayload
+      this.io.to(`ws:${workspaceId}:stream:${payload.sourceStreamId}`).emit(event.eventType, event.payload)
+      this.io.to(`ws:${workspaceId}:stream:${payload.destinationStreamId}`).emit(event.eventType, event.payload)
       return
     }
 

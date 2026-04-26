@@ -20,11 +20,20 @@ export type {
   DeleteMessageParams,
   AddReactionParams,
   RemoveReactionParams,
+  MoveMessagesToThreadParams,
+  ValidateMoveMessagesToThreadParams,
+  MoveMessagesToThreadResult,
 } from "./event-service"
 
 // Handlers
 export { createMessageHandlers } from "./handlers"
-export { createMessageSchema, updateMessageSchema, addReactionSchema } from "./handlers"
+export {
+  createMessageSchema,
+  updateMessageSchema,
+  addReactionSchema,
+  moveMessagesToThreadSchema,
+  validateMoveMessagesToThreadSchema,
+} from "./handlers"
 
 // Metadata
 export {

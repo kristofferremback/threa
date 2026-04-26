@@ -234,6 +234,18 @@ interface MessageDeletedPayload {
   deletedAt: string
 }
 
+interface MessagesMovedPayload {
+  workspaceId: string
+  streamId: string
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: Stream
+  events: StreamEvent[]
+  removedEventIds: string[]
+}
+
 interface ReactionPayload {
   workspaceId: string
   streamId: string
@@ -489,6 +501,57 @@ export function registerStreamSocketHandlers(
     }))
   }
 
+  const handleMessagesMoved = async (payload: MessagesMovedPayload) => {
+    if (payload.sourceStreamId !== streamId && payload.destinationStreamId !== streamId) return
+
+    const now = Date.now()
+    await db.transaction("rw", [db.events, db.streams], async () => {
+      if (payload.sourceStreamId === streamId) {
+        await db.events.bulkDelete(payload.removedEventIds)
+        await updateMessageEvent(streamId, payload.targetMessageId, (p) => ({
+          ...p,
+          threadId: payload.thread.id,
+          replyCount:
+            typeof p.replyCount === "number"
+              ? Math.max(p.replyCount, payload.movedMessageIds.length)
+              : payload.movedMessageIds.length,
+        }))
+      }
+
+      if (payload.destinationStreamId === streamId) {
+        await db.events.bulkPut(
+          payload.events.map((event) => ({
+            ...event,
+            workspaceId,
+            _sequenceNum: sequenceToNum(event.sequence),
+            _cachedAt: now,
+          }))
+        )
+      }
+
+      const streamUpdate = { ...payload.thread, _cachedAt: now }
+      const updated = await db.streams.update(payload.thread.id, streamUpdate)
+      if (updated === 0) {
+        await db.streams.put(streamUpdate)
+      }
+    })
+
+    queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+      if (!old) return old
+      const streamExists = old.streams.some((stream) => stream.id === payload.thread.id)
+      return {
+        ...old,
+        streams: streamExists
+          ? old.streams.map((stream) =>
+              stream.id === payload.thread.id
+                ? { ...stream, ...payload.thread, lastMessagePreview: stream.lastMessagePreview }
+                : stream
+            )
+          : [...old.streams, { ...payload.thread, lastMessagePreview: null }],
+      }
+    })
+  }
+
   const handleReactionAdded = async (payload: ReactionPayload) => {
     if (payload.streamId !== streamId) return
     await updateMessageEvent(streamId, payload.messageId, (p) => {
@@ -524,6 +587,23 @@ export function registerStreamSocketHandlers(
       ...p,
       threadId: stream.id,
     }))
+
+    await db.streams.put({ ...stream, _cachedAt: Date.now() })
+
+    queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+      if (!old) return old
+      const streamExists = old.streams.some((existing) => existing.id === stream.id)
+      return {
+        ...old,
+        streams: streamExists
+          ? old.streams.map((existing) =>
+              existing.id === stream.id
+                ? { ...existing, ...stream, lastMessagePreview: existing.lastMessagePreview }
+                : existing
+            )
+          : [...old.streams, { ...stream, lastMessagePreview: null }],
+      }
+    })
   }
 
   const handleMessageUpdated = async (payload: MessageUpdatedPayload) => {
@@ -585,6 +665,7 @@ export function registerStreamSocketHandlers(
   socket.on("message:created", handleMessageCreated)
   socket.on("message:edited", handleMessageEdited)
   socket.on("message:deleted", handleMessageDeleted)
+  socket.on("messages:moved", handleMessagesMoved)
   socket.on("reaction:added", handleReactionAdded)
   socket.on("reaction:removed", handleReactionRemoved)
   socket.on("stream:created", handleStreamCreated)
@@ -606,6 +687,7 @@ export function registerStreamSocketHandlers(
     socket.off("message:created", handleMessageCreated)
     socket.off("message:edited", handleMessageEdited)
     socket.off("message:deleted", handleMessageDeleted)
+    socket.off("messages:moved", handleMessagesMoved)
     socket.off("reaction:added", handleReactionAdded)
     socket.off("reaction:removed", handleReactionRemoved)
     socket.off("stream:created", handleStreamCreated)

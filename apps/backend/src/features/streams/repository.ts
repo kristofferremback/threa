@@ -803,6 +803,20 @@ export const StreamRepository = {
     return map
   },
 
+  async moveChildThreadsToParent(
+    db: Querier,
+    params: { sourceParentStreamId: string; destinationParentStreamId: string; parentMessageIds: string[] }
+  ): Promise<void> {
+    if (params.parentMessageIds.length === 0) return
+
+    await db.query(sql`
+      UPDATE streams
+      SET parent_stream_id = ${params.destinationParentStreamId}, updated_at = NOW()
+      WHERE parent_stream_id = ${params.sourceParentStreamId}
+        AND parent_message_id = ANY(${params.parentMessageIds})
+    `)
+  },
+
   /**
    * Find all threads for messages in a given parent stream, including reply counts.
    * Returns a map of parentMessageId -> { threadId, replyCount }
@@ -857,7 +871,6 @@ export const StreamRepository = {
         SELECT
           s.parent_message_id,
           m.id,
-          m.sequence,
           m.author_id,
           m.author_type,
           m.content_markdown,
@@ -872,18 +885,18 @@ export const StreamRepository = {
         SELECT DISTINCT ON (parent_message_id)
           parent_message_id, id, author_id, author_type, content_markdown, created_at
         FROM thread_messages
-        ORDER BY parent_message_id, sequence DESC
+        ORDER BY parent_message_id, created_at DESC, id DESC
       ),
       participants_distinct AS (
-        SELECT parent_message_id, author_id, author_type, MIN(sequence) AS first_reply_sequence
+        SELECT parent_message_id, author_id, author_type, MIN(created_at) AS first_reply_at, MIN(id) AS first_reply_id
         FROM thread_messages
         GROUP BY parent_message_id, author_id, author_type
       ),
       participants AS (
         SELECT
           parent_message_id,
-          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids,
-          (ARRAY_AGG(author_type ORDER BY first_reply_sequence))[1:3] AS author_types
+          (ARRAY_AGG(author_id ORDER BY first_reply_at, first_reply_id))[1:3] AS author_ids,
+          (ARRAY_AGG(author_type ORDER BY first_reply_at, first_reply_id))[1:3] AS author_types
         FROM participants_distinct
         GROUP BY parent_message_id
       )
@@ -926,7 +939,6 @@ export const StreamRepository = {
         SELECT
           s.parent_message_id,
           m.id,
-          m.sequence,
           m.author_id,
           m.author_type,
           m.content_markdown,
@@ -937,14 +949,14 @@ export const StreamRepository = {
           AND m.deleted_at IS NULL
       ),
       participants_distinct AS (
-        SELECT author_id, author_type, MIN(sequence) AS first_reply_sequence
+        SELECT author_id, author_type, MIN(created_at) AS first_reply_at, MIN(id) AS first_reply_id
         FROM thread_messages
         GROUP BY author_id, author_type
       ),
       participants AS (
         SELECT
-          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids,
-          (ARRAY_AGG(author_type ORDER BY first_reply_sequence))[1:3] AS author_types
+          (ARRAY_AGG(author_id ORDER BY first_reply_at, first_reply_id))[1:3] AS author_ids,
+          (ARRAY_AGG(author_type ORDER BY first_reply_at, first_reply_id))[1:3] AS author_types
         FROM participants_distinct
       )
       SELECT
@@ -957,7 +969,7 @@ export const StreamRepository = {
         COALESCE((SELECT author_ids FROM participants), ARRAY[]::TEXT[]) AS participant_ids,
         COALESCE((SELECT author_types FROM participants), ARRAY[]::TEXT[]) AS participant_types
       FROM thread_messages l
-      ORDER BY l.sequence DESC
+      ORDER BY l.created_at DESC, l.id DESC
       LIMIT 1
     `)
 
