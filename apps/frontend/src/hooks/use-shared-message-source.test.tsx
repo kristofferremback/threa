@@ -87,6 +87,51 @@ describe("useSharedMessageSource", () => {
     expect(result.current).toEqual({ status: "missing" })
   })
 
+  it("maps private hydration state to a privacy placeholder source", () => {
+    const { result } = renderHook(() => useSharedMessageSource("msg_p", "stream_src"), {
+      wrapper: ({ children }) => (
+        <SharedMessagesProvider
+          map={{
+            msg_p: {
+              state: "private",
+              messageId: "msg_p",
+              sourceStreamKind: "channel",
+              sourceVisibility: "private",
+            },
+          }}
+        >
+          {children}
+        </SharedMessagesProvider>
+      ),
+    })
+
+    expect(result.current).toEqual({
+      status: "private",
+      sourceStreamKind: "channel",
+      sourceVisibility: "private",
+    })
+  })
+
+  it("maps truncated hydration state to a navigable placeholder source", () => {
+    const { result } = renderHook(() => useSharedMessageSource("msg_t", "stream_src"), {
+      wrapper: ({ children }) => (
+        <SharedMessagesProvider
+          map={{
+            msg_t: { state: "truncated", messageId: "msg_t", streamId: "stream_deep" },
+          }}
+        >
+          {children}
+        </SharedMessagesProvider>
+      ),
+    })
+
+    expect(result.current).toEqual({
+      status: "truncated",
+      streamId: "stream_deep",
+      messageId: "msg_t",
+    })
+  })
+
   it("falls back to the local IDB event cache when hydration is absent", async () => {
     await db.events.put({
       id: "evt_cached",
