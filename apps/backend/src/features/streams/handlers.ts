@@ -190,6 +190,7 @@ interface Dependencies {
 async function hydrateSharedMessagesForEvents(
   pool: Pool,
   workspaceId: string,
+  viewerId: string,
   events: StreamEvent[]
 ): Promise<Record<string, HydratedSharedMessage>> {
   const ids = new Set<string>()
@@ -200,7 +201,7 @@ async function hydrateSharedMessagesForEvents(
     }
   }
   if (ids.size === 0) return {}
-  return hydrateSharedMessageIds(pool, workspaceId, ids)
+  return hydrateSharedMessageIds(pool, workspaceId, viewerId, ids)
 }
 
 function serializeEvent(event: StreamEvent) {
@@ -452,7 +453,7 @@ export function createStreamHandlers({
       })
 
       const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(linkPreviewService, workspaceId, userId, events)
-      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, userId, eventsWithLinkPreviews)
 
       res.json({ events: eventsWithLinkPreviews.map(serializeEvent), sharedMessages })
     },
@@ -487,7 +488,7 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
-      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, userId, eventsWithLinkPreviews)
 
       res.json({
         events: eventsWithLinkPreviews.map(serializeEvent),
@@ -686,7 +687,7 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
-      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, userId, eventsWithLinkPreviews)
 
       // Fold the stream's persisted ContextBag into the bootstrap so the
       // timeline message-context badge renders synchronously from cached

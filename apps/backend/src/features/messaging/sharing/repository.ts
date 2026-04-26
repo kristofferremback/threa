@@ -104,4 +104,51 @@ export const SharedMessageRepository = {
         AND share_message_id = ${shareMessageId}
     `)
   },
+
+  /**
+   * Returns the subset of `sourceMessageIds` for which the viewer has been
+   * granted read access via at least one share whose `target_stream_id` the
+   * viewer can access (per `listAccessibleStreamIds` semantics — direct
+   * member, public visibility, or thread inheriting from root). Set-based,
+   * single SQL round-trip.
+   *
+   * Used by recursive pointer hydration (D8) to decide per-viewer access at
+   * each level of a re-share chain: a viewer who isn't directly a member of
+   * the source stream still sees the source content if they have any share
+   * grant reaching them.
+   */
+  async listSourcesGrantedToViewer(
+    db: Querier,
+    workspaceId: string,
+    userId: string,
+    sourceMessageIds: readonly string[]
+  ): Promise<Set<string>> {
+    if (sourceMessageIds.length === 0) return new Set()
+    const result = await db.query<{ source_message_id: string }>(sql`
+      SELECT DISTINCT sm.source_message_id
+      FROM shared_messages sm
+      JOIN streams t ON t.id = sm.target_stream_id
+      LEFT JOIN streams root ON root.id = t.root_stream_id
+      WHERE sm.workspace_id = ${workspaceId}
+        AND sm.source_message_id = ANY(${sourceMessageIds as string[]})
+        AND (
+          (t.root_stream_id IS NULL AND (
+            t.visibility = 'public'
+            OR EXISTS (
+              SELECT 1 FROM stream_members
+              WHERE stream_id = t.id AND member_id = ${userId}
+            )
+          ))
+          OR
+          (t.root_stream_id IS NOT NULL AND root.id IS NOT NULL AND (
+            root.visibility = 'public'
+            OR EXISTS (
+              SELECT 1 FROM stream_members
+              WHERE stream_id = t.root_stream_id AND member_id = ${userId}
+            )
+          ))
+        )
+    `)
+    return new Set(result.rows.map((r) => r.source_message_id))
+  },
 }
