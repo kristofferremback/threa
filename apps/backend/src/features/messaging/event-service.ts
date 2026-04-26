@@ -3,7 +3,7 @@ import { withTransaction, withClient } from "../../db"
 import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
-import { canReadStream } from "../streams"
+import { checkStreamAccess } from "../streams"
 import { MessageRepository, Message } from "./repository"
 import { ShareService } from "./sharing"
 import { AttachmentRepository, isVideoAttachment } from "../attachments"
@@ -342,7 +342,8 @@ export class EventService {
         isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
         countExposedMembers: (db, targetStreamId, sourceStreamId) =>
           StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
-        canReadStream: (db, workspaceId, streamId, userId) => canReadStream(db, workspaceId, streamId, userId),
+        canReadStream: async (db, workspaceId, streamId, userId) =>
+          (await checkStreamAccess(db, streamId, workspaceId, userId)) !== null,
         confirmedPrivacyWarning: params.confirmedPrivacyWarning,
       })
 
@@ -441,7 +442,8 @@ export class EventService {
           isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
           countExposedMembers: (db, targetStreamId, sourceStreamId) =>
             StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
-          canReadStream: (db, workspaceId, streamId, userId) => canReadStream(db, workspaceId, streamId, userId),
+          canReadStream: async (db, workspaceId, streamId, userId) =>
+            (await checkStreamAccess(db, streamId, workspaceId, userId)) !== null,
           confirmedPrivacyWarning: params.confirmedPrivacyWarning,
         })
 

@@ -44,6 +44,7 @@ import {
   TimelineItemContent,
   groupTimelineItems,
   annotateAuthorGroups,
+  findFirstMessageId,
   getTimelineItemKey,
   filterVisibleItems,
   type TimelineItem,
@@ -884,6 +885,13 @@ function VirtuosoMessageList({
     [abortResearch, workspaceId]
   )
 
+  // First-message lookup for the context-bag attachment badge anchor.
+  // Computed once per timeline change; the Virtuoso path threads this through
+  // `renderCtx` so the badge can light up on whichever message the
+  // conversation opened with. Without this, virtualized scratchpad timelines
+  // would never get `isFirstMessage=true` and the badge would silently drop.
+  const firstMessageId = useMemo(() => findFirstMessageId(visibleItems), [visibleItems])
+
   const renderCtx = useMemo<TimelineItemRenderContext>(
     () => ({
       workspaceId,
@@ -894,6 +902,7 @@ function VirtuosoMessageList({
       agentActivity,
       hideSessionCards,
       newMessageIds,
+      firstMessageId,
       sessionLiveCounts,
       sessionLiveSubsteps,
       sessionCanAbort,
@@ -909,6 +918,7 @@ function VirtuosoMessageList({
       agentActivity,
       hideSessionCards,
       newMessageIds,
+      firstMessageId,
       sessionLiveCounts,
       sessionLiveSubsteps,
       sessionCanAbort,

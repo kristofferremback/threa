@@ -5,8 +5,8 @@ import { AgentTriggers, AuthorTypes, StreamTypes } from "@threa/types"
 import type { UserPreferencesService } from "../../user-preferences"
 import { MessageRepository, SharedMessageRepository, collectSharedMessageIds, type Message } from "../../messaging"
 import { UserRepository } from "../../workspaces"
-import { PersonaRepository } from "../persona-repository"
 import type { Persona } from "../persona-repository"
+import { resolveActorNames } from "../actor-names"
 import { AttachmentRepository } from "../../attachments"
 import { StreamRepository, type Stream } from "../../streams"
 import { awaitAttachmentProcessing } from "../../attachments"
@@ -138,7 +138,9 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     keptMessages: streamScopedMessages,
   })
 
-  // Build author names from participants + repo lookups
+  // Build author names from participants + a single batched user+persona lookup.
+  // `resolveActorNames` handles the user/persona split (INV-56: batched, never
+  // per-row) so we don't reimplement it inline per surface.
   const authorNames = new Map<string, string>()
   if (streamContext.participants) {
     for (const p of streamContext.participants) {
@@ -146,27 +148,11 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     }
   }
 
-  const memberAuthorIds = [
-    ...new Set(
-      streamContext.conversationHistory
-        .filter((m) => m.authorType === AuthorTypes.USER && !authorNames.has(m.authorId))
-        .map((m) => m.authorId)
-    ),
-  ]
-  if (memberAuthorIds.length > 0) {
-    const members = await UserRepository.findByIds(db, workspaceId, memberAuthorIds)
-    for (const m of members) authorNames.set(m.id, m.name)
-  }
-
-  const personaAuthorIds = [
-    ...new Set(
-      streamContext.conversationHistory.filter((m) => m.authorType === AuthorTypes.PERSONA).map((m) => m.authorId)
-    ),
-  ]
-  if (personaAuthorIds.length > 0) {
-    const personas = await PersonaRepository.findByIds(db, personaAuthorIds)
-    for (const p of personas) authorNames.set(p.id, p.name)
-  }
+  const missingAuthorIds = streamContext.conversationHistory
+    .filter((m) => !authorNames.has(m.authorId))
+    .map((m) => m.authorId)
+  const resolvedNames = await resolveActorNames(db, workspaceId, missingAuthorIds)
+  for (const [id, name] of resolvedNames) authorNames.set(id, name)
 
   let mentionerName: string | undefined
   if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === AuthorTypes.USER) {
@@ -252,28 +238,14 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
     }
 
     // Resolve any author names we don't already have for the new sources.
-    const newUserIds = [
-      ...new Set(
-        [...allowedSources.values()]
-          .filter((m) => m.authorType === AuthorTypes.USER && !authorNames.has(m.authorId))
-          .map((m) => m.authorId)
-      ),
+    // `resolveActorNames` handles the user/persona split internally, so the
+    // share-source enrichment uses the same batched helper as the main
+    // history pass — no parallel implementation per surface.
+    const missingSourceAuthorIds = [
+      ...new Set([...allowedSources.values()].filter((m) => !authorNames.has(m.authorId)).map((m) => m.authorId)),
     ]
-    const newPersonaIds = [
-      ...new Set(
-        [...allowedSources.values()]
-          .filter((m) => m.authorType === AuthorTypes.PERSONA && !authorNames.has(m.authorId))
-          .map((m) => m.authorId)
-      ),
-    ]
-    if (newUserIds.length > 0) {
-      const users = await UserRepository.findByIds(db, workspaceId, newUserIds)
-      for (const u of users) authorNames.set(u.id, u.name)
-    }
-    if (newPersonaIds.length > 0) {
-      const personas = await PersonaRepository.findByIds(db, newPersonaIds)
-      for (const p of personas) authorNames.set(p.id, p.name)
-    }
+    const sourceAuthorNames = await resolveActorNames(db, workspaceId, missingSourceAuthorIds)
+    for (const [id, name] of sourceAuthorNames) authorNames.set(id, name)
 
     streamContext.conversationHistory = streamContext.conversationHistory.map((m) => {
       const ids = new Set<string>()

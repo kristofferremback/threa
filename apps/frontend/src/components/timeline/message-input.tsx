@@ -18,12 +18,13 @@ import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/c
 import type { ComposerControlHandle } from "@/components/composer"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
-import { hasCommandNode } from "@/lib/commands"
+import { extractCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
-import { StreamTypes, type JSONContent } from "@threa/types"
+import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
+import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
 
@@ -188,6 +189,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const navigate = useNavigate()
   const { preferences } = usePreferences()
   const { stream, sendMessage } = useStreamOrDraft(workspaceId, streamId)
+  const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   // Resolve stream context for broadcast mention filtering.
@@ -464,14 +466,36 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
       // Dispatch as a command only when the editor produced a slashCommand node.
       // Plain text starting with "/" (e.g. "/s") should send as a regular message.
-      if (hasCommandNode(normalizedContent)) {
-        const commandMarkdown = serializeToMarkdown(normalizedContent).trim()
+      const commandNode = extractCommandNode(normalizedContent)
+      if (commandNode !== null) {
+        const { clientActionId } = commandNode
 
-        // Clear input immediately for responsiveness
+        // Clear input immediately for responsiveness — same reset the server
+        // path does. Either branch below consumes the command, so the user
+        // shouldn't see their chip linger after pressing send.
         composer.setContent(EMPTY_DOC)
         composer.clearDraft()
         setExpanded(false)
 
+        // Client-action commands are routed locally — `/discuss-with-ariadne`
+        // creates a scratchpad + navigates; no backend dispatch. Matches the
+        // "type the command, press send" UX of server commands so the user
+        // isn't surprised by an action firing as they pick from autocomplete.
+        // The hook surfaces failure via a toast (shared with the context-menu
+        // entry point), so we intentionally don't set an inline composer
+        // error here — that would render the same failure twice.
+        if (clientActionId === DISCUSS_WITH_ARIADNE_COMMAND) {
+          try {
+            await startDiscussWithAriadne({ sourceStreamId: streamId })
+          } catch {
+            /* hook already toasted; composer stays clean */
+          } finally {
+            composer.setIsSending(false)
+          }
+          return
+        }
+
+        const commandMarkdown = serializeToMarkdown(normalizedContent).trim()
         try {
           const result = await commandsApi.dispatch(workspaceId, {
             command: commandMarkdown,
@@ -524,7 +548,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         composer.setIsSending(false)
       }
     },
-    [composer, sendMessage, navigate, workspaceId, streamId]
+    [composer, sendMessage, navigate, workspaceId, streamId, startDiscussWithAriadne]
   )
 
   if (disabled && disabledReason) {
@@ -545,6 +569,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     onContentChange: composer.handleContentChange,
     pendingAttachments: composer.pendingAttachments,
     onRemoveAttachment: composer.handleRemoveAttachment,
+    contextRefs: composer.contextRefs,
+    streamId,
+    workspaceId,
     fileInputRef: composer.fileInputRef,
     onFileSelect: composer.handleFileSelect,
     onFileUpload: composer.uploadFile,

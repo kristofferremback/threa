@@ -5,6 +5,9 @@ export { createStreamHandlers } from "./handlers"
 export { StreamService } from "./service"
 export type { CreateScratchpadParams, CreateChannelParams, CreateThreadParams } from "./service"
 
+// Access (canonical "can this user read this stream?" check — INV-8)
+export { checkStreamAccess } from "./access"
+
 // Naming
 export { StreamNamingService } from "./naming-service"
 export type { GenerateNameResult } from "./naming-service"
@@ -55,6 +58,3 @@ export type { MemoStreamState, StreamReadyToProcess } from "./state-repository"
 // Display name utilities
 export { getEffectiveDisplayName, formatParticipantNames, needsAutoNaming } from "./display-name"
 export type { DisplayNameSource, DisplayNameContext, EffectiveDisplayName } from "./display-name"
-
-// Read-access helper (Querier-based permission check for use inside transactions)
-export { canReadStream } from "./read-access"

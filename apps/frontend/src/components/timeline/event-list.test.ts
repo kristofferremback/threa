@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { StreamEvent } from "@threa/types"
-import { annotateAuthorGroups, groupTimelineItems, type TimelineItem } from "./event-list"
+import { annotateAuthorGroups, findFirstMessageId, groupTimelineItems, type TimelineItem } from "./event-list"
 
 interface CreateEventParams {
   id: string
@@ -254,5 +254,65 @@ describe("annotateAuthorGroups", () => {
       { type: "session_group", sessionId: "sess_1", sessionVersion: 1, events: [] },
     ]
     expect(annotateAuthorGroups(input)).toEqual(input)
+  })
+})
+
+describe("findFirstMessageId", () => {
+  function eventItem(
+    id: string,
+    sequence: string,
+    eventType: StreamEvent["eventType"],
+    messageId: string
+  ): TimelineItem {
+    return {
+      type: "event",
+      event: createEvent({ id, sequence, eventType, payload: { messageId } }),
+    }
+  }
+
+  it("returns the messageId of the first message_created event in render order", () => {
+    const items: TimelineItem[] = [
+      eventItem("evt_1", "1", "message_created", "msg_first"),
+      eventItem("evt_2", "2", "message_created", "msg_second"),
+    ]
+    expect(findFirstMessageId(items)).toBe("msg_first")
+  })
+
+  it("ignores companion_response events so the badge can't anchor on Ariadne's reply", () => {
+    // Restricted to user-authored messages on purpose: in a bag-attached
+    // scratchpad the conversation always opens with the user's question.
+    // Hide rather than mis-anchor when an offline-reconnect ordering glitch
+    // (or some agent edge case) puts a companion_response first.
+    const items: TimelineItem[] = [
+      eventItem("evt_1", "1", "companion_response", "msg_companion"),
+      eventItem("evt_2", "2", "message_created", "msg_user"),
+    ]
+    expect(findFirstMessageId(items)).toBe("msg_user")
+  })
+
+  it("returns undefined when only companion_response events exist (no user message yet)", () => {
+    const items: TimelineItem[] = [eventItem("evt_1", "1", "companion_response", "msg_companion")]
+    expect(findFirstMessageId(items)).toBeUndefined()
+  })
+
+  it("skips command_group / session_group items and finds the first underlying message", () => {
+    const items: TimelineItem[] = [
+      { type: "command_group", commandId: "cmd_1", events: [] },
+      { type: "session_group", sessionId: "sess_1", sessionVersion: 1, events: [] },
+      eventItem("evt_1", "3", "message_created", "msg_after_groups"),
+    ]
+    expect(findFirstMessageId(items)).toBe("msg_after_groups")
+  })
+
+  it("ignores events without a messageId payload (membership events, etc.)", () => {
+    const items: TimelineItem[] = [
+      { type: "event", event: createEvent({ id: "evt_1", sequence: "1", eventType: "member_joined", payload: {} }) },
+      eventItem("evt_2", "2", "message_created", "msg_real"),
+    ]
+    expect(findFirstMessageId(items)).toBe("msg_real")
+  })
+
+  it("returns undefined for an empty timeline so the badge stays in the composer strip", () => {
+    expect(findFirstMessageId([])).toBeUndefined()
   })
 })

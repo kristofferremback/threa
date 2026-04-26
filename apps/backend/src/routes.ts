@@ -18,6 +18,7 @@ import { createConversationHandlers } from "./features/conversations"
 import { createCommandHandlers } from "./features/commands"
 import { createUserPreferencesHandlers } from "./features/user-preferences"
 import { createAIUsageHandlers } from "./features/ai-usage"
+import type { AI } from "./lib/ai/ai"
 import { createInvitationHandlers } from "./features/invitations"
 import { createActivityHandlers } from "./features/activity"
 import { createSavedMessagesHandlers } from "./features/saved-messages"
@@ -25,7 +26,7 @@ import { createPushHandlers } from "./features/push"
 import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
-import { createAgentSessionHandlers } from "./features/agents"
+import { createAgentSessionHandlers, createContextBagHandlers } from "./features/agents"
 import { createLinkPreviewHandlers } from "./features/link-previews"
 import { createWorkspaceIntegrationHandlers } from "./features/workspace-integrations"
 import { createPublicApiHandlers, createBotHandlers } from "./features/public-api"
@@ -94,6 +95,7 @@ interface Dependencies {
   userApiKeyService: UserApiKeyService
   botApiKeyService: BotApiKeyService
   storage: StorageProvider
+  ai: AI
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -128,6 +130,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     userApiKeyService,
     botApiKeyService,
     storage,
+    ai,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -152,7 +155,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     workosOrgService,
     pool,
   })
-  const stream = createStreamHandlers({ streamService, eventService, activityService, linkPreviewService, pool })
+  const stream = createStreamHandlers({ pool, streamService, eventService, activityService, linkPreviewService })
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
   const attachment = createAttachmentHandlers({ attachmentService, streamService, storage, pool })
   const search = createSearchHandlers({ pool, searchService })
@@ -167,6 +170,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const activity = createActivityHandlers({ activityService })
   const savedMessages = createSavedMessagesHandlers({ savedMessagesService })
   const agentSession = createAgentSessionHandlers({ pool })
+  const contextBag = createContextBagHandlers({ pool, ai })
   const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
   const workspaceIntegration = createWorkspaceIntegrationHandlers({
     workspaceIntegrationService,
@@ -328,6 +332,10 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
+
+  // Context-bag standalone precompute (composer draft flow)
+  app.post("/api/workspaces/:workspaceId/context-bag/precompute", ...authed, contextBag.precompute)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId/context-bag", ...authed, contextBag.getStreamBag)
 
   // Link Previews
   app.get("/api/workspaces/:workspaceId/messages/:messageId/link-previews", ...authed, linkPreview.getForMessage)

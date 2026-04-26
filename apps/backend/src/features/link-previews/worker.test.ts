@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import { createLinkPreviewWorker, decodeHtmlBytes, detectCharset, parseHtmlMeta } from "./worker"
+import {
+  createLinkPreviewWorker,
+  decodeHtmlBytes,
+  detectCharset,
+  extractOEmbedDescription,
+  parseHtmlMeta,
+} from "./worker"
 import { GitHubPreviewTypes } from "@threa/types"
 
 /** Encode a string as ISO-8859-1 (Latin-1) bytes. Each char with code ≤ 0xFF becomes one byte. */
@@ -243,13 +249,13 @@ describe("parseHtmlMeta", () => {
     expect(result.title).toBe("Reversed Order")
   })
 
-  test("returns null fields when no metadata found", async () => {
+  test("falls back to URL-derived title/site when no metadata found", async () => {
     const html = `<html><head></head></html>`
-    const result = await parseHtmlMeta(html, baseUrl)
-    expect(result.title).toBeNull()
+    const result = await parseHtmlMeta(html, "https://news.example.com/articles/hello-world")
+    expect(result.title).toBe("hello world")
     expect(result.description).toBeNull()
     expect(result.imageUrl).toBeNull()
-    expect(result.siteName).toBeNull()
+    expect(result.siteName).toBe("news.example.com")
     expect(result.status).toBe("completed")
   })
 
@@ -265,6 +271,19 @@ describe("parseHtmlMeta", () => {
     const result = await parseHtmlMeta(html, baseUrl)
     expect(result.title).toBe("OG Title")
     expect(result.description).toBe("OG Description")
+  })
+})
+
+describe("extractOEmbedDescription", () => {
+  test("extracts readable text from X/Twitter oEmbed blockquote HTML", () => {
+    const html =
+      '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">closing what&#39;s fixed was the pre-clean. <a href="https://t.co/YYNEbg7Q79">https://t.co/YYNEbg7Q79</a></p>&mdash; Peter</blockquote>'
+
+    const description = extractOEmbedDescription(html)
+
+    expect(description).toContain("closing what's fixed was the pre-clean.")
+    expect(description).toContain("https://t.co/YYNEbg7Q79")
+    expect(description).not.toContain("<a")
   })
 })
 
@@ -449,6 +468,206 @@ describe("createLinkPreviewWorker", () => {
           metadata: expect.objectContaining({
             previewType: GitHubPreviewTypes.FILE,
             title: "README.md",
+          }),
+        }),
+      ],
+      { forcePublish: undefined }
+    )
+  })
+
+  test("enriches X oEmbed previews with page image metadata when thumbnail is missing", async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString()
+
+      if (url.startsWith("https://publish.twitter.com/oembed")) {
+        return new Response(
+          JSON.stringify({
+            provider_name: "Twitter",
+            author_name: "Peter Steinberger",
+            html: '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">tweet text</p></blockquote>',
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      }
+
+      if (url.startsWith("https://x.com/steipete/status/2047957234664030380")) {
+        const headers = new Headers(init?.headers)
+        expect(headers.get("User-Agent")).toBe("Twitterbot/1.0")
+        return new Response(
+          '<html><head><meta name="twitter:image" content="https://pbs.twimg.com/media/abc123.jpg"></head></html>',
+          { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }
+        )
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`)
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const completePreviewsAndPublish = mock(async () => {})
+    const worker = createLinkPreviewWorker({
+      linkPreviewService: {
+        extractAndCreatePending: mock(async () => [
+          { id: "lp_123", url: "https://x.com/steipete/status/2047957234664030380" },
+        ]),
+        getPreviewById: mock(async () => ({
+          id: "lp_123",
+          workspaceId: "ws_123",
+          url: "https://x.com/steipete/status/2047957234664030380",
+          normalizedUrl: "https://x.com/steipete/status/2047957234664030380",
+          title: null,
+          description: null,
+          imageUrl: null,
+          faviconUrl: null,
+          siteName: null,
+          contentType: "website",
+          status: "pending",
+          previewType: null,
+          previewData: null,
+          targetWorkspaceId: null,
+          targetStreamId: null,
+          targetMessageId: null,
+          fetchedAt: null,
+          expiresAt: null,
+          createdAt: new Date("2026-04-25T10:00:00.000Z"),
+        })),
+        completePreviewsAndPublish,
+        replacePreviewsForMessage: mock(async () => []),
+        publishEmptyPreviews: mock(async () => {}),
+      } as any,
+      workspaceIntegrationService: {
+        getGithubClient: mock(async () => null),
+      } as any,
+    })
+
+    await worker({
+      id: "job_123",
+      name: "link_preview.extract",
+      data: {
+        workspaceId: "ws_123",
+        streamId: "stream_123",
+        messageId: "msg_123",
+        contentMarkdown: "https://x.com/steipete/status/2047957234664030380",
+      },
+    })
+
+    expect(completePreviewsAndPublish).toHaveBeenCalledWith(
+      "ws_123",
+      "stream_123",
+      "msg_123",
+      [
+        expect.objectContaining({
+          id: "lp_123",
+          skipped: false,
+          overwrite: false,
+          metadata: expect.objectContaining({
+            title: "Peter Steinberger",
+            description: "tweet text",
+            imageUrl: "https://pbs.twimg.com/media/abc123.jpg",
+            siteName: "Twitter",
+            status: "completed",
+          }),
+        }),
+      ],
+      { forcePublish: undefined }
+    )
+  })
+
+  test("uses media links from oEmbed HTML when canonical tweet page has no image metadata", async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString()
+
+      if (url.startsWith("https://publish.twitter.com/oembed")) {
+        return new Response(
+          JSON.stringify({
+            provider_name: "Twitter",
+            author_name: "Tran Mau Tri Tam",
+            html: '<blockquote class="twitter-tweet"><p>Paste a URL. <a href="https://t.co/DwmswUYWSP">pic.twitter.com/DwmswUYWSP</a></p></blockquote>',
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      }
+
+      if (url.startsWith("https://x.com/tranmautritam/status/2047744367549612456")) {
+        const headers = new Headers(init?.headers)
+        expect(headers.get("User-Agent")).toBe("Twitterbot/1.0")
+        return new Response("<html><head><title>tweet page</title></head></html>", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        })
+      }
+
+      if (url.startsWith("https://t.co/DwmswUYWSP")) {
+        return new Response(
+          '<html><head><meta property="og:image" content="https://pbs.twimg.com/amplify_video_thumb/example.jpg:large"></head></html>',
+          { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }
+        )
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`)
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const completePreviewsAndPublish = mock(async () => {})
+    const worker = createLinkPreviewWorker({
+      linkPreviewService: {
+        extractAndCreatePending: mock(async () => [
+          { id: "lp_124", url: "https://x.com/tranmautritam/status/2047744367549612456" },
+        ]),
+        getPreviewById: mock(async () => ({
+          id: "lp_124",
+          workspaceId: "ws_123",
+          url: "https://x.com/tranmautritam/status/2047744367549612456",
+          normalizedUrl: "https://x.com/tranmautritam/status/2047744367549612456",
+          title: null,
+          description: null,
+          imageUrl: null,
+          faviconUrl: null,
+          siteName: null,
+          contentType: "website",
+          status: "pending",
+          previewType: null,
+          previewData: null,
+          targetWorkspaceId: null,
+          targetStreamId: null,
+          targetMessageId: null,
+          fetchedAt: null,
+          expiresAt: null,
+          createdAt: new Date("2026-04-25T10:00:00.000Z"),
+        })),
+        completePreviewsAndPublish,
+        replacePreviewsForMessage: mock(async () => []),
+        publishEmptyPreviews: mock(async () => {}),
+      } as any,
+      workspaceIntegrationService: {
+        getGithubClient: mock(async () => null),
+      } as any,
+    })
+
+    await worker({
+      id: "job_124",
+      name: "link_preview.extract",
+      data: {
+        workspaceId: "ws_123",
+        streamId: "stream_123",
+        messageId: "msg_124",
+        contentMarkdown: "https://x.com/tranmautritam/status/2047744367549612456",
+      },
+    })
+
+    expect(completePreviewsAndPublish).toHaveBeenCalledWith(
+      "ws_123",
+      "stream_123",
+      "msg_124",
+      [
+        expect.objectContaining({
+          id: "lp_124",
+          skipped: false,
+          overwrite: false,
+          metadata: expect.objectContaining({
+            title: "Tran Mau Tri Tam",
+            imageUrl: "https://pbs.twimg.com/amplify_video_thumb/example.jpg:large",
+            siteName: "Twitter",
+            status: "completed",
           }),
         }),
       ],
