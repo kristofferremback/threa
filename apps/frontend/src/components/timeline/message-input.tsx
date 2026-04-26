@@ -310,7 +310,21 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   useEffect(() => {
     let pendingRaf: number | null = null
 
+    const cancelPendingRaf = () => {
+      if (pendingRaf !== null) {
+        cancelAnimationFrame(pendingRaf)
+        pendingRaf = null
+      }
+    }
+
     const tryConsume = () => {
+      // A second handoff can arrive (subscriber notification) while the
+      // previous one's retry loop is still waiting for the editor to mount.
+      // Cancel the in-flight chain first so the two retries don't race to
+      // setContent — the second pending share carries the freshest payload
+      // and should win without the cleanup-only-cancels-latest leak.
+      cancelPendingRaf()
+
       const pending = consumeShareHandoff(streamId)
       if (!pending) return
 
@@ -342,6 +356,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           })
           .focus("end")
           .run()
+        pendingRaf = null
         return true
       }
 
@@ -359,7 +374,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
     return () => {
       unsubscribe()
-      if (pendingRaf !== null) cancelAnimationFrame(pendingRaf)
+      cancelPendingRaf()
     }
   }, [streamId])
 

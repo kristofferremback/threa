@@ -447,12 +447,6 @@ interface MessageEventInnerProps {
 }
 
 /**
- * Produce a user-facing label for the share-to-parent menu entry based on
- * the parent stream's type. Channels read naturally as "#slug"; DMs and
- * scratchpads get a generic label to avoid awkward display-name phrasing
- * ("Share to Untitled scratchpad" etc.) in slice 1.
- */
-/**
  * Decide what to do after `queueShareHandoff` for a share-to-parent /
  * share-to-root entry. The behavior diverges by viewport because the
  * meaning of the panel query (`?panel=…`) differs:
@@ -489,6 +483,14 @@ function navigateAfterShareHandoff({
   navigate(`${targetPathname}${search}`)
 }
 
+/**
+ * Produce a user-facing label for the share-to-parent / share-to-root menu
+ * entry based on the target stream's type. Channels read naturally as
+ * "#slug"; DMs and scratchpads get a generic label to avoid awkward
+ * display-name phrasing ("Share to Untitled scratchpad" etc.) in slice 1.
+ * Thread parents (only reachable from a nested thread) include the display
+ * name so the user can tell the root + parent entries apart in the menu.
+ */
 function buildShareToStreamLabel(target: { type: string; displayName: string | null; slug: string | null }): string {
   if (target.type === "channel") {
     const tag = target.slug ? `#${target.slug}` : (target.displayName ?? "channel")

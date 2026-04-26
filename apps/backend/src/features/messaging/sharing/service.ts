@@ -114,14 +114,15 @@ export interface ValidateAndRecordSharesParams {
  * body. This keeps the create and edit paths on one code path — edits that
  * add, remove, or swap share nodes produce the correct final row set.
  *
- * Batched (INV-56): all read-only checks run before any per-ref validation.
- * Source messages come from a single `findByIds` SQL query; per-stream
- * checks (`findStream`, `canReadStream`, `crossesPrivacyBoundary`) run in
- * parallel keyed by unique `sourceStreamId` so duplicate refs to the same
- * source share one round trip. Inserts also fire in parallel since the
- * outer transaction client serializes them. Slice 1 messages carry one
- * share node so the win is structural — Slice 2's multi-node composer
- * benefits without further changes.
+ * Batched (INV-56): the source-message read is one SQL query for every
+ * referenced id (not findById-per-ref). Per-stream callbacks
+ * (`findStream`, `canReadStream`, `crossesPrivacyBoundary`) are memoized
+ * per unique `sourceStreamId` so duplicate references targeting the same
+ * source stream pay each cost once instead of once-per-ref. Calls remain
+ * sequentially `await`ed on the caller's transaction client because pg
+ * connections can't multiplex; the win is dedup, not concurrency. Slice 1
+ * messages carry one share node so the win is structural — Slice 2's
+ * multi-node composer benefits without further changes.
  */
 export const ShareService = {
   async validateAndRecordShares(params: ValidateAndRecordSharesParams): Promise<void> {

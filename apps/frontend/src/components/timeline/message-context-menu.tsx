@@ -81,9 +81,10 @@ function GroupedItem({
 
   // Split-button group: render the primary as a normal item, then a chevron
   // sub-trigger that opens a sub-menu listing ALL group members (primary
-  // first, then the rest). The sub-menu opens below the row (side="bottom",
-  // align="end") so it doesn't cover the primary text. Same data model as
-  // the mobile drawer (driven by `groupVisibleActions`).
+  // first, then the rest). Radix positions the sub-menu next to the trigger
+  // (side/align are not configurable on `DropdownMenuSubContent`); we nudge
+  // it with `sideOffset` / `alignOffset` for visual breathing room. Same
+  // data model as the mobile drawer (driven by `groupVisibleActions`).
   const { members } = item
   const primary = members[0]
   const PrimaryIcon = primary.icon
