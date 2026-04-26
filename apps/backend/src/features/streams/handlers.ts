@@ -35,8 +35,14 @@ const createStreamSchema = z
      * Optional context-bag attached at creation time. Powers "Discuss with
      * Ariadne": when present on a scratchpad, the pre-compute handler warms
      * the shared summary cache so the first real user turn is fast.
+     *
+     * `z.lazy` defers dereferencing `contextBagSchema` until parse time. The
+     * agents-barrel re-export lives behind a transitive cycle
+     * (streams/handlers → messaging/sharing → agents → streams → handlers),
+     * so without lazy evaluation the binding is in TDZ at module-eval and
+     * the backend crashes on boot.
      */
-    contextBag: contextBagSchema.optional(),
+    contextBag: z.lazy(() => contextBagSchema).optional(),
   })
   .refine((data) => data.type !== "channel" || data.slug, {
     message: "Slug is required for channels",
