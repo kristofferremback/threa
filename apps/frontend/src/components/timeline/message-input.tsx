@@ -362,10 +362,20 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
       if (insert()) return
 
-      // Editor not mounted yet on the first tick after a route change — retry
-      // on the next frame until it's ready. One-shot handoff; second read is null.
+      // Editor not mounted yet on the first tick after a route change —
+      // retry on the next frame until it lands. Bound the chain with a
+      // deadline so a permanently-unmounted host (e.g. the
+      // `disabled && disabledReason` early return below) doesn't burn
+      // a frame per tick forever and silently swallow the share. Mirrors
+      // the deadline pattern on `triggerEditLast` further down.
+      const deadline = performance.now() + 1500
       pendingRaf = requestAnimationFrame(function retry() {
-        if (!insert()) pendingRaf = requestAnimationFrame(retry)
+        if (insert()) return
+        if (performance.now() >= deadline) {
+          pendingRaf = null
+          return
+        }
+        pendingRaf = requestAnimationFrame(retry)
       })
     }
 

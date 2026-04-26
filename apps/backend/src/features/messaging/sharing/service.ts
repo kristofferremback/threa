@@ -141,8 +141,19 @@ export const ShareService = {
     // remain sequential because they share the caller's transaction client
     // (pg connections can't multiplex), but each unique stream pays the
     // cost once instead of once-per-reference.
+    //
+    // Workspace-scoped lookup (INV-8): a stranger's message id elsewhere in
+    // the platform must look identical to "doesn't exist" — otherwise
+    // probing distinct error codes (`MESSAGE_NOT_FOUND` vs the cross-
+    // workspace and stream-mismatch paths below) leaks message-existence
+    // across workspaces. `findByIdsInWorkspace` collapses every cross-
+    // workspace ref into the not-found bucket up-front.
     const uniqueSourceMessageIds = [...new Set(references.map((r) => r.sourceMessageId))]
-    const sourceMessagesById = await MessageRepository.findByIds(params.client, uniqueSourceMessageIds)
+    const sourceMessagesById = await MessageRepository.findByIdsInWorkspace(
+      params.client,
+      params.workspaceId,
+      uniqueSourceMessageIds
+    )
 
     const sourceStreamCache = new Map<string, Awaited<ReturnType<FindStreamForSharing>>>()
     const canReadCache = new Map<string, boolean>()

@@ -122,7 +122,7 @@ describe("ShareService.validateAndRecordShares", () => {
   }
 
   beforeEach(() => {
-    spyOn(MessageRepository, "findByIds").mockResolvedValue(new Map([[sourceMessage.id, sourceMessage]]))
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(new Map([[sourceMessage.id, sourceMessage]]))
     spyOn(SharedMessageRepository, "insert").mockResolvedValue({} as any)
     spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
   })
@@ -182,7 +182,7 @@ describe("ShareService.validateAndRecordShares", () => {
   })
 
   it("fails when the referenced source message does not exist", async () => {
-    spyOn(MessageRepository, "findByIds").mockResolvedValue(new Map())
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(new Map())
     await expect(
       ShareService.validateAndRecordShares(
         baseParams({
@@ -196,7 +196,7 @@ describe("ShareService.validateAndRecordShares", () => {
   })
 
   it("fails when the source message belongs to a different stream than claimed", async () => {
-    spyOn(MessageRepository, "findByIds").mockResolvedValue(
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(
       new Map([[sourceMessage.id, { ...sourceMessage, streamId: "stream_other" }]])
     )
     await expect(ShareService.validateAndRecordShares(baseParams())).rejects.toMatchObject({
@@ -232,7 +232,7 @@ describe("ShareService.validateAndRecordShares", () => {
 
     expect(findStream).toHaveBeenCalledTimes(1)
     expect(canReadStream).toHaveBeenCalledTimes(1)
-    expect(MessageRepository.findByIds).toHaveBeenCalledTimes(1)
+    expect(MessageRepository.findByIdsInWorkspace).toHaveBeenCalledTimes(1)
     expect(SharedMessageRepository.insert).toHaveBeenCalledTimes(2)
   })
 
