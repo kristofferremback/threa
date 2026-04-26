@@ -1,8 +1,7 @@
 import type { Querier } from "../../../db"
-import { type JSONContent, AuthorTypes } from "@threa/types"
+import { type JSONContent } from "@threa/types"
 import { MessageRepository, type Message } from "../repository"
-import { UserRepository } from "../../workspaces"
-import { PersonaRepository } from "../../agents"
+import { resolveActorNames } from "../../agents"
 
 /**
  * Hydrated payload for a single shared-message reference. The frontend
@@ -65,21 +64,15 @@ export async function hydrateSharedMessageIds(
 
   const byId = await MessageRepository.findByIdsInWorkspace(db, workspaceId, ids)
 
-  const userIds = new Set<string>()
-  const personaIds = new Set<string>()
+  // INV-35: reuse `resolveActorNames` instead of partitioning user/persona ids
+  // by authorType and re-running the parallel-batched lookup inline. The
+  // helper already handles the user (workspace-scoped) + persona (workspace-
+  // agnostic) split and returns a single id→name map.
+  const actorIds = new Set<string>()
   for (const source of byId.values()) {
-    if (source.deletedAt) continue
-    if (source.authorType === AuthorTypes.USER) userIds.add(source.authorId)
-    else if (source.authorType === AuthorTypes.PERSONA) personaIds.add(source.authorId)
+    if (!source.deletedAt) actorIds.add(source.authorId)
   }
-
-  const [users, personas] = await Promise.all([
-    userIds.size > 0 ? UserRepository.findByIds(db, workspaceId, [...userIds]) : Promise.resolve([]),
-    personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds]) : Promise.resolve([]),
-  ])
-  const authorNames = new Map<string, string>()
-  for (const u of users) authorNames.set(u.id, u.name)
-  for (const p of personas) authorNames.set(p.id, p.name)
+  const authorNames = await resolveActorNames(db, workspaceId, actorIds)
 
   const result: Record<string, HydratedSharedMessage> = {}
   for (const id of ids) {
