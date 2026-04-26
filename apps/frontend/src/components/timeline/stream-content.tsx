@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Virtuoso } from "react-virtuoso"
-import { MessageSquare, ArrowDown, X, Move } from "lucide-react"
+import { MessageSquare, ArrowDown, X, Move, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -349,7 +349,11 @@ export function StreamContent({
     setSelectedMessageIds(new Set())
     setHoveredBatchTargetId(null)
     setDragGhost(null)
-  }, [])
+    // Selection and search share the same flush-top strip; keep one open at a
+    // time so they can't stack. Search bar's own listeners handle the reverse.
+    setIsSearchOpen(false)
+    clearSearch()
+  }, [clearSearch])
 
   const toggleBatchMessage = useCallback((messageId: string) => {
     setSelectedMessageIds((prev) => {
@@ -460,8 +464,6 @@ export function StreamContent({
   const pendingMoveDescription = pendingMove
     ? `Move ${pendingMove.messageCount} selected message${pendingMove.messageCount === 1 ? "" : "s"} into this thread?`
     : ""
-
-  const batchStatusText = isMoveValidating ? "Validating move..." : "Drag selection onto an earlier message"
 
   const batchPointerHandlers = batchMode
     ? {
@@ -926,16 +928,11 @@ export function StreamContent({
           <div className="relative h-full">
             <div className="absolute inset-0 overflow-hidden">
               {batchMode && (
-                <div className="absolute inset-x-3 top-3 z-30 flex items-center gap-3 rounded-md border bg-background/95 px-3 py-2 shadow-sm backdrop-blur">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={cancelBatchMode} aria-label="Cancel">
-                    <X className="h-4 w-4" />
-                  </Button>
-                  <div className="min-w-0 text-sm font-medium">{selectedMessageIds.size} selected</div>
-                  <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                    <Move className="h-3.5 w-3.5" />
-                    {batchStatusText}
-                  </div>
-                </div>
+                <BatchSelectionBar
+                  count={selectedMessageIds.size}
+                  isValidating={isMoveValidating}
+                  onCancel={cancelBatchMode}
+                />
               )}
               {isSearchOpen && (
                 <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
@@ -1033,7 +1030,7 @@ export function StreamContent({
                   ref={plainScrollRef}
                   className={cn(
                     "h-full overflow-y-auto overflow-x-hidden overscroll-y-contain",
-                    isSearchOpen && "pt-11",
+                    (isSearchOpen || batchMode) && "pt-11",
                     batchMode && "select-none"
                   )}
                   style={{ paddingBottom: "var(--composer-height, 0px)" }}
@@ -1049,7 +1046,6 @@ export function StreamContent({
                       replyCount={events.length}
                     />
                   )}
-                  {batchMode && <BatchTopSpacer />}
                   {isFetchingOlder && (
                     <div className="flex justify-center py-2">
                       <p className="text-sm text-muted-foreground">Loading older messages...</p>
@@ -1328,11 +1324,6 @@ function VirtuosoMessageList({
     [renderCtx]
   )
 
-  const components = useMemo(
-    () => (batch?.enabled ? { ...virtuosoComponents, Header: BatchTopSpacer } : virtuosoComponents),
-    [batch?.enabled]
-  )
-
   // Key items by stable identity so React doesn't reuse component instances
   // across messages and leak per-message state (e.g. link previews).
   const computeItemKey = useCallback((_index: number, item: TimelineItem) => getTimelineItemKey(item), [])
@@ -1383,6 +1374,26 @@ function VirtuosoMessageList({
     [handleRangeChanged, firstItemIndex, visibleItems.length, handleStartReached, handleEndReached]
   )
 
+  // Virtuoso positions items absolutely inside its scroller, so plain CSS
+  // `padding-top` on the wrapper is silently ignored — the topmost item still
+  // renders flush at scroller-top, where the floating BatchSelectionBar /
+  // StreamSearchBar overlap it. The official escape hatch is the `Header`
+  // component, which renders before the first item and is treated as
+  // scrollable content. We swap it in only while one of the bars is open.
+  // Must sit above the early returns below so the hook order stays stable.
+  const reservedTopSpacer = isSearchOpen || batch?.enabled
+  const components = useMemo(
+    () => ({
+      // When no bar is open, fall back to StreamHeaderSpacer so the head
+      // row's hover toolbar (which floats above the message via
+      // `bottom-[calc(100%-20px)]`) doesn't get clipped by the scroller's
+      // top edge. Bar-open state uses the taller h-11 spacer.
+      Header: reservedTopSpacer ? BarTopSpacer : StreamHeaderSpacer,
+      Footer: ComposerFooterSpacer,
+    }),
+    [reservedTopSpacer]
+  )
+
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
@@ -1419,9 +1430,8 @@ function VirtuosoMessageList({
     <Virtuoso
       ref={virtuosoRef}
       scrollerRef={handleVirtuosoScrollerRef}
-      className={cn("h-full", isSearchOpen && "pt-11", batch?.enabled && "select-none")}
+      className={cn("h-full", batch?.enabled && "select-none")}
       data-suppress-pull-refresh="true"
-      {...batchPointerHandlers}
       firstItemIndex={firstItemIndex}
       initialTopMostItemIndex={initialTopMostItemIndex}
       data={visibleItems}
@@ -1437,6 +1447,7 @@ function VirtuosoMessageList({
       atBottomThreshold={30}
       increaseViewportBy={{ top: 600, bottom: 600 }}
       components={components}
+      {...batchPointerHandlers}
     />
   )
 }
@@ -1447,6 +1458,79 @@ function VirtuosoMessageList({
 const StreamHeaderSpacer = () => <div className="h-3 sm:h-6" aria-hidden />
 
 const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--composer-height, 0px)" }} />
-const BatchTopSpacer = () => <div aria-hidden className="h-16" />
 
-const virtuosoComponents = { Header: StreamHeaderSpacer, Footer: ComposerFooterSpacer }
+// 44px scrollable spacer used as Virtuoso's Header while the search or
+// batch-selection bar is open. Both bars render `absolute top-0` outside the
+// scroller; Header reserves matching room *inside* the scroller so the
+// topmost item never sits permanently underneath either bar. h-11 keeps the
+// numbers aligned with `StreamSearchBar` / `BatchSelectionBar`.
+const BarTopSpacer = () => <div aria-hidden className="h-11" />
+
+/**
+ * Flush-top toolbar shown while batch-selection mode is active. Mirrors the
+ * `StreamSearchBar` pattern (h-11 strip, border-b, blurred translucent
+ * background) so the scroller's matching `pt-11` keeps every previously
+ * visible message reachable — the topmost item slides under the bar instead
+ * of disappearing.
+ */
+function BatchSelectionBar({
+  count,
+  isValidating,
+  onCancel,
+}: {
+  count: number
+  isValidating: boolean
+  onCancel: () => void
+}) {
+  let hint: string
+  if (isValidating) {
+    hint = "Validating move…"
+  } else if (count === 0) {
+    hint = "Tap messages to select"
+  } else {
+    hint = "Drag onto a message above to move"
+  }
+
+  return (
+    <div
+      className={cn(
+        "absolute top-0 left-0 right-0 z-20",
+        "flex items-center gap-2 px-2 py-1.5 sm:px-4 sm:py-2",
+        "bg-background/95 backdrop-blur-sm border-b shadow-sm"
+      )}
+      // Outer toolbar listens for nothing — its children handle their own
+      // events. Setting select-none here prevents accidental text selection
+      // when the user starts dragging from a message and crosses the bar.
+      style={{ userSelect: "none" }}
+    >
+      <div className="flex items-center gap-2 shrink-0">
+        <span
+          className={cn(
+            "inline-flex items-center justify-center h-6 min-w-6 px-1.5 rounded-full",
+            "text-xs font-medium tabular-nums tracking-tight transition-colors",
+            count > 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+          )}
+          aria-live="polite"
+        >
+          {count}
+        </span>
+        <span className="hidden sm:inline text-sm font-medium">
+          {count === 1 ? "message selected" : "messages selected"}
+        </span>
+      </div>
+
+      <div className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        {isValidating ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+        ) : (
+          <Move className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        )}
+        <span className="truncate">{hint}</span>
+      </div>
+
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onCancel} aria-label="Cancel selection">
+        <X className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
+}

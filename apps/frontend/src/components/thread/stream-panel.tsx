@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/side-panel"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { SidebarActionDrawer, type SidebarActionItem } from "@/components/layout/sidebar/sidebar-actions"
 import {
   useStreamBootstrap,
   useDraftComposer,
@@ -178,6 +179,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
 
   // Draft thread expand state
   const [draftExpanded, setDraftExpanded] = useState(false)
+  const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false)
   const draftExpandedRef = useRef<HTMLDivElement>(null)
   const draftPortalTargetRef = useRef<HTMLElement | null>(null)
 
@@ -185,6 +187,15 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     if (!panelId) return
     dispatchStartBatchSelect(panelId)
   }, [panelId])
+
+  const panelMenuActions: SidebarActionItem[] = [
+    {
+      id: "select-messages",
+      label: "Select messages",
+      icon: CheckSquare,
+      onSelect: handleSelectMessages,
+    },
+  ]
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
     draftPortalTargetRef.current = el
   }, [])
@@ -366,21 +377,53 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
           </Button>
         )}
         {headerContent}
-        {!isDraft && stream && !stream.archivedAt && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
+        {!isDraft &&
+          stream &&
+          !stream.archivedAt &&
+          (isMobile ? (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 flex-shrink-0"
+                aria-label="Stream actions"
+                onClick={() => setIsMenuDrawerOpen(true)}
+              >
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={handleSelectMessages} disabled={!!stream.archivedAt}>
-                <CheckSquare className="mr-2 h-4 w-4" />
-                Select messages
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+              <SidebarActionDrawer
+                open={isMenuDrawerOpen}
+                onOpenChange={setIsMenuDrawerOpen}
+                actions={panelMenuActions}
+                title="Stream actions"
+                description="Choose an action for this stream."
+                header={
+                  <div className="px-4 pt-2 pb-3">
+                    <p className="truncate text-base font-semibold text-foreground">
+                      {getStreamName(stream) ?? streamFallbackLabel(stream.type as StreamType, "generic")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {stream.type === StreamTypes.THREAD ? "Thread" : "Stream"} actions
+                    </p>
+                  </div>
+                }
+              />
+            </>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={handleSelectMessages} disabled={!!stream.archivedAt}>
+                  <CheckSquare className="mr-2 h-4 w-4" />
+                  Select messages
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ))}
         {/* Hide X close button on mobile (back button used instead) */}
         {!isMobile && <SidePanelClose onClose={onClose} />}
       </SidePanelHeader>
