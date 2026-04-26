@@ -33,6 +33,19 @@ const STATUS_ICON: Record<DraftContextRef["status"], typeof MessageSquareReply> 
   error: AlertCircle,
 }
 
+// Composite identity tuple shared by the pre-send draft refs and the
+// server-resolved bag refs. Keep it at module scope so the React `key` and
+// the server-by-key Map lookup can't drift on shape (`refKind` vs `kind`).
+function refKey(r: {
+  refKind?: string
+  kind?: string
+  streamId: string
+  fromMessageId?: string | null
+  toMessageId?: string | null
+}): string {
+  return `${r.refKind ?? r.kind}|${r.streamId}|${r.fromMessageId ?? ""}|${r.toMessageId ?? ""}`
+}
+
 /**
  * Inline strip rendered above the composer for any context refs attached
  * to the active draft. Uses the same `<AttachmentPill>` primitive as
@@ -55,16 +68,9 @@ export function ContextRefStrip({ workspaceId, streamId, draftRefs }: ContextRef
 
   if (!hasDraftRefs || !draftRefs) return null
 
-  // Composite key matches the pill identity tuple — bag refs may share a
-  // streamId with different `fromMessageId` / `toMessageId` anchors, so a
-  // streamId-only Map would silently drop one of them.
-  const refKey = (r: {
-    refKind?: string
-    kind?: string
-    streamId: string
-    fromMessageId?: string | null
-    toMessageId?: string | null
-  }) => `${r.refKind ?? r.kind}|${r.streamId}|${r.fromMessageId ?? ""}|${r.toMessageId ?? ""}`
+  // Bag refs may share a streamId with different `fromMessageId` /
+  // `toMessageId` anchors, so a streamId-only Map would silently drop one
+  // of them — `refKey` (module scope) builds the composite identity tuple.
   const serverByKey = new Map((data?.refs ?? []).map((r) => [refKey(r), r]))
 
   return (
@@ -83,7 +89,7 @@ export function ContextRefStrip({ workspaceId, streamId, draftRefs }: ContextRef
           ref.errorMessage ?? (ref.status === "pending" ? "Preparing context…" : "Click to open the source thread")
         return (
           <AttachmentPill
-            key={`${ref.refKind}|${ref.streamId}|${ref.fromMessageId ?? ""}|${ref.toMessageId ?? ""}`}
+            key={refKey(ref)}
             icon={STATUS_ICON[ref.status]}
             label={label}
             status={STATUS_MAP[ref.status]}

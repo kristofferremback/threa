@@ -131,8 +131,13 @@ async function assertAnchorExists(
   anchorId: string,
   label: "fromMessageId" | "toMessageId"
 ): Promise<never> {
+  // `MessageRepository.findById` does NOT filter `deleted_at`, but
+  // `MessageRepository.list` (which produced the search window) does. So a
+  // soft-deleted anchor would otherwise look like a live row and get
+  // mis-labeled OUT_OF_WINDOW — the suggested workaround (widen the window)
+  // can never recover it. Treat soft-deleted anchors as not-found.
   const anchor = await MessageRepository.findById(db, anchorId)
-  const existsInStream = anchor !== null && anchor.streamId === streamId
+  const existsInStream = anchor !== null && anchor.streamId === streamId && !anchor.deletedAt
   if (!existsInStream) {
     throw new HttpError(`${label} anchor not found in this stream`, {
       status: 422,

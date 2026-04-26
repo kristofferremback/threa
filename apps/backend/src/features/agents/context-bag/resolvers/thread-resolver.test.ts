@@ -187,6 +187,29 @@ describe("ThreadResolver.fetch", () => {
     ).rejects.toMatchObject({ code: "CONTEXT_ANCHOR_OUT_OF_WINDOW" })
   })
 
+  it("throws CONTEXT_ANCHOR_NOT_FOUND when the anchor exists but is soft-deleted", async () => {
+    // `MessageRepository.list` filters `deleted_at IS NULL`, so a soft-deleted
+    // anchor falls out of the search window and `findById` (which doesn't
+    // filter) is what we'd otherwise see. Without the deletedAt guard the
+    // assertion would mis-classify this as OUT_OF_WINDOW and tell the
+    // frontend to widen the window — pointless, the message is gone.
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([])
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "list").mockResolvedValue([makeMessage({ id: "msg_recent" })])
+    spyOn(MessageRepository, "findById").mockResolvedValue(
+      makeMessage({ id: "msg_gone", streamId: "stream_source", deletedAt: new Date() })
+    )
+
+    await expect(
+      ThreadResolver.fetch({} as any, {
+        kind: ContextRefKinds.THREAD,
+        streamId: "stream_source",
+        fromMessageId: "msg_gone",
+      })
+    ).rejects.toMatchObject({ code: "CONTEXT_ANCHOR_NOT_FOUND" })
+  })
+
   it("throws CONTEXT_ANCHOR_NOT_FOUND when the anchor exists but is in a different stream", async () => {
     spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
     spyOn(UserRepository, "findByIds").mockResolvedValue([])
