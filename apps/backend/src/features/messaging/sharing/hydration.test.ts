@@ -8,7 +8,8 @@ import {
 import { MessageRepository } from "../repository"
 import { UserRepository } from "../../workspaces"
 import { PersonaRepository } from "../../agents"
-import * as streamsModule from "../../streams"
+import * as streamsBarrel from "../../streams"
+import { StreamRepository } from "../../streams"
 import { SharedMessageRepository } from "./repository"
 
 afterEach(() => {
@@ -28,14 +29,14 @@ function stubAuthorLookups() {
  * override these.
  */
 function stubFullAccess() {
-  spyOn(streamsModule, "listAccessibleStreamIds").mockImplementation(async (_db, _ws, _uid, candidates) => {
+  spyOn(streamsBarrel, "listAccessibleStreamIds").mockImplementation(async (_db, _ws, _uid, candidates) => {
     return new Set(candidates)
   })
   spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(new Set())
 }
 
 function stubNoAccess() {
-  spyOn(streamsModule, "listAccessibleStreamIds").mockResolvedValue(new Set())
+  spyOn(streamsBarrel, "listAccessibleStreamIds").mockResolvedValue(new Set())
   spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(new Set())
 }
 
@@ -136,7 +137,7 @@ describe("hydrateSharedMessageIds", () => {
     )
     stubAuthorLookups()
     stubNoAccess()
-    spyOn(streamsModule.StreamRepository, "findByIds").mockResolvedValue([
+    spyOn(StreamRepository, "findByIds").mockResolvedValue([
       {
         id: "stream_source",
         type: "channel",
@@ -160,7 +161,7 @@ describe("hydrateSharedMessageIds", () => {
     )
     stubAuthorLookups()
     stubNoAccess()
-    const findStreams = spyOn(streamsModule.StreamRepository, "findByIds")
+    const findStreams = spyOn(StreamRepository, "findByIds")
       .mockResolvedValueOnce([
         {
           id: "stream_source",
@@ -193,7 +194,7 @@ describe("hydrateSharedMessageIds", () => {
       new Map([["msg_a", makeMessage({ id: "msg_a" })]])
     )
     stubAuthorLookups()
-    spyOn(streamsModule, "listAccessibleStreamIds").mockResolvedValue(new Set()) // not a member
+    spyOn(streamsBarrel, "listAccessibleStreamIds").mockResolvedValue(new Set()) // not a member
     spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(new Set(["msg_a"])) // but has share grant
 
     const result = await hydrateSharedMessageIds({} as any, "ws_1", VIEWER_ID, ["msg_a"])
@@ -265,11 +266,11 @@ describe("hydrateSharedMessageIds", () => {
       return map
     })
     stubAuthorLookups()
-    spyOn(streamsModule, "listAccessibleStreamIds").mockImplementation(async (_db, _ws, _uid, candidates) => {
+    spyOn(streamsBarrel, "listAccessibleStreamIds").mockImplementation(async (_db, _ws, _uid, candidates) => {
       return new Set([...candidates].filter((id) => id === "stream_outer"))
     })
     spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(new Set())
-    spyOn(streamsModule.StreamRepository, "findByIds").mockResolvedValue([
+    spyOn(StreamRepository, "findByIds").mockResolvedValue([
       { id: "stream_inner", type: "channel", visibility: "private", rootStreamId: null } as any,
     ])
 

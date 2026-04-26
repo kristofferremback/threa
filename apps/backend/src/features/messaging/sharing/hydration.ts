@@ -3,6 +3,7 @@ import { type JSONContent, type StreamType, type Visibility, StreamTypes } from 
 import { MessageRepository, type Message } from "../repository"
 import { resolveActorNames } from "../../agents"
 import { listAccessibleStreamIds, StreamRepository, type Stream } from "../../streams"
+
 import { SharedMessageRepository } from "./repository"
 
 /**
@@ -12,6 +13,11 @@ import { SharedMessageRepository } from "./repository"
  * `truncated` placeholder linking to the source stream so the viewer can
  * keep reading there. See `docs/plans/message-sharing-streams.md` (Pointer
  * hydration on message fetch).
+ *
+ * Inlined as a module-local literal (rather than imported from a separate
+ * config module) because the messaging↔streams barrel cycle leaves a
+ * cross-module re-export of this binding in TDZ when this file is
+ * partially evaluated as part of the cycle's eval graph.
  */
 export const MAX_HYDRATION_DEPTH = 3
 
@@ -133,7 +139,12 @@ export async function hydrateSharedMessageIds(
   db: Querier,
   workspaceId: string,
   viewerId: string,
-  sourceMessageIds: Iterable<string>
+  sourceMessageIds: Iterable<string>,
+  // Default-arg evaluation reads the module-scope const at call time, by
+  // which point any cross-feature barrel cycle that delayed this file's
+  // initialization has resolved. A direct reference inside the loop body
+  // hits TDZ when the cycle leaves the binding un-init mid-eval.
+  maxDepth: number = MAX_HYDRATION_DEPTH
 ): Promise<Record<string, HydratedSharedMessage>> {
   const seedIds = Array.from(new Set(sourceMessageIds))
   if (seedIds.length === 0) return {}
@@ -150,7 +161,7 @@ export async function hydrateSharedMessageIds(
   let frontier = new Map<string, string>(seedIds.map((id) => [id, ""]))
   let depth = 0
 
-  while (frontier.size > 0 && depth < MAX_HYDRATION_DEPTH) {
+  while (frontier.size > 0 && depth < maxDepth) {
     const ids = [...frontier.keys()].filter((id) => !visited.has(id))
     if (ids.length === 0) break
     for (const id of ids) visited.add(id)

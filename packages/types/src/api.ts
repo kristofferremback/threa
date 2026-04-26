@@ -174,6 +174,14 @@ export interface CreateMessageInputJson {
   clientMessageId?: string
   /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
   metadata?: Record<string, string>
+  /**
+   * Set to `true` after the user has acknowledged that a share node in
+   * `contentJson` would expose its source to people outside the source
+   * stream. Required by the backend for shares that cross a privacy
+   * boundary; sends without it return 409 + code
+   * `SHARE_PRIVACY_CONFIRMATION_REQUIRED`.
+   */
+  confirmedPrivacyWarning?: boolean
 }
 
 export interface CreateDmMessageInputJson {
@@ -187,6 +195,8 @@ export interface CreateDmMessageInputJson {
   clientMessageId?: string
   /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
   metadata?: Record<string, string>
+  /** Same semantics as `CreateMessageInputJson.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 /**
@@ -227,6 +237,8 @@ export type CreateDmMessageInput = CreateDmMessageInputJson | CreateDmMessageInp
 export interface UpdateMessageInputJson {
   contentJson: JSONContent
   contentMarkdown?: string
+  /** See `CreateMessageInputJson.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 /**
@@ -234,6 +246,8 @@ export interface UpdateMessageInputJson {
  */
 export interface UpdateMessageInputMarkdown {
   content: string
+  /** See `CreateMessageInputJson.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 /**

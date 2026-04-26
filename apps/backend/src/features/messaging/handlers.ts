@@ -26,6 +26,12 @@ const createMessageJsonToStreamSchema = z.object({
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
   metadata: messageMetadataSchema.optional(),
+  // Flag the user has already seen the privacy warning for any private-source
+  // share node in this content. Required by `ShareService` whenever a share
+  // crosses a privacy boundary; otherwise the call returns 409 with code
+  // `SHARE_PRIVACY_CONFIRMATION_REQUIRED`. Optional on the wire so non-share
+  // sends don't have to set it.
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 // Schema for markdown input to an existing stream (from AI/external)
@@ -35,6 +41,7 @@ const createMessageMarkdownToStreamSchema = z.object({
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
   metadata: messageMetadataSchema.optional(),
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 // Schema for JSON input to a DM target user (lazy stream creation on first message)
@@ -48,6 +55,7 @@ const createMessageJsonToDmSchema = z.object({
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
   metadata: messageMetadataSchema.optional(),
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 // Schema for markdown input to a DM target user (lazy stream creation on first message)
@@ -57,6 +65,7 @@ const createMessageMarkdownToDmSchema = z.object({
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
   metadata: messageMetadataSchema.optional(),
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 // Union schema - accepts either format
@@ -74,10 +83,12 @@ const updateMessageJsonSchema = z.object({
     content: z.array(z.any()),
   }),
   contentMarkdown: z.string().optional(),
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 const updateMessageMarkdownSchema = z.object({
   content: z.string().min(1, "content is required"),
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 const updateMessageSchema = z.union([updateMessageJsonSchema, updateMessageMarkdownSchema])
@@ -229,6 +240,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         attachmentIds,
         clientMessageId: data.clientMessageId,
         metadata: data.metadata,
+        confirmedPrivacyWarning: data.confirmedPrivacyWarning,
       })
 
       res.status(201).json({ message: serializeMessage(message) })
@@ -275,6 +287,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         contentJson,
         contentMarkdown,
         actorId: userId,
+        confirmedPrivacyWarning: result.data.confirmedPrivacyWarning,
       })
 
       if (!message) {
