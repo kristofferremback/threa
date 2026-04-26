@@ -28,7 +28,7 @@ import {
   focusAtEnd,
   type MessageAgentActivity,
 } from "@/hooks"
-import { Quote, MessageSquareReply } from "lucide-react"
+import { Quote, MessageSquareReply, Check } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -54,7 +54,6 @@ import { MessageReactions } from "./message-reactions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 import { useQuoteReply } from "./quote-reply-context"
 import { useSwipeAction } from "@/hooks/use-swipe-action"
-import { Checkbox } from "@/components/ui/checkbox"
 import type { BatchTimelineState } from "./event-list"
 import { useStreamFromStore } from "@/stores/stream-store"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
@@ -240,6 +239,140 @@ const ACTOR_ROW_THEME: Record<NonNullable<StreamEvent["actorType"]>, ActorRowThe
     nameClassName: "text-blue-500",
     badge: null,
   },
+}
+
+/**
+ * Avatar-as-toggle for batch-selection mode (Gmail Android pattern).
+ *
+ * The avatar is the leading slot for non-continuation rows; in batch mode it
+ * doubles as the per-message selection control. To avoid a "cheap" stacked
+ * look, we never blend layers via transparency — the avatar and the check
+ * circle each toggle their own `display`, so only one is in the DOM flow at
+ * any given (row-state, hover-state) combination. Three states:
+ *
+ * - rest (unselected, no group-hover) → avatar visible
+ * - group-hover (unselected) → outline-only check circle (primary border on
+ *   transparent fill — reads as "preview before you click")
+ * - checked → solid primary fill with white check
+ *
+ * The hover→checked transition is a `bg/text-color` change on the same
+ * element so it animates smoothly; the rest↔hover swap is instant (display
+ * none/grid) which reads as snappy rather than draggy. The whole row still
+ * toggles on click via `MessageLayout`'s `onClick`; this component is a
+ * visual affordance, not its own button.
+ */
+function BatchSelectionAvatar({
+  selected,
+  actorId,
+  actorType,
+  workspaceId,
+  alt,
+}: {
+  selected: boolean
+  actorId: string | null | undefined
+  actorType?: StreamEvent["actorType"]
+  workspaceId: string
+  alt: string
+}) {
+  // Wrapper has to match ActorAvatar size="md" exactly (h-8 w-8) — anything
+  // bigger leaves a gap around the inner avatar and clips its corners. We
+  // also intentionally don't add `rounded-full overflow-hidden` here: that
+  // would force image avatars into circles, hiding the rounded-square shape
+  // ActorAvatar actually uses for "md". The check overlay matches that
+  // `rounded-[8px]` so rest↔selected is a clean color swap, not a shape
+  // morph. Shadcn's AvatarFallback is `rounded-full` which makes initials
+  // read as a circle inside the outer rounded square; we accept the small
+  // visual difference between fallback (circle) and image (rounded square)
+  // because that's the existing app-wide behavior, not something this
+  // component should paper over.
+  return (
+    <div
+      data-batch-control
+      data-state={selected ? "checked" : "unchecked"}
+      className="message-avatar relative h-8 w-8 shrink-0 select-none"
+    >
+      <div aria-hidden={selected} className={cn("absolute inset-0", selected ? "hidden" : "block group-hover:hidden")}>
+        <ActorAvatar
+          actorId={actorId ?? null}
+          actorType={actorType ?? null}
+          workspaceId={workspaceId}
+          size="md"
+          alt={alt}
+        />
+      </div>
+      <div
+        aria-hidden={!selected}
+        className={cn(
+          "absolute inset-0 place-content-center rounded-[8px] transition-colors duration-150",
+          selected
+            ? "grid bg-primary text-primary-foreground shadow-sm"
+            : "hidden group-hover:grid border-2 border-primary bg-primary/5 text-primary"
+        )}
+      >
+        <Check className="h-4 w-4" strokeWidth={3} />
+      </div>
+    </div>
+  )
+}
+
+/** Render the batch-mode replacement for the leading slot, or the slot itself. */
+function renderBatchLeading(
+  batchEnabled: boolean,
+  isContinuation: boolean,
+  args: {
+    selected: boolean
+    actorId: string | null | undefined
+    actorType?: StreamEvent["actorType"]
+    workspaceId: string
+    alt: string
+    fallback: ReactNode
+  }
+): ReactNode {
+  if (!batchEnabled) return args.fallback
+  if (isContinuation) return <BatchSelectionDot selected={args.selected} />
+  return (
+    <BatchSelectionAvatar
+      selected={args.selected}
+      actorId={args.actorId}
+      actorType={args.actorType}
+      workspaceId={args.workspaceId}
+      alt={args.alt}
+    />
+  )
+}
+
+/**
+ * Selection dot for continuations — the "twist" on Gmail's avatar-as-toggle.
+ *
+ * Author-grouped continuations don't render an avatar (the head row carries
+ * it), so there's nothing to morph into a checkmark. We instead render a
+ * compact 14px outline circle inside the same `h-5 w-8` gutter that normally
+ * holds the on-hover HH:MM micro-time. Same column width, same vertical
+ * alignment, no row height change. Outline → primary on group-hover, filled
+ * on selection. Sits flush right inside the gutter so it lines up vertically
+ * with the head row's avatar above it, giving the column a consistent
+ * "selection rail" while batch mode is active.
+ */
+function BatchSelectionDot({ selected }: { selected: boolean }) {
+  return (
+    <div
+      data-batch-control
+      data-state={selected ? "checked" : "unchecked"}
+      className="message-avatar-spacer flex h-5 w-8 shrink-0 select-none items-center justify-end pr-1.5"
+    >
+      <span
+        aria-hidden={!selected}
+        className={cn(
+          "grid h-3.5 w-3.5 place-content-center rounded-full border transition-all duration-150",
+          selected
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-muted-foreground/30 bg-transparent group-hover:border-primary/60 group-hover:bg-primary/10"
+        )}
+      >
+        {selected && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+      </span>
+    </div>
+  )
 }
 
 function MessageLayout({
@@ -435,19 +568,24 @@ function MessageLayout({
         )}
         style={hasSwipe ? { transform: `translateX(${swipeOffset}px)` } : undefined}
       >
-        {batchEnabled ? (
-          <div className="flex h-8 w-8 shrink-0 items-start justify-end pt-1" data-batch-control>
-            <Checkbox
-              checked={isSelected}
-              aria-label={isSelected ? "Deselect message" : "Select message"}
-              onClick={(event) => event.stopPropagation()}
-              onCheckedChange={() => batch?.onToggleMessage(payload.messageId)}
-            />
-          </div>
-        ) : (
-          leadingSlot
-        )}
-        <div className="message-content flex-1 min-w-0">
+        {renderBatchLeading(batchEnabled, !!renderAsContinuation, {
+          selected: isSelected,
+          actorId: event.actorId,
+          actorType: event.actorType,
+          workspaceId,
+          alt: actorName,
+          fallback: leadingSlot,
+        })}
+        <div
+          className={cn(
+            "message-content flex-1 min-w-0",
+            // In batch mode the whole row is a single selection target — disable
+            // child interactivity (links, reactions, thread card) so taps toggle
+            // selection instead of triggering nested handlers. Reactions and
+            // thread cards still render at full size to keep row height stable.
+            batchEnabled && "pointer-events-none"
+          )}
+        >
           {headerRow}
           {messageBody}
           {footer}
@@ -899,11 +1037,12 @@ function SentMessageEvent({
     ]
   )
 
+  // Reactions + thread card stay visible in batch mode so entering selection
+  // mode doesn't change row height. They're rendered as `pointer-events-none`
+  // (handled below) so the row's batch-toggle click handler still wins.
   let footerContent: ReactNode
   if (isEditing && !isMobile) {
     footerContent = undefined
-  } else if (batch?.enabled) {
-    footerContent = null
   } else {
     footerContent = (
       <>

@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { SidebarActionDrawer, type SidebarActionItem } from "@/components/layout/sidebar/sidebar-actions"
 import { cn } from "@/lib/utils"
 import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId, useTypeToFocus } from "@/hooks"
 import { useWorkspaceDmPeers } from "@/stores/workspace-store"
@@ -92,6 +93,7 @@ export function StreamPage() {
 
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
+  const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Set document title to include stream name (matching sidebar DM resolution logic)
@@ -153,6 +155,43 @@ export function StreamPage() {
 
   const handleSelectMessages = () => {
     dispatchStartBatchSelect(streamId)
+  }
+
+  const streamMenuActions: SidebarActionItem[] = []
+  if (!isArchived) {
+    streamMenuActions.push({
+      id: "select-messages",
+      label: "Select messages",
+      icon: CheckSquare,
+      onSelect: handleSelectMessages,
+    })
+  }
+  if (isScratchpad) {
+    streamMenuActions.push({
+      id: "rename",
+      label: "Rename",
+      icon: Pencil,
+      onSelect: handleStartRename,
+      separatorBefore: streamMenuActions.length > 0,
+    })
+    streamMenuActions.push(
+      isArchived
+        ? {
+            id: "unarchive",
+            label: "Unarchive",
+            icon: Archive,
+            onSelect: handleUnarchive,
+            separatorBefore: true,
+          }
+        : {
+            id: "archive",
+            label: "Archive",
+            icon: Archive,
+            onSelect: handleArchive,
+            variant: "destructive",
+            separatorBefore: true,
+          }
+    )
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -245,42 +284,72 @@ export function StreamPage() {
               <MessageCircle className="h-4 w-4" />
             </Button>
           )}
-          {stream && !isDraft && !(isArchived && !isScratchpad) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
+          {stream &&
+            !isDraft &&
+            !(isArchived && !isScratchpad) &&
+            (isMobile ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label="Stream actions"
+                  onClick={() => setIsMenuDrawerOpen(true)}
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={handleSelectMessages} disabled={isArchived}>
-                  <CheckSquare className="mr-2 h-4 w-4" />
-                  Select messages
-                </DropdownMenuItem>
-                {isScratchpad && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleStartRename}>
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Rename
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {isArchived ? (
-                      <DropdownMenuItem onClick={handleUnarchive}>
-                        <Archive className="mr-2 h-4 w-4" />
-                        Unarchive
+                <SidebarActionDrawer
+                  open={isMenuDrawerOpen}
+                  onOpenChange={setIsMenuDrawerOpen}
+                  actions={streamMenuActions}
+                  title="Stream actions"
+                  description="Choose an action for this stream."
+                  header={
+                    <div className="px-4 pt-2 pb-3">
+                      <p className="truncate text-base font-semibold text-foreground">{streamName}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {stream ? getStreamTypeLabel(stream.type) : "Stream"} actions
+                      </p>
+                    </div>
+                  }
+                />
+              </>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem onClick={handleSelectMessages} disabled={isArchived}>
+                    <CheckSquare className="mr-2 h-4 w-4" />
+                    Select messages
+                  </DropdownMenuItem>
+                  {isScratchpad && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleStartRename}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Rename
                       </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-                        <Archive className="mr-2 h-4 w-4" />
-                        Archive
-                      </DropdownMenuItem>
-                    )}
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+                      <DropdownMenuSeparator />
+                      {isArchived ? (
+                        <DropdownMenuItem onClick={handleUnarchive}>
+                          <Archive className="mr-2 h-4 w-4" />
+                          Unarchive
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem onClick={handleArchive} className="text-destructive">
+                          <Archive className="mr-2 h-4 w-4" />
+                          Archive
+                        </DropdownMenuItem>
+                      )}
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ))}
         </div>
       </header>
       <main className="relative flex-1 overflow-hidden" data-editor-zone="main">
