@@ -115,10 +115,17 @@ export interface StreamBootstrap {
 }
 
 /**
- * Wire-format variants for an individual pointer's hydrated content. `ok`
- * includes the source's current content; `deleted` and `missing` surface
- * tombstone states. Slice 2 will add `private` / `truncated` variants for
- * the recursive chain case.
+ * Wire-format variants for an individual pointer's hydrated content.
+ *
+ * - `ok`: viewer has access; current source content is inlined.
+ * - `deleted`: source row exists but is tombstoned.
+ * - `missing`: source row never existed (or was hard-deleted in a way that
+ *   leaves no tombstone — defended for, shouldn't normally occur).
+ * - `private`: viewer has no read access to the source and no share-grant
+ *   reaches them. Reveals only the source stream's `kind` + `visibility`,
+ *   never the content/author/stream-name. See plan D8.
+ * - `truncated`: hydration stopped at `MAX_HYDRATION_DEPTH` for an
+ *   accessible chain; viewer can follow `streamId` to read in source.
  */
 export type SharedMessageHydration =
   | {
@@ -134,6 +141,13 @@ export type SharedMessageHydration =
     }
   | { state: "deleted"; messageId: string; deletedAt: string }
   | { state: "missing"; messageId: string }
+  | {
+      state: "private"
+      messageId: string
+      sourceStreamKind: StreamType
+      sourceVisibility: Visibility
+    }
+  | { state: "truncated"; messageId: string; streamId: string }
 
 export interface EventsAroundResponse {
   events: StreamEvent[]

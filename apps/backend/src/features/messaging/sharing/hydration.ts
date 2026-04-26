@@ -1,5 +1,5 @@
 import type { Querier } from "../../../db"
-import { type JSONContent } from "@threa/types"
+import { type JSONContent, type StreamType, type Visibility } from "@threa/types"
 import { MessageRepository, type Message } from "../repository"
 import { resolveActorNames } from "../../agents"
 
@@ -7,9 +7,17 @@ import { resolveActorNames } from "../../agents"
  * Hydrated payload for a single shared-message reference. The frontend
  * overlays this data onto the inline `sharedMessage` node at render time.
  *
- * In Slice 1 we emit one of: full content, deleted-tombstone, or missing.
- * Slice 2 will add a per-viewer `{ private: true, sourceStreamKind, ... }`
- * placeholder for non-ancestor cross-stream shares (D8).
+ * Variants:
+ * - `ok`: viewer has access; current source content is inlined.
+ * - `deleted`: source row exists but is tombstoned.
+ * - `missing`: source row never existed (defended for; shouldn't normally
+ *   happen because shares are recorded against existing source ids).
+ * - `private`: viewer has no read path to the source — reveals only the
+ *   source stream's `kind` + `visibility`, never content/author/name. Used
+ *   for re-share chains where a downstream viewer can see the outer
+ *   pointer but not an inner one (plan D8).
+ * - `truncated`: hydration stopped at `MAX_HYDRATION_DEPTH` for an
+ *   accessible chain; viewer can navigate to `streamId` to keep reading.
  */
 export type HydratedSharedMessage =
   | {
@@ -26,6 +34,13 @@ export type HydratedSharedMessage =
     }
   | { state: "deleted"; messageId: string; deletedAt: Date }
   | { state: "missing"; messageId: string }
+  | {
+      state: "private"
+      messageId: string
+      sourceStreamKind: StreamType
+      sourceVisibility: Visibility
+    }
+  | { state: "truncated"; messageId: string; streamId: string }
 
 /**
  * Walk a ProseMirror content tree and add every `sharedMessage` node's
