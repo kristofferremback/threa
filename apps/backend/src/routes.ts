@@ -253,6 +253,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/memos/:memoId", ...authed, memo.getById)
 
   app.post("/api/workspaces/:workspaceId/messages", ...authed, rateLimits.messageCreate, message.create)
+  app.post("/api/workspaces/:workspaceId/messages/move-to-thread/validate", ...authed, message.validateMoveToThread)
+  app.post("/api/workspaces/:workspaceId/messages/move-to-thread", ...authed, message.moveToThread)
   app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
   app.get("/api/workspaces/:workspaceId/messages/:messageId/versions", ...authed, message.getHistory)

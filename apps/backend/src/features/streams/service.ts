@@ -506,6 +506,10 @@ export class StreamService {
       const rootStream =
         rootStreamId === parentStream.id ? parentStream : await StreamRepository.findById(client, rootStreamId)
       const inheritedVisibility = rootStream?.visibility ?? Visibilities.PRIVATE
+      const inheritedCompanionMode =
+        rootStream?.type === StreamTypes.SCRATCHPAD ? rootStream.companionMode : CompanionModes.OFF
+      const inheritedCompanionPersonaId =
+        rootStream?.type === StreamTypes.SCRATCHPAD ? (rootStream.companionPersonaId ?? undefined) : undefined
 
       const { stream, created } = await StreamRepository.insertThreadOrFind(client, {
         id,
@@ -515,6 +519,8 @@ export class StreamService {
         parentMessageId: params.parentMessageId,
         rootStreamId,
         visibility: inheritedVisibility,
+        companionMode: inheritedCompanionMode,
+        companionPersonaId: inheritedCompanionPersonaId,
         createdBy: params.createdBy,
       })
 

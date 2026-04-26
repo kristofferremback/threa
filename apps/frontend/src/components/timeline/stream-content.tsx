@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Virtuoso } from "react-virtuoso"
-import { MessageSquare, ArrowDown } from "lucide-react"
+import { MessageSquare, ArrowDown, X, Move } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -26,6 +26,17 @@ import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
+import { messagesApi } from "@/api"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
@@ -48,6 +59,7 @@ import {
   filterVisibleItems,
   type TimelineItem,
   type TimelineItemRenderContext,
+  type BatchTimelineState,
 } from "./event-list"
 import { MessageInput } from "./message-input"
 import { JoinChannelBar } from "./join-channel-bar"
@@ -83,6 +95,27 @@ export function StreamContent({
   const jumpTriggeredRef = useRef<string | null>(null)
   const user = useUser()
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [batchMode, setBatchMode] = useState(false)
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set())
+  const [hoveredBatchTargetId, setHoveredBatchTargetId] = useState<string | null>(null)
+  const [dragGhost, setDragGhost] = useState<{ x: number; y: number } | null>(null)
+  const [pendingMove, setPendingMove] = useState<{
+    targetMessageId: string
+    messageIds: string[]
+    leaseKey: string
+    messageCount: number
+  } | null>(null)
+  const [isMoveValidating, setIsMoveValidating] = useState(false)
+  const [isMoveConfirming, setIsMoveConfirming] = useState(false)
+  const suppressNextBatchClickRef = useRef(false)
+  const batchPointerRef = useRef<{
+    id: number
+    messageId: string
+    x: number
+    y: number
+    dragging: boolean
+    wasSelected: boolean
+  } | null>(null)
 
   // Clear highlight param after delay (works for both main view and panels)
   useEffect(() => {
@@ -239,7 +272,258 @@ export function StreamContent({
   // Compute timeline items in StreamContent so the virtualizer can use count + keys.
   // After grouping commands/sessions, annotate consecutive same-author message runs
   // with `groupContinuation` so MessageEvent can collapse the repeated header row.
-  const timelineItems = useMemo(() => annotateAuthorGroups(groupTimelineItems(events, user?.id)), [events, user?.id])
+  const displayEvents = useMemo(() => {
+    if (!isThread) return events
+    return [...events].sort((a, b) => {
+      const timeDelta = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      if (timeDelta !== 0) return timeDelta
+      return a.id.localeCompare(b.id)
+    })
+  }, [events, isThread])
+
+  const timelineItems = useMemo(
+    () => annotateAuthorGroups(groupTimelineItems(displayEvents, user?.id)),
+    [displayEvents, user?.id]
+  )
+
+  const messageEventMeta = useMemo(() => {
+    const meta = new Map<string, { sequence: bigint; content: string }>()
+    for (const event of displayEvents) {
+      if (event.eventType !== "message_created") continue
+      const payload = event.payload as { messageId?: string; contentMarkdown?: string; deletedAt?: string }
+      if (!payload.messageId || payload.deletedAt) continue
+      meta.set(payload.messageId, { sequence: BigInt(event.sequence), content: payload.contentMarkdown ?? "" })
+    }
+    return meta
+  }, [displayEvents])
+
+  const selectedSequenceFloor = useMemo(() => {
+    let min: bigint | null = null
+    for (const messageId of selectedMessageIds) {
+      const sequence = messageEventMeta.get(messageId)?.sequence
+      if (sequence === undefined) continue
+      min = min === null || sequence < min ? sequence : min
+    }
+    return min
+  }, [messageEventMeta, selectedMessageIds])
+
+  const invalidBatchTargetIds = useMemo(() => {
+    const invalid = new Set<string>()
+    if (!batchMode || !dragGhost || selectedSequenceFloor === null) return invalid
+    for (const [messageId, meta] of messageEventMeta) {
+      if (selectedMessageIds.has(messageId) || meta.sequence >= selectedSequenceFloor) {
+        invalid.add(messageId)
+      }
+    }
+    return invalid
+  }, [batchMode, dragGhost, messageEventMeta, selectedMessageIds, selectedSequenceFloor])
+
+  const isValidBatchTarget = useCallback(
+    (messageId: string | null) => {
+      if (!messageId || selectedSequenceFloor === null) return false
+      const meta = messageEventMeta.get(messageId)
+      return !!meta && !selectedMessageIds.has(messageId) && meta.sequence < selectedSequenceFloor
+    },
+    [messageEventMeta, selectedMessageIds, selectedSequenceFloor]
+  )
+
+  const startBatchSelect = useCallback(() => {
+    setBatchMode(true)
+    setSelectedMessageIds(new Set())
+    setHoveredBatchTargetId(null)
+    setDragGhost(null)
+  }, [])
+
+  const toggleBatchMessage = useCallback((messageId: string) => {
+    setSelectedMessageIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(messageId)) {
+        next.delete(messageId)
+      } else {
+        next.add(messageId)
+      }
+      return next
+    })
+  }, [])
+
+  const cancelBatchMode = useCallback(() => {
+    setBatchMode(false)
+    setSelectedMessageIds(new Set())
+    setHoveredBatchTargetId(null)
+    setDragGhost(null)
+    setPendingMove(null)
+    batchPointerRef.current = null
+  }, [])
+
+  useEffect(() => {
+    const handleStartBatchSelect = (event: Event) => {
+      const detail = (event as CustomEvent<{ streamId?: string }>).detail
+      if (detail?.streamId && detail.streamId !== streamId) return
+      startBatchSelect()
+    }
+
+    document.addEventListener("threa:start-batch-select", handleStartBatchSelect)
+    return () => document.removeEventListener("threa:start-batch-select", handleStartBatchSelect)
+  }, [startBatchSelect, streamId])
+
+  useEffect(() => {
+    cancelBatchMode()
+  }, [streamId, cancelBatchMode])
+
+  const batchState = useMemo<BatchTimelineState | undefined>(
+    () => ({
+      enabled: batchMode,
+      selectedMessageIds,
+      invalidTargetIds: invalidBatchTargetIds,
+      hoveredTargetId: hoveredBatchTargetId,
+      onToggleMessage: toggleBatchMessage,
+    }),
+    [batchMode, selectedMessageIds, invalidBatchTargetIds, hoveredBatchTargetId, toggleBatchMessage]
+  )
+
+  const findMessageIdFromPoint = useCallback((x: number, y: number) => {
+    const element = document.elementFromPoint(x, y)
+    return element?.closest<HTMLElement>("[data-message-id]")?.dataset.messageId ?? null
+  }, [])
+
+  const dropBatchOnTarget = useCallback(
+    async (targetMessageId: string) => {
+      const messageIds = Array.from(selectedMessageIds)
+      if (messageIds.length === 0 || isMoveValidating) return
+      setIsMoveValidating(true)
+      try {
+        const validation = await messagesApi.validateMoveToThread(workspaceId, {
+          sourceStreamId: streamId,
+          targetMessageId,
+          messageIds,
+        })
+        setPendingMove({
+          targetMessageId,
+          messageIds,
+          leaseKey: validation.leaseKey,
+          messageCount: validation.messageCount,
+        })
+      } catch {
+        toast.error("Could not validate this move")
+      } finally {
+        setIsMoveValidating(false)
+      }
+    },
+    [isMoveValidating, selectedMessageIds, streamId, workspaceId]
+  )
+
+  const confirmPendingMove = useCallback(async () => {
+    if (!pendingMove || isMoveConfirming) return
+    setIsMoveConfirming(true)
+    try {
+      await messagesApi.moveToThread(workspaceId, {
+        sourceStreamId: streamId,
+        targetMessageId: pendingMove.targetMessageId,
+        messageIds: pendingMove.messageIds,
+        leaseKey: pendingMove.leaseKey,
+      })
+      toast.success(`Moved ${pendingMove.messageCount} message${pendingMove.messageCount === 1 ? "" : "s"} to thread`)
+      cancelBatchMode()
+    } catch {
+      toast.error("Could not move messages")
+    } finally {
+      setIsMoveConfirming(false)
+    }
+  }, [cancelBatchMode, isMoveConfirming, pendingMove, streamId, workspaceId])
+
+  const closePendingMove = useCallback(() => {
+    if (isMoveConfirming) return
+    setPendingMove(null)
+  }, [isMoveConfirming])
+
+  const pendingMoveDescription = pendingMove
+    ? `Move ${pendingMove.messageCount} selected message${pendingMove.messageCount === 1 ? "" : "s"} into this thread?`
+    : ""
+
+  const batchStatusText = isMoveValidating ? "Validating move..." : "Drag selection onto an earlier message"
+
+  const batchPointerHandlers = batchMode
+    ? {
+        onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+          const target = event.target as HTMLElement
+          if (target.closest("[data-batch-control]")) return
+          const messageId = target.closest<HTMLElement>("[data-message-id]")?.dataset.messageId
+          if (!messageId) return
+          event.preventDefault()
+          batchPointerRef.current = {
+            id: event.pointerId,
+            messageId,
+            x: event.clientX,
+            y: event.clientY,
+            dragging: false,
+            wasSelected: selectedMessageIds.has(messageId),
+          }
+          if (!selectedMessageIds.has(messageId)) {
+            setSelectedMessageIds((prev) => new Set(prev).add(messageId))
+          }
+        },
+        onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+          const pointer = batchPointerRef.current
+          if (!pointer || pointer.id !== event.pointerId) return
+          const distance = Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y)
+          if (!pointer.dragging && distance < 6) return
+          event.preventDefault()
+          if (!pointer.dragging && !selectedMessageIds.has(pointer.messageId)) {
+            setSelectedMessageIds((prev) => new Set(prev).add(pointer.messageId))
+          }
+          pointer.dragging = true
+          setDragGhost({ x: event.clientX, y: event.clientY })
+          const targetId = findMessageIdFromPoint(event.clientX, event.clientY)
+          const validTargetId = isValidBatchTarget(targetId) ? targetId : null
+          setHoveredBatchTargetId((previous) => {
+            if (previous !== validTargetId && validTargetId && "vibrate" in navigator) {
+              navigator.vibrate?.(10)
+            }
+            return validTargetId
+          })
+        },
+        onPointerUp: (event: React.PointerEvent<HTMLElement>) => {
+          const pointer = batchPointerRef.current
+          if (!pointer || pointer.id !== event.pointerId) return
+          event.preventDefault()
+          suppressNextBatchClickRef.current = true
+          window.setTimeout(() => {
+            suppressNextBatchClickRef.current = false
+          }, 350)
+          const targetId = hoveredBatchTargetId
+          const wasDragging = pointer.dragging
+          batchPointerRef.current = null
+          setDragGhost(null)
+          setHoveredBatchTargetId(null)
+          if (!wasDragging) {
+            setSelectedMessageIds((prev) => {
+              const next = new Set(prev)
+              if (pointer.wasSelected) {
+                next.delete(pointer.messageId)
+              } else {
+                next.add(pointer.messageId)
+              }
+              return next
+            })
+            return
+          }
+          if (wasDragging && targetId && isValidBatchTarget(targetId)) {
+            void dropBatchOnTarget(targetId)
+          }
+        },
+        onPointerCancel: () => {
+          batchPointerRef.current = null
+          setDragGhost(null)
+          setHoveredBatchTargetId(null)
+        },
+        onClickCapture: (event: React.MouseEvent<HTMLElement>) => {
+          if (!suppressNextBatchClickRef.current) return
+          suppressNextBatchClickRef.current = false
+          event.preventDefault()
+          event.stopPropagation()
+        },
+      }
+    : {}
 
   // For drafts with pending events, compute timeline items from those events. Drafts
   // are a single-author transcript already, but running the same pipeline keeps the
@@ -610,6 +894,18 @@ export function StreamContent({
         <TextSelectionQuote streamId={streamId} />
         <div className="relative h-full">
           <div className="absolute inset-0 overflow-hidden">
+            {batchMode && (
+              <div className="absolute inset-x-3 top-3 z-30 flex items-center gap-3 rounded-md border bg-background/95 px-3 py-2 shadow-sm backdrop-blur">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={cancelBatchMode} aria-label="Cancel">
+                  <X className="h-4 w-4" />
+                </Button>
+                <div className="min-w-0 text-sm font-medium">{selectedMessageIds.size} selected</div>
+                <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+                  <Move className="h-3.5 w-3.5" />
+                  {batchStatusText}
+                </div>
+              </div>
+            )}
             {isSearchOpen && (
               <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
             )}
@@ -624,6 +920,7 @@ export function StreamContent({
                     isLoading={false}
                     workspaceId={workspaceId}
                     streamId={streamId}
+                    batch={batchState}
                   />
                 ) : (
                   <Empty className="h-full border-0">
@@ -667,6 +964,8 @@ export function StreamContent({
                   hideSessionCards={isChannel}
                   newMessageIds={newMessageIds}
                   isSearchOpen={isSearchOpen}
+                  batch={batchState}
+                  batchPointerHandlers={batchPointerHandlers}
                 />
                 {/* Overlay loading indicators — absolutely positioned so they
                     don't cause layout shift when prepending older messages. */}
@@ -701,10 +1000,15 @@ export function StreamContent({
             {!isDraft && !useVirtualized && (
               <div
                 ref={plainScrollRef}
-                className={cn("h-full overflow-y-auto overflow-x-hidden overscroll-y-contain", isSearchOpen && "pt-11")}
+                className={cn(
+                  "h-full overflow-y-auto overflow-x-hidden overscroll-y-contain",
+                  isSearchOpen && "pt-11",
+                  batchMode && "select-none"
+                )}
                 style={{ paddingBottom: "var(--composer-height, 0px)" }}
                 data-suppress-pull-refresh="true"
                 onScroll={plainHandleScroll}
+                {...batchPointerHandlers}
               >
                 {isThread && parentMessage && parentStreamId && (
                   <ThreadParentMessage
@@ -714,6 +1018,7 @@ export function StreamContent({
                     replyCount={events.length}
                   />
                 )}
+                {batchMode && <BatchTopSpacer />}
                 {isFetchingOlder && (
                   <div className="flex justify-center py-2">
                     <p className="text-sm text-muted-foreground">Loading older messages...</p>
@@ -730,6 +1035,7 @@ export function StreamContent({
                   agentActivity={agentActivity}
                   hideSessionCards={isChannel}
                   newMessageIds={newMessageIds}
+                  batch={batchState}
                 />
                 {isFetchingNewer && (
                   <div className="flex justify-center py-2">
@@ -757,6 +1063,35 @@ export function StreamContent({
               </Button>
             </div>
           )}
+          {dragGhost && (
+            <div
+              className="pointer-events-none fixed z-50 max-w-[280px] rounded-md border bg-popover/95 px-3 py-2 text-sm shadow-lg"
+              style={{ left: dragGhost.x + 12, top: dragGhost.y + 12 }}
+            >
+              <div className="font-medium">{selectedMessageIds.size} selected</div>
+              <div className="line-clamp-1 text-xs text-muted-foreground">
+                {Array.from(selectedMessageIds)
+                  .map((messageId) => messageEventMeta.get(messageId)?.content)
+                  .filter(Boolean)
+                  .slice(0, 1)
+                  .join("")}
+              </div>
+            </div>
+          )}
+          <AlertDialog open={!!pendingMove} onOpenChange={(open) => !open && closePendingMove()}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Move messages?</AlertDialogTitle>
+                <AlertDialogDescription>{pendingMoveDescription}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isMoveConfirming}>Cancel</AlertDialogCancel>
+                <Button onClick={confirmPendingMove} disabled={isMoveConfirming}>
+                  {isMoveConfirming ? "Moving..." : "Move"}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {membershipResolved && !isMember && isPublicChannel && (
             <div className="absolute inset-x-0 z-10" style={{ bottom: "var(--composer-height, 0px)" }}>
               <JoinChannelBar
@@ -810,6 +1145,8 @@ function VirtuosoMessageList({
   hideSessionCards,
   newMessageIds,
   isSearchOpen,
+  batch,
+  batchPointerHandlers,
 }: {
   visibleItems: TimelineItem[]
   isLoading: boolean
@@ -840,6 +1177,8 @@ function VirtuosoMessageList({
   hideSessionCards?: boolean
   newMessageIds?: Set<string>
   isSearchOpen: boolean
+  batch?: BatchTimelineState
+  batchPointerHandlers?: React.HTMLAttributes<HTMLElement>
 }) {
   const { phase } = useCoordinatedLoading()
   const socket = useSocket()
@@ -882,6 +1221,7 @@ function VirtuosoMessageList({
       sessionCanAbort,
       onAbortResearch: handleAbortResearch,
       phase,
+      batch,
     }),
     [
       workspaceId,
@@ -897,6 +1237,7 @@ function VirtuosoMessageList({
       sessionCanAbort,
       handleAbortResearch,
       phase,
+      batch,
     ]
   )
 
@@ -941,6 +1282,11 @@ function VirtuosoMessageList({
       </div>
     ),
     [renderCtx]
+  )
+
+  const components = useMemo(
+    () => (batch?.enabled ? { ...virtuosoComponents, Header: BatchTopSpacer } : virtuosoComponents),
+    [batch?.enabled]
   )
 
   // Key items by stable identity so React doesn't reuse component instances
@@ -1029,8 +1375,9 @@ function VirtuosoMessageList({
     <Virtuoso
       ref={virtuosoRef}
       scrollerRef={handleVirtuosoScrollerRef}
-      className={cn("h-full", isSearchOpen && "pt-11")}
+      className={cn("h-full", isSearchOpen && "pt-11", batch?.enabled && "select-none")}
       data-suppress-pull-refresh="true"
+      {...batchPointerHandlers}
       firstItemIndex={firstItemIndex}
       initialTopMostItemIndex={initialTopMostItemIndex}
       data={visibleItems}
@@ -1045,7 +1392,7 @@ function VirtuosoMessageList({
       endReached={handleEndReached}
       atBottomThreshold={30}
       increaseViewportBy={{ top: 600, bottom: 600 }}
-      components={virtuosoComponents}
+      components={components}
     />
   )
 }
@@ -1054,5 +1401,6 @@ function VirtuosoMessageList({
 // message sits visually offset above the pill at rest and `atBottom` accounts
 // for the composer's height (Virtuoso treats Footer as content).
 const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--composer-height, 0px)" }} />
+const BatchTopSpacer = () => <div aria-hidden className="h-16" />
 
 const virtuosoComponents = { Footer: ComposerFooterSpacer }

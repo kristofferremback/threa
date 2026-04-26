@@ -37,6 +37,8 @@ export interface MessageService {
   createDm: typeof messagesApi.createDm
   update: typeof messagesApi.update
   delete: typeof messagesApi.delete
+  validateMoveToThread: typeof messagesApi.validateMoveToThread
+  moveToThread: typeof messagesApi.moveToThread
   addReaction: typeof messagesApi.addReaction
   removeReaction: typeof messagesApi.removeReaction
   getVersions: typeof messagesApi.getVersions

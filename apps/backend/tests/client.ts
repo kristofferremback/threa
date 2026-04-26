@@ -397,6 +397,53 @@ export async function deleteMessage(client: TestClient, workspaceId: string, mes
   }
 }
 
+export async function moveMessagesToThread(
+  client: TestClient,
+  workspaceId: string,
+  sourceStreamId: string,
+  targetMessageId: string,
+  messageIds: string[]
+): Promise<{
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: Stream & { parentStreamId: string; parentMessageId: string }
+  events: StreamEvent[]
+  removedEventIds: string[]
+}> {
+  const validation = await client.post<{ leaseKey: string }>(
+    `/api/workspaces/${workspaceId}/messages/move-to-thread/validate`,
+    {
+      sourceStreamId,
+      targetMessageId,
+      messageIds,
+    }
+  )
+  if (validation.status !== 200) {
+    throw new Error(`Validate move messages failed: ${JSON.stringify(validation.data)}`)
+  }
+
+  const { status, data } = await client.post<{
+    sourceStreamId: string
+    destinationStreamId: string
+    targetMessageId: string
+    movedMessageIds: string[]
+    thread: Stream & { parentStreamId: string; parentMessageId: string }
+    events: StreamEvent[]
+    removedEventIds: string[]
+  }>(`/api/workspaces/${workspaceId}/messages/move-to-thread`, {
+    sourceStreamId,
+    targetMessageId,
+    messageIds,
+    leaseKey: validation.data.leaseKey,
+  })
+  if (status !== 200) {
+    throw new Error(`Move messages failed: ${JSON.stringify(data)}`)
+  }
+  return data
+}
+
 export async function uploadAttachment(
   client: TestClient,
   workspaceId: string,

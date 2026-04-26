@@ -59,6 +59,11 @@ export interface InsertMessageParams {
   metadata?: Record<string, string>
 }
 
+export interface MoveMessageSequenceUpdate {
+  messageId: string
+  sequence: bigint
+}
+
 function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = {}): Message {
   return {
     id: row.id,
@@ -119,6 +124,13 @@ const SELECT_FIELDS = `
   edited_at, deleted_at, created_at
 `
 
+const QUALIFIED_SELECT_FIELDS = `
+  m.id, m.stream_id, m.sequence, m.author_id, m.author_type,
+  m.content_json, m.content_markdown, m.reply_count, m.client_message_id, m.sent_via,
+  m.metadata,
+  m.edited_at, m.deleted_at, m.created_at
+`
+
 export const MessageRepository = {
   async findByClientMessageId(db: Querier, streamId: string, clientMessageId: string): Promise<Message | null> {
     const result = await db.query<MessageRow>(sql`
@@ -176,6 +188,28 @@ export const MessageRepository = {
       map.set(row.id, mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
     }
     return map
+  },
+
+  async findByIdsForUpdate(db: Querier, ids: string[]): Promise<Message[]> {
+    if (ids.length === 0) return []
+
+    const result = await db.query<MessageRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+      WHERE id = ANY(${ids})
+      ORDER BY sequence ASC
+      FOR UPDATE
+    `)
+
+    if (result.rows.length === 0) return []
+
+    const messageIds = result.rows.map((r) => r.id)
+    const reactionsResult = await db.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${messageIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    return result.rows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
   },
 
   /**
@@ -302,6 +336,123 @@ export const MessageRepository = {
     return mapRowToMessage(result.rows[0])
   },
 
+  async moveToStream(
+    db: Querier,
+    destinationStreamId: string,
+    updates: MoveMessageSequenceUpdate[]
+  ): Promise<Message[]> {
+    if (updates.length === 0) return []
+
+    const messageIds = updates.map((update) => update.messageId)
+    const sequences = updates.map((update) => update.sequence.toString())
+
+    const result = await db.query<MessageRow>(
+      `UPDATE messages m
+       SET stream_id = $1, sequence = updates.new_sequence
+       FROM (
+         SELECT * FROM unnest($2::text[], $3::bigint[]) AS u(id, new_sequence)
+       ) updates
+       WHERE m.id = updates.id
+       RETURNING ${QUALIFIED_SELECT_FIELDS}`,
+      [destinationStreamId, messageIds, sequences]
+    )
+
+    if (result.rows.length === 0) return []
+
+    const movedIds = result.rows.map((row) => row.id)
+    const reactionsResult = await db.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${movedIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    return result.rows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+  },
+
+  async updateStreamScopedReferences(
+    db: Querier,
+    params: { workspaceId: string; sourceStreamId: string; destinationStreamId: string; messageIds: string[] }
+  ): Promise<void> {
+    if (params.messageIds.length === 0) return
+
+    await db.query(sql`
+      UPDATE attachments
+      SET stream_id = ${params.destinationStreamId}
+      WHERE workspace_id = ${params.workspaceId}
+        AND stream_id = ${params.sourceStreamId}
+        AND message_id = ANY(${params.messageIds})
+    `)
+
+    await db.query(sql`
+      UPDATE saved_messages
+      SET stream_id = ${params.destinationStreamId}, updated_at = NOW()
+      WHERE workspace_id = ${params.workspaceId}
+        AND stream_id = ${params.sourceStreamId}
+        AND message_id = ANY(${params.messageIds})
+    `)
+
+    await db.query(sql`
+      UPDATE user_activity
+      SET stream_id = ${params.destinationStreamId}
+      WHERE workspace_id = ${params.workspaceId}
+        AND stream_id = ${params.sourceStreamId}
+        AND message_id = ANY(${params.messageIds})
+    `)
+
+    await db.query(sql`
+      UPDATE researcher_cache
+      SET stream_id = ${params.destinationStreamId}
+      WHERE workspace_id = ${params.workspaceId}
+        AND stream_id = ${params.sourceStreamId}
+        AND message_id = ANY(${params.messageIds})
+    `)
+
+    await db.query(sql`
+      UPDATE memo_pending_items
+      SET stream_id = ${params.destinationStreamId}
+      WHERE workspace_id = ${params.workspaceId}
+        AND stream_id = ${params.sourceStreamId}
+        AND item_type = 'message'
+        AND item_id = ANY(${params.messageIds})
+    `)
+
+    await db.query(sql`
+      UPDATE link_previews
+      SET target_stream_id = ${params.destinationStreamId}
+      WHERE workspace_id = ${params.workspaceId}
+        AND target_stream_id = ${params.sourceStreamId}
+        AND target_message_id = ANY(${params.messageIds})
+    `)
+
+    await db.query(sql`
+      UPDATE agent_sessions
+      SET stream_id = ${params.destinationStreamId}
+      WHERE stream_id = ${params.sourceStreamId}
+        AND (
+          response_message_id = ANY(${params.messageIds})
+          OR sent_message_ids && ${params.messageIds}
+        )
+    `)
+  },
+
+  async findAgentSessionIdsForMessages(
+    db: Querier,
+    params: { sourceStreamId: string; messageIds: string[] }
+  ): Promise<string[]> {
+    if (params.messageIds.length === 0) return []
+
+    const result = await db.query<{ id: string }>(sql`
+      SELECT id
+      FROM agent_sessions
+      WHERE stream_id = ${params.sourceStreamId}
+        AND (
+          response_message_id = ANY(${params.messageIds})
+          OR sent_message_ids && ${params.messageIds}
+        )
+    `)
+    return result.rows.map((row) => row.id)
+  },
+
   /**
    * Find non-deleted messages whose `metadata` JSONB contains all the given
    * key/value pairs (AND-containment via the `@>` operator, backed by the
@@ -410,10 +561,28 @@ export const MessageRepository = {
     `)
   },
 
+  async incrementReplyCountBy(db: Querier, id: string, count: number): Promise<void> {
+    if (count <= 0) return
+    await db.query(sql`
+      UPDATE messages
+      SET reply_count = reply_count + ${count}
+      WHERE id = ${id}
+    `)
+  },
+
   async decrementReplyCount(db: Querier, id: string): Promise<void> {
     await db.query(sql`
       UPDATE messages
       SET reply_count = GREATEST(reply_count - 1, 0)
+      WHERE id = ${id}
+    `)
+  },
+
+  async decrementReplyCountBy(db: Querier, id: string, count: number): Promise<void> {
+    if (count <= 0) return
+    await db.query(sql`
+      UPDATE messages
+      SET reply_count = GREATEST(reply_count - ${count}, 0)
       WHERE id = ${id}
     `)
   },
@@ -470,7 +639,7 @@ export const MessageRepository = {
       WHERE s.parent_message_id = ANY(${parentMessageIds})
         AND s.type = 'thread'
         AND m.deleted_at IS NULL
-      ORDER BY m.sequence ASC
+      ORDER BY m.created_at ASC, m.id ASC
     `)
 
     if (result.rows.length === 0) return new Map()

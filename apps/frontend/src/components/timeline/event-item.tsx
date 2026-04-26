@@ -1,5 +1,6 @@
 import type { StreamEvent } from "@threa/types"
 import type { MessageAgentActivity } from "@/hooks"
+import type { BatchTimelineState } from "./event-list"
 import { MessageEvent } from "./message-event"
 import { MembershipEvent } from "./membership-event"
 import { SystemEvent } from "./system-event"
@@ -25,6 +26,7 @@ interface EventItemProps {
    * a full header in MessageEvent regardless.
    */
   groupContinuation?: boolean
+  batch?: BatchTimelineState
 }
 
 export function EventItem({
@@ -37,6 +39,7 @@ export function EventItem({
   isNew,
   deferSecondaryHydration = false,
   groupContinuation = false,
+  batch,
 }: EventItemProps) {
   // Check if this event's message should be highlighted
   const messageId = (event.payload as { messageId?: string })?.messageId
@@ -65,6 +68,7 @@ export function EventItem({
             activity={messageId ? agentActivity?.get(messageId) : undefined}
             deferSecondaryHydration={deferSecondaryHydration}
             groupContinuation={groupContinuation}
+            batch={batch}
           />
         </div>
       )

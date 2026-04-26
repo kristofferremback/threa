@@ -7,13 +7,18 @@ import { MessageRepository, Message } from "./repository"
 import { AttachmentRepository, isVideoAttachment } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
-import { eventId, messageId, messageVersionId } from "../../lib/id"
+import { eventId, messageId, messageVersionId, streamId as generateStreamId } from "../../lib/id"
 import { MessageVersionRepository, type MessageVersion } from "./version-repository"
 import { serializeBigInt } from "@threa/backend-common"
 import { messagesTotal } from "../../lib/observability"
+import { HttpError, MessageNotFoundError, StreamNotFoundError } from "../../lib/errors"
+import { OperationLeaseRepository } from "../../lib/operation-leases"
 import {
   AttachmentSafetyStatuses,
   AuthorTypes,
+  CompanionModes,
+  StreamTypes,
+  Visibilities,
   type AuthorType,
   type EventType,
   type SourceItem,
@@ -123,6 +128,64 @@ export interface RemoveReactionParams {
   streamId: string
   emoji: string
   userId: string
+}
+
+export interface MoveMessagesToThreadParams {
+  workspaceId: string
+  sourceStreamId: string
+  targetMessageId: string
+  messageIds: string[]
+  actorId: string
+  leaseKey: string
+}
+
+export interface ValidateMoveMessagesToThreadParams {
+  workspaceId: string
+  sourceStreamId: string
+  targetMessageId: string
+  messageIds: string[]
+  actorId: string
+}
+
+export interface MoveMessagesToThreadResult {
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: import("../streams").Stream
+  events: StreamEvent[]
+  removedEventIds: string[]
+}
+
+const MOVE_MESSAGES_TO_THREAD_OPERATION = "messages.move_to_thread"
+
+function canonicalMoveLeasePayload(params: {
+  sourceStreamId: string
+  targetMessageId: string
+  messageIds: string[]
+}): Record<string, unknown> {
+  return {
+    sourceStreamId: params.sourceStreamId,
+    targetMessageId: params.targetMessageId,
+    messageIds: [...params.messageIds].sort(),
+  }
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
+      left.localeCompare(right)
+    )
+    return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`).join(",")}}`
+  }
+  return JSON.stringify(value)
+}
+
+function payloadsEqual(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+  return stableStringify(left) === stableStringify(right)
 }
 
 /** Sentinel thrown when ON CONFLICT DO NOTHING suppresses a duplicate messages INSERT.
@@ -461,6 +524,339 @@ export class EventService {
       }
 
       return message
+    })
+  }
+
+  async moveMessagesToThread(params: MoveMessagesToThreadParams): Promise<MoveMessagesToThreadResult> {
+    const uniqueMessageIds = Array.from(new Set(params.messageIds))
+    if (uniqueMessageIds.length === 0) {
+      throw new HttpError("At least one message is required", { status: 400, code: "NO_MESSAGES_SELECTED" })
+    }
+
+    return withTransaction(this.pool, async (client) => {
+      const lease = await OperationLeaseRepository.consume(client, {
+        id: params.leaseKey,
+        workspaceId: params.workspaceId,
+        userId: params.actorId,
+        operationType: MOVE_MESSAGES_TO_THREAD_OPERATION,
+      })
+      if (!lease) {
+        throw new HttpError("Move validation lease is missing or expired", {
+          status: 409,
+          code: "MOVE_LEASE_REQUIRED",
+        })
+      }
+      const expectedLeasePayload = canonicalMoveLeasePayload({
+        sourceStreamId: params.sourceStreamId,
+        targetMessageId: params.targetMessageId,
+        messageIds: uniqueMessageIds,
+      })
+      if (!payloadsEqual(lease.payload, expectedLeasePayload)) {
+        throw new HttpError("Move validation lease does not match this request", {
+          status: 409,
+          code: "MOVE_LEASE_MISMATCH",
+        })
+      }
+
+      const sourceStream = await StreamRepository.findById(client, params.sourceStreamId)
+      if (!sourceStream || sourceStream.workspaceId !== params.workspaceId) {
+        throw new StreamNotFoundError()
+      }
+      if (sourceStream.archivedAt) {
+        throw new HttpError("Cannot move messages from an archived stream", { status: 403, code: "STREAM_ARCHIVED" })
+      }
+
+      const isMember = await StreamMemberRepository.isMember(
+        client,
+        sourceStream.rootStreamId ?? sourceStream.id,
+        params.actorId
+      )
+      if (!isMember) {
+        throw new HttpError("Not a member of this stream", { status: 403, code: "NOT_STREAM_MEMBER" })
+      }
+
+      const targetMessage = await MessageRepository.findByIdForUpdate(client, params.targetMessageId)
+      if (
+        !targetMessage ||
+        targetMessage.streamId !== params.sourceStreamId ||
+        targetMessage.deletedAt ||
+        uniqueMessageIds.includes(targetMessage.id)
+      ) {
+        throw new MessageNotFoundError()
+      }
+
+      const selectedMessages = await MessageRepository.findByIdsForUpdate(client, uniqueMessageIds)
+      if (selectedMessages.length !== uniqueMessageIds.length) {
+        throw new MessageNotFoundError()
+      }
+      if (selectedMessages.some((message) => message.streamId !== params.sourceStreamId || message.deletedAt)) {
+        throw new HttpError("Selected messages must be active messages in the source stream", {
+          status: 400,
+          code: "INVALID_MOVE_SELECTION",
+        })
+      }
+      if (selectedMessages.some((message) => message.sequence <= targetMessage.sequence)) {
+        throw new HttpError("Messages can only be moved onto a preceding message", {
+          status: 400,
+          code: "TARGET_MUST_PRECEDE_SELECTION",
+        })
+      }
+
+      const rootStreamId = sourceStream.rootStreamId ?? sourceStream.id
+      const rootStream =
+        rootStreamId === sourceStream.id ? sourceStream : await StreamRepository.findById(client, rootStreamId)
+      const inheritedVisibility = rootStream?.visibility ?? Visibilities.PRIVATE
+      const inheritedCompanionMode =
+        rootStream?.type === StreamTypes.SCRATCHPAD ? rootStream.companionMode : CompanionModes.OFF
+      const inheritedCompanionPersonaId =
+        rootStream?.type === StreamTypes.SCRATCHPAD ? (rootStream.companionPersonaId ?? undefined) : undefined
+
+      const { stream: destinationThread, created } = await StreamRepository.insertThreadOrFind(client, {
+        id: generateStreamId(),
+        workspaceId: params.workspaceId,
+        type: StreamTypes.THREAD,
+        parentStreamId: params.sourceStreamId,
+        parentMessageId: params.targetMessageId,
+        rootStreamId,
+        visibility: inheritedVisibility,
+        companionMode: inheritedCompanionMode,
+        companionPersonaId: inheritedCompanionPersonaId,
+        createdBy: params.actorId,
+      })
+      if (destinationThread.archivedAt) {
+        throw new HttpError("Cannot move messages into an archived thread", { status: 403, code: "THREAD_ARCHIVED" })
+      }
+
+      const actorIsThreadMember = await StreamMemberRepository.isMember(client, destinationThread.id, params.actorId)
+      if (!actorIsThreadMember) {
+        await StreamMemberRepository.insert(client, destinationThread.id, params.actorId)
+      }
+      if (targetMessage.authorType === AuthorTypes.USER && targetMessage.authorId !== params.actorId) {
+        const authorIsThreadMember = await StreamMemberRepository.isMember(
+          client,
+          destinationThread.id,
+          targetMessage.authorId
+        )
+        if (!authorIsThreadMember) {
+          await StreamMemberRepository.insert(client, destinationThread.id, targetMessage.authorId)
+        }
+      }
+
+      const sourceEvents = await StreamEventRepository.findMessageCreatedByMessageIdsForUpdate(
+        client,
+        params.sourceStreamId,
+        uniqueMessageIds
+      )
+      if (sourceEvents.length !== uniqueMessageIds.length) {
+        throw new HttpError("Could not find source events for all selected messages", {
+          status: 409,
+          code: "MOVE_SOURCE_EVENTS_MISSING",
+        })
+      }
+
+      const agentSessionIds = await MessageRepository.findAgentSessionIdsForMessages(client, {
+        sourceStreamId: params.sourceStreamId,
+        messageIds: uniqueMessageIds,
+      })
+      const sourceAgentSessionEvents = await StreamEventRepository.findAgentSessionEventsBySessionIdsForUpdate(
+        client,
+        params.sourceStreamId,
+        agentSessionIds
+      )
+      const movableEvents = [
+        ...sourceEvents.map((event) => ({
+          kind: "message" as const,
+          event,
+          messageId: (event.payload as MessageCreatedPayload).messageId,
+        })),
+        ...sourceAgentSessionEvents.map((event) => ({
+          kind: "agent_session" as const,
+          event,
+        })),
+      ].sort((left, right) => {
+        if (left.event.sequence < right.event.sequence) return -1
+        if (left.event.sequence > right.event.sequence) return 1
+        return left.event.id.localeCompare(right.event.id)
+      })
+
+      const nextSequences = await StreamEventRepository.getNextSequences(
+        client,
+        destinationThread.id,
+        movableEvents.length
+      )
+      const updates: { messageId: string; sequence: bigint }[] = []
+      const agentSessionEventUpdates: { eventId: string; sequence: bigint }[] = []
+      movableEvents.forEach((entry, index) => {
+        if (entry.kind === "message") {
+          updates.push({ messageId: entry.messageId, sequence: nextSequences[index] })
+        } else {
+          agentSessionEventUpdates.push({ eventId: entry.event.id, sequence: nextSequences[index] })
+        }
+      })
+
+      const movedEvents = await StreamEventRepository.moveMessageCreatedEvents(client, {
+        sourceStreamId: params.sourceStreamId,
+        destinationStreamId: destinationThread.id,
+        updates,
+      })
+      const movedAgentSessionEvents = await StreamEventRepository.moveEventsById(client, {
+        sourceStreamId: params.sourceStreamId,
+        destinationStreamId: destinationThread.id,
+        updates: agentSessionEventUpdates,
+      })
+      await MessageRepository.moveToStream(client, destinationThread.id, updates)
+      await MessageRepository.updateStreamScopedReferences(client, {
+        workspaceId: params.workspaceId,
+        sourceStreamId: params.sourceStreamId,
+        destinationStreamId: destinationThread.id,
+        messageIds: uniqueMessageIds,
+      })
+      await StreamRepository.moveChildThreadsToParent(client, {
+        sourceParentStreamId: params.sourceStreamId,
+        destinationParentStreamId: destinationThread.id,
+        parentMessageIds: uniqueMessageIds,
+      })
+
+      await MessageRepository.incrementReplyCountBy(client, params.targetMessageId, uniqueMessageIds.length)
+      await this.publishParentThreadUpdate(client, {
+        workspaceId: params.workspaceId,
+        parentStreamId: params.sourceStreamId,
+        parentMessageId: params.targetMessageId,
+      })
+
+      if (sourceStream.parentStreamId && sourceStream.parentMessageId) {
+        await MessageRepository.decrementReplyCountBy(client, sourceStream.parentMessageId, uniqueMessageIds.length)
+        await this.publishParentThreadUpdate(client, {
+          workspaceId: params.workspaceId,
+          parentStreamId: sourceStream.parentStreamId,
+          parentMessageId: sourceStream.parentMessageId,
+        })
+      }
+
+      if (created) {
+        await OutboxRepository.insert(client, "stream:created", {
+          workspaceId: params.workspaceId,
+          streamId: params.sourceStreamId,
+          stream: destinationThread,
+        })
+      }
+
+      const serializedEvents = [...movedEvents, ...movedAgentSessionEvents]
+        .map((event) => serializeBigInt(event) as StreamEvent)
+        .sort((a, b) => {
+          const seqA = BigInt(a.sequence)
+          const seqB = BigInt(b.sequence)
+          if (seqA < seqB) return -1
+          if (seqA > seqB) return 1
+          return a.id.localeCompare(b.id)
+        })
+      const removedEventIds = [...movedEvents, ...movedAgentSessionEvents].map((event) => event.id)
+
+      await OutboxRepository.insert(client, "messages:moved", {
+        workspaceId: params.workspaceId,
+        streamId: params.sourceStreamId,
+        sourceStreamId: params.sourceStreamId,
+        destinationStreamId: destinationThread.id,
+        targetMessageId: params.targetMessageId,
+        movedMessageIds: uniqueMessageIds,
+        thread: destinationThread,
+        events: serializedEvents,
+        removedEventIds,
+      })
+
+      return {
+        sourceStreamId: params.sourceStreamId,
+        destinationStreamId: destinationThread.id,
+        targetMessageId: params.targetMessageId,
+        movedMessageIds: uniqueMessageIds,
+        thread: destinationThread,
+        events: serializedEvents,
+        removedEventIds,
+      }
+    })
+  }
+
+  async validateMoveMessagesToThread(params: ValidateMoveMessagesToThreadParams): Promise<{
+    leaseKey: string
+    expiresAt: string
+    destinationStreamId: string | null
+    messageCount: number
+  }> {
+    const uniqueMessageIds = Array.from(new Set(params.messageIds))
+    if (uniqueMessageIds.length === 0) {
+      throw new HttpError("At least one message is required", { status: 400, code: "NO_MESSAGES_SELECTED" })
+    }
+
+    return withTransaction(this.pool, async (client) => {
+      const sourceStream = await StreamRepository.findById(client, params.sourceStreamId)
+      if (!sourceStream || sourceStream.workspaceId !== params.workspaceId) {
+        throw new StreamNotFoundError()
+      }
+      if (sourceStream.archivedAt) {
+        throw new HttpError("Cannot move messages from an archived stream", { status: 403, code: "STREAM_ARCHIVED" })
+      }
+
+      const isMember = await StreamMemberRepository.isMember(
+        client,
+        sourceStream.rootStreamId ?? sourceStream.id,
+        params.actorId
+      )
+      if (!isMember) {
+        throw new HttpError("Not a member of this stream", { status: 403, code: "NOT_STREAM_MEMBER" })
+      }
+
+      const targetMessage = await MessageRepository.findById(client, params.targetMessageId)
+      if (
+        !targetMessage ||
+        targetMessage.streamId !== params.sourceStreamId ||
+        targetMessage.deletedAt ||
+        uniqueMessageIds.includes(targetMessage.id)
+      ) {
+        throw new MessageNotFoundError()
+      }
+
+      const selectedMessagesMap = await MessageRepository.findByIds(client, uniqueMessageIds)
+      const selectedMessages = uniqueMessageIds
+        .map((id) => selectedMessagesMap.get(id))
+        .filter((message): message is Message => !!message)
+      if (selectedMessages.length !== uniqueMessageIds.length) {
+        throw new MessageNotFoundError()
+      }
+      if (selectedMessages.some((message) => message.streamId !== params.sourceStreamId || message.deletedAt)) {
+        throw new HttpError("Selected messages must be active messages in the source stream", {
+          status: 400,
+          code: "INVALID_MOVE_SELECTION",
+        })
+      }
+      if (selectedMessages.some((message) => message.sequence <= targetMessage.sequence)) {
+        throw new HttpError("Messages can only be moved onto a preceding message", {
+          status: 400,
+          code: "TARGET_MUST_PRECEDE_SELECTION",
+        })
+      }
+
+      const existingThread = await StreamRepository.findByParentMessage(
+        client,
+        params.sourceStreamId,
+        params.targetMessageId
+      )
+      const lease = await OperationLeaseRepository.create(client, {
+        workspaceId: params.workspaceId,
+        userId: params.actorId,
+        operationType: MOVE_MESSAGES_TO_THREAD_OPERATION,
+        payload: canonicalMoveLeasePayload({
+          sourceStreamId: params.sourceStreamId,
+          targetMessageId: params.targetMessageId,
+          messageIds: uniqueMessageIds,
+        }),
+      })
+
+      return {
+        leaseKey: lease.id,
+        expiresAt: lease.expiresAt.toISOString(),
+        destinationStreamId: existingThread?.id ?? null,
+        messageCount: uniqueMessageIds.length,
+      }
     })
   }
 
