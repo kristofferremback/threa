@@ -25,6 +25,12 @@ interface EventItemProps {
    * a full header in MessageEvent regardless.
    */
   groupContinuation?: boolean
+  /**
+   * True when this event renders the first message in the stream. Drives the
+   * `<MessageContextBadge>` attachment-style chip on bag-attached scratchpads
+   * — only the opening message gets the breadcrumb.
+   */
+  isFirstMessage?: boolean
 }
 
 export function EventItem({
@@ -37,6 +43,7 @@ export function EventItem({
   isNew,
   deferSecondaryHydration = false,
   groupContinuation = false,
+  isFirstMessage = false,
 }: EventItemProps) {
   // Check if this event's message should be highlighted
   const messageId = (event.payload as { messageId?: string })?.messageId
@@ -65,6 +72,7 @@ export function EventItem({
             activity={messageId ? agentActivity?.get(messageId) : undefined}
             deferSecondaryHydration={deferSecondaryHydration}
             groupContinuation={groupContinuation}
+            isFirstMessage={isFirstMessage}
           />
         </div>
       )

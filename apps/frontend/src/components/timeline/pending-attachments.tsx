@@ -1,12 +1,12 @@
-import { Loader2, FileText, Image, File, AlertCircle, X } from "lucide-react"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { cn } from "@/lib/utils"
+import type { ReactNode } from "react"
+import { Loader2, FileText, Image as ImageIcon, File as FileIcon, AlertCircle } from "lucide-react"
+import { AttachmentPill, type AttachmentPillStatus } from "@/components/composer/attachment-pill"
 import type { PendingAttachment } from "@/hooks/use-attachments"
 
-function getFileIcon(mimeType: string) {
-  if (mimeType.startsWith("image/")) return Image
+function getFileIcon(mimeType: string): typeof FileIcon {
+  if (mimeType.startsWith("image/")) return ImageIcon
   if (mimeType.startsWith("text/") || mimeType === "application/pdf") return FileText
-  return File
+  return FileIcon
 }
 
 function formatFileSize(bytes: number): string {
@@ -15,86 +15,67 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+const STATUS_MAP: Record<PendingAttachment["status"], AttachmentPillStatus> = {
+  uploading: "pending",
+  uploaded: "default",
+  error: "error",
+}
+
 interface PendingAttachmentsProps {
   attachments: PendingAttachment[]
   onRemove: (id: string) => void
+  /**
+   * Pills rendered inside the same flex-wrap row before the file pills.
+   * Used by the composer to fold context-ref chips into the same visual
+   * surface as file uploads — so users see one row of "things attached
+   * to this message," not two stacked rows.
+   */
+  beforePills?: ReactNode
 }
 
-export function PendingAttachments({ attachments, onRemove }: PendingAttachmentsProps) {
-  if (attachments.length === 0) return null
+/**
+ * Composer attachment row: renders pending file uploads alongside any
+ * caller-provided `beforePills` (typically context-ref chips) inside a
+ * single `flex flex-wrap` container. Uses the shared `<AttachmentPill>`
+ * primitive so files + context-refs share visuals (rounded-lg border,
+ * primary accent, dashed-border pending state).
+ *
+ * Renders nothing when both lists are empty.
+ */
+export function PendingAttachments({ attachments, onRemove, beforePills }: PendingAttachmentsProps) {
+  if (attachments.length === 0 && !beforePills) return null
 
   return (
     <div className="flex flex-wrap gap-2 mb-3 max-h-[120px] overflow-y-auto">
+      {beforePills}
       {attachments.map((attachment) => {
-        const Icon = getFileIcon(attachment.mimeType)
-        const isError = attachment.status === "error"
+        const status = STATUS_MAP[attachment.status]
         const isUploading = attachment.status === "uploading"
-        const isUploaded = attachment.status === "uploaded"
-        let StatusIcon = Icon
-        if (isUploading) {
-          StatusIcon = Loader2
-        } else if (isError) {
-          StatusIcon = AlertCircle
-        }
+        const isError = attachment.status === "error"
+        let Icon = getFileIcon(attachment.mimeType)
+        if (isUploading) Icon = Loader2
+        else if (isError) Icon = AlertCircle
 
-        const attachmentChip = (
-          <div
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium",
-              // Error state
-              isError && "border border-destructive bg-destructive/10 text-destructive",
-              // Uploading state - dashed border, muted (matches kitchen sink)
-              isUploading && "border border-dashed border-muted-foreground/40 bg-transparent text-muted-foreground",
-              // Uploaded state - gold accent (matches kitchen sink)
-              isUploaded && "border border-primary/30 bg-primary/10 text-primary"
-            )}
-          >
-            <StatusIcon className={cn("h-3.5 w-3.5", isUploading && "animate-spin")} />
-            <span className="max-w-[120px] truncate">{attachment.filename}</span>
-            {isError ? (
-              <span>Failed</span>
-            ) : (
-              <span className={cn(isUploaded ? "text-primary/70" : "text-muted-foreground")}>
-                {formatFileSize(attachment.sizeBytes)}
-              </span>
-            )}
-            {attachment.status !== "uploading" && (
-              <button
-                type="button"
-                onClick={() => onRemove(attachment.id)}
-                className={cn(
-                  "ml-0.5 rounded-full p-0.5 opacity-60 hover:opacity-100 transition-opacity",
-                  isError && "hover:bg-destructive/20",
-                  isUploaded && "hover:bg-primary/20"
-                )}
-                aria-label={`Remove ${attachment.filename}`}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
+        const isGenericError =
+          isError &&
+          (attachment.error === "Internal server error" || attachment.error === "Upload failed" || !attachment.error)
+        let tooltip: string | undefined
+        if (isGenericError) tooltip = "We couldn't upload this file. Please remove it and try again."
+        else if (isError) tooltip = attachment.error
+
+        return (
+          <AttachmentPill
+            key={attachment.id}
+            icon={Icon}
+            label={attachment.filename}
+            secondary={isError ? "Failed" : formatFileSize(attachment.sizeBytes)}
+            status={status}
+            tooltip={tooltip}
+            onRemove={isUploading ? undefined : () => onRemove(attachment.id)}
+            removeLabel={`Remove ${attachment.filename}`}
+            labelMaxWidth="max-w-[120px]"
+          />
         )
-
-        if (isError) {
-          const isServerError =
-            !attachment.error || attachment.error === "Internal server error" || attachment.error === "Upload failed"
-
-          return (
-            <Tooltip key={attachment.id}>
-              <TooltipTrigger asChild>{attachmentChip}</TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs">
-                <p className="font-medium">Upload failed</p>
-                {isServerError ? (
-                  <p className="text-muted-foreground">We couldn't upload this file. Please remove it and try again.</p>
-                ) : (
-                  <p className="text-muted-foreground">{attachment.error}</p>
-                )}
-              </TooltipContent>
-            </Tooltip>
-          )
-        }
-
-        return <div key={attachment.id}>{attachmentChip}</div>
       })}
     </div>
   )

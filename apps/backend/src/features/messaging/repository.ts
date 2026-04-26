@@ -210,6 +210,28 @@ export const MessageRepository = {
     return map
   },
 
+  /**
+   * Return the parent ("root") message of a stream — the message that spawned
+   * the thread — or null when the stream has no parent (channel / scratchpad /
+   * DM / hard-deleted root / soft-deleted root).
+   *
+   * Canonical helper for the recurring "thread root forgotten" bug class:
+   * every context-building path that fetches a thread's messages must also
+   * include the root so the reply chain stays intelligible. Callers that use
+   * `MessageRepository.list(streamId)` on a thread stream miss the root by
+   * default (it lives in the parent stream). This helper centralises:
+   *   1. The `parentMessageId` presence check
+   *   2. The `findById` lookup
+   *   3. The soft-delete filter — `findById` doesn't filter `deletedAt IS NULL`,
+   *      so without this guard a user's deleted root would still reach the AI.
+   */
+  async findThreadRoot(db: Querier, stream: { parentMessageId: string | null }): Promise<Message | null> {
+    if (!stream.parentMessageId) return null
+    const parent = await MessageRepository.findById(db, stream.parentMessageId)
+    if (!parent || parent.deletedAt) return null
+    return parent
+  },
+
   async list(
     db: Querier,
     streamId: string,
@@ -435,6 +457,38 @@ export const MessageRepository = {
       map.set(row.id, row.reply_count)
     }
     return map
+  },
+
+  /**
+   * Count non-deleted messages in a stream. Used by surfaces that label a
+   * stream by its size (e.g. context-bag chip strips: "12 messages in #intro").
+   */
+  async countByStream(db: Querier, streamId: string): Promise<number> {
+    const result = await db.query<{ count: string }>(sql`
+      SELECT COUNT(*)::text AS count FROM messages
+      WHERE stream_id = ${streamId}
+        AND deleted_at IS NULL
+    `)
+    return Number(result.rows[0]?.count ?? 0)
+  },
+
+  /**
+   * Batched variant of `countByStream` — returns a Map keyed by streamId so a
+   * caller fanning over N refs (context-bag, sidebar previews) can avoid an
+   * N-query loop. Streams with no messages are absent from the map; callers
+   * default to 0. INV-56.
+   */
+  async countByStreams(db: Querier, streamIds: string[]): Promise<Map<string, number>> {
+    if (streamIds.length === 0) return new Map()
+    const result = await db.query<{ stream_id: string; count: string }>(sql`
+      SELECT stream_id, COUNT(*)::text AS count FROM messages
+      WHERE stream_id = ANY(${streamIds})
+        AND deleted_at IS NULL
+      GROUP BY stream_id
+    `)
+    const out = new Map<string, number>()
+    for (const row of result.rows) out.set(row.stream_id, Number(row.count))
+    return out
   },
 
   /**

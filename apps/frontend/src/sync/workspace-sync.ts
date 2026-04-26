@@ -1376,17 +1376,30 @@ export async function applyWorkspaceBootstrap(
   // Build membership lookup for O(1) access when merging onto streams
   const membershipByStream = new Map(bootstrap.streamMemberships.map((sm) => [sm.streamId, sm]))
 
+  // Workspace bootstrap doesn't carry stream-level fields that the per-stream
+  // bootstrap writes (e.g. `contextBag`), but `bulkPut` is a full overwrite.
+  // Read existing local records once so we can preserve those fields across
+  // a refresh — without this merge, opening any bag-attached scratchpad
+  // after a fresh load shows the message badge briefly, then loses it when
+  // workspace bootstrap clobbers the field.
+  const existingStreams = await db.streams.where("workspaceId").equals(workspaceId).toArray()
+  const existingByStreamId = new Map(existingStreams.map((s) => [s.id, s]))
+
   await Promise.all([
     db.workspaces.put({ ...bootstrap.workspace, _cachedAt: now }),
     db.workspaceUsers.bulkPut(bootstrap.users.map((u) => ({ ...u, _cachedAt: now }))),
     db.streams.bulkPut(
       bootstrap.streams.map((s) => {
         const membership = membershipByStream.get(s.id)
+        const existing = existingByStreamId.get(s.id)
         return {
           ...s,
           pinned: membership?.pinned,
           notificationLevel: membership?.notificationLevel,
           lastReadEventId: membership?.lastReadEventId,
+          // Preserve fields workspace-bootstrap doesn't carry but stream-
+          // bootstrap does (bag mirroring lives in `applyStreamBootstrap`).
+          contextBag: existing?.contextBag,
           _cachedAt: now,
         }
       })
@@ -1568,11 +1581,16 @@ export async function applyReconnectBootstrapBatch(
         db.streams.bulkPut(
           finalBootstrap.streams.map((stream) => {
             const membership = membershipByStream.get(stream.id)
+            const local = localStreams.find((s) => s.id === stream.id)
             return {
               ...stream,
               pinned: membership?.pinned,
               notificationLevel: membership?.notificationLevel,
               lastReadEventId: membership?.lastReadEventId,
+              // Preserve fields workspace-bootstrap doesn't carry but
+              // stream-bootstrap mirrors locally (`contextBag` is the
+              // canonical example — see `applyStreamBootstrap`).
+              contextBag: local?.contextBag,
               _cachedAt: now,
             }
           })

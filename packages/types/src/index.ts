@@ -244,6 +244,9 @@ export type {
   UpdateStreamInput,
   UpdateCompanionModeInput,
   StreamBootstrap,
+  StreamContextBagPayload,
+  StreamContextRef,
+  StreamContextRefSource,
   EventsAroundResponse,
   // Messages
   CreateMessageInput,
@@ -280,6 +283,7 @@ export type {
   EmojiEntry,
   // Commands
   CommandInfo,
+  CommandKind,
   DispatchCommandInput,
   DispatchCommandResponse,
   DispatchCommandError,
@@ -301,6 +305,20 @@ export type {
 
 // Push Notifications
 export { DEVICE_KEY_LENGTH } from "./api"
+
+// Command kind constants
+export { CommandKinds } from "./api"
+
+// Discuss-with-Ariadne client-action id (single source of truth)
+export const DISCUSS_WITH_ARIADNE_COMMAND = "discuss-with-ariadne" as const
+
+/**
+ * Persona slug for Ariadne — the workspace-companion persona that backs
+ * "Discuss with Ariadne" scratchpads. Single source of truth (INV-33) so
+ * backend lookups (`PersonaRepository.findBySlug`), frontend command
+ * filters, and any future onboarding seeding stay in sync.
+ */
+export const ARIADNE_PERSONA_SLUG = "ariadne" as const
 
 // ProseMirror / TipTap JSON types
 export type {
@@ -421,6 +439,18 @@ export {
   type BotApiKey,
   type CreateBotApiKeyResponse,
 } from "./api-keys"
+
+// Context bag primitive
+export {
+  ContextIntents,
+  CONTEXT_INTENTS,
+  ContextRefKinds,
+  CONTEXT_REF_KINDS,
+  type ContextIntent,
+  type ContextRefKind,
+  type ContextRef,
+  type ContextBag,
+} from "./context-bag"
 
 // Agent trace types
 export {

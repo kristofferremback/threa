@@ -5,6 +5,9 @@ export { createStreamHandlers } from "./handlers"
 export { StreamService } from "./service"
 export type { CreateScratchpadParams, CreateChannelParams, CreateThreadParams } from "./service"
 
+// Access (canonical "can this user read this stream?" check — INV-8)
+export { checkStreamAccess } from "./access"
+
 // Naming
 export { StreamNamingService } from "./naming-service"
 export type { GenerateNameResult } from "./naming-service"
