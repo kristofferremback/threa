@@ -112,6 +112,10 @@ export function StreamContent({
   } | null>(null)
   const [isMoveValidating, setIsMoveValidating] = useState(false)
   const [isMoveConfirming, setIsMoveConfirming] = useState(false)
+  // Anti-flicker: only surface the validating dialog if validation is slow
+  // enough that the user would otherwise wonder whether anything happened.
+  // Matches `LOADING_DELAY_MS` / `SKELETON_DELAY_MS` (300ms) used elsewhere.
+  const [showValidatingDialog, setShowValidatingDialog] = useState(false)
   const suppressNextBatchClickRef = useRef(false)
   const suppressNextBatchClickTimerRef = useRef<number | null>(null)
   const batchPointerRef = useRef<{
@@ -461,9 +465,22 @@ export function StreamContent({
     setPendingMove(null)
   }, [isMoveConfirming])
 
+  // Show the loading dialog ONLY if validation hasn't resolved within 300ms.
+  // Fast validations skip straight to the confirm dialog with no flash.
+  useEffect(() => {
+    if (!isMoveValidating) {
+      setShowValidatingDialog(false)
+      return
+    }
+    const timer = window.setTimeout(() => setShowValidatingDialog(true), 300)
+    return () => window.clearTimeout(timer)
+  }, [isMoveValidating])
+
   const pendingMoveDescription = pendingMove
     ? `Move ${pendingMove.messageCount} selected message${pendingMove.messageCount === 1 ? "" : "s"} into this thread?`
     : ""
+  const isValidatingPhase = showValidatingDialog && !pendingMove
+  const moveDialogOpen = !!pendingMove || isValidatingPhase
 
   const batchPointerHandlers = batchMode
     ? {
@@ -1108,15 +1125,33 @@ export function StreamContent({
                 </div>
               </div>
             )}
-            <AlertDialog open={!!pendingMove} onOpenChange={(open) => !open && closePendingMove()}>
+            <AlertDialog
+              open={moveDialogOpen}
+              onOpenChange={(open) => {
+                if (open) return
+                // Block dismiss while we're still working — there's no abort
+                // path for the in-flight validate/move request, so let it
+                // complete. The dialog will swap to the confirm step (or close
+                // on error toast) within ~1s in the worst case.
+                if (isValidatingPhase || isMoveConfirming) return
+                closePendingMove()
+              }}
+            >
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Move messages?</AlertDialogTitle>
-                  <AlertDialogDescription>{pendingMoveDescription}</AlertDialogDescription>
+                  <AlertDialogDescription>
+                    {isValidatingPhase ? "Checking that this move is still valid…" : pendingMoveDescription}
+                  </AlertDialogDescription>
                 </AlertDialogHeader>
+                {isValidatingPhase && (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Validating" />
+                  </div>
+                )}
                 <AlertDialogFooter>
-                  <AlertDialogCancel disabled={isMoveConfirming}>Cancel</AlertDialogCancel>
-                  <Button onClick={confirmPendingMove} disabled={isMoveConfirming}>
+                  <AlertDialogCancel disabled={isValidatingPhase || isMoveConfirming}>Cancel</AlertDialogCancel>
+                  <Button onClick={confirmPendingMove} disabled={!pendingMove || isMoveConfirming}>
                     {isMoveConfirming ? "Moving..." : "Move"}
                   </Button>
                 </AlertDialogFooter>
