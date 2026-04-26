@@ -25,6 +25,7 @@ import { StreamTypes, type StreamType } from "@threa/types"
 import { getStreamName, resolveDmDisplayName, streamFallbackLabel } from "@/lib/streams"
 import { setPageStreamName } from "@/lib/page-title"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
+import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
 
 function getStreamTypeLabel(type: StreamType): string {
   switch (type) {
@@ -151,7 +152,7 @@ export function StreamPage() {
   }
 
   const handleSelectMessages = () => {
-    document.dispatchEvent(new CustomEvent("threa:start-batch-select", { detail: { streamId } }))
+    dispatchStartBatchSelect(streamId)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -244,7 +245,7 @@ export function StreamPage() {
               <MessageCircle className="h-4 w-4" />
             </Button>
           )}
-          {stream && !isDraft && (
+          {stream && !isDraft && !(isArchived && !isScratchpad) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">

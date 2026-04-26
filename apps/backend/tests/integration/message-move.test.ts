@@ -86,8 +86,9 @@ describe("message move integration", () => {
       triggerMessageId: target.id,
       status: SessionStatuses.RUNNING,
     })
+    const traceStartedEventId = eventId()
     await StreamEventRepository.insert(pool, {
-      id: eventId(),
+      id: traceStartedEventId,
       streamId: sourceStreamId,
       eventType: "agent_session:started",
       payload: {
@@ -105,8 +106,9 @@ describe("message move integration", () => {
       responseMessageId: movedB.id,
       sentMessageIds: [movedA.id, movedB.id],
     })
+    const traceCompletedEventId = eventId()
     await StreamEventRepository.insert(pool, {
-      id: eventId(),
+      id: traceCompletedEventId,
       streamId: sourceStreamId,
       eventType: "agent_session:completed",
       payload: {
@@ -152,7 +154,7 @@ describe("message move integration", () => {
 
     const movedTraceSession = await AgentSessionRepository.findById(pool, traceSession.id)
     expect(movedTraceSession?.streamId).toBe(result.thread.id)
-    expect(result.removedEventIds.length).toBe(4)
+    expect(result.removedEventIds).toEqual(expect.arrayContaining([traceStartedEventId, traceCompletedEventId]))
 
     const sourceTraceEvents = await StreamEventRepository.list(pool, sourceStreamId, {
       types: ["agent_session:started", "agent_session:completed"],

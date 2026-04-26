@@ -2,6 +2,10 @@ import { ulid } from "ulid"
 import type { Querier } from "../../db"
 import { sql } from "../../db"
 
+/**
+ * Short-lived authorization token for two-step batch operations, scoped to a
+ * workspace, user, operation type, and canonical request payload.
+ */
 export interface OperationLease {
   id: string
   workspaceId: string
@@ -40,6 +44,10 @@ function mapRow(row: OperationLeaseRow): OperationLease {
 const SELECT_FIELDS = "id, workspace_id, user_id, operation_type, payload, expires_at, consumed_at, created_at"
 
 export const OperationLeaseRepository = {
+  /**
+   * Create a claimable lease for a validated operation. Leases expire after
+   * `ttlSeconds` seconds, defaulting to five minutes.
+   */
   async create(
     db: Querier,
     params: {
@@ -67,6 +75,10 @@ export const OperationLeaseRepository = {
     return mapRow(result.rows[0])
   },
 
+  /**
+   * Atomically consume an unexpired lease for the same workspace, user, and
+   * operation type. Returns `null` when the lease is missing, expired, or used.
+   */
   async consume(
     db: Querier,
     params: {

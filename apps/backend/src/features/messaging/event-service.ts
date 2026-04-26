@@ -24,6 +24,7 @@ import {
   type SourceItem,
   type JSONContent,
   type ThreadSummary,
+  type StreamEvent as WireStreamEvent,
 } from "@threa/types"
 
 // Event payloads
@@ -153,7 +154,7 @@ export interface MoveMessagesToThreadResult {
   targetMessageId: string
   movedMessageIds: string[]
   thread: import("../streams").Stream
-  events: StreamEvent[]
+  events: WireStreamEvent[]
   removedEventIds: string[]
 }
 
@@ -605,11 +606,14 @@ export class EventService {
       const rootStreamId = sourceStream.rootStreamId ?? sourceStream.id
       const rootStream =
         rootStreamId === sourceStream.id ? sourceStream : await StreamRepository.findById(client, rootStreamId)
-      const inheritedVisibility = rootStream?.visibility ?? Visibilities.PRIVATE
+      if (!rootStream) {
+        throw new StreamNotFoundError()
+      }
+      const inheritedVisibility = rootStream.visibility
       const inheritedCompanionMode =
-        rootStream?.type === StreamTypes.SCRATCHPAD ? rootStream.companionMode : CompanionModes.OFF
+        rootStream.type === StreamTypes.SCRATCHPAD ? rootStream.companionMode : CompanionModes.OFF
       const inheritedCompanionPersonaId =
-        rootStream?.type === StreamTypes.SCRATCHPAD ? (rootStream.companionPersonaId ?? undefined) : undefined
+        rootStream.type === StreamTypes.SCRATCHPAD ? (rootStream.companionPersonaId ?? undefined) : undefined
 
       const { stream: destinationThread, created } = await StreamRepository.insertThreadOrFind(client, {
         id: generateStreamId(),
@@ -741,16 +745,13 @@ export class EventService {
         })
       }
 
-      const serializedEvents = [...movedEvents, ...movedAgentSessionEvents]
-        .map((event) => serializeBigInt(event) as StreamEvent)
-        .sort((a, b) => {
-          const seqA = BigInt(a.sequence)
-          const seqB = BigInt(b.sequence)
-          if (seqA < seqB) return -1
-          if (seqA > seqB) return 1
-          return a.id.localeCompare(b.id)
-        })
-      const removedEventIds = [...movedEvents, ...movedAgentSessionEvents].map((event) => event.id)
+      const orderedEvents = [...movedEvents, ...movedAgentSessionEvents].sort((a, b) => {
+        if (a.sequence < b.sequence) return -1
+        if (a.sequence > b.sequence) return 1
+        return a.id.localeCompare(b.id)
+      })
+      const serializedEvents = orderedEvents.map((event) => serializeBigInt(event) as unknown as WireStreamEvent)
+      const removedEventIds = orderedEvents.map((event) => event.id)
 
       await OutboxRepository.insert(client, "messages:moved", {
         workspaceId: params.workspaceId,

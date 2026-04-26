@@ -180,8 +180,10 @@ export class BroadcastHandler implements OutboxHandler {
 
     if (isOutboxEventType(event, "messages:moved")) {
       const payload = event.payload as MessagesMovedOutboxPayload
-      this.io.to(`ws:${workspaceId}:stream:${payload.sourceStreamId}`).emit(event.eventType, event.payload)
-      this.io.to(`ws:${workspaceId}:stream:${payload.destinationStreamId}`).emit(event.eventType, event.payload)
+      this.io
+        .to(`ws:${workspaceId}:stream:${payload.sourceStreamId}`)
+        .to(`ws:${workspaceId}:stream:${payload.destinationStreamId}`)
+        .emit(event.eventType, event.payload)
       return
     }
 

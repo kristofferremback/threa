@@ -746,7 +746,6 @@ function SentMessageEvent({
       quoteReplyCtx,
       actorName,
       isSaved,
-      batch,
       handleToggleSave,
       handleRequestReminder,
     ]

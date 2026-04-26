@@ -36,11 +36,20 @@ interface EventListProps {
   batch?: BatchTimelineState
 }
 
+/**
+ * Shared batch-selection state passed from `StreamContent` into timeline rows.
+ * Enabled rows render selection controls and expose drag/drop target feedback.
+ */
 export interface BatchTimelineState {
+  /** Whether batch-selection mode is active. */
   enabled: boolean
+  /** Message IDs currently selected for the batch operation. */
   selectedMessageIds: Set<string>
+  /** Message IDs that are not valid drop targets during a drag. */
   invalidTargetIds: Set<string>
+  /** Valid drop target currently hovered during drag, or `null`. */
   hoveredTargetId: string | null
+  /** Toggles one message in the current selection. */
   onToggleMessage: (messageId: string) => void
 }
 
