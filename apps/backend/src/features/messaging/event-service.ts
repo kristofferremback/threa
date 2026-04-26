@@ -1,10 +1,10 @@
 import type { Pool, PoolClient } from "pg"
 import { withTransaction, withClient } from "../../db"
-import { StreamEventRepository, StreamEvent } from "../streams"
+import { StreamEventRepository, type StreamEvent, type MoveEventIdSequenceUpdate } from "../streams"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
 import { checkStreamAccess, resolveEffectiveAccessStream } from "../streams"
-import { MessageRepository, Message } from "./repository"
+import { MessageRepository, type Message, type MoveMessageSequenceUpdate } from "./repository"
 import { ShareService, type ResolveEffectiveStream } from "./sharing"
 import { AttachmentRepository, isVideoAttachment } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
@@ -759,8 +759,8 @@ export class EventService {
         destinationThread.id,
         movableEvents.length
       )
-      const updates: { messageId: string; sequence: bigint }[] = []
-      const agentSessionEventUpdates: { eventId: string; sequence: bigint }[] = []
+      const updates: MoveMessageSequenceUpdate[] = []
+      const agentSessionEventUpdates: MoveEventIdSequenceUpdate[] = []
       movableEvents.forEach((entry, index) => {
         if (entry.kind === "message") {
           updates.push({ messageId: entry.messageId, sequence: nextSequences[index] })

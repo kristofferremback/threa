@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Virtuoso } from "react-virtuoso"
-import { MessageSquare, ArrowDown, X, Move, Loader2 } from "lucide-react"
+import { MessageSquare, ArrowDown, X, Move, Loader2, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -30,10 +30,10 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import {
   AlertDialog,
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
@@ -104,18 +104,22 @@ export function StreamContent({
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set())
   const [hoveredBatchTargetId, setHoveredBatchTargetId] = useState<string | null>(null)
   const [dragGhost, setDragGhost] = useState<{ x: number; y: number } | null>(null)
-  const [pendingMove, setPendingMove] = useState<{
+  // Single source of truth for the move flow: opens the dialog immediately on
+  // drop with the real message count from selection (no need to wait for the
+  // server). `leaseKey` stays null while validate is in flight, then gets
+  // patched in on success — that transition is what flips the inline footer
+  // status from "Verifying…" to "Verified" with the check pop-in.
+  const [moveAttempt, setMoveAttempt] = useState<{
     targetMessageId: string
     messageIds: string[]
-    leaseKey: string
-    messageCount: number
+    leaseKey: string | null
   } | null>(null)
-  const [isMoveValidating, setIsMoveValidating] = useState(false)
   const [isMoveConfirming, setIsMoveConfirming] = useState(false)
-  // Anti-flicker: only surface the validating dialog if validation is slow
-  // enough that the user would otherwise wonder whether anything happened.
-  // Matches `LOADING_DELAY_MS` / `SKELETON_DELAY_MS` (300ms) used elsewhere.
-  const [showValidatingDialog, setShowValidatingDialog] = useState(false)
+  // Cancellation guard: when the user dismisses the dialog while validation
+  // is still in flight, we increment this token. The async handler reads the
+  // ref at resolution time and bails out if the token has moved on. Cheaper
+  // than threading AbortSignal through the api client just for one path.
+  const moveAttemptTokenRef = useRef(0)
   const suppressNextBatchClickRef = useRef(false)
   const suppressNextBatchClickTimerRef = useRef<number | null>(null)
   const batchPointerRef = useRef<{
@@ -376,7 +380,11 @@ export function StreamContent({
     setSelectedMessageIds(new Set())
     setHoveredBatchTargetId(null)
     setDragGhost(null)
-    setPendingMove(null)
+    // Bump the cancellation token so any in-flight validate becomes a no-op
+    // before clearing the attempt — otherwise its setMoveAttempt could race
+    // back in after we've moved on.
+    moveAttemptTokenRef.current += 1
+    setMoveAttempt(null)
     batchPointerRef.current = null
     suppressNextBatchClickRef.current = false
     if (suppressNextBatchClickTimerRef.current !== null) {
@@ -416,71 +424,71 @@ export function StreamContent({
   const dropBatchOnTarget = useCallback(
     async (targetMessageId: string) => {
       const messageIds = Array.from(selectedMessageIds)
-      if (messageIds.length === 0 || isMoveValidating) return
-      setIsMoveValidating(true)
+      if (messageIds.length === 0 || moveAttempt) return
+      // Open the dialog immediately with the client-side count so the question
+      // is on screen the moment the user releases — validation runs in the
+      // background and patches in the lease when it returns.
+      const token = ++moveAttemptTokenRef.current
+      setMoveAttempt({ targetMessageId, messageIds, leaseKey: null })
       try {
         const validation = await messageService.validateMoveToThread(workspaceId, {
           sourceStreamId: streamId,
           targetMessageId,
           messageIds,
         })
-        setPendingMove({
-          targetMessageId,
-          messageIds,
-          leaseKey: validation.leaseKey,
-          messageCount: validation.messageCount,
-        })
+        if (moveAttemptTokenRef.current !== token) return
+        setMoveAttempt((prev) => (prev ? { ...prev, leaseKey: validation.leaseKey } : null))
       } catch (error) {
+        if (moveAttemptTokenRef.current !== token) return
         console.error("validateMoveToThread failed", { error, streamId, targetMessageId, messageIds })
         toast.error(error instanceof Error ? error.message : "Could not validate this move")
-      } finally {
-        setIsMoveValidating(false)
+        setMoveAttempt(null)
       }
     },
-    [isMoveValidating, messageService, selectedMessageIds, streamId, workspaceId]
+    [messageService, moveAttempt, selectedMessageIds, streamId, workspaceId]
   )
 
   const confirmPendingMove = useCallback(async () => {
-    if (!pendingMove || isMoveConfirming) return
+    if (!moveAttempt?.leaseKey || isMoveConfirming) return
+    const { targetMessageId, messageIds, leaseKey } = moveAttempt
     setIsMoveConfirming(true)
     try {
       await messageService.moveToThread(workspaceId, {
         sourceStreamId: streamId,
-        targetMessageId: pendingMove.targetMessageId,
-        messageIds: pendingMove.messageIds,
-        leaseKey: pendingMove.leaseKey,
+        targetMessageId,
+        messageIds,
+        leaseKey,
       })
-      toast.success(`Moved ${pendingMove.messageCount} message${pendingMove.messageCount === 1 ? "" : "s"} to thread`)
+      toast.success(`Moved ${messageIds.length} message${messageIds.length === 1 ? "" : "s"} to thread`)
       cancelBatchMode()
     } catch (error) {
-      console.error("moveToThread failed", { error, streamId, pendingMove })
+      console.error("moveToThread failed", { error, streamId, moveAttempt })
       toast.error(error instanceof Error ? error.message : "Could not move messages")
     } finally {
       setIsMoveConfirming(false)
     }
-  }, [cancelBatchMode, isMoveConfirming, messageService, pendingMove, streamId, workspaceId])
+  }, [cancelBatchMode, isMoveConfirming, messageService, moveAttempt, streamId, workspaceId])
 
   const closePendingMove = useCallback(() => {
     if (isMoveConfirming) return
-    setPendingMove(null)
+    // Bump the token so any in-flight validation no-ops on resolve.
+    moveAttemptTokenRef.current += 1
+    setMoveAttempt(null)
   }, [isMoveConfirming])
 
-  // Show the loading dialog ONLY if validation hasn't resolved within 300ms.
-  // Fast validations skip straight to the confirm dialog with no flash.
-  useEffect(() => {
-    if (!isMoveValidating) {
-      setShowValidatingDialog(false)
-      return
-    }
-    const timer = window.setTimeout(() => setShowValidatingDialog(true), 300)
-    return () => window.clearTimeout(timer)
-  }, [isMoveValidating])
-
-  const pendingMoveDescription = pendingMove
-    ? `Move ${pendingMove.messageCount} selected message${pendingMove.messageCount === 1 ? "" : "s"} into this thread?`
-    : ""
-  const isValidatingPhase = showValidatingDialog && !pendingMove
-  const moveDialogOpen = !!pendingMove || isValidatingPhase
+  // Phase derived from the single source of truth. Drives the inline status
+  // row in the footer and the disabled/aria-busy state of the Move button.
+  let movePhase: MovePhase
+  if (isMoveConfirming) {
+    movePhase = "moving"
+  } else if (moveAttempt?.leaseKey) {
+    movePhase = "validated"
+  } else {
+    movePhase = "validating"
+  }
+  const moveDialogOpen = !!moveAttempt
+  const moveMessageCount = moveAttempt?.messageIds.length ?? 0
+  const moveMessageCountLabel = `${moveMessageCount} selected message${moveMessageCount === 1 ? "" : "s"}`
 
   const batchPointerHandlers = batchMode
     ? {
@@ -944,16 +952,10 @@ export function StreamContent({
           <TextSelectionQuote streamId={streamId} />
           <div className="relative h-full">
             <div className="absolute inset-0 overflow-hidden">
-              {batchMode && (
-                <BatchSelectionBar
-                  count={selectedMessageIds.size}
-                  isValidating={isMoveValidating}
-                  onCancel={cancelBatchMode}
-                />
-              )}
               {isSearchOpen && (
                 <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
               )}
+              {batchMode && <BatchSelectionBar count={selectedMessageIds.size} onCancel={cancelBatchMode} />}
               {isDraft && (
                 <div
                   className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain"
@@ -1129,32 +1131,43 @@ export function StreamContent({
               open={moveDialogOpen}
               onOpenChange={(open) => {
                 if (open) return
-                // Block dismiss while we're still working — there's no abort
-                // path for the in-flight validate/move request, so let it
-                // complete. The dialog will swap to the confirm step (or close
-                // on error toast) within ~1s in the worst case.
-                if (isValidatingPhase || isMoveConfirming) return
+                // Cancel + Esc are allowed during validating (we just bump the
+                // cancellation token and the in-flight request becomes a no-op
+                // on resolve). Only the irreversible commit phase blocks
+                // dismiss — there is no rollback once moveToThread succeeds.
+                if (isMoveConfirming) return
                 closePendingMove()
               }}
             >
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Move messages?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    {isValidatingPhase ? "Checking that this move is still valid…" : pendingMoveDescription}
-                  </AlertDialogDescription>
+                  <AlertDialogDescription>{`Move ${moveMessageCountLabel} into this thread?`}</AlertDialogDescription>
                 </AlertDialogHeader>
-                {isValidatingPhase && (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Validating" />
+                {/* Custom footer: status row (left) + actions (right). Replaces
+                  shadcn's AlertDialogFooter, which forces flex-col-reverse on
+                  mobile and would invert our vertical stacking. */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <MoveStatusRow phase={movePhase} />
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-2">
+                    <AlertDialogCancel disabled={movePhase === "moving"}>Cancel</AlertDialogCancel>
+                    {/* `preventDefault` keeps the dialog open through the
+                      moving phase so the inline status row can transition
+                      to "Moving…" — Radix's default Action behavior would
+                      auto-close on click. confirmPendingMove closes the
+                      dialog itself on success via cancelBatchMode. */}
+                    <AlertDialogAction
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void confirmPendingMove()
+                      }}
+                      disabled={movePhase !== "validated"}
+                      aria-busy={movePhase === "moving"}
+                    >
+                      Move
+                    </AlertDialogAction>
                   </div>
-                )}
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={isValidatingPhase || isMoveConfirming}>Cancel</AlertDialogCancel>
-                  <Button onClick={confirmPendingMove} disabled={!pendingMove || isMoveConfirming}>
-                    {isMoveConfirming ? "Moving..." : "Move"}
-                  </Button>
-                </AlertDialogFooter>
+                </div>
               </AlertDialogContent>
             </AlertDialog>
             {membershipResolved && !isMember && isPublicChannel && (
@@ -1502,29 +1515,78 @@ const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--comp
 const BarTopSpacer = () => <div aria-hidden className="h-11" />
 
 /**
+ * Three-phase state for the batch-move confirmation dialog. Drives the
+ * inline footer status row (`MoveStatusRow`) and the disabled / aria-busy
+ * state of the Move button.
+ *
+ * - `validating` — drop just landed, server validate is in flight, lease
+ *   not yet returned. Move button disabled, Cancel still allowed.
+ * - `validated`  — lease in hand, user gates the irreversible commit.
+ * - `moving`     — moveToThread in flight. Both buttons disabled, Move
+ *   carries `aria-busy` for assistive tech.
+ */
+type MovePhase = "validating" | "validated" | "moving"
+
+/**
+ * Inline status indicator pinned to the left of the dialog footer. The
+ * dialog body (title + description) stays constant across all three
+ * phases — this row is the only thing that changes, so the user never
+ * has to re-read the question. `min-h-[1.75rem]` locks the row height
+ * so the icon swap from spinner → check pill doesn't jiggle the buttons.
+ *
+ * Accessibility: `role="status"` + `aria-live="polite"` + `aria-atomic`
+ * causes assistive tech to announce each phase transition once, as a
+ * complete sentence ("Verifying…", "Verified", "Moving…"). Icons are
+ * decorative (`aria-hidden`) — the text label carries the meaning.
+ */
+function MoveStatusRow({ phase }: { phase: MovePhase }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className="flex min-h-[1.75rem] items-center gap-2 text-[13px] leading-none tabular-nums"
+    >
+      {phase === "validating" && (
+        <>
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground/80" aria-hidden />
+          <span className="text-muted-foreground">Verifying…</span>
+        </>
+      )}
+      {phase === "validated" && (
+        <>
+          <span
+            aria-hidden
+            className={cn(
+              "grid h-4 w-4 shrink-0 place-content-center rounded-full",
+              "bg-emerald-500/15 text-emerald-600",
+              "animate-in fade-in zoom-in-50 duration-300"
+            )}
+          >
+            <Check className="h-2.5 w-2.5" strokeWidth={3.5} />
+          </span>
+          <span className="font-medium text-emerald-600">Verified</span>
+        </>
+      )}
+      {phase === "moving" && (
+        <>
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+          <span className="text-foreground">Moving…</span>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
  * Flush-top toolbar shown while batch-selection mode is active. Mirrors the
  * `StreamSearchBar` pattern (h-11 strip, border-b, blurred translucent
  * background) so the scroller's matching `pt-11` keeps every previously
  * visible message reachable — the topmost item slides under the bar instead
  * of disappearing.
  */
-function BatchSelectionBar({
-  count,
-  isValidating,
-  onCancel,
-}: {
-  count: number
-  isValidating: boolean
-  onCancel: () => void
-}) {
-  let hint: string
-  if (isValidating) {
-    hint = "Validating move…"
-  } else if (count === 0) {
-    hint = "Tap messages to select"
-  } else {
-    hint = "Drag onto a message above to move"
-  }
+function BatchSelectionBar({ count, onCancel }: { count: number; onCancel: () => void }) {
+  const hint = count === 0 ? "Tap messages to select" : "Drag onto a message above to move"
 
   return (
     <div
@@ -1555,11 +1617,7 @@ function BatchSelectionBar({
       </div>
 
       <div className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-        {isValidating ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
-        ) : (
-          <Move className="h-3.5 w-3.5 shrink-0" aria-hidden />
-        )}
+        <Move className="h-3.5 w-3.5 shrink-0" aria-hidden />
         <span className="truncate">{hint}</span>
       </div>
 
