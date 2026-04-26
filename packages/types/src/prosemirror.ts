@@ -57,6 +57,7 @@ export type ThreaBlockNode =
   | ThreaCodeBlock
   | ThreaBlockquote
   | ThreaQuoteReply
+  | ThreaSharedMessage
   | ThreaBulletList
   | ThreaOrderedList
   | ThreaHorizontalRule
@@ -118,6 +119,28 @@ export interface ThreaQuoteReply {
     actorType: string
     /** The quoted text snippet */
     snippet: string
+  }
+}
+
+/**
+ * Shared message (pointer) - a live reference to a message in another stream.
+ * Unlike a quote, the rendered body is hydrated at read time and tracks edits
+ * on the source. Carries only the references + cached display hints; the
+ * renderer fetches live content via backend hydration.
+ */
+export interface ThreaSharedMessage {
+  type: "sharedMessage"
+  attrs: {
+    /** The ID of the referenced source message */
+    messageId: string
+    /** The stream containing the referenced message (for access validation) */
+    streamId: string
+    /** Display name of the source author, cached at share time so the node can render a skeleton before hydration */
+    authorName?: string
+    /** The ID of the source author, cached for the same reason */
+    authorId?: string
+    /** The actor type of the source author, cached for the same reason */
+    actorType?: string
   }
 }
 
@@ -413,6 +436,7 @@ const blockNodeSchema = z.lazy(() =>
     codeBlockNodeSchema,
     blockquoteNodeSchema,
     quoteReplyNodeSchema,
+    sharedMessageNodeSchema,
     bulletListNodeSchema,
     orderedListNodeSchema,
     horizontalRuleNodeSchema,
@@ -438,6 +462,17 @@ const quoteReplyNodeSchema = z.object({
     authorId: z.string(),
     actorType: z.string(),
     snippet: z.string(),
+  }),
+})
+
+const sharedMessageNodeSchema = z.object({
+  type: z.literal("sharedMessage"),
+  attrs: z.object({
+    messageId: z.string(),
+    streamId: z.string(),
+    authorName: z.string().optional(),
+    authorId: z.string().optional(),
+    actorType: z.string().optional(),
   }),
 })
 

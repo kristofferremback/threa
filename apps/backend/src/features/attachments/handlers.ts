@@ -77,11 +77,14 @@ export function createAttachmentHandlers({ attachmentService, streamService, sto
         return res.status(403).json({ error: sharingBlockReason })
       }
 
-      // For attached files, verify stream membership
-      // Pending files (no stream) are accessible to any workspace user
+      // For attached files, verify the user can READ the stream — not just
+      // that they're a `stream_members` row. Public channels and inherited
+      // thread access were previously blocked here because plain `isMember`
+      // missed both. `tryAccess` is the canonical read-access check
+      // (visibility + workspace match + thread root inheritance).
       if (attachment.streamId) {
-        const isMember = await streamService.isMember(attachment.streamId, userId)
-        if (!isMember) {
+        const accessible = await streamService.tryAccess(attachment.streamId, workspaceId, userId)
+        if (!accessible) {
           return res.status(403).json({ error: "Access denied" })
         }
       }

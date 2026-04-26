@@ -11,6 +11,7 @@ import {
 } from "@threa/types"
 import type { Socket } from "socket.io-client"
 import { workspaceKeys } from "@/hooks/use-workspaces"
+import { streamKeys } from "@/hooks/use-streams"
 import type { QueryClient } from "@tanstack/react-query"
 
 // ============================================================================
@@ -364,6 +365,18 @@ export async function setParentThreadId(
  * lastMessagePreview on message:created — this is a transitional coupling
  * that will be removed in Phase 3 when workspace data moves to IDB.
  */
+function contentHasSharedMessage(contentJson: unknown): boolean {
+  if (!contentJson || typeof contentJson !== "object") return false
+  const node = contentJson as { type?: unknown; content?: unknown[] }
+  if (node.type === "sharedMessage") return true
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) {
+      if (contentHasSharedMessage(child)) return true
+    }
+  }
+  return false
+}
+
 export function registerStreamSocketHandlers(
   socket: Socket,
   workspaceId: string,
@@ -435,6 +448,15 @@ export function registerStreamSocketHandlers(
         }),
       }
     })
+
+    // If the new event includes a sharedMessage pointer, the cached bootstrap's
+    // sharedMessages hydration map won't contain an entry for the source yet —
+    // without a refetch the pointer renders with no content. Invalidate so the
+    // next response populates the hydration map.
+    if (contentHasSharedMessage(newPayload.contentJson)) {
+      await queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+      await queryClient.invalidateQueries({ queryKey: streamKeys.events(workspaceId, streamId) })
+    }
   }
 
   const handleMessageEdited = async (payload: MessageEventPayload) => {
@@ -452,6 +474,11 @@ export function registerStreamSocketHandlers(
       contentMarkdown: editPayload.contentMarkdown,
       editedAt: editEvent.createdAt,
     }))
+
+    if (contentHasSharedMessage(editPayload.contentJson)) {
+      await queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+      await queryClient.invalidateQueries({ queryKey: streamKeys.events(workspaceId, streamId) })
+    }
   }
 
   const handleMessageDeleted = async (payload: MessageDeletedPayload) => {
@@ -542,6 +569,19 @@ export function registerStreamSocketHandlers(
     }))
   }
 
+  /**
+   * Invalidate any TanStack Query cache holding this stream's messages when
+   * a pointer-referenced source message in another stream is edited or
+   * deleted. Triggers a refetch so the hydrated share-map on the next
+   * response reflects the new content. The payload's targetStreamId is the
+   * room this emit was scoped to, so we just invalidate bootstrap/events.
+   */
+  const handlePointerInvalidated = async (payload: { targetStreamId: string; sourceMessageId: string }) => {
+    if (payload.targetStreamId !== streamId) return
+    await queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+    await queryClient.invalidateQueries({ queryKey: streamKeys.events(workspaceId, streamId) })
+  }
+
   socket.on("message:created", handleMessageCreated)
   socket.on("message:edited", handleMessageEdited)
   socket.on("message:deleted", handleMessageDeleted)
@@ -560,6 +600,7 @@ export function registerStreamSocketHandlers(
   socket.on("agent_session:failed", handleAppendEvent)
   socket.on("agent_session:deleted", handleAppendEvent)
   socket.on("link_preview:ready", handleLinkPreviewReady)
+  socket.on("pointer:invalidated", handlePointerInvalidated)
 
   return () => {
     socket.off("message:created", handleMessageCreated)
@@ -580,5 +621,6 @@ export function registerStreamSocketHandlers(
     socket.off("agent_session:failed", handleAppendEvent)
     socket.off("agent_session:deleted", handleAppendEvent)
     socket.off("link_preview:ready", handleLinkPreviewReady)
+    socket.off("pointer:invalidated", handlePointerInvalidated)
   }
 }

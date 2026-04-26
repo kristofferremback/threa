@@ -3,7 +3,9 @@ import { withTransaction, withClient } from "../../db"
 import { StreamEventRepository, StreamEvent } from "../streams"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
+import { checkStreamAccess } from "../streams"
 import { MessageRepository, Message } from "./repository"
+import { ShareService } from "./sharing"
 import { AttachmentRepository, isVideoAttachment } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
@@ -89,6 +91,12 @@ export interface CreateMessageParams {
   sentVia?: string
   /** External references (string->string) attached to the message. Reserved prefix: `threa.*`. */
   metadata?: Record<string, string>
+  /**
+   * Present when the sharer has acknowledged a privacy warning in the
+   * share modal. Backend still independently verifies whether the share
+   * crosses a privacy boundary before consulting this flag.
+   */
+  confirmedPrivacyWarning?: boolean
 }
 
 export interface EditMessageParams {
@@ -99,6 +107,8 @@ export interface EditMessageParams {
   contentMarkdown: string
   actorId: string
   actorType?: AuthorType
+  /** Same semantics as `CreateMessageParams.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 export interface DeleteMessageParams {
@@ -317,14 +327,34 @@ export class EventService {
         }
       }
 
-      // 7. Publish to outbox for real-time delivery
+      // 7. Validate and record any cross-stream share references carried in
+      //    contentJson. Runs inside the transaction so the shared_messages
+      //    access-projection is committed atomically with the event + projection
+      //    (INV-7). No-op for messages without cross-stream share nodes.
+      await ShareService.validateAndRecordShares({
+        client,
+        workspaceId: params.workspaceId,
+        targetStreamId: params.streamId,
+        shareMessageId: msgId,
+        sharerId: params.authorId,
+        contentJson: params.contentJson,
+        findStream: (db, id) => StreamRepository.findById(db, id),
+        isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
+        countExposedMembers: (db, targetStreamId, sourceStreamId) =>
+          StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
+        canReadStream: async (db, workspaceId, streamId, userId) =>
+          (await checkStreamAccess(db, streamId, workspaceId, userId)) !== null,
+        confirmedPrivacyWarning: params.confirmedPrivacyWarning,
+      })
+
+      // 8. Publish to outbox for real-time delivery
       await OutboxRepository.insert(client, "message:created", {
         workspaceId: params.workspaceId,
         streamId: params.streamId,
         event: serializeBigInt(event),
       })
 
-      // 8. Publish unread increment for sidebar updates
+      // 9. Publish unread increment for sidebar updates
       // Stream-scoped: only members of this stream receive the preview content.
       // Frontend excludes the author's own messages from unread count.
       await OutboxRepository.insert(client, "stream:activity", {
@@ -339,7 +369,7 @@ export class EventService {
         },
       })
 
-      // 9. If this is a thread, update parent message's reply count
+      // 10. If this is a thread, update parent message's reply count
       if (stream?.parentMessageId && stream?.parentStreamId) {
         await MessageRepository.incrementReplyCount(client, stream.parentMessageId)
         await this.publishParentThreadUpdate(client, {
@@ -396,7 +426,28 @@ export class EventService {
       )
 
       if (message) {
-        // 4. Publish to outbox
+        // 4. Re-validate share nodes. Same call as createMessage — edits that
+        //    add, remove, or swap share references rewrite the shared_messages
+        //    row set so hydration/authorization reflects the new content.
+        //    Without this, an author could edit in a sharedMessage pointing
+        //    at an arbitrary id and leak its content past the create-time check.
+        await ShareService.validateAndRecordShares({
+          client,
+          workspaceId: params.workspaceId,
+          targetStreamId: params.streamId,
+          shareMessageId: params.messageId,
+          sharerId: params.actorId,
+          contentJson: params.contentJson,
+          findStream: (db, id) => StreamRepository.findById(db, id),
+          isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
+          countExposedMembers: (db, targetStreamId, sourceStreamId) =>
+            StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
+          canReadStream: async (db, workspaceId, streamId, userId) =>
+            (await checkStreamAccess(db, streamId, workspaceId, userId)) !== null,
+          confirmedPrivacyWarning: params.confirmedPrivacyWarning,
+        })
+
+        // 5. Publish to outbox
         await OutboxRepository.insert(client, "message:edited", {
           workspaceId: params.workspaceId,
           streamId: params.streamId,

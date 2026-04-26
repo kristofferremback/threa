@@ -80,6 +80,7 @@ export {
   videoTranscodeJobId,
   savedMessageId,
   reminderQueueId,
+  sharedMessageId,
   streamContextAttachmentId,
   contextSummaryId,
 } from "./id"

@@ -179,6 +179,39 @@ export const MessageRepository = {
   },
 
   /**
+   * Fetch messages by ID scoped to a workspace. The messages table has no
+   * direct `workspace_id` column so the filter joins through `streams`. Used
+   * by callers whose input ids come from untrusted sources (e.g. a pointer
+   * messageId pulled from contentJson) where trusting the caller's implicit
+   * workspace boundary would violate INV-8.
+   */
+  async findByIdsInWorkspace(db: Querier, workspaceId: string, ids: string[]): Promise<Map<string, Message>> {
+    if (ids.length === 0) return new Map()
+
+    const result = await db.query<MessageRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)}
+      FROM messages
+      WHERE id = ANY(${ids})
+        AND stream_id IN (SELECT id FROM streams WHERE workspace_id = ${workspaceId})
+    `)
+
+    if (result.rows.length === 0) return new Map()
+
+    const foundIds = result.rows.map((r) => r.id)
+    const reactionsResult = await db.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${foundIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    const map = new Map<string, Message>()
+    for (const row of result.rows) {
+      map.set(row.id, mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+    }
+    return map
+  },
+
+  /**
    * Fetch messages by ID, restricted to a set of accessible streams and excluding
    * soft-deleted rows. Used by quote-reply resolution where the quoted message ID
    * comes from untrusted client content (`content_json.attrs.messageId`) and must

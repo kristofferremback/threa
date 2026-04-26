@@ -15,12 +15,14 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
 import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
+import type { ComposerControlHandle } from "@/components/composer"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
 import { extractCommandNode } from "@/lib/commands"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
+import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
 import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
 import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
@@ -252,7 +254,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   composerRef.current = composer
 
   // Imperative handle for programmatic focus from outside (e.g. quote reply insertion)
-  const composerFocusRef = useRef<{ focus: () => void; focusAfterQuoteReply: () => void } | null>(null)
+  const composerFocusRef = useRef<ComposerControlHandle | null>(null)
 
   // Register with QuoteReplyContext to insert quote reply nodes into the composer.
   // Stable deps: quoteReplyCtx is from context, composerRef is a ref.
@@ -294,6 +296,109 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       composerFocusRef.current?.focusAfterQuoteReply()
     })
   }, [quoteReplyCtx])
+
+  // Consume any pending share handoff for this stream, pre-inserting the
+  // shared-message pointer into the composer and leaving the cursor after it.
+  // We drive this through the editor directly (not React state) so the cursor
+  // positioning lands atomically with the content change — going through the
+  // useState path meant setContent committed one frame after the focus call,
+  // and TipTap would reset the selection to 0 in the process.
+  //
+  // Two trigger paths: (a) on mount / streamId change, pick up any handoff
+  // queued before this composer existed; (b) subscribe to the store so a
+  // share queued while we're already mounted (e.g. share-to-parent fired
+  // from a thread panel of the parent we're already viewing) reaches us
+  // without a remount.
+  useEffect(() => {
+    let pendingRaf: number | null = null
+    // Buffer of share nodes consumed from the store but not yet inserted
+    // into the editor (editor not mounted, RAF retry pending). A second
+    // handoff arriving mid-retry appends to this buffer and the RAF inserts
+    // both in one chain — previously, cancelling the retry dropped the
+    // first share's already-consumed payload from the closure. Order is
+    // preserved: first queued ends up first in the doc.
+    const buffered: JSONContent[] = []
+
+    const cancelPendingRaf = () => {
+      if (pendingRaf !== null) {
+        cancelAnimationFrame(pendingRaf)
+        pendingRaf = null
+      }
+    }
+
+    const tryConsume = () => {
+      const pending = consumeShareHandoff(streamId)
+      if (pending) {
+        buffered.push({
+          type: "sharedMessage",
+          attrs: pending as unknown as Record<string, unknown>,
+        })
+      }
+      if (buffered.length === 0) return
+
+      // Reset any in-flight retry — we'll restart it below covering the
+      // updated buffer. Safe because the retry's only side-effect is
+      // requestAnimationFrame; the editor write only happens inside
+      // `insert()` which we re-run on the new RAF.
+      cancelPendingRaf()
+
+      const insert = (): boolean => {
+        const editor = composerFocusRef.current?.getEditor?.()
+        if (!editor || editor.isDestroyed) return false
+
+        const currentDoc = editor.getJSON() as JSONContent
+        const existingBlocks = currentDoc.content ?? []
+        const trimmedBlocks = [...existingBlocks]
+        while (
+          trimmedBlocks.length > 0 &&
+          trimmedBlocks[trimmedBlocks.length - 1].type === "paragraph" &&
+          (trimmedBlocks[trimmedBlocks.length - 1].content?.length ?? 0) === 0
+        ) {
+          trimmedBlocks.pop()
+        }
+
+        // Drain the buffer atomically with the setContent so a notification
+        // arriving between getJSON and setContent doesn't double-insert.
+        const nodesToInsert = buffered.splice(0)
+        editor
+          .chain()
+          .setContent({
+            type: "doc",
+            content: [...trimmedBlocks, ...nodesToInsert, { type: "paragraph" }],
+          })
+          .focus("end")
+          .run()
+        pendingRaf = null
+        return true
+      }
+
+      if (insert()) return
+
+      // Editor not mounted yet on the first tick after a route change —
+      // retry on the next frame until it lands. Bound the chain with a
+      // deadline so a permanently-unmounted host (e.g. the
+      // `disabled && disabledReason` early return below) doesn't burn
+      // a frame per tick forever and silently swallow the share. Mirrors
+      // the deadline pattern on `triggerEditLast` further down.
+      const deadline = performance.now() + 1500
+      pendingRaf = requestAnimationFrame(function retry() {
+        if (insert()) return
+        if (performance.now() >= deadline) {
+          pendingRaf = null
+          return
+        }
+        pendingRaf = requestAnimationFrame(retry)
+      })
+    }
+
+    tryConsume()
+    const unsubscribe = subscribeShareHandoff(streamId, tryConsume)
+
+    return () => {
+      unsubscribe()
+      cancelPendingRaf()
+    }
+  }, [streamId])
 
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)

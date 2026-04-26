@@ -29,7 +29,7 @@ import {
   type MessageAgentActivity,
 } from "@/hooks"
 import { Quote, MessageSquareReply } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -54,6 +54,8 @@ import { MessageReactions } from "./message-reactions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 import { useQuoteReply } from "./quote-reply-context"
 import { useSwipeAction } from "@/hooks/use-swipe-action"
+import { useStreamFromStore } from "@/stores/stream-store"
+import { queueShareHandoff } from "@/stores/share-handoff-store"
 
 interface MessagePayload {
   messageId: string
@@ -461,6 +463,67 @@ interface MessageEventInnerProps {
   isFirstMessage?: boolean
 }
 
+/**
+ * Decide what to do after `queueShareHandoff` for a share-to-parent /
+ * share-to-root entry. The behavior diverges by viewport because the
+ * meaning of the panel query (`?panel=…`) differs:
+ *
+ * - **Desktop two-pane:** the panel renders alongside the main view, so
+ *   the parent composer is mounted and visible. Preserve `location.search`
+ *   so the panel stays open across the navigation. Skip `navigate()` when
+ *   pathname + search are unchanged — the existing composer subscribes to
+ *   the handoff store and picks the share up in place.
+ *
+ * - **Mobile fullscreen:** the panel TAKES OVER the screen, so the parent
+ *   composer is NOT visible even when the URL pathname matches the share
+ *   target. Drop the search on mobile so navigating to the bare pathname
+ *   swaps the view back to the parent's main composer. Without this, the
+ *   share queues but the user is still looking at the thread and nothing
+ *   visible happens.
+ */
+function navigateAfterShareHandoff({
+  workspaceId,
+  targetStreamId,
+  location,
+  navigate,
+  isMobile,
+}: {
+  workspaceId: string
+  targetStreamId: string
+  location: ReturnType<typeof useLocation>
+  navigate: ReturnType<typeof useNavigate>
+  isMobile: boolean
+}): void {
+  const targetPathname = `/w/${workspaceId}/s/${targetStreamId}`
+  const search = isMobile ? "" : location.search
+  if (location.pathname === targetPathname && location.search === search) return
+  navigate(`${targetPathname}${search}`)
+}
+
+/**
+ * Produce a user-facing label for the share-to-parent / share-to-root menu
+ * entry based on the target stream's type. Channels read naturally as
+ * "#slug"; DMs and scratchpads get a generic label to avoid awkward
+ * display-name phrasing ("Share to Untitled scratchpad" etc.) in slice 1.
+ * Thread parents (only reachable from a nested thread) include the display
+ * name so the user can tell the root + parent entries apart in the menu.
+ */
+function buildShareToStreamLabel(target: { type: string; displayName: string | null; slug: string | null }): string {
+  if (target.type === "channel") {
+    const tag = target.slug ? `#${target.slug}` : (target.displayName ?? "channel")
+    return `Share to ${tag}`
+  }
+  if (target.type === "dm") return "Share to DM"
+  if (target.type === "scratchpad") return "Share to scratchpad"
+  // Thread parent — only reachable from a nested thread. Use the display name
+  // when available so the user can tell the two entries apart in the menu.
+  if (target.type === "thread") {
+    const name = target.displayName ?? target.slug ?? "thread"
+    return `Share to thread (${name})`
+  }
+  return "Share to parent"
+}
+
 function SentMessageEvent({
   event,
   payload,
@@ -480,6 +543,17 @@ function SentMessageEvent({
   const currentUserId = useWorkspaceUserId(workspaceId)
   const { getTraceUrl } = useTrace()
   const quoteReplyCtx = useQuoteReply()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const currentStream = useStreamFromStore(streamId)
+  const parentStream = useStreamFromStore(currentStream?.parentStreamId ?? undefined)
+  const rootStream = useStreamFromStore(currentStream?.rootStreamId ?? undefined)
+  // For one-level threads, parent === root, so we only show the root entry to
+  // avoid two identical menu items. For nested threads (parent is itself a
+  // thread), we show both: root for the most useful target (the channel/dm/
+  // scratchpad), parent for the intermediate thread when that's what the
+  // user actually wants.
+  const showParentEntry = parentStream && rootStream && parentStream.id !== rootStream.id
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -717,6 +791,39 @@ function SentMessageEvent({
               snippet,
             })
         : undefined,
+      onShareToRoot: rootStream
+        ? () => {
+            queueShareHandoff(rootStream.id, {
+              messageId: payload.messageId,
+              streamId,
+              authorName: actorName,
+              authorId: event.actorId ?? "",
+              actorType: event.actorType ?? "user",
+            })
+            navigateAfterShareHandoff({ workspaceId, targetStreamId: rootStream.id, location, navigate, isMobile })
+          }
+        : undefined,
+      shareToRootLabel: rootStream ? buildShareToStreamLabel(rootStream) : undefined,
+      onShareToParent:
+        showParentEntry && parentStream
+          ? () => {
+              queueShareHandoff(parentStream.id, {
+                messageId: payload.messageId,
+                streamId,
+                authorName: actorName,
+                authorId: event.actorId ?? "",
+                actorType: event.actorType ?? "user",
+              })
+              navigateAfterShareHandoff({
+                workspaceId,
+                targetStreamId: parentStream.id,
+                location,
+                navigate,
+                isMobile,
+              })
+            }
+          : undefined,
+      shareToParentLabel: showParentEntry && parentStream ? buildShareToStreamLabel(parentStream) : undefined,
     }),
     [
       payload.contentMarkdown,
@@ -743,6 +850,12 @@ function SentMessageEvent({
       isSaved,
       handleToggleSave,
       handleRequestReminder,
+      parentStream,
+      rootStream,
+      showParentEntry,
+      navigate,
+      location,
+      isMobile,
       handleDiscussWithAriadne,
     ]
   )

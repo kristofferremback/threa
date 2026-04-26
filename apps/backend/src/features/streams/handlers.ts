@@ -2,10 +2,11 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { StreamService } from "./service"
 import type { EventService } from "../messaging"
+import { collectSharedMessageIds, hydrateSharedMessageIds, type HydratedSharedMessage } from "../messaging"
 import type { ActivityService } from "../activity"
 import type { LinkPreviewService } from "../link-previews"
 import type { StreamEvent } from "./event-repository"
-import type { EventType, LinkPreviewSummary, StreamType } from "@threa/types"
+import type { EventType, JSONContent, LinkPreviewSummary, StreamType } from "@threa/types"
 import { ARIADNE_PERSONA_SLUG, StreamTypes, SLUG_PATTERN, CompanionModes } from "@threa/types"
 import type { Pool } from "pg"
 import { PersonaRepository, getResolver, fetchStreamBag, contextBagSchema } from "../agents"
@@ -34,8 +35,14 @@ const createStreamSchema = z
      * Optional context-bag attached at creation time. Powers "Discuss with
      * Ariadne": when present on a scratchpad, the pre-compute handler warms
      * the shared summary cache so the first real user turn is fast.
+     *
+     * `z.lazy` defers dereferencing `contextBagSchema` until parse time. The
+     * agents-barrel re-export lives behind a transitive cycle
+     * (streams/handlers → messaging/sharing → agents → streams → handlers),
+     * so without lazy evaluation the binding is in TDZ at module-eval and
+     * the backend crashes on boot.
      */
-    contextBag: contextBagSchema.optional(),
+    contextBag: z.lazy(() => contextBagSchema).optional(),
   })
   .refine((data) => data.type !== "channel" || data.slug, {
     message: "Slug is required for channels",
@@ -172,6 +179,28 @@ interface Dependencies {
   eventService: EventService
   activityService?: ActivityService
   linkPreviewService: LinkPreviewService
+}
+
+/**
+ * Scan event payloads for `sharedMessage` node references and fetch the
+ * hydrated content + metadata for each source message. Returned as a
+ * `sourceMessageId → payload` map that the frontend overlays onto pointer
+ * node renders.
+ */
+async function hydrateSharedMessagesForEvents(
+  pool: Pool,
+  workspaceId: string,
+  events: StreamEvent[]
+): Promise<Record<string, HydratedSharedMessage>> {
+  const ids = new Set<string>()
+  for (const event of events) {
+    if (event.eventType === "message_created" || event.eventType === "message_edited") {
+      const payload = event.payload as { contentJson?: JSONContent }
+      if (payload.contentJson) collectSharedMessageIds(payload.contentJson, ids)
+    }
+  }
+  if (ids.size === 0) return {}
+  return hydrateSharedMessageIds(pool, workspaceId, ids)
 }
 
 function serializeEvent(event: StreamEvent) {
@@ -423,8 +452,9 @@ export function createStreamHandlers({
       })
 
       const eventsWithLinkPreviews = await enrichEventsWithLinkPreviews(linkPreviewService, workspaceId, userId, events)
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
 
-      res.json({ events: eventsWithLinkPreviews.map(serializeEvent) })
+      res.json({ events: eventsWithLinkPreviews.map(serializeEvent), sharedMessages })
     },
 
     async listEventsAround(req: Request, res: Response) {
@@ -457,9 +487,11 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
 
       res.json({
         events: eventsWithLinkPreviews.map(serializeEvent),
+        sharedMessages,
         hasOlder: result.hasOlder,
         hasNewer: result.hasNewer,
       })
@@ -654,6 +686,7 @@ export function createStreamHandlers({
         userId,
         enrichedEvents
       )
+      const sharedMessages = await hydrateSharedMessagesForEvents(pool, workspaceId, eventsWithLinkPreviews)
 
       // Fold the stream's persisted ContextBag into the bootstrap so the
       // timeline message-context badge renders synchronously from cached
@@ -667,6 +700,7 @@ export function createStreamHandlers({
         data: {
           stream,
           events: eventsWithLinkPreviews.map(serializeEvent),
+          sharedMessages,
           members,
           botMemberIds,
           membership,

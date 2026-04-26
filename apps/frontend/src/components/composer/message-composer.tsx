@@ -63,6 +63,11 @@ function getPreviewText(doc: JSONContent): string {
       return `Replying to ${author}`
     }
 
+    if (node.type === "sharedMessage") {
+      const author = typeof node.attrs?.authorName === "string" ? node.attrs.authorName : ""
+      return author ? `Sharing message from ${author}` : "Sharing a message"
+    }
+
     if (node.type === "codeBlock") {
       const text = (node.content ?? []).map((c) => c.text ?? "").join("")
       return text.split("\n")[0] ?? ""
@@ -95,6 +100,12 @@ function getPreviewText(doc: JSONContent): string {
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl+ elsewhere) */
 const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
 const MOD_KEY_NAME = navigator.platform?.toLowerCase().includes("mac") ? "Command" : "Control"
+
+export interface ComposerControlHandle {
+  focus(): void
+  focusAfterQuoteReply(): void
+  getEditor(): Editor | null
+}
 
 export interface MessageComposerProps {
   // Content (controlled)
@@ -160,7 +171,7 @@ export interface MessageComposerProps {
   /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
   streamContext?: MentionStreamContext
   /** Imperative handle ref for programmatic focus from parent */
-  composerRef?: React.MutableRefObject<{ focus: () => void; focusAfterQuoteReply: () => void } | null>
+  composerRef?: React.MutableRefObject<ComposerControlHandle | null>
 
   /**
    * Triggered when the user presses Cmd/Ctrl+S with focus inside the composer,
@@ -352,6 +363,7 @@ export function MessageComposer({
         setMobileFocused(true)
         requestAnimationFrame(() => richEditorRef.current?.focusAfterQuoteReply())
       },
+      getEditor: () => richEditorRef.current?.getEditor() ?? null,
     }
     return () => {
       composerRef.current = null

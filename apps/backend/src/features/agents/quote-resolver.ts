@@ -4,6 +4,7 @@ import { MessageRepository, type Message } from "../messaging"
 import { UserRepository } from "../workspaces"
 import { PersonaRepository } from "./persona-repository"
 import { logger } from "../../lib/logger"
+import { escapeXmlAttr } from "../../lib/xml"
 
 /**
  * Default maximum depth of quote-reply precursors to resolve.
@@ -264,8 +265,4 @@ async function resolveAuthorNamesForMessages(
   for (const u of users) names.set(u.id, u.name)
   for (const p of personas) names.set(p.id, p.name)
   return names
-}
-
-function escapeXmlAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }

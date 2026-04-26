@@ -127,10 +127,20 @@ async function databaseExists(dbName: string): Promise<boolean> {
  * Seed umzug_migrations in the cloned PR database for migrations that were
  * applied to the source DB before Umzug tracking was introduced.
  *
- * Strategy: query the source DB for its latest tracked migration (high-water
- * mark). All migration files at or before that point were already applied to
- * the source — and therefore exist in the clone. Files AFTER that point are
- * new PR-branch migrations that Umzug should run incrementally.
+ * Strategy: copy the EXACT set of names from `sourceDb.umzug_migrations` into
+ * `prDb.umzug_migrations`. Anything in the source's applied list represents
+ * DDL that already exists in the cloned data — the backend's runMigrations()
+ * must skip those. Anything NOT in the source's applied list is either:
+ *   (a) a new PR-branch migration whose table the clone doesn't have, or
+ *   (b) a migration the source somehow lost,
+ * and in both cases the backend must run it on boot.
+ *
+ * We previously used a "high-water mark" range — seed every PR-branch file
+ * lexicographically ≤ source's latest entry. That broke when a PR's new
+ * migration timestamp landed BETWEEN two already-merged main migrations:
+ * the new file slipped under the mark and got marked as applied even though
+ * its table never existed on the clone. Symptom: `relation "<x>" does not
+ * exist` on first write after deploy.
  */
 async function seedPreExistingMigrations(prDb: string, sourceDb: string, migrationsRelPath: string): Promise<void> {
   // Ensure umzug_migrations exists in the PR DB (may be missing if source
@@ -140,45 +150,41 @@ async function seedPreExistingMigrations(prDb: string, sourceDb: string, migrati
     "CREATE TABLE IF NOT EXISTS umzug_migrations (name VARCHAR(255) PRIMARY KEY, executed_at TIMESTAMPTZ DEFAULT NOW())"
   )
 
-  // High-water mark: the latest migration the source DB has tracked
-  let latestTracked: string
+  // Pull the explicit set of applied migration names from the source DB.
+  let appliedNames: string[] = []
   try {
-    latestTracked = await runPsql(sourceDb, "SELECT name FROM umzug_migrations ORDER BY name DESC LIMIT 1")
+    const raw = await runPsql(sourceDb, "SELECT name FROM umzug_migrations ORDER BY name")
+    appliedNames = raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
   } catch {
-    // Source DB may not have umzug_migrations at all
-    console.log(`Could not read umzug_migrations from '${sourceDb}' — seeding all migration files`)
-    latestTracked = ""
+    // Source DB may not have umzug_migrations at all (predates Umzug). Fall
+    // back to seeding every file from disk so already-applied DDL doesn't
+    // re-run and crash on "relation already exists". PRs that add brand-new
+    // migrations against a fully-untracked source must fix the source's
+    // umzug_migrations first — the script can't tell new from old without it.
+    console.log(`Could not read umzug_migrations from '${sourceDb}' — seeding all files from disk`)
+    const migrationsDir = path.join(import.meta.dirname, "..", migrationsRelPath)
+    appliedNames = (await readdir(migrationsDir)).filter((f) => f.endsWith(".sql")).sort()
   }
 
-  const migrationsDir = path.join(import.meta.dirname, "..", migrationsRelPath)
-  const files = (await readdir(migrationsDir)).filter((f) => f.endsWith(".sql")).sort()
-
-  if (files.length === 0) {
-    throw new Error(`No migration files found in ${migrationsRelPath}`)
+  if (appliedNames.length === 0) {
+    console.log(`No applied migrations on source '${sourceDb}' — nothing to seed in '${prDb}'`)
+    return
   }
-
-  // If the source has no tracked migrations, seed ALL files from disk.
-  // This means the source was set up before Umzug — every migration has
-  // been applied but none are tracked. New PR migrations will also be
-  // seeded (and thus skipped), but this is the safe default to avoid
-  // "relation already exists" crashes. PRs that add new migrations against
-  // a fully-untracked source should fix the source's umzug_migrations first.
-  const seedUpTo = latestTracked || files[files.length - 1]
 
   let seeded = 0
-  for (const file of files) {
-    if (file > seedUpTo) break
+  for (const name of appliedNames) {
     const result = await runPsql(
       prDb,
-      `INSERT INTO umzug_migrations (name) VALUES ('${file}') ON CONFLICT DO NOTHING RETURNING name`
+      `INSERT INTO umzug_migrations (name) VALUES ('${name}') ON CONFLICT DO NOTHING RETURNING name`
     )
     if (result) seeded++
   }
 
   if (seeded > 0) {
-    console.log(
-      `Seeded ${seeded} pre-existing migration entries into '${prDb}' umzug_migrations (high-water mark: ${seedUpTo})`
-    )
+    console.log(`Seeded ${seeded} pre-existing migration entries into '${prDb}' umzug_migrations`)
   } else {
     console.log(`All pre-existing migrations already tracked in '${prDb}'`)
   }

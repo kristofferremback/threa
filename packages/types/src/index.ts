@@ -150,6 +150,10 @@ export {
   GITHUB_PREVIEW_TYPES,
   type GitHubPreviewType,
   GitHubPreviewTypes,
+  // Share flavors
+  SHARE_FLAVORS,
+  type ShareFlavor,
+  ShareFlavors,
   // Inter-service authentication
   INTERNAL_API_KEY_HEADER,
 } from "./constants"
@@ -248,6 +252,7 @@ export type {
   StreamContextRef,
   StreamContextRefSource,
   EventsAroundResponse,
+  SharedMessageHydration,
   // Messages
   CreateMessageInput,
   CreateMessageInputJson,
@@ -332,6 +337,8 @@ export type {
   ThreaHeading,
   ThreaCodeBlock,
   ThreaBlockquote,
+  ThreaQuoteReply,
+  ThreaSharedMessage,
   ThreaBulletList,
   ThreaOrderedList,
   ThreaListItem,

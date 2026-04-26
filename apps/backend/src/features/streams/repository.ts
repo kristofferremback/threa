@@ -216,6 +216,36 @@ export const StreamRepository = {
   },
 
   /**
+   * Returns true when `ancestorCandidateId` equals `streamId`, is its parent
+   * anywhere up the chain, or is the non-thread root (`root_stream_id`) of any
+   * stream on the chain. Runs as a single recursive CTE — no app-level loop,
+   * no arbitrary depth cap. The `root_stream_id` predicate gives a one-hop
+   * short-circuit for the common thread→root share-to-parent case.
+   */
+  async isAncestor(db: Querier, ancestorCandidateId: string, streamId: string): Promise<boolean> {
+    if (ancestorCandidateId === streamId) return true
+    const result = await db.query<{ matched: boolean }>(sql`
+      WITH RECURSIVE chain AS (
+        SELECT id, parent_stream_id, root_stream_id
+        FROM streams
+        WHERE id = ${streamId}
+
+        UNION ALL
+
+        SELECT s.id, s.parent_stream_id, s.root_stream_id
+        FROM chain c
+        JOIN streams s ON s.id = c.parent_stream_id
+      )
+      SELECT TRUE AS matched
+      FROM chain
+      WHERE id = ${ancestorCandidateId}
+         OR root_stream_id = ${ancestorCandidateId}
+      LIMIT 1
+    `)
+    return result.rows.length > 0
+  },
+
+  /**
    * List streams by a known set of IDs with optional filtering.
    * Used by the public API to fetch accessible stream details.
    */
