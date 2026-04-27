@@ -311,45 +311,52 @@ export function StreamContent({
     [displayEvents, user?.id]
   )
 
+  // `order` is the position in the rendered timeline. Non-thread streams
+  // happen to sort by sequence already, but threads re-sort by
+  // (createdAt, id) — once moved messages land in a thread, their sequence
+  // (assigned in the destination's event log) can diverge from their visual
+  // position. Validating "target precedes selection" against `order` keeps
+  // batch UI consistent with what the user sees.
   const messageEventMeta = useMemo(() => {
-    const meta = new Map<string, { sequence: bigint; content: string }>()
+    const meta = new Map<string, { order: number; content: string }>()
+    let order = 0
     for (const event of displayEvents) {
       if (event.eventType !== "message_created") continue
       const payload = event.payload as { messageId?: string; contentMarkdown?: string; deletedAt?: string }
       if (!payload.messageId || payload.deletedAt) continue
-      meta.set(payload.messageId, { sequence: BigInt(event.sequence), content: payload.contentMarkdown ?? "" })
+      meta.set(payload.messageId, { order: order++, content: payload.contentMarkdown ?? "" })
     }
     return meta
   }, [displayEvents])
 
-  const selectedSequenceFloor = useMemo(() => {
-    let min: bigint | null = null
+  const selectedOrderFloor = useMemo(() => {
+    let min: number | null = null
     for (const messageId of selectedMessageIds) {
-      const sequence = messageEventMeta.get(messageId)?.sequence
-      if (sequence === undefined) continue
-      min = min === null || sequence < min ? sequence : min
+      const order = messageEventMeta.get(messageId)?.order
+      if (order === undefined) continue
+      min = min === null || order < min ? order : min
     }
     return min
   }, [messageEventMeta, selectedMessageIds])
 
   const invalidBatchTargetIds = useMemo(() => {
     const invalid = new Set<string>()
-    if (!batchMode || !dragGhost || selectedSequenceFloor === null) return invalid
+    if (!batchMode || !dragGhost || selectedOrderFloor === null) return invalid
     for (const [messageId, meta] of messageEventMeta) {
-      if (selectedMessageIds.has(messageId) || meta.sequence >= selectedSequenceFloor) {
+      if (selectedMessageIds.has(messageId) || meta.order >= selectedOrderFloor) {
         invalid.add(messageId)
       }
     }
     return invalid
-  }, [batchMode, dragGhost, messageEventMeta, selectedMessageIds, selectedSequenceFloor])
+  }, [batchMode, dragGhost, messageEventMeta, selectedMessageIds, selectedOrderFloor])
 
   const isValidBatchTarget = useCallback(
     (messageId: string | null) => {
-      if (!messageId || selectedSequenceFloor === null) return false
+      if (!messageId || selectedOrderFloor === null) return false
       const meta = messageEventMeta.get(messageId)
-      return !!meta && !selectedMessageIds.has(messageId) && meta.sequence < selectedSequenceFloor
+      return !!meta && !selectedMessageIds.has(messageId) && meta.order < selectedOrderFloor
     },
-    [messageEventMeta, selectedMessageIds, selectedSequenceFloor]
+    [messageEventMeta, selectedMessageIds, selectedOrderFloor]
   )
 
   const startBatchSelect = useCallback(

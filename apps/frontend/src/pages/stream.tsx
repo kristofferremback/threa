@@ -157,8 +157,12 @@ export function StreamPage() {
     dispatchStartBatchSelect(streamId)
   }
 
+  // System streams are read-only on the backend (e.g. activity/notification
+  // feeds) — surfacing "Move messages…" there would be a guaranteed dead
+  // end since the move endpoints reject the source stream.
+  const isSystem = stream?.type === StreamTypes.SYSTEM
   const streamMenuActions: SidebarActionItem[] = []
-  if (!isArchived) {
+  if (!isArchived && !isSystem) {
     streamMenuActions.push({
       id: "move-messages",
       label: "Move messages…",
@@ -322,12 +326,13 @@ export function StreamPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
-                  {/* Hide "Move messages…" entirely on archived streams to
-                    match the mobile drawer (which builds via
-                    `streamMenuActions` and skips the entry when isArchived).
+                  {/* Hide "Move messages…" entirely on archived/system streams
+                    to match the mobile drawer (which builds via
+                    `streamMenuActions` and skips the entry in both cases).
                     A disabled menu item would just confuse — there's no path
-                    to enable it without unarchiving first. */}
-                  {!isArchived && (
+                    to enable it without unarchiving first, and system streams
+                    can never be a valid source. */}
+                  {!isArchived && !isSystem && (
                     <DropdownMenuItem onClick={handleSelectMessages}>
                       <CornerDownRight className="mr-2 h-4 w-4" />
                       Move messages…

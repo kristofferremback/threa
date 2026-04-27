@@ -609,14 +609,14 @@ function MessageLayout({
           fallback: leadingSlot,
         })}
         <div
-          className={cn(
-            "message-content flex-1 min-w-0",
-            // In batch mode the whole row is a single selection target — disable
-            // child interactivity (links, reactions, thread card) so taps toggle
-            // selection instead of triggering nested handlers. Reactions and
-            // thread cards still render at full size to keep row height stable.
-            batchEnabled && "pointer-events-none"
-          )}
+          // `inert` removes descendants from the tab order and from
+          // pointer/click handling — `pointer-events-none` alone leaves
+          // nested links/buttons keyboard-focusable, so a Tab in batch mode
+          // would land inside the row instead of treating it as a single
+          // selection target. Reactions and thread cards still render at
+          // full size so row height stays stable.
+          inert={batchEnabled || undefined}
+          className={cn("message-content flex-1 min-w-0", batchEnabled && "pointer-events-none")}
         >
           {headerRow}
           {messageBody}
@@ -1498,6 +1498,10 @@ export function MessageEvent({
   const actorName = getActorName(event.actorId, event.actorType)
 
   switch (status) {
+    // Pending/failed/editing rows aren't selectable (they don't have a
+    // canonical server-side messageId yet), so the timeline never enters
+    // batch-target visuals on them. Don't thread `batch` through — it would
+    // only suggest these rows participate in selection when they don't.
     case "pending":
       return (
         <PendingMessageEvent
@@ -1510,7 +1514,6 @@ export function MessageEvent({
           deferSecondaryHydration={deferSecondaryHydration}
           groupContinuation={groupContinuation}
           isFirstMessage={isFirstMessage}
-          batch={batch}
         />
       )
     case "failed":
@@ -1524,7 +1527,6 @@ export function MessageEvent({
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
           isFirstMessage={isFirstMessage}
-          batch={batch}
         />
       )
     case "editing":
@@ -1537,7 +1539,6 @@ export function MessageEvent({
           actorName={actorName}
           deferSecondaryHydration={deferSecondaryHydration}
           isFirstMessage={isFirstMessage}
-          batch={batch}
         />
       )
     default:

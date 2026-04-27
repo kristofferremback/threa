@@ -730,19 +730,12 @@ export class EventService {
         throw new HttpError("Cannot move messages into an archived thread", { status: 403, code: "THREAD_ARCHIVED" })
       }
 
-      const actorIsThreadMember = await StreamMemberRepository.isMember(client, destinationThread.id, params.actorId)
-      if (!actorIsThreadMember) {
-        await StreamMemberRepository.insert(client, destinationThread.id, params.actorId)
-      }
+      // insert is idempotent (ON CONFLICT (stream_id, member_id) DO NOTHING),
+      // so we can call it unconditionally for both the actor and the target
+      // message's author without a precheck round-trip.
+      await StreamMemberRepository.insert(client, destinationThread.id, params.actorId)
       if (targetMessage.authorType === AuthorTypes.USER && targetMessage.authorId !== params.actorId) {
-        const authorIsThreadMember = await StreamMemberRepository.isMember(
-          client,
-          destinationThread.id,
-          targetMessage.authorId
-        )
-        if (!authorIsThreadMember) {
-          await StreamMemberRepository.insert(client, destinationThread.id, targetMessage.authorId)
-        }
+        await StreamMemberRepository.insert(client, destinationThread.id, targetMessage.authorId)
       }
 
       const sourceEvents = await StreamEventRepository.findMessageCreatedByMessageIdsForUpdate(
@@ -1041,6 +1034,15 @@ export class EventService {
         params.sourceStreamId,
         params.targetMessageId
       )
+      // Mirror the moveMessagesToThread guard so validate doesn't hand out
+      // leases the move endpoint will reject — keeps the two-step contract
+      // honest about what's actually movable.
+      if (existingThread?.archivedAt) {
+        throw new HttpError("Cannot move messages into an archived thread", {
+          status: 403,
+          code: "THREAD_ARCHIVED",
+        })
+      }
       const lease = await OperationLeaseRepository.create(client, {
         workspaceId: params.workspaceId,
         userId: params.actorId,

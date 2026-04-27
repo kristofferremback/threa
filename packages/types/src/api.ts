@@ -6,6 +6,7 @@
 
 import type { StreamType, Visibility, CompanionMode, SavedStatus, AuthorType } from "./constants"
 import type { ContextBag, ContextIntent } from "./context-bag"
+import type { UserId } from "./ids"
 import type { JSONContent } from "./prosemirror"
 import type {
   Stream,
@@ -340,7 +341,7 @@ export interface MovedFromProvenance {
   sourceStreamSlug: string | null
   sourceStreamDisplayName: string | null
   movedAt: string
-  movedBy: string
+  movedBy: UserId
   /**
    * Author type of `movedBy`. Today the move handler is gated to user
    * actors, so this is always `"user"` — but persisting the type alongside

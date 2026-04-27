@@ -412,7 +412,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
           ) : (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
+                <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" aria-label="Stream actions">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>

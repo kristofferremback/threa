@@ -899,9 +899,18 @@ export const StreamRepository = {
         ORDER BY parent_message_id, created_at DESC, id DESC
       ),
       participants_distinct AS (
-        SELECT parent_message_id, author_id, author_type, MIN(created_at) AS first_reply_at, MIN(id) AS first_reply_id
+        -- Pick the earliest reply row per (parent, author) so first_reply_at
+        -- and first_reply_id come from the same row. Independent MIN()s could
+        -- pair an early timestamp with a later id from the same author and
+        -- destabilize the (first_reply_at, first_reply_id) tie-break.
+        SELECT DISTINCT ON (parent_message_id, author_id, author_type)
+          parent_message_id,
+          author_id,
+          author_type,
+          created_at AS first_reply_at,
+          id AS first_reply_id
         FROM thread_messages
-        GROUP BY parent_message_id, author_id, author_type
+        ORDER BY parent_message_id, author_id, author_type, created_at ASC, id ASC
       ),
       participants AS (
         SELECT
@@ -960,9 +969,15 @@ export const StreamRepository = {
           AND m.deleted_at IS NULL
       ),
       participants_distinct AS (
-        SELECT author_id, author_type, MIN(created_at) AS first_reply_at, MIN(id) AS first_reply_id
+        -- Same DISTINCT ON pattern as findThreadSummaries — keep the SQL in
+        -- sync so single-parent and batch results agree on participant order.
+        SELECT DISTINCT ON (author_id, author_type)
+          author_id,
+          author_type,
+          created_at AS first_reply_at,
+          id AS first_reply_id
         FROM thread_messages
-        GROUP BY author_id, author_type
+        ORDER BY author_id, author_type, created_at ASC, id ASC
       ),
       participants AS (
         SELECT

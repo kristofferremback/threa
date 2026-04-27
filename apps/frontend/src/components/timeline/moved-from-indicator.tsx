@@ -85,7 +85,8 @@ export function MovedFromIndicator({ workspaceId, movedFrom, onClick }: MovedFro
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className="inline-flex items-center text-muted-foreground hover:text-foreground cursor-default"
+          tabIndex={0}
+          className="inline-flex items-center text-muted-foreground hover:text-foreground cursor-default rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
           aria-label={ariaLabel}
         >
           <CornerDownRight className="h-3 w-3" aria-hidden="true" />
