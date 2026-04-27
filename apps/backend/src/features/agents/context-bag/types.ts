@@ -1,6 +1,7 @@
 import type { ContextBag, ContextIntent, ContextRef, ContextRefKind } from "@threa/types"
 import type { Querier } from "../../../db"
 import type { AI, CostContext } from "../../../lib/ai/ai"
+import type { AttachmentSummary } from "../../messaging"
 
 /**
  * Persisted bag row (before resolution). `lastRendered` is the snapshot
@@ -38,25 +39,14 @@ export interface LastRenderedSnapshot {
 }
 
 /**
- * Attachment metadata surfaced in the rendered context block. We only carry
- * the fields the model needs to know an attachment exists and what it is —
- * full extractions/page text are loaded on demand through Ariadne's existing
- * attachment tools (`load_attachment`, `load_pdf_section`, etc.) so we don't
- * duplicate the heavy enrichment that runs for the live conversation history.
- *
- * Without this the focal message in a "Discuss with Ariadne" window renders
- * as text-only, which makes the trace lie about what the user attached.
- */
-export interface RenderableAttachment {
-  id: string
-  filename: string
-  mimeType: string
-  sizeBytes: number
-}
-
-/**
  * Minimal renderable unit for the thread resolver. Kept narrow so the resolver
  * doesn't leak the full Message shape into the render step.
+ *
+ * Attachments use the same `AttachmentSummary` shape that message_created
+ * events carry on the wire — no need for a parallel context-bag-only type.
+ * Without `attachments` here the focal message in a "Discuss with Ariadne"
+ * window renders as text-only, which makes the trace lie about what the
+ * user attached.
  */
 export interface RenderableMessage {
   messageId: string
@@ -66,8 +56,8 @@ export interface RenderableMessage {
   createdAt: string
   editedAt: string | null
   sequence: bigint
-  /** Attachments on this source message, if any. Empty/omitted when the message has none. */
-  attachments?: RenderableAttachment[]
+  /** Attachments on this source message, if any. Omitted when the message has none. */
+  attachments?: AttachmentSummary[]
 }
 
 /**

@@ -2,12 +2,12 @@ import type { Querier } from "../../../../db"
 import { ContextIntents, ContextRefKinds, type ContextRef } from "@threa/types"
 import { HttpError } from "../../../../lib/errors"
 import { AttachmentRepository } from "../../../attachments"
-import type { Message } from "../../../messaging"
+import type { AttachmentSummary, Message } from "../../../messaging"
 import { MessageRepository } from "../../../messaging"
 import { StreamRepository, checkStreamAccess } from "../../../streams"
 import { resolveActorNames } from "../../actor-names"
 import { fingerprintContent, fingerprintManifest as fingerprintInputs } from "../fingerprint"
-import type { RenderableAttachment, RenderableMessage, Resolver, SummaryInput } from "../types"
+import type { RenderableMessage, Resolver, SummaryInput } from "../types"
 
 type ThreadRef = Extract<ContextRef, { kind: typeof ContextRefKinds.THREAD }>
 
@@ -105,7 +105,7 @@ export const ThreadResolver: Resolver<ThreadRef> = {
 
     const items: RenderableMessage[] = withRoot.map((m) => {
       const messageAttachments = attachmentsByMessage.get(m.id)
-      const attachments: RenderableAttachment[] | undefined =
+      const attachments: AttachmentSummary[] | undefined =
         messageAttachments && messageAttachments.length > 0
           ? messageAttachments.map((a) => ({
               id: a.id,
@@ -126,6 +126,12 @@ export const ThreadResolver: Resolver<ThreadRef> = {
       }
     })
 
+    // Attachments are intentionally NOT folded into the fingerprint: they're
+    // immutable after message creation (the link is set at insert time and
+    // never mutated), so adding them would expand the manifest without ever
+    // changing the value. If that invariant ever breaks (e.g. retroactive
+    // attach/detach), the rendered stable region would drift while the
+    // fingerprint stays put — the cache would silently serve a stale summary.
     const inputs: SummaryInput[] = items.map((item) => ({
       messageId: item.messageId,
       contentFingerprint: fingerprintContent(item.contentMarkdown),
