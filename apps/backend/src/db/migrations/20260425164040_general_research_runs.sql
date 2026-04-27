@@ -54,11 +54,6 @@ CREATE TABLE IF NOT EXISTS general_research_steps (
 CREATE INDEX IF NOT EXISTS idx_general_research_steps_run
     ON general_research_steps (run_id, started_at);
 
--- Enable bounded general research for Ariadne without disturbing custom personas.
-UPDATE personas
-SET enabled_tools = CASE
-    WHEN enabled_tools IS NULL THEN ARRAY['general_research']
-    WHEN NOT (enabled_tools @> ARRAY['general_research']) THEN enabled_tools || ARRAY['general_research']
-    ELSE enabled_tools
-END
-WHERE id = 'persona_system_ariadne';
+-- Built-in tool enablement for Ariadne lives in apps/backend/src/features/agents/built-in-agents.ts
+-- (code-backed defaults). Workspace-managed personas can add `general_research` via their row or
+-- an agent_config_overrides patch if product policy allows.
