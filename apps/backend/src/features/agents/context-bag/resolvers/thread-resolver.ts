@@ -1,6 +1,7 @@
 import type { Querier } from "../../../../db"
-import { ContextRefKinds, type ContextRef } from "@threa/types"
+import { ContextIntents, ContextRefKinds, type ContextIntent, type ContextRef } from "@threa/types"
 import { HttpError } from "../../../../lib/errors"
+import type { Message } from "../../../messaging"
 import { MessageRepository } from "../../../messaging"
 import { StreamRepository, checkStreamAccess } from "../../../streams"
 import { resolveActorNames } from "../../actor-names"
@@ -10,6 +11,16 @@ import type { RenderableMessage, Resolver, SummaryInput } from "../types"
 type ThreadRef = Extract<ContextRef, { kind: typeof ContextRefKinds.THREAD }>
 
 const MAX_FETCH = 500
+
+/**
+ * Total messages we include when DISCUSS_THREAD windows the source stream.
+ * Tuned for "Ariadne can read the whole window without losing the plot" —
+ * larger windows quickly drown the focal message in unrelated chatter, which
+ * is exactly the failure mode this windowing is supposed to fix. If the user
+ * needs more, Ariadne can call `get_stream_messages` to pull additional
+ * history into a tool result.
+ */
+const DISCUSS_WINDOW_TOTAL = 50
 
 /**
  * Thread resolver: materializes a thread/scratchpad/channel reference into the
@@ -44,17 +55,26 @@ export const ThreadResolver: Resolver<ThreadRef> = {
     }
   },
 
-  async fetch(db, ref) {
+  async fetch(db, ref, options) {
     const stream = await StreamRepository.findById(db, ref.streamId)
     if (!stream) {
       throw new HttpError("Context source stream not found", { status: 404, code: "CONTEXT_SOURCE_NOT_FOUND" })
     }
 
-    const messages = await MessageRepository.list(db, ref.streamId, { limit: MAX_FETCH })
+    // DISCUSS_THREAD takes a narrow, focused window instead of dumping the
+    // whole tail. Other intents keep the legacy fetch-then-anchor path (and
+    // can opt into windowing later by passing their own intent here).
+    const useDiscussWindow = options?.intent === ContextIntents.DISCUSS_THREAD
+    const messages = useDiscussWindow
+      ? await fetchDiscussWindow(db, ref)
+      : await MessageRepository.list(db, ref.streamId, { limit: MAX_FETCH })
 
     // Apply optional anchoring. `fromMessageId`/`toMessageId` bound the slice
     // by sequence so the bag can pin down a specific range of the thread.
-    const anchored = await applyAnchors(db, messages, ref)
+    // The discuss-window path already returns a centered slice, so anchors
+    // are skipped there — they're a different slicing primitive that the
+    // discuss flow doesn't use (and can't combine with cleanly).
+    const anchored = useDiscussWindow ? messages : await applyAnchors(db, messages, ref)
 
     // Always prepend the thread's root message when the source is a thread —
     // the reply chain is unintelligible without the message that spawned it.
@@ -88,13 +108,82 @@ export const ThreadResolver: Resolver<ThreadRef> = {
     const fingerprint = fingerprintInputs(inputs)
     const tail = items[items.length - 1]
 
+    // The focal message is only meaningful when it actually shows up in the
+    // window — if the user pasted/typed an originMessageId that points
+    // somewhere we couldn't fetch (different stream, soft-deleted, etc.)
+    // we drop the focal rather than letting the renderer flag a phantom.
+    const focalMessageId =
+      useDiscussWindow && ref.originMessageId && items.some((i) => i.messageId === ref.originMessageId)
+        ? ref.originMessageId
+        : null
+
     return {
       items,
       inputs,
       fingerprint,
       tailMessageId: tail?.messageId ?? null,
+      focalMessageId,
     }
   },
+}
+
+/**
+ * Fetch the DISCUSS_THREAD window: ~50 messages centered on `originMessageId`,
+ * or the most recent ~50 messages when there's no focal (slash-command entry
+ * point). Rebalances when the focal is near the top or bottom of the stream
+ * so the window stays at full size whenever possible — e.g. focal at index 5
+ * with 200 messages after returns 5 before + focal + 44 after rather than
+ * leaving 19 slots empty.
+ */
+async function fetchDiscussWindow(db: Querier, ref: ThreadRef): Promise<Message[]> {
+  if (!ref.originMessageId) {
+    // No focal: return the most recent N messages (chronological order).
+    return MessageRepository.list(db, ref.streamId, { limit: DISCUSS_WINDOW_TOTAL })
+  }
+
+  // Fetch generously on both sides so we can rebalance below without a second
+  // round-trip. `findSurrounding` filters soft-deletes and returns
+  // chronological order with the target included.
+  const surrounding = await MessageRepository.findSurrounding(
+    db,
+    ref.originMessageId,
+    ref.streamId,
+    DISCUSS_WINDOW_TOTAL,
+    DISCUSS_WINDOW_TOTAL
+  )
+  if (surrounding.length === 0) {
+    // Origin doesn't resolve in this stream (wrong id, deleted, different
+    // stream). Fall back to the most-recent slice so the user still gets a
+    // useful context — matching the slash-command shape.
+    return MessageRepository.list(db, ref.streamId, { limit: DISCUSS_WINDOW_TOTAL })
+  }
+
+  const targetIdx = surrounding.findIndex((m) => m.id === ref.originMessageId)
+  if (targetIdx < 0) {
+    // Defensive: target should always be in the surrounding slice when
+    // present. Treat as no-focal fallback.
+    return surrounding.slice(-DISCUSS_WINDOW_TOTAL)
+  }
+
+  const beforeAvailable = targetIdx
+  const afterAvailable = surrounding.length - 1 - targetIdx
+  const halfBefore = Math.floor((DISCUSS_WINDOW_TOTAL - 1) / 2)
+  const halfAfter = DISCUSS_WINDOW_TOTAL - 1 - halfBefore
+
+  // Pick balanced halves first, then push leftover capacity from the short
+  // side onto the long side so the window stays at DISCUSS_WINDOW_TOTAL when
+  // possible.
+  let takeBefore = Math.min(beforeAvailable, halfBefore)
+  let takeAfter = Math.min(afterAvailable, halfAfter)
+  const remaining = DISCUSS_WINDOW_TOTAL - 1 - takeBefore - takeAfter
+  if (remaining > 0) {
+    const extraAfter = Math.min(remaining, afterAvailable - takeAfter)
+    takeAfter += extraAfter
+    const extraBefore = Math.min(remaining - extraAfter, beforeAvailable - takeBefore)
+    takeBefore += extraBefore
+  }
+
+  return surrounding.slice(targetIdx - takeBefore, targetIdx + takeAfter + 1)
 }
 
 async function applyAnchors<T extends { id: string; sequence: bigint; streamId?: string }>(

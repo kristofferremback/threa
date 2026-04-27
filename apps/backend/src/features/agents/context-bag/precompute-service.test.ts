@@ -36,7 +36,7 @@ describe("precomputeRefSummaries", () => {
     mock.restore()
   })
 
-  it("returns status=inline and writes no summary when content fits under the intent threshold", async () => {
+  it("returns status=inline and writes no summary for a small DISCUSS_THREAD slice", async () => {
     stubWithClient()
     spyOn(ThreadResolver, "assertAccess").mockResolvedValue(undefined)
     spyOn(ThreadResolver, "fetch").mockResolvedValue({
@@ -47,6 +47,7 @@ describe("precomputeRefSummaries", () => {
       ],
       fingerprint: "fp_small",
       tailMessageId: "msg_1",
+      focalMessageId: null,
     })
     const upsert = spyOn(SummaryRepository, "upsert")
     const find = spyOn(SummaryRepository, "find")
@@ -68,71 +69,29 @@ describe("precomputeRefSummaries", () => {
     expect(ai.generateText).not.toHaveBeenCalled()
   })
 
-  it("returns status=ready and upserts a summary when content exceeds the inline threshold", async () => {
+  it("never summarises DISCUSS_THREAD even with very large windows (summariser disabled for the intent)", async () => {
+    // Windowing in the resolver caps the slice to ~50 messages, but if the
+    // user pastes huge messages the inline character count can still get
+    // arbitrarily large. Summarisation is disabled regardless — the intent
+    // sets `inlineCharThreshold` to Infinity so Ariadne always sees the raw
+    // windowed messages, never a summary. Locks in the new behavior so a
+    // future tweak to the threshold doesn't silently re-enable the summary
+    // path that was overwhelming her.
     stubWithClient()
     spyOn(ThreadResolver, "assertAccess").mockResolvedValue(undefined)
-    // 10 × 1000 chars = 10,000, well over the 8000 threshold.
     spyOn(ThreadResolver, "fetch").mockResolvedValue({
-      items: makeItems(10, 1000),
-      inputs: Array.from({ length: 10 }, (_, i) => ({
+      items: makeItems(50, 1000), // 50,000 chars — would have tripped the old 8k threshold
+      inputs: Array.from({ length: 50 }, (_, i) => ({
         messageId: `msg_${i}`,
         contentFingerprint: `f${i}`,
         editedAt: null,
         deleted: false,
       })),
       fingerprint: "fp_big",
-      tailMessageId: "msg_9",
+      tailMessageId: "msg_49",
+      focalMessageId: null,
     })
-    spyOn(SummaryRepository, "find").mockResolvedValue(null)
-    const upsert = spyOn(SummaryRepository, "upsert").mockResolvedValue({
-      id: "cs_1",
-      workspaceId: "ws_1",
-      refKind: ContextRefKinds.THREAD,
-      refKey: "thread:stream_src",
-      fingerprint: "fp_big",
-      inputs: [],
-      summaryText: "generated summary",
-      model: "openrouter:openai/gpt-5.4-nano",
-      createdAt: new Date(),
-    })
-
-    const ai = makeAi()
-    const refs: ContextRef[] = [{ kind: ContextRefKinds.THREAD, streamId: "stream_src" }]
-    const results = await precomputeRefSummaries(
-      { pool: {} as any, ai },
-      { workspaceId: "ws_1", userId: "usr_1", intent: ContextIntents.DISCUSS_THREAD, refs }
-    )
-
-    expect(results[0].status).toBe("ready")
-    expect(ai.generateText).toHaveBeenCalledTimes(1)
-    expect(upsert).toHaveBeenCalledTimes(1)
-  })
-
-  it("reuses a cached summary when the fingerprint already has a row (no AI call)", async () => {
-    stubWithClient()
-    spyOn(ThreadResolver, "assertAccess").mockResolvedValue(undefined)
-    spyOn(ThreadResolver, "fetch").mockResolvedValue({
-      items: makeItems(10, 1000),
-      inputs: Array.from({ length: 10 }, (_, i) => ({
-        messageId: `msg_${i}`,
-        contentFingerprint: `f${i}`,
-        editedAt: null,
-        deleted: false,
-      })),
-      fingerprint: "fp_cached",
-      tailMessageId: "msg_9",
-    })
-    spyOn(SummaryRepository, "find").mockResolvedValue({
-      id: "cs_cached",
-      workspaceId: "ws_1",
-      refKind: ContextRefKinds.THREAD,
-      refKey: "thread:stream_src",
-      fingerprint: "fp_cached",
-      inputs: [],
-      summaryText: "warm summary",
-      model: "openrouter:openai/gpt-5.4-nano",
-      createdAt: new Date(),
-    })
+    const find = spyOn(SummaryRepository, "find")
     const upsert = spyOn(SummaryRepository, "upsert")
 
     const ai = makeAi()
@@ -142,9 +101,10 @@ describe("precomputeRefSummaries", () => {
       { workspaceId: "ws_1", userId: "usr_1", intent: ContextIntents.DISCUSS_THREAD, refs }
     )
 
-    expect(results[0].status).toBe("ready")
+    expect(results[0].status).toBe("inline")
     expect(ai.generateText).not.toHaveBeenCalled()
     expect(upsert).not.toHaveBeenCalled()
+    expect(find).not.toHaveBeenCalled()
   })
 
   it("propagates access errors from the resolver (INV-8 boundary)", async () => {
@@ -193,12 +153,14 @@ describe("precomputeRefSummaries", () => {
         inputs: [{ messageId: "msg_a", contentFingerprint: "fa", editedAt: null, deleted: false }],
         fingerprint: "fp_a",
         tailMessageId: "msg_a",
+        focalMessageId: null,
       })
       .mockResolvedValueOnce({
         items: makeItems(1, 50),
         inputs: [{ messageId: "msg_b", contentFingerprint: "fb", editedAt: null, deleted: false }],
         fingerprint: "fp_b",
         tailMessageId: "msg_b",
+        focalMessageId: null,
       })
 
     const ai = makeAi()

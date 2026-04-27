@@ -23,8 +23,14 @@ describe("DiscussThreadIntent config", () => {
     expect(DiscussThreadIntent.supportedKinds).toContain(ContextRefKinds.THREAD)
   })
 
-  test("sets a positive inline character threshold so tiny threads inline and big ones summarize", () => {
-    expect(DiscussThreadIntent.inlineCharThreshold).toBeGreaterThan(0)
+  test("disables summarisation by setting an infinite inline-char threshold", () => {
+    // The resolver windows the source stream to ~50 messages before render,
+    // so we'd rather inline that windowed slice verbatim than summarise it.
+    // The summariser code path is intentionally kept around for future
+    // intents — but it must stay dormant for DISCUSS_THREAD. Regression
+    // guard: a finite threshold here would silently re-enable summarisation
+    // for slices with long messages, the exact failure mode we just fixed.
+    expect(DiscussThreadIntent.inlineCharThreshold).toBe(Number.POSITIVE_INFINITY)
   })
 
   test("system preamble instructs the model to treat the delta as authoritative", () => {
@@ -62,5 +68,41 @@ describe("inline-vs-summarize strategy (via renderStable)", () => {
     })
     expect(out).toContain("Messages (chronological)")
     expect(out).toContain("[msg_a]")
+  })
+
+  test("splits inline messages around the focal anchor and marks it with a chevron", () => {
+    // Render with an empty preamble so the assertion below isn't fooled by
+    // the preamble's own mention of focal-message machinery — we want to
+    // pin the *renderer's* output for this case.
+    const out = renderStable({
+      preamble: "",
+      inlineItems: [
+        msg({ messageId: "msg_a" }),
+        msg({ messageId: "msg_b", contentMarkdown: "the focal one" }),
+        msg({ messageId: "msg_c" }),
+      ],
+      refLabel: "thread:stream_x",
+      focalMessageId: "msg_b",
+    })
+    expect(out).toContain("Messages before the focused message")
+    expect(out).toContain("Focused message (the message the user opened this discussion from)")
+    expect(out).toContain("Messages after the focused message")
+    expect(out).toContain("► [msg_b]")
+    // Without a focal we'd see the un-split heading; with a focal we should not.
+    expect(out).not.toContain("Messages (chronological)")
+  })
+
+  test("falls back to the chronological list when the focal id isn't in the inline window", () => {
+    // Empty preamble — see comment in the previous test for why.
+    const out = renderStable({
+      preamble: "",
+      inlineItems: [msg({ messageId: "msg_a" }), msg({ messageId: "msg_b" })],
+      refLabel: "thread:stream_x",
+      // Caller asked for a focal that isn't present — render plain list rather
+      // than fabricate a focal section the model will get confused by.
+      focalMessageId: "msg_phantom",
+    })
+    expect(out).toContain("Messages (chronological)")
+    expect(out).not.toContain("Focused message (the message the user opened this discussion from)")
   })
 })
