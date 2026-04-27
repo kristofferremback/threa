@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { api, ApiError } from "./client"
+import { api, ApiError, parseApiError } from "./client"
 
 const originalFetch = globalThis.fetch
 
@@ -59,5 +59,22 @@ describe("apiFetch error parsing", () => {
       message: "Validation failed",
       details: { fieldErrors: { endpoint: ["Required"] } },
     })
+  })
+})
+
+describe("parseApiError — for raw fetch callers (multipart uploads)", () => {
+  it("uses the supplied fallback when the body is empty", async () => {
+    const response = new Response("", { status: 500, headers: { "Content-Type": "application/json" } })
+    const err = await parseApiError(response, { code: "UPLOAD_ERROR", message: "Upload failed" })
+    expect(err).toMatchObject({ status: 500, code: "UPLOAD_ERROR", message: "Upload failed" })
+  })
+
+  it("prefers the wire-shape over the fallback when the server provided one", async () => {
+    const response = new Response(JSON.stringify({ error: "File too large", code: "FILE_TOO_LARGE" }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" },
+    })
+    const err = await parseApiError(response, { code: "UPLOAD_ERROR", message: "Upload failed" })
+    expect(err).toMatchObject({ status: 413, code: "FILE_TOO_LARGE", message: "File too large" })
   })
 })
