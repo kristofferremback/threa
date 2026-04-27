@@ -188,7 +188,14 @@ const MOVED_MESSAGE_PREVIEW_CHAR_CAP = 200
 
 function capMovedPreview(content: string): string {
   if (content.length <= MOVED_MESSAGE_PREVIEW_CHAR_CAP) return content
-  return `${content.slice(0, MOVED_MESSAGE_PREVIEW_CHAR_CAP)}…`
+  // Iterate by code points so emoji and other non-BMP characters don't get
+  // split into a lone surrogate at the truncation boundary. `Array.from`
+  // on a string yields one entry per code point, which is what we want
+  // for "200 user-perceived characters" (close enough — grapheme clusters
+  // would be ideal but cost more for very little user benefit here).
+  const codePoints = Array.from(content)
+  if (codePoints.length <= MOVED_MESSAGE_PREVIEW_CHAR_CAP) return content
+  return `${codePoints.slice(0, MOVED_MESSAGE_PREVIEW_CHAR_CAP).join("")}…`
 }
 
 function canonicalMoveLeasePayload(params: {
@@ -776,11 +783,11 @@ export class EventService {
         destinationStreamId: destinationThread.id,
         updates,
         movedFrom: {
-          sourceStreamId: params.sourceStreamId,
           sourceStreamSlug: sourceStream.slug,
           sourceStreamDisplayName: sourceStream.displayName,
           movedAt: movedAt.toISOString(),
           movedBy: params.actorId,
+          movedByType: AuthorTypes.USER,
         },
       })
       const movedAgentSessionEvents = await StreamEventRepository.moveEventsById(client, {
@@ -864,6 +871,10 @@ export class EventService {
         destinationStreamDisplayName: destinationThread.displayName,
         messages: movedMessagePreviews,
       }
+      // Pin both tombstones AND the per-message `movedFrom.movedAt` to the
+      // same `movedAt` value so the badge tooltip and the tombstone summary
+      // line render identical timestamps for the same move (otherwise app
+      // clock vs DB NOW() can drift visibly under slow transactions).
       const sourceTombstone = await StreamEventRepository.insert(client, {
         id: eventId(),
         streamId: params.sourceStreamId,
@@ -871,6 +882,7 @@ export class EventService {
         payload: tombstonePayload,
         actorId: params.actorId,
         actorType: AuthorTypes.USER,
+        createdAt: movedAt,
       })
       const destinationTombstone = await StreamEventRepository.insert(client, {
         id: eventId(),
@@ -879,6 +891,7 @@ export class EventService {
         payload: tombstonePayload,
         actorId: params.actorId,
         actorType: AuthorTypes.USER,
+        createdAt: movedAt,
       })
 
       // Order the wire events that will be applied to the destination

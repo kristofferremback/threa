@@ -35,8 +35,13 @@ function formatStreamName(displayName: string | null, slug: string | null): stri
 export function MessagesMovedEvent({ event, workspaceId, streamId }: MessagesMovedEventProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const payload = event.payload as MessagesMovedEventPayload
-  const { getActorName } = useActors(workspaceId)
-  const moverName = getActorName(event.actorId, event.actorType)
+  // Single `useActors` subscription for both the tombstone summary and
+  // every drawer row. `MovedMessagesDrawer` is rendered unconditionally
+  // (only its `open` prop toggles visibility), so calling `useActors`
+  // inside it would create a parallel IDB subscription on every
+  // tombstone in the timeline.
+  const actors = useActors(workspaceId)
+  const moverName = actors.getActorName(event.actorId, event.actorType)
 
   const count = payload.messages.length
   const noun = count === 1 ? "message" : "messages"
@@ -64,6 +69,7 @@ export function MessagesMovedEvent({ event, workspaceId, streamId }: MessagesMov
         workspaceId={workspaceId}
         currentStreamId={streamId}
         moverName={moverName}
+        actors={actors}
       />
     </>
   )
@@ -77,6 +83,7 @@ interface MovedMessagesDrawerProps {
   workspaceId: string
   currentStreamId: string
   moverName: string
+  actors: ActorLookup
 }
 
 function MovedMessagesDrawer({
@@ -87,13 +94,8 @@ function MovedMessagesDrawer({
   workspaceId,
   currentStreamId,
   moverName,
+  actors,
 }: MovedMessagesDrawerProps) {
-  // One `useActors` call for the whole drawer — without this hoist each
-  // `MovedMessageRow` would subscribe its own copy of the workspace
-  // users/personas/bots live queries, so a 50-message move would create
-  // 150 redundant IDB subscriptions for identical data. Mirrors the
-  // membership-event.tsx pattern (single call at the parent).
-  const actors = useActors(workspaceId)
   const sourceLabel = formatStreamName(payload.sourceStreamDisplayName, payload.sourceStreamSlug) ?? "another stream"
   const destinationLabel =
     formatStreamName(payload.destinationStreamDisplayName, payload.destinationStreamSlug) ?? "a thread"

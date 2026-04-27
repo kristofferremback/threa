@@ -23,7 +23,7 @@ function formatSourceName(displayName: string | null, slug: string | null): stri
  */
 export function MovedFromIndicator({ workspaceId, movedFrom }: MovedFromIndicatorProps) {
   const { getActorName } = useActors(workspaceId)
-  const moverName = getActorName(movedFrom.movedBy, "user")
+  const moverName = getActorName(movedFrom.movedBy, movedFrom.movedByType)
   const sourceName = formatSourceName(movedFrom.sourceStreamDisplayName, movedFrom.sourceStreamSlug)
 
   return (

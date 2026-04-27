@@ -37,6 +37,13 @@ export interface InsertEventParams {
   payload: unknown
   actorId?: string
   actorType?: AuthorType
+  /**
+   * Override the row's `created_at`. Defaults to DB `NOW()` when omitted.
+   * Used by the move flow to give a single timestamp to source + destination
+   * tombstones and to per-message `movedFrom` provenance, so all three
+   * surfaces render the same "X moved messages 2m ago" time.
+   */
+  createdAt?: Date
 }
 
 export interface MoveEventSequenceUpdate {
@@ -107,9 +114,10 @@ export const StreamEventRepository = {
 
   async insert(db: Querier, params: InsertEventParams): Promise<StreamEvent> {
     const sequence = await this.getNextSequence(db, params.streamId)
+    const createdAt = params.createdAt ?? new Date()
 
     const result = await db.query<StreamEventRow>(sql`
-      INSERT INTO stream_events (id, stream_id, sequence, event_type, payload, actor_id, actor_type)
+      INSERT INTO stream_events (id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at)
       VALUES (
         ${params.id},
         ${params.streamId},
@@ -117,7 +125,8 @@ export const StreamEventRepository = {
         ${params.eventType},
         ${JSON.stringify(params.payload)},
         ${params.actorId ?? null},
-        ${params.actorType ?? null}
+        ${params.actorType ?? null},
+        ${createdAt}
       )
       RETURNING id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
     `)
@@ -320,18 +329,22 @@ export const StreamEventRepository = {
       updates: MoveEventSequenceUpdate[]
       /**
        * Stamps `movedFrom: { sourceStreamId, sourceStreamSlug,
-       * sourceStreamDisplayName, movedAt, movedBy }` onto each relocated
-       * `message_created` payload so the destination timeline can render a
-       * per-message origin badge without a join. Uses jsonb concat (`||`)
-       * so re-moves overwrite the previous provenance — we surface the
-       * most recent origin, not a chain.
+       * sourceStreamDisplayName, movedAt, movedBy, movedByType }` onto each
+       * relocated `message_created` payload so the destination timeline
+       * can render a per-message origin badge without a join. Uses jsonb
+       * concat (`||`) so re-moves overwrite the previous provenance — we
+       * surface the most recent origin, not a chain.
+       *
+       * `sourceStreamId` is reused from the top-level param (they're
+       * always equal, this helper rejects mixed sources implicitly) so
+       * there's only one source-of-truth on the wire.
        */
       movedFrom: {
-        sourceStreamId: string
         sourceStreamSlug: string | null
         sourceStreamDisplayName: string | null
         movedAt: string
         movedBy: string
+        movedByType: string
       }
     }
   ): Promise<StreamEvent[]> {
@@ -346,11 +359,12 @@ export const StreamEventRepository = {
            sequence = updates.new_sequence,
            payload = e.payload || jsonb_build_object(
              'movedFrom', jsonb_build_object(
-               'sourceStreamId', $5::text,
-               'sourceStreamSlug', $6::text,
-               'sourceStreamDisplayName', $7::text,
-               'movedAt', $8::text,
-               'movedBy', $9::text
+               'sourceStreamId', $4::text,
+               'sourceStreamSlug', $5::text,
+               'sourceStreamDisplayName', $6::text,
+               'movedAt', $7::text,
+               'movedBy', $8::text,
+               'movedByType', $9::text
              )
            )
        FROM (
@@ -365,11 +379,11 @@ export const StreamEventRepository = {
         messageIds,
         sequences,
         params.sourceStreamId,
-        params.movedFrom.sourceStreamId,
         params.movedFrom.sourceStreamSlug,
         params.movedFrom.sourceStreamDisplayName,
         params.movedFrom.movedAt,
         params.movedFrom.movedBy,
+        params.movedFrom.movedByType,
       ]
     )
     return result.rows.map(mapRowToEvent)

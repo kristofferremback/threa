@@ -313,6 +313,13 @@ export interface MovedFromProvenance {
   sourceStreamDisplayName: string | null
   movedAt: string
   movedBy: string
+  /**
+   * Author type of `movedBy`. Today the move handler is gated to user
+   * actors, so this is always `"user"` — but persisting the type alongside
+   * the id avoids silently mislabelling bot/agent movers if the move flow
+   * is ever reused.
+   */
+  movedByType: AuthorType
 }
 
 export interface ValidateMoveMessagesToThreadInput {

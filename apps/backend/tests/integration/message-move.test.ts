@@ -178,11 +178,14 @@ describe("message move integration", () => {
     // trace of the move. The renderer collapses each row to "Actor moved N
     // messages" + a drill-in drawer; this assertion locks in the wire shape
     // (per-message previews + stream metadata) the drawer depends on.
-    const sourceTombstones = await StreamEventRepository.list(pool, sourceStreamId, {
+    // Find by id rather than asserting count (INV-23) — future test setup
+    // could add a second move call without breaking these assertions.
+    const sourceTombstoneRows = await StreamEventRepository.list(pool, sourceStreamId, {
       types: ["messages:moved"],
     })
-    expect(sourceTombstones).toHaveLength(1)
-    const sourceTombstone = sourceTombstones[0]
+    const sourceTombstone = sourceTombstoneRows.find((event) => event.id === result.sourceTombstoneEvent.id)
+    expect(sourceTombstone).toBeDefined()
+    if (!sourceTombstone) throw new Error("unreachable")
     expect(sourceTombstone.actorId).toBe(actor.id)
     expect(sourceTombstone.actorType).toBe("user")
     const sourceTombstonePayload = sourceTombstone.payload as {
@@ -194,30 +197,46 @@ describe("message move integration", () => {
     expect(sourceTombstonePayload.destinationStreamId).toBe(result.thread.id)
     expect(sourceTombstonePayload.messages.map((message) => message.id)).toEqual([movedA.id, movedB.id])
 
-    const destinationTombstones = await StreamEventRepository.list(pool, result.thread.id, {
+    const destinationTombstoneRows = await StreamEventRepository.list(pool, result.thread.id, {
       types: ["messages:moved"],
     })
-    expect(destinationTombstones).toHaveLength(1)
-    expect(destinationTombstones[0].payload).toEqual(sourceTombstonePayload)
+    const destinationTombstone = destinationTombstoneRows.find(
+      (event) => (event.payload as { destinationStreamId: string }).destinationStreamId === result.thread.id
+    )
+    expect(destinationTombstone).toBeDefined()
+    expect(destinationTombstone?.payload).toEqual(sourceTombstonePayload)
 
     // The outbox payload carries the source tombstone separately so source
     // clients can append it after applying `removedEventIds` (the tombstone
     // is NOT in `events`, which is the destination-side write set).
-    expect(result.sourceTombstoneEvent.id).toBe(sourceTombstone.id)
     expect(result.sourceTombstoneEvent.streamId).toBe(sourceStreamId)
-    expect(result.events.find((event) => event.id === destinationTombstones[0].id)).toBeDefined()
+    expect(result.events.find((event) => event.id === destinationTombstone?.id)).toBeDefined()
     expect(result.removedEventIds).not.toContain(sourceTombstone.id)
 
     // Relocated `message_created` payloads carry `movedFrom` provenance so
     // the destination timeline can show a per-message origin badge without
-    // joining a separate provenance table.
+    // joining a separate provenance table. Locks in the full provenance
+    // shape — including the snapshotted source slug/displayName the
+    // tooltip depends on, and the explicit movedByType.
     const relocatedMessageCreated = await StreamEventRepository.list(pool, result.thread.id, {
       types: ["message_created"],
     })
     for (const event of relocatedMessageCreated) {
-      const payload = event.payload as { movedFrom?: { sourceStreamId: string; movedAt: string; movedBy: string } }
+      const payload = event.payload as {
+        movedFrom?: {
+          sourceStreamId: string
+          sourceStreamSlug: string | null
+          sourceStreamDisplayName: string | null
+          movedAt: string
+          movedBy: string
+          movedByType: string
+        }
+      }
       expect(payload.movedFrom?.sourceStreamId).toBe(sourceStreamId)
+      expect(payload.movedFrom?.sourceStreamSlug).toBe(null)
+      expect(payload.movedFrom?.sourceStreamDisplayName).toBe(null)
       expect(payload.movedFrom?.movedBy).toBe(actor.id)
+      expect(payload.movedFrom?.movedByType).toBe("user")
       expect(typeof payload.movedFrom?.movedAt).toBe("string")
     }
   })
