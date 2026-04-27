@@ -95,6 +95,7 @@ None. Slice 1 already created `shared_messages`. Slice 2's `confirmedPrivacyWarn
 ## What's NOT Included
 
 Deferred to Slice 3 / follow-ups:
+- **Attachments on shared messages.** A shared "look at this" + image currently renders as the text only — `HydratedSharedMessage.ok` carries `contentJson`/`contentMarkdown` but no `attachments`, and `card-body.tsx` doesn't mount an `AttachmentList`. Slice 3 should: extend the `ok` wire variant with `attachments: AttachmentSummary[]`, batch-fetch via `AttachmentRepository.findByMessageIds(okMessageIds)` inside `hydrateSharedMessageIds` (one extra round-trip, no per-ref loop, INV-56), thread through `use-shared-message-source.ts`, and render `<AttachmentList>` in the `ok` branch of `card-body.tsx`. Access is implicit — attachments are emitted only for `ok` payloads where viewer access to the source is already established, so no privacy gap.
 - **Step-2 privacy confirm in the modal** (still a blocking toast in Slice 2).
 - **`GET /api/.../share-preview` endpoint** for pre-flight privacy check.
 - **`'share-as-quote'` action** + cross-stream quote flavor.
