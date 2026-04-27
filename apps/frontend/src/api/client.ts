@@ -26,6 +26,23 @@ interface ErrorResponse {
 }
 
 /**
+ * Read an error response and return a typed `ApiError`. Use this from
+ * raw `fetch` callers (multipart uploads) so they share `apiFetch`'s
+ * error-shape handling instead of reimplementing it. A body that's
+ * missing or unparseable falls back to the supplied defaults rather
+ * than crashing.
+ */
+export async function parseApiError(
+  response: Response,
+  fallback: { code?: string; message?: string } = {}
+): Promise<ApiError> {
+  const body = (await response.json().catch(() => ({}))) as ErrorResponse
+  const code = body.code || fallback.code || "UNKNOWN_ERROR"
+  const message = body.error || fallback.message || `Request failed with status ${response.status}`
+  return new ApiError(response.status, code, message, body.details)
+}
+
+/**
  * Base URL for API calls. Empty string for same-origin (dev/prod),
  * absolute URL for staging (e.g. "https://staging.threa.io").
  */
@@ -47,25 +64,18 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     return undefined as T
   }
 
-  // Parse JSON response
-  let body: T & ErrorResponse
+  if (!response.ok) {
+    throw await parseApiError(response)
+  }
+
+  // Parse JSON success body. A malformed payload here is its own failure
+  // mode (server lied about content-type), distinct from an error
+  // response, so use a dedicated code so callers can tell them apart.
   try {
-    body = await response.json()
+    return (await response.json()) as T
   } catch {
     throw new ApiError(response.status, "PARSE_ERROR", "Failed to parse server response")
   }
-
-  // Handle error responses
-  if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      body.code || "UNKNOWN_ERROR",
-      body.error || `Request failed with status ${response.status}`,
-      body.details
-    )
-  }
-
-  return body as T
 }
 
 // HTTP method helpers
