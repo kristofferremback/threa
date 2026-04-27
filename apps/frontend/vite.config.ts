@@ -83,6 +83,12 @@ export default defineConfig({
       manifest: false, // use existing public/manifest.json
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
+        // recover.html is the nuclear-option SW-unregister page (public/recover.html).
+        // Precaching it would defeat its purpose — and with CF Pages Pretty URLs, the
+        // /recover ↔ /recover.html rewrite loop in _redirects causes the SW install
+        // fetch to fail with ERR_TOO_MANY_REDIRECTS, which strands the SW in
+        // "installing" forever and breaks navigator.serviceWorker.ready (and push).
+        globIgnores: ["**/recover.html"],
       },
       devOptions: {
         enabled: true,
