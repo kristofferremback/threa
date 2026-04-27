@@ -220,16 +220,16 @@ function PushNotificationSection({ workspaceId }: { workspaceId: string }) {
           </Alert>
         )}
 
-        {permission === "granted" &&
-          !isSubscribed &&
-          !optedOut &&
-          !pushDisabledOnServer &&
-          status === "subscribing" && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Subscribing this device…</span>
-            </div>
-          )}
+        {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && status !== "error" && (
+          // Covers both "subscribing" (active flow) and "idle" (fresh mount before
+          // the auto-subscribe effect has set status). Without the "idle" case the
+          // card body was empty whenever a fresh permission grant raced ahead of
+          // the first subscribe() call.
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Subscribing this device…</span>
+          </div>
+        )}
 
         {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && status === "error" && (
           <Alert variant="destructive">
@@ -272,9 +272,10 @@ function resolveStatusInfo(args: {
   if (isSubscribed) return { label: "Enabled", variant: "default" }
   if (optedOut) return { label: "Off", variant: "outline" }
   if (pushDisabledOnServer) return { label: "Unavailable", variant: "outline" }
-  if (status === "subscribing") return { label: "Subscribing…", variant: "secondary" }
   if (status === "error") return { label: "Error", variant: "destructive" }
-  return { label: "Off", variant: "outline" }
+  // permission=granted, no other flag set → either "subscribing" or "idle"
+  // before the first subscribe() call. Either way we're trying, not Off.
+  return { label: "Subscribing…", variant: "secondary" }
 }
 
 export function NotificationsSettings() {

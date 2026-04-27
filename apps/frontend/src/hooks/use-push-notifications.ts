@@ -191,45 +191,55 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     setOptedOut(workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId)) === "1" : false)
   }, [workspaceId])
 
-  // Subscribe to push notifications
-  const subscribe = useCallback(
-    async (registration: ServiceWorkerRegistration) => {
-      if (!workspaceId) return
+  // Subscribe to push notifications. Owns the full flow including waiting for
+  // the service worker to be ready, so a hung SW activation is covered by the
+  // same 15s timeout as the subscribe handshake itself.
+  const subscribe = useCallback(async () => {
+    if (!workspaceId) return
 
-      setStatus("subscribing")
-      setError(null)
+    setStatus("subscribing")
+    setError(null)
 
-      // Hard timeout — without this, a hung fetch (e.g. suspended SW or stuck network)
-      // would leave the UI in "subscribing" forever.
-      let timeoutId: ReturnType<typeof setTimeout> | undefined
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new SubscribeTimeoutError()), SUBSCRIBE_TIMEOUT_MS)
-      })
+    // Hard timeout — covers both the serviceWorker.ready wait and the
+    // subscribe handshake. Without this, a never-resolving SW activation
+    // (mobile Firefox on a fresh domain, blocked SW install, etc.) leaves
+    // the UI in "subscribing" forever.
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new SubscribeTimeoutError()), SUBSCRIBE_TIMEOUT_MS)
+    })
 
-      try {
-        const result = await Promise.race([runSubscribeFlow(workspaceId, registration, vapidCacheRef), timeoutPromise])
+    try {
+      const result = await Promise.race([
+        (async () => {
+          if (!("serviceWorker" in navigator)) {
+            throw new Error("Service workers are not available in this browser")
+          }
+          const registration = await navigator.serviceWorker.ready
+          return runSubscribeFlow(workspaceId, registration, vapidCacheRef)
+        })(),
+        timeoutPromise,
+      ])
 
-        if (result.kind === "disabled-on-server") {
-          setIsSubscribed(false)
-          setPushDisabledOnServer(true)
-          setStatus("idle")
-          return
-        }
-
-        setPushDisabledOnServer(false)
-        setIsSubscribed(true)
-        setStatus("subscribed")
-      } catch (err) {
-        console.error("[Push] Failed to subscribe:", err)
+      if (result.kind === "disabled-on-server") {
         setIsSubscribed(false)
-        setError(toSubscriptionError(err))
-        setStatus("error")
-      } finally {
-        if (timeoutId !== undefined) clearTimeout(timeoutId)
+        setPushDisabledOnServer(true)
+        setStatus("idle")
+        return
       }
-    },
-    [workspaceId]
-  )
+
+      setPushDisabledOnServer(false)
+      setIsSubscribed(true)
+      setStatus("subscribed")
+    } catch (err) {
+      console.error("[Push] Failed to subscribe:", err)
+      setIsSubscribed(false)
+      setError(toSubscriptionError(err))
+      setStatus("error")
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
+    }
+  }, [workspaceId])
 
   // Reset subscription state when permission is revoked or workspaceId changes
   useEffect(() => {
@@ -245,24 +255,14 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
   useEffect(() => {
     if (permission !== "granted" || !workspaceId || optedOut) return
 
-    const doSubscribe = () => {
-      navigator.serviceWorker?.ready
-        .then(async (registration) => {
-          // Always call subscribe — it upserts on the backend, so it handles both
-          // new subscriptions and re-registering after pushsubscriptionchange events.
-          await subscribe(registration)
-        })
-        .catch((err) => {
-          console.error("[Push] Failed to check subscription:", err)
-          setError(toSubscriptionError(err))
-          setStatus("error")
-        })
-    }
-
-    doSubscribe()
+    // subscribe() owns the SW-ready wait and timeout, so callers don't need
+    // to gate on it themselves — they just kick off the flow.
+    void subscribe()
 
     // Re-register when the SW notifies us of a subscription change (avoids full page reload)
-    const handleSubscriptionChange = () => doSubscribe()
+    const handleSubscriptionChange = () => {
+      void subscribe()
+    }
     window.addEventListener("pushsubscriptionchanged", handleSubscriptionChange)
     return () => window.removeEventListener("pushsubscriptionchanged", handleSubscriptionChange)
   }, [permission, workspaceId, subscribe, optedOut])
@@ -318,8 +318,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       setPermission(result)
 
       if (result === "granted") {
-        const registration = await navigator.serviceWorker.ready
-        await subscribe(registration)
+        await subscribe()
       }
     } catch (err) {
       console.error("[Push] Failed to request permission:", err)
@@ -333,21 +332,9 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
   // picked up without a full reload.
   const retry = useCallback(async () => {
     if (!workspaceId) return
-    try {
-      vapidCacheRef.current = null
-      setPushDisabledOnServer(false)
-      const registration = await navigator.serviceWorker?.ready
-      if (!registration) {
-        setError({ message: "Service worker is not available", code: "NO_SERVICE_WORKER" })
-        setStatus("error")
-        return
-      }
-      await subscribe(registration)
-    } catch (err) {
-      console.error("[Push] Retry failed:", err)
-      setError(toSubscriptionError(err))
-      setStatus("error")
-    }
+    vapidCacheRef.current = null
+    setPushDisabledOnServer(false)
+    await subscribe()
   }, [subscribe, workspaceId])
 
   return {
