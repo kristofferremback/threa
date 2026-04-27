@@ -141,6 +141,21 @@ export interface MessagesMovedOutboxPayload extends StreamScopedPayload {
   thread: Stream
   events: WireStreamEvent[]
   removedEventIds: string[]
+  /**
+   * Authoritative `replyCount` for the drop-target message (the thread
+   * parent), recomputed AFTER the move's `incrementReplyCountBy`. Frontend
+   * sets this directly on the parent message in the source stream. Including
+   * it in `messages:moved` makes this event self-sufficient: ThreadCard
+   * surfaces with the right count even if the sibling `message:updated`
+   * outbox event is delayed, dropped, or processed out of order.
+   */
+  parentReplyCount: number
+  /**
+   * Recomputed thread summary for the drop-target — same field shape
+   * `message:updated` ships, included here so the card preview/participants
+   * land alongside the move without waiting for a second event.
+   */
+  parentThreadSummary: import("@threa/types").ThreadSummary | null
 }
 
 export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
