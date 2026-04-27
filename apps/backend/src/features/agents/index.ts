@@ -108,6 +108,19 @@ export type { OrphanSessionCleanup } from "./orphan-session-cleanup"
 // Repositories
 export { PersonaRepository } from "./persona-repository"
 export type { Persona } from "./persona-repository"
+export {
+  ARIADNE_AGENT_ID,
+  EMPTY_AGENT_ID,
+  BUILT_IN_AGENTS,
+  getBuiltInAgentConfig,
+  listVisibleBuiltInAgentConfigs,
+  applyBuiltInAgentPatch,
+  builtInAgentConfigPatchSchema,
+  builtInAgentConfigSchema,
+} from "./built-in-agents"
+export type { BuiltInAgentConfig, BuiltInAgentConfigPatch } from "./built-in-agents"
+export { AgentConfigOverrideRepository } from "./agent-config-override-repository"
+export type { AgentConfigOverride } from "./agent-config-override-repository"
 
 export { AgentSessionRepository, SessionStatuses } from "./session-repository"
 export type {

@@ -178,7 +178,7 @@ export async function enrichMessageSearchResults(
   // Batch fetch users, personas, streams
   const [members, personas, streams] = await Promise.all([
     userIds.size > 0 ? UserRepository.findByIds(db, workspaceId, [...userIds]) : Promise.resolve([]),
-    personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds]) : Promise.resolve([]),
+    personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds], workspaceId) : Promise.resolve([]),
     StreamRepository.findByIds(db, [...streamIds]),
   ])
 

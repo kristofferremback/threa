@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
-import { ContextRefKinds, Visibilities } from "@threa/types"
+import { ContextIntents, ContextRefKinds, Visibilities } from "@threa/types"
 import { ThreadResolver } from "./thread-resolver"
 import { MessageRepository } from "../../../messaging"
 import { StreamRepository, StreamMemberRepository } from "../../../streams"
@@ -326,5 +326,218 @@ describe("ThreadResolver.fetch", () => {
     })
 
     expect(result.items.map((i) => i.messageId)).toEqual(["msg_b", "msg_c"])
+  })
+})
+
+describe("ThreadResolver.fetch — DISCUSS_THREAD windowing", () => {
+  // The discuss-thread intent narrows the source stream to ~50 messages
+  // around an anchor instead of dumping the full tail. These tests pin the
+  // shape of that window — failure mode this guards against is "Ariadne
+  // gets the entire stream and can't tell what the user actually wants to
+  // discuss", which is what motivated the change.
+  afterEach(() => mock.restore())
+
+  function seq(id: string, n: number): any {
+    return makeMessage({ id, sequence: BigInt(n) })
+  }
+
+  it("centers a 50-message window around the focal message when the stream is large enough", async () => {
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
+
+    // Simulate `findSurrounding` returning 50 before + focal + 50 after.
+    const before = Array.from({ length: 50 }, (_, i) => seq(`msg_b${i}`, i + 1))
+    const focal = seq("msg_focal", 51)
+    const after = Array.from({ length: 50 }, (_, i) => seq(`msg_a${i}`, i + 52))
+    const surrounding = [...before, focal, ...after]
+    spyOn(MessageRepository, "findSurrounding").mockResolvedValue(surrounding)
+
+    const result = await ThreadResolver.fetch(
+      {} as any,
+      { kind: ContextRefKinds.THREAD, streamId: "stream_source", originMessageId: "msg_focal" },
+      { intent: ContextIntents.DISCUSS_THREAD }
+    )
+
+    // 50-total window: 24 before + focal + 25 after (or 25/24, depending on
+    // halving — what matters is total === 50 and focal is included).
+    expect(result.items).toHaveLength(50)
+    expect(result.focalMessageId).toBe("msg_focal")
+    const ids = result.items.map((i) => i.messageId)
+    expect(ids).toContain("msg_focal")
+    expect(ids[0]).toMatch(/^msg_b/)
+    expect(ids[ids.length - 1]).toMatch(/^msg_a/)
+  })
+
+  it("rebalances toward the long side when the focal sits near the start of the stream", async () => {
+    // Focal at index 5: only 5 messages before it, plenty after. We should
+    // see all 5 before + focal + 44 after, not 5 before + focal + 24 after.
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
+
+    const before = Array.from({ length: 5 }, (_, i) => seq(`msg_b${i}`, i + 1))
+    const focal = seq("msg_focal", 6)
+    const after = Array.from({ length: 50 }, (_, i) => seq(`msg_a${i}`, i + 7))
+    spyOn(MessageRepository, "findSurrounding").mockResolvedValue([...before, focal, ...after])
+
+    const result = await ThreadResolver.fetch(
+      {} as any,
+      { kind: ContextRefKinds.THREAD, streamId: "stream_source", originMessageId: "msg_focal" },
+      { intent: ContextIntents.DISCUSS_THREAD }
+    )
+
+    expect(result.items).toHaveLength(50)
+    const ids = result.items.map((i) => i.messageId)
+    expect(ids.filter((id) => id.startsWith("msg_b"))).toHaveLength(5)
+    expect(ids.filter((id) => id.startsWith("msg_a"))).toHaveLength(44)
+    expect(ids).toContain("msg_focal")
+  })
+
+  it("falls back to the most recent 50 when there is no originMessageId (slash command)", async () => {
+    // No focal: this is the `/discuss-with-ariadne` path. We should NOT call
+    // findSurrounding, just take the tail.
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
+    const findSurrounding = spyOn(MessageRepository, "findSurrounding")
+    const list = spyOn(MessageRepository, "list").mockResolvedValue(
+      Array.from({ length: 50 }, (_, i) => seq(`msg_${i}`, i + 1))
+    )
+
+    const result = await ThreadResolver.fetch(
+      {} as any,
+      { kind: ContextRefKinds.THREAD, streamId: "stream_source" },
+      { intent: ContextIntents.DISCUSS_THREAD }
+    )
+
+    expect(findSurrounding).not.toHaveBeenCalled()
+    expect(list).toHaveBeenCalledWith(expect.anything(), "stream_source", { limit: 50 })
+    expect(result.items).toHaveLength(50)
+    expect(result.focalMessageId).toBeNull()
+  })
+
+  it("drops the focal flag when the originMessageId can't be resolved in the source stream", async () => {
+    // Origin id is stale or points to a different stream. `findSurrounding`
+    // returns nothing; we fall back to the recent-tail slice and emit a null
+    // focal so the renderer doesn't fabricate a `Focused message` section.
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
+    spyOn(MessageRepository, "findSurrounding").mockResolvedValue([])
+    spyOn(MessageRepository, "list").mockResolvedValue([seq("msg_x", 1)])
+
+    const result = await ThreadResolver.fetch(
+      {} as any,
+      { kind: ContextRefKinds.THREAD, streamId: "stream_source", originMessageId: "msg_unknown" },
+      { intent: ContextIntents.DISCUSS_THREAD }
+    )
+
+    expect(result.focalMessageId).toBeNull()
+    expect(result.items.map((i) => i.messageId)).toEqual(["msg_x"])
+  })
+
+  it("ignores fromMessageId/toMessageId in the discuss path (windowing replaces the legacy slice)", async () => {
+    // The legacy from/to anchors are still respected for non-DISCUSS_THREAD
+    // intents but the discuss flow uses the centered window instead. Mixing
+    // them would double-slice; this test pins that we take the window and
+    // drop the anchors.
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
+
+    const focal = seq("msg_focal", 10)
+    const surrounding = [seq("msg_a", 8), seq("msg_b", 9), focal, seq("msg_c", 11), seq("msg_d", 12)]
+    spyOn(MessageRepository, "findSurrounding").mockResolvedValue(surrounding)
+
+    const result = await ThreadResolver.fetch(
+      {} as any,
+      {
+        kind: ContextRefKinds.THREAD,
+        streamId: "stream_source",
+        originMessageId: "msg_focal",
+        fromMessageId: "msg_b",
+        toMessageId: "msg_c",
+      },
+      { intent: ContextIntents.DISCUSS_THREAD }
+    )
+
+    // If anchors had been honored we'd see only msg_b..msg_c (3 items). We
+    // expect the full surrounding slice instead.
+    expect(result.items.map((i) => i.messageId)).toEqual(["msg_a", "msg_b", "msg_focal", "msg_c", "msg_d"])
+  })
+
+  it("does NOT keep focal state when origin matches the prepended thread root but isn't in the windowed slice", async () => {
+    // Regression: a user clicking "Discuss with Ariadne" on a thread's root
+    // message produces `originMessageId === root.id`. The root lives in the
+    // PARENT stream, so `findSurrounding(root.id, threadStream)` returns
+    // nothing and we fall through to the recent-tail slice. The thread root
+    // is then prepended to `items` for context — but that prepend is a
+    // rendering convenience, not "the origin is in the window." Marking the
+    // root as focal in this case would synthesize a `Focused message`
+    // section even though the discuss-window fallback path was taken.
+    spyOn(StreamRepository, "findById").mockResolvedValue(
+      makeStream({ id: "stream_thread", type: "thread", parentMessageId: "msg_root" })
+    )
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "findSurrounding").mockResolvedValue([])
+    spyOn(MessageRepository, "list").mockResolvedValue([seq("msg_reply_1", 1), seq("msg_reply_2", 2)])
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(
+      makeMessage({ id: "msg_root", streamId: "stream_root", contentMarkdown: "the originating message" })
+    )
+
+    const result = await ThreadResolver.fetch(
+      {} as any,
+      { kind: ContextRefKinds.THREAD, streamId: "stream_thread", originMessageId: "msg_root" },
+      { intent: ContextIntents.DISCUSS_THREAD }
+    )
+
+    // Root is still rendered (prepend convenience) but focal is null because
+    // the origin isn't in the discuss window — we want the chronological
+    // render path here, not the focal-section split.
+    expect(result.items.map((i) => i.messageId)).toEqual(["msg_root", "msg_reply_1", "msg_reply_2"])
+    expect(result.focalMessageId).toBeNull()
+  })
+
+  it("falls back to the stream tail (not a deletion-skewed slice) when the focal message is soft-deleted", async () => {
+    // Regression: `MessageRepository.findSurrounding` looks the target's
+    // sequence up without a `deleted_at` filter but excludes the target
+    // itself from its neighbor query. So a soft-deleted focal produces
+    // `surrounding.length > 0, targetIdx < 0`. Slicing the surrounding
+    // result here would give a window skewed around the deletion point;
+    // the user's anchor is unrecoverable so we return the recent-tail
+    // (slash-command shape) instead. CodeRabbit caught this — the comment
+    // said "no-focal fallback" but the code was lying to us.
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
+
+    // Surrounding query found the deleted target's neighbors (so the array
+    // is non-empty) but the target row itself was filtered out by the
+    // `deleted_at IS NULL` clause on the neighbor query.
+    const neighborsAroundDeletion = [seq("msg_neighbor_a", 100), seq("msg_neighbor_b", 102)]
+    spyOn(MessageRepository, "findSurrounding").mockResolvedValue(neighborsAroundDeletion)
+    const list = spyOn(MessageRepository, "list").mockResolvedValue([
+      seq("msg_recent_1", 500),
+      seq("msg_recent_2", 501),
+    ])
+
+    const result = await ThreadResolver.fetch(
+      {} as any,
+      { kind: ContextRefKinds.THREAD, streamId: "stream_source", originMessageId: "msg_deleted" },
+      { intent: ContextIntents.DISCUSS_THREAD }
+    )
+
+    // Recent tail, not the deletion-skewed window.
+    expect(list).toHaveBeenCalledWith(expect.anything(), "stream_source", { limit: 50 })
+    expect(result.items.map((i) => i.messageId)).toEqual(["msg_recent_1", "msg_recent_2"])
+    expect(result.focalMessageId).toBeNull()
   })
 })

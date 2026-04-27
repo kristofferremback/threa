@@ -101,6 +101,8 @@ export interface PersonaAgentInput {
   trigger?: typeof AgentTriggers.MENTION
   supersedesSessionId?: string
   rerunContext?: AgentSessionRerunContext
+  /** Invocation time override for deterministic evals/tests. Production leaves this unset. */
+  currentTime?: Date
 }
 
 export interface PersonaAgentResult {
@@ -143,11 +145,21 @@ export class PersonaAgent {
       deleteMessage,
       createThread,
     } = this.deps
-    const { workspaceId, streamId, messageId, personaId, serverId, trigger, supersedesSessionId, rerunContext } = input
+    const {
+      workspaceId,
+      streamId,
+      messageId,
+      personaId,
+      serverId,
+      trigger,
+      supersedesSessionId,
+      rerunContext,
+      currentTime,
+    } = input
 
     // Step 1: Load and validate persona + stream
     const precheck = await withClient(pool, async (client) => {
-      const persona = await PersonaRepository.findById(client, personaId)
+      const persona = await PersonaRepository.findById(client, personaId, workspaceId)
       if (!persona || persona.status !== "active") {
         return { skip: true as const, reason: "persona not found or inactive" }
       }
@@ -226,7 +238,7 @@ export class PersonaAgent {
         // Build all context the agent needs
         const agentContext = await buildAgentContext(
           { db: pool, userPreferencesService, conversationSummaryService },
-          { workspaceId, streamId, stream, messageId, persona, trigger }
+          { workspaceId, streamId, stream, messageId, persona, trigger, currentTime }
         )
 
         // Resolve an attached ContextBag (if any) so `stable + delta` flow into
@@ -375,6 +387,8 @@ export class PersonaAgent {
         const tools = buildToolSet({
           enabledTools: persona.enabledTools,
           tavilyApiKey,
+          currentTime: agentContext.streamContext.temporal?.currentTime,
+          timezone: agentContext.streamContext.temporal?.timezone,
           runWorkspaceAgent,
           workspace: workspaceDeps,
           github: githubDeps,
@@ -416,6 +430,8 @@ export class PersonaAgent {
           ),
           messages: agentContext.messages,
           tools,
+          maxTokens: persona.maxTokens,
+          temperature: persona.temperature,
           sendMessage: doSendMessage,
           allowNoMessageOutput: isSupersedeRerun,
           validateFinalResponse: isSupersedeRerun
@@ -505,7 +521,7 @@ export class PersonaAgent {
 
               const [members, personas] = await Promise.all([
                 userIds.length > 0 ? UserRepository.findByIds(db, workspaceId, userIds) : Promise.resolve([]),
-                personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+                personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds, workspaceId) : Promise.resolve([]),
               ])
 
               const names = new Map<string, string>()

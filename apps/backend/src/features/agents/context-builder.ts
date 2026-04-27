@@ -10,7 +10,14 @@ import type {
   TableData,
   DiagramData,
 } from "@threa/types"
-import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers, InjectionStrategies } from "@threa/types"
+import {
+  StreamTypes,
+  AuthorTypes,
+  ExtractionSourceTypes,
+  PdfSizeTiers,
+  InjectionStrategies,
+  DEFAULT_USER_PREFERENCES,
+} from "@threa/types"
 import { StreamRepository, StreamMemberRepository, type Stream } from "../streams"
 import { MessageRepository, type Message } from "../messaging"
 import { UserRepository } from "../workspaces"
@@ -157,8 +164,9 @@ export interface BuildStreamContextOptions {
  * Build stream context for the companion agent.
  * Returns stream-type-specific context for enriching the system prompt.
  *
- * When preferences are provided, includes temporal context
- * with the invoking user's timezone and time preferences.
+ * When preferences are provided, includes temporal context with the invoking user's
+ * timezone and time preferences. When only `currentTime` is provided (e.g. deterministic
+ * evals without a user prefs row), temporal context uses UTC and default date/time formats.
  *
  * When includeAttachments is true, messages are enriched with attachment context.
  * Detail level varies based on message recency relative to triggerMessageId.
@@ -168,10 +176,18 @@ export async function buildStreamContext(
   stream: Stream,
   options?: BuildStreamContextOptions
 ): Promise<StreamContext> {
-  // Build temporal context if we have user preferences
   let temporal: TemporalContext | undefined
   if (options?.preferences) {
     temporal = buildTemporalContext(options.preferences, options.currentTime)
+  } else if (options?.currentTime) {
+    temporal = buildTemporalContext(
+      {
+        timezone: DEFAULT_USER_PREFERENCES.timezone,
+        dateFormat: DEFAULT_USER_PREFERENCES.dateFormat,
+        timeFormat: DEFAULT_USER_PREFERENCES.timeFormat,
+      },
+      options.currentTime
+    )
   }
 
   let context: StreamContext
@@ -181,7 +197,7 @@ export async function buildStreamContext(
       break
 
     case StreamTypes.CHANNEL:
-      context = await buildChannelContext(db, stream, temporal)
+      context = await buildChannelContext(db, stream, temporal, options?.currentTime)
       break
 
     case StreamTypes.THREAD:
@@ -189,7 +205,7 @@ export async function buildStreamContext(
       break
 
     case StreamTypes.DM:
-      context = await buildDmContext(db, stream, temporal)
+      context = await buildDmContext(db, stream, temporal, options?.currentTime)
       break
 
     default:
@@ -208,10 +224,12 @@ export async function buildStreamContext(
   return context
 }
 
+type TemporalPreferenceFields = Pick<UserPreferences, "timezone" | "dateFormat" | "timeFormat">
+
 /**
- * Build temporal context from user preferences.
+ * Build temporal context from timezone and display preferences.
  */
-function buildTemporalContext(preferences: UserPreferences, currentTime?: Date): TemporalContext {
+function buildTemporalContext(preferences: TemporalPreferenceFields, currentTime?: Date): TemporalContext {
   const now = currentTime ?? new Date()
 
   return {
@@ -244,7 +262,12 @@ async function buildScratchpadContext(db: Querier, stream: Stream, temporal?: Te
 /**
  * Channel context: collaborative. Includes members, slug, and conversation.
  */
-async function buildChannelContext(db: Querier, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
+async function buildChannelContext(
+  db: Querier,
+  stream: Stream,
+  temporal?: TemporalContext,
+  currentTime?: Date
+): Promise<StreamContext> {
   const [messages, members] = await Promise.all([
     MessageRepository.list(db, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
     StreamMemberRepository.list(db, { streamId: stream.id }),
@@ -255,7 +278,8 @@ async function buildChannelContext(db: Querier, stream: Stream, temporal?: Tempo
     db,
     stream.workspaceId,
     userIds,
-    temporal !== undefined
+    temporal !== undefined,
+    currentTime
   )
 
   return {
@@ -275,7 +299,12 @@ async function buildChannelContext(db: Querier, stream: Stream, temporal?: Tempo
 /**
  * DM context: two-party. Like channels but focused.
  */
-async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
+async function buildDmContext(
+  db: Querier,
+  stream: Stream,
+  temporal?: TemporalContext,
+  currentTime?: Date
+): Promise<StreamContext> {
   const [messages, members] = await Promise.all([
     MessageRepository.list(db, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
     StreamMemberRepository.list(db, { streamId: stream.id }),
@@ -286,7 +315,8 @@ async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalCo
     db,
     stream.workspaceId,
     userIds,
-    temporal !== undefined
+    temporal !== undefined,
+    currentTime
   )
 
   return {
@@ -392,7 +422,8 @@ async function resolveParticipantsWithTimezones(
   db: Querier,
   workspaceId: string,
   userIds: string[],
-  includeTimezones: boolean
+  includeTimezones: boolean,
+  currentTime?: Date
 ): Promise<{ participants: Participant[]; participantTimezones?: ParticipantTemporal[] }> {
   if (userIds.length === 0) {
     return { participants: [], participantTimezones: includeTimezones ? [] : undefined }
@@ -409,7 +440,7 @@ async function resolveParticipantsWithTimezones(
   // Build timezone info from the same member data if needed
   let participantTimezones: ParticipantTemporal[] | undefined
   if (includeTimezones) {
-    const now = new Date()
+    const now = currentTime ?? new Date()
     participantTimezones = members.map((member) => {
       const timezone = member.timezone ?? "UTC"
       return {

@@ -86,7 +86,7 @@ export async function resolveBagForStream(
         continue
       }
       const resolver = getResolver(ref.kind)
-      const part = await resolver.fetch(db, ref)
+      const part = await resolver.fetch(db, ref, { intent: bag.intent })
       resolveds.push({ ref, ...part })
     }
 
@@ -130,6 +130,7 @@ export async function resolveBagForStream(
       inlineItems: summaryText ? undefined : resolved.items,
       summaryText,
       refLabel: refKey,
+      focalMessageId: resolved.focalMessageId,
     })
     stableParts.push(stable)
 

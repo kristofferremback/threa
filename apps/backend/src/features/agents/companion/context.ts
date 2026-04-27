@@ -33,6 +33,8 @@ export interface ContextParams {
   messageId: string
   persona: Persona
   trigger?: typeof AgentTriggers.MENTION
+  /** Invocation time override for deterministic evals/tests. Production uses Date.now(). */
+  currentTime?: Date
 }
 
 export interface AgentContext {
@@ -82,7 +84,7 @@ async function resolveScratchpadCustomPrompt(
  */
 export async function buildAgentContext(deps: ContextDeps, params: ContextParams): Promise<AgentContext> {
   const { db, userPreferencesService, conversationSummaryService } = deps
-  const { workspaceId, streamId, stream, messageId, persona, trigger } = params
+  const { workspaceId, streamId, stream, messageId, persona, trigger, currentTime } = params
 
   const triggerMessage = await MessageRepository.findById(db, messageId)
   const invokingUserId = triggerMessage?.authorType === AuthorTypes.USER ? triggerMessage.authorId : undefined
@@ -125,6 +127,7 @@ export async function buildAgentContext(deps: ContextDeps, params: ContextParams
 
   const streamContext = await buildStreamContext(db, stream, {
     preferences,
+    currentTime,
     triggerMessageId: messageId,
     includeAttachments: true,
   })

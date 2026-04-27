@@ -13,8 +13,8 @@
 
 import { describe, test, expect, setDefaultTimeout } from "bun:test"
 
-// Boundary extraction uses LLM which can be slow in CI - use 30s like companion tests
-setDefaultTimeout(30000)
+// waitForConversations defaults to 45s; per-test timeout must stay above that
+setDefaultTimeout(90_000)
 
 import {
   TestClient,
@@ -39,8 +39,8 @@ async function waitForConversations(
   streamId: string,
   options?: { timeoutMs?: number; minCount?: number }
 ): Promise<void> {
-  // Boundary extraction uses LLM which can be slow in CI - use 15s like companion tests
-  const timeout = options?.timeoutMs ?? 15000
+  // E2E runs many parallel files; the boundary queue can lag behind 15s under load
+  const timeout = options?.timeoutMs ?? 45_000
   const minCount = options?.minCount ?? 1
   const start = Date.now()
 

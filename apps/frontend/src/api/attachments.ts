@@ -1,4 +1,4 @@
-import { api, API_BASE, ApiError } from "./client"
+import { api, API_BASE, ApiError, parseApiError } from "./client"
 import type { Attachment } from "@threa/types"
 
 const inFlightDownloadUrlRequests = new Map<string, Promise<string>>()
@@ -27,9 +27,7 @@ export const attachmentsApi = {
     })
 
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      const errorMessage = typeof body.error === "string" ? body.error : body.error?.message || "Upload failed"
-      throw new ApiError(response.status, body.error?.code || "UPLOAD_ERROR", errorMessage, body.error?.details)
+      throw await parseApiError(response, { code: "UPLOAD_ERROR", message: "Upload failed" })
     }
 
     const body = await response.json()

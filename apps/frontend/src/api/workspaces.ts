@@ -1,4 +1,4 @@
-import { api, API_BASE } from "./client"
+import { api, API_BASE, parseApiError } from "./client"
 import type {
   Workspace,
   WorkspaceBootstrap,
@@ -96,9 +96,7 @@ export const workspacesApi = {
     })
 
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      const errorMessage = typeof body.error === "string" ? body.error : body.error?.message || "Upload failed"
-      throw new Error(errorMessage)
+      throw await parseApiError(response, { code: "AVATAR_UPLOAD_ERROR", message: "Avatar upload failed" })
     }
 
     const body = await response.json()

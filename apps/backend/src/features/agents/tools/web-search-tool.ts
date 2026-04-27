@@ -18,6 +18,8 @@ export interface WebSearchResultItem {
 
 export interface WebSearchResult {
   query: string
+  searchedAt?: string
+  timezone?: string
   results: WebSearchResultItem[]
   answer?: string
 }
@@ -37,6 +39,9 @@ interface TavilySearchResponse {
 export interface CreateWebSearchToolParams {
   tavilyApiKey: string
   maxResults?: number
+  /** Invocation time from the agent context, used to ground recency-sensitive searches. */
+  currentTime?: string
+  timezone?: string
 }
 
 const FETCH_TIMEOUT_MS = 30000
@@ -57,12 +62,14 @@ function redactQuery(query: string): string {
 }
 
 export function createWebSearchTool(params: CreateWebSearchToolParams) {
-  const { tavilyApiKey, maxResults = 5 } = params
+  const { tavilyApiKey, maxResults = 5, currentTime, timezone } = params
+  const recencyHint = currentTime
+    ? ` Current invocation time is ${currentTime}${timezone ? ` (${timezone})` : ""}; for latest, recent, current, or news queries, include the current date/year in your query and judge results against that invocation time.`
+    : ""
 
   return defineAgentTool({
     name: "web_search",
-    description:
-      "Search the web for current information. Returns relevant results with titles, URLs, and content snippets. Use this when you need up-to-date information or facts not in your training data.",
+    description: `Search the web for current information. Returns relevant results with titles, URLs, and content snippets. Use this when you need up-to-date information or facts not in your training data.${recencyHint}`,
     inputSchema: WebSearchSchema,
 
     execute: async (input): Promise<AgentToolResult> => {
@@ -97,6 +104,10 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
 
         const result: WebSearchResult = {
           query: data.query,
+          ...(currentTime && {
+            searchedAt: new Date(currentTime).toISOString(),
+            timezone,
+          }),
           results: data.results.map((r) => ({
             title: r.title,
             url: r.url,

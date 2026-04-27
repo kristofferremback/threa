@@ -34,6 +34,7 @@ import {
   brevityEvaluator,
   asksQuestionEvaluator,
   webSearchUsageEvaluator,
+  webSearchQueryEvaluator,
   createResponseQualityEvaluator,
   createToneEvaluator,
   accuracyEvaluator,
@@ -41,6 +42,7 @@ import {
   averageQualityEvaluator,
 } from "./evaluators"
 import {
+  ARIADNE_AGENT_ID,
   COMPANION_MODEL_ID,
   COMPANION_TEMPERATURE,
   COMPANION_SUMMARY_MODEL_ID,
@@ -69,9 +71,6 @@ import { parseMarkdown } from "@threa/prosemirror"
 import { AuthorTypes, AgentTriggers, StreamTypes } from "@threa/types"
 import { ulid } from "ulid"
 import { personaId as generatePersonaId, streamId as generateStreamId } from "../../../src/lib/id"
-
-/** The production Ariadne system persona ID */
-const ARIADNE_PERSONA_ID = "persona_system_ariadne"
 
 /**
  * Get model configuration from context.
@@ -104,7 +103,9 @@ function mapStreamTypeToDbStreamType(
 
 /**
  * Set up test data for a companion eval case.
- * Creates persona, stream, and trigger message in the database.
+ * Creates a workspace-scoped eval persona row, stream, and trigger message.
+ * Prompt text and tools come from the built-in Ariadne config (see `built-in-agents.ts`),
+ * merged with any workspace agent overrides — same resolution as production.
  */
 async function setupTestData(
   input: CompanionInput,
@@ -117,17 +118,16 @@ async function setupTestData(
   const pool = ctx.pool
   const modelConfig = getModelConfig(ctx)
 
-  // Read the production Ariadne persona to get its system prompt
-  // This ensures evals use the EXACT production prompt (INV-44)
-  const productionPersona = await PersonaRepository.findById(pool, ARIADNE_PERSONA_ID)
-  if (!productionPersona) {
-    throw new Error(`Production persona ${ARIADNE_PERSONA_ID} not found - ensure migrations have run`)
+  // Resolve Ariadne as production does: built-in defaults in code plus optional workspace overrides.
+  const templatePersona = await PersonaRepository.findById(pool, ARIADNE_AGENT_ID, ctx.workspaceId)
+  if (!templatePersona) {
+    throw new Error(`Could not resolve built-in companion persona ${ARIADNE_AGENT_ID} (see built-in-agents.ts)`)
   }
-  if (!productionPersona.systemPrompt) {
-    throw new Error(`Production persona ${ARIADNE_PERSONA_ID} has no system prompt`)
+  if (!templatePersona.systemPrompt) {
+    throw new Error(`Built-in companion persona ${ARIADNE_AGENT_ID} has no system prompt`)
   }
 
-  // Create a test persona with production's system prompt but eval's model
+  // Create a test persona row with the resolved prompt and tools but the eval permutation model.
   const testPersonaId = generatePersonaId()
   await pool.query(
     `
@@ -141,11 +141,11 @@ async function setupTestData(
       testPersonaId,
       `eval-ariadne-${ulid().toLowerCase().slice(0, 8)}`,
       "Ariadne (Eval)",
-      productionPersona.description,
-      productionPersona.avatarEmoji,
-      productionPersona.systemPrompt,
+      templatePersona.description,
+      templatePersona.avatarEmoji,
+      templatePersona.systemPrompt,
       modelConfig.model,
-      productionPersona.enabledTools ?? ["send_message"],
+      templatePersona.enabledTools ?? ["send_message"],
     ]
   )
 
@@ -173,14 +173,31 @@ async function setupTestData(
   // Create event service for message creation
   const eventService = new EventService(pool)
 
+  const userPreferencesService = new UserPreferencesService(pool)
+  await userPreferencesService.updatePreferences(ctx.workspaceId, ctx.userId, { timezone: input.timezone ?? "UTC" })
+
+  const setMessageCreatedAt = async (messageId: string, createdAt: string): Promise<void> => {
+    const date = new Date(createdAt)
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`Invalid eval message createdAt: ${createdAt}`)
+    }
+    await pool.query(`UPDATE messages SET created_at = $1 WHERE id = $2`, [date, messageId])
+  }
+
   const seedConversationHistory = async (
     targetStreamId: string,
-    history: Array<{ role: "user" | "assistant"; content: string }>
+    history: Array<{ role: "user" | "assistant"; content: string; createdAt?: string }>,
+    pinTimeIso?: string
   ): Promise<void> => {
-    for (const msg of history) {
+    const pinMs = pinTimeIso ? new Date(pinTimeIso).getTime() : undefined
+    if (pinTimeIso && pinMs !== undefined && Number.isNaN(pinMs)) {
+      throw new Error(`Invalid eval pin time for seeded history: ${pinTimeIso}`)
+    }
+    for (let i = 0; i < history.length; i++) {
+      const msg = history[i]
       const authorId = msg.role === "user" ? ctx.userId : testPersonaId
       const authorType = msg.role === "user" ? AuthorTypes.USER : AuthorTypes.PERSONA
-      await eventService.createMessage({
+      const message = await eventService.createMessage({
         workspaceId: ctx.workspaceId,
         streamId: targetStreamId,
         authorId,
@@ -188,12 +205,17 @@ async function setupTestData(
         contentJson: parseMarkdown(msg.content),
         contentMarkdown: msg.content,
       })
+      const syntheticCreatedAt =
+        msg.createdAt ?? (pinMs !== undefined ? new Date(pinMs - (history.length - i) * 1000).toISOString() : undefined)
+      if (syntheticCreatedAt) {
+        await setMessageCreatedAt(message.id, syntheticCreatedAt)
+      }
     }
   }
 
   // Create conversation history if provided
   if (input.conversationHistory && input.conversationHistory.length > 0) {
-    await seedConversationHistory(testStreamId, input.conversationHistory)
+    await seedConversationHistory(testStreamId, input.conversationHistory, input.currentTime)
   }
 
   // Seed additional workspace context in separate streams for cross-stream retrieval tests
@@ -213,7 +235,7 @@ async function setupTestData(
       })
 
       await StreamMemberRepository.insert(pool, contextStreamId, ctx.userId)
-      await seedConversationHistory(contextStreamId, contextStream.conversationHistory)
+      await seedConversationHistory(contextStreamId, contextStream.conversationHistory, input.currentTime)
     }
   }
 
@@ -226,6 +248,9 @@ async function setupTestData(
     contentJson: parseMarkdown(input.message),
     contentMarkdown: input.message,
   })
+  if (input.currentTime) {
+    await setMessageCreatedAt(triggerMessage.id, input.currentTime)
+  }
 
   return {
     personaId: testPersonaId,
@@ -385,6 +410,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       personaId,
       serverId: `eval-server-${ulid()}`,
       trigger: input.trigger === "mention" ? AgentTriggers.MENTION : undefined,
+      currentTime: input.currentTime ? new Date(input.currentTime) : undefined,
     }
 
     // Run the agent!
@@ -445,6 +471,7 @@ export const companionSuite: EvalSuite<CompanionInput, CompanionOutput, Companio
     brevityEvaluator,
     asksQuestionEvaluator,
     webSearchUsageEvaluator,
+    webSearchQueryEvaluator,
     createResponseQualityEvaluator(),
     createToneEvaluator(),
   ],
