@@ -322,13 +322,20 @@ export function StreamPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuItem onClick={handleSelectMessages} disabled={isArchived}>
-                    <CheckSquare className="mr-2 h-4 w-4" />
-                    Select messages
-                  </DropdownMenuItem>
+                  {/* Hide "Select messages" entirely on archived streams to
+                    match the mobile drawer (which builds via
+                    `streamMenuActions` and skips the entry when isArchived).
+                    A disabled menu item would just confuse — there's no path
+                    to enable it without unarchiving first. */}
+                  {!isArchived && (
+                    <DropdownMenuItem onClick={handleSelectMessages}>
+                      <CheckSquare className="mr-2 h-4 w-4" />
+                      Select messages
+                    </DropdownMenuItem>
+                  )}
                   {isScratchpad && (
                     <>
-                      <DropdownMenuSeparator />
+                      {!isArchived && <DropdownMenuSeparator />}
                       <DropdownMenuItem onClick={handleStartRename}>
                         <Pencil className="mr-2 h-4 w-4" />
                         Rename

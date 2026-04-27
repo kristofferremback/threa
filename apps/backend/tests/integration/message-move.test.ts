@@ -159,7 +159,12 @@ describe("message move integration", () => {
     const sourceTraceEvents = await StreamEventRepository.list(pool, sourceStreamId, {
       types: ["agent_session:started", "agent_session:completed"],
     })
-    expect(sourceTraceEvents).toHaveLength(0)
+    const sourceTraceEventIds = sourceTraceEvents.map((event) => event.id)
+    // INV-23: assert the specific trace events are absent from source rather
+    // than coupling to a count, so unrelated trace events on this stream don't
+    // break the test in the future.
+    expect(sourceTraceEventIds).not.toContain(traceStartedEventId)
+    expect(sourceTraceEventIds).not.toContain(traceCompletedEventId)
 
     const threadTraceEvents = await StreamEventRepository.list(pool, result.thread.id, {
       types: ["agent_session:started", "agent_session:completed"],

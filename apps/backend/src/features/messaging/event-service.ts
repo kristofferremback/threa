@@ -787,6 +787,7 @@ export class EventService {
         messageIds: uniqueMessageIds,
       })
       await StreamRepository.moveChildThreadsToParent(client, {
+        workspaceId: params.workspaceId,
         sourceParentStreamId: params.sourceStreamId,
         destinationParentStreamId: destinationThread.id,
         parentMessageIds: uniqueMessageIds,
