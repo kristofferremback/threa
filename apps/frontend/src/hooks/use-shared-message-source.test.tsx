@@ -48,6 +48,7 @@ describe("useSharedMessageSource", () => {
               contentMarkdown: "hello from hydration",
               editedAt: null,
               createdAt: "2026-04-23T10:00:00Z",
+              attachments: [],
             },
           }}
         >
@@ -63,6 +64,7 @@ describe("useSharedMessageSource", () => {
       actorType: "user",
       authorName: "Ada",
       editedAt: null,
+      attachments: [],
     })
   })
 

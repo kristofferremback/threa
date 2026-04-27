@@ -26,6 +26,7 @@ describe("SharedMessagesProvider", () => {
       contentMarkdown: "hi",
       editedAt: null,
       createdAt: "2026-04-23T10:00:00Z",
+      attachments: [],
     }
     const { result } = renderHook(() => useSharedMessageHydration("msg_1"), {
       wrapper: ({ children }) => <SharedMessagesProvider map={{ msg_1: ok }}>{children}</SharedMessagesProvider>,

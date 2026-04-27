@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test"
 import {
   collectSharedMessageIds,
   hydrateSharedMessageIds,
@@ -10,10 +10,19 @@ import { UserRepository } from "../../workspaces"
 import { PersonaRepository } from "../../agents"
 import * as streamsBarrel from "../../streams"
 import { StreamRepository } from "../../streams"
+import { AttachmentRepository } from "../../attachments"
 import { SharedMessageRepository } from "./repository"
 
 afterEach(() => {
   mock.restore()
+})
+
+// Every ok-state hydration triggers `AttachmentRepository.findByMessageIds`
+// to enrich the payload. Default the stub to "no attachments" so the
+// existing battery of tests doesn't have to opt in; the dedicated
+// attachment tests below override it.
+beforeEach(() => {
+  spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(new Map())
 })
 
 const VIEWER_ID = "usr_viewer"
@@ -282,6 +291,83 @@ describe("hydrateSharedMessageIds", () => {
       sourceStreamKind: "channel",
       sourceVisibility: "private",
     })
+  })
+
+  it("inlines attachments on ok-state payloads", async () => {
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(
+      new Map([["msg_a", makeMessage({ id: "msg_a" })]])
+    )
+    stubAuthorLookups()
+    stubFullAccess()
+    spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(
+      new Map([
+        [
+          "msg_a",
+          [
+            {
+              id: "att_pic",
+              filename: "screenshot.png",
+              mimeType: "image/png",
+              sizeBytes: 1234,
+              processingStatus: "completed",
+            } as any,
+          ],
+        ],
+      ])
+    )
+
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", VIEWER_ID, ["msg_a"])
+    expect(result.msg_a).toMatchObject({
+      state: "ok",
+      attachments: [{ id: "att_pic", filename: "screenshot.png", mimeType: "image/png", sizeBytes: 1234 }],
+    })
+    // Non-video attachments must NOT carry processingStatus on the wire —
+    // the field is exclusively for video transcoding state, mirroring
+    // event-service.ts's emit logic so the wire payload stays consistent.
+    expect(
+      (result.msg_a as { attachments: Array<{ processingStatus?: string }> }).attachments[0].processingStatus
+    ).toBeUndefined()
+  })
+
+  it("emits an empty attachments array when the source has none", async () => {
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(
+      new Map([["msg_a", makeMessage({ id: "msg_a" })]])
+    )
+    stubAuthorLookups()
+    stubFullAccess()
+    // Default beforeEach stub returns an empty map, but be explicit here.
+    spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(new Map())
+
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", VIEWER_ID, ["msg_a"])
+    expect(result.msg_a).toMatchObject({ state: "ok", attachments: [] })
+  })
+
+  it("batches attachment lookups across every ok-state message in one round-trip (INV-56)", async () => {
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(
+      new Map([
+        ["msg_a", makeMessage({ id: "msg_a" })],
+        ["msg_b", makeMessage({ id: "msg_b" })],
+      ])
+    )
+    stubAuthorLookups()
+    stubFullAccess()
+    const findAttachments = spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(new Map())
+
+    await hydrateSharedMessageIds({} as any, "ws_1", VIEWER_ID, ["msg_a", "msg_b"])
+    expect(findAttachments).toHaveBeenCalledTimes(1)
+    const calledWith = (findAttachments as any).mock.calls[0][1].sort()
+    expect(calledWith).toEqual(["msg_a", "msg_b"])
+  })
+
+  it("does not fetch attachments when no ok-state messages survive", async () => {
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(new Map())
+    stubAuthorLookups()
+    stubFullAccess()
+    const findAttachments = spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(new Map())
+
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", VIEWER_ID, ["msg_missing"])
+    expect(result.msg_missing).toEqual({ state: "missing", messageId: "msg_missing" })
+    expect(findAttachments).not.toHaveBeenCalled()
   })
 })
 

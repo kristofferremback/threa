@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom"
 import { Skeleton } from "@/components/ui/skeleton"
-import { MarkdownContent } from "@/components/ui/markdown-content"
+import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
+import { AttachmentList } from "@/components/timeline/attachment-list"
 import { type SharedMessageSource } from "@/hooks/use-shared-message-source"
 import { streamFallbackLabel } from "@/lib/streams"
 import type { StreamType, Visibility } from "@threa/types"
@@ -28,6 +29,13 @@ export function SharedMessageCardBody({
   source: SharedMessageSource
   fallbackAuthor: string
 }) {
+  // The ok-branch needs `workspaceId` to render `<AttachmentList>` (it
+  // resolves presigned URLs via the workspace-scoped attachment API).
+  // Both call sites — `SharedMessageView` (TipTap NodeView) and
+  // `SharedMessagePointerBlock` (markdown renderer) — mount under the
+  // `/w/:workspaceId` route, so this is always defined at runtime.
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+
   if (source.status === "deleted") {
     return (
       <>
@@ -71,16 +79,33 @@ export function SharedMessageCardBody({
     )
   }
 
-  return (
-    <>
-      <AuthorLabel name={source.authorName || fallbackAuthor || "—"} />
+  const attachments = source.attachments ?? []
+  // Only mount `<AttachmentProvider>` when there's something to render —
+  // it depends on `MediaGalleryContext`, which the shared-message card's
+  // call sites (TipTap NodeView, markdown-block) wrap in but isolated
+  // tests don't necessarily provide. Cards without attachments stay a
+  // pure markdown render, matching the Slice 1/2 behavior.
+  const hasAttachments = workspaceId !== undefined && attachments.length > 0
+  const body = (
+    <div className="mt-0.5">
       {/* The card is the live inline rendering of the source message, not a
           single-line preview, so it gets full markdown (emoji, mentions,
           formatting) rather than the strip-to-inline used by sidebar
           surfaces. INV-60 doesn't apply here. */}
-      <div className="mt-0.5">
-        <MarkdownContent content={source.contentMarkdown} className="text-sm leading-relaxed" />
-      </div>
+      <MarkdownContent content={source.contentMarkdown} className="text-sm leading-relaxed" />
+    </div>
+  )
+  return (
+    <>
+      <AuthorLabel name={source.authorName || fallbackAuthor || "—"} />
+      {hasAttachments ? (
+        <AttachmentProvider workspaceId={workspaceId} attachments={attachments}>
+          {body}
+          <AttachmentList attachments={attachments} workspaceId={workspaceId} />
+        </AttachmentProvider>
+      ) : (
+        body
+      )}
     </>
   )
 }
