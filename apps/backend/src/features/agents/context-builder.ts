@@ -10,7 +10,14 @@ import type {
   TableData,
   DiagramData,
 } from "@threa/types"
-import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers, InjectionStrategies } from "@threa/types"
+import {
+  StreamTypes,
+  AuthorTypes,
+  ExtractionSourceTypes,
+  PdfSizeTiers,
+  InjectionStrategies,
+  DEFAULT_USER_PREFERENCES,
+} from "@threa/types"
 import { StreamRepository, StreamMemberRepository, type Stream } from "../streams"
 import { MessageRepository, type Message } from "../messaging"
 import { UserRepository } from "../workspaces"
@@ -157,8 +164,9 @@ export interface BuildStreamContextOptions {
  * Build stream context for the companion agent.
  * Returns stream-type-specific context for enriching the system prompt.
  *
- * When preferences are provided, includes temporal context
- * with the invoking user's timezone and time preferences.
+ * When preferences are provided, includes temporal context with the invoking user's
+ * timezone and time preferences. When only `currentTime` is provided (e.g. deterministic
+ * evals without a user prefs row), temporal context uses UTC and default date/time formats.
  *
  * When includeAttachments is true, messages are enriched with attachment context.
  * Detail level varies based on message recency relative to triggerMessageId.
@@ -168,10 +176,18 @@ export async function buildStreamContext(
   stream: Stream,
   options?: BuildStreamContextOptions
 ): Promise<StreamContext> {
-  // Build temporal context if we have user preferences
   let temporal: TemporalContext | undefined
   if (options?.preferences) {
     temporal = buildTemporalContext(options.preferences, options.currentTime)
+  } else if (options?.currentTime) {
+    temporal = buildTemporalContext(
+      {
+        timezone: DEFAULT_USER_PREFERENCES.timezone,
+        dateFormat: DEFAULT_USER_PREFERENCES.dateFormat,
+        timeFormat: DEFAULT_USER_PREFERENCES.timeFormat,
+      },
+      options.currentTime
+    )
   }
 
   let context: StreamContext
@@ -208,10 +224,12 @@ export async function buildStreamContext(
   return context
 }
 
+type TemporalPreferenceFields = Pick<UserPreferences, "timezone" | "dateFormat" | "timeFormat">
+
 /**
- * Build temporal context from user preferences.
+ * Build temporal context from timezone and display preferences.
  */
-function buildTemporalContext(preferences: UserPreferences, currentTime?: Date): TemporalContext {
+function buildTemporalContext(preferences: TemporalPreferenceFields, currentTime?: Date): TemporalContext {
   const now = currentTime ?? new Date()
 
   return {

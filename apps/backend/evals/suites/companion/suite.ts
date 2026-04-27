@@ -187,9 +187,15 @@ async function setupTestData(
 
   const seedConversationHistory = async (
     targetStreamId: string,
-    history: Array<{ role: "user" | "assistant"; content: string; createdAt?: string }>
+    history: Array<{ role: "user" | "assistant"; content: string; createdAt?: string }>,
+    pinTimeIso?: string
   ): Promise<void> => {
-    for (const msg of history) {
+    const pinMs = pinTimeIso ? new Date(pinTimeIso).getTime() : undefined
+    if (pinTimeIso && pinMs !== undefined && Number.isNaN(pinMs)) {
+      throw new Error(`Invalid eval pin time for seeded history: ${pinTimeIso}`)
+    }
+    for (let i = 0; i < history.length; i++) {
+      const msg = history[i]
       const authorId = msg.role === "user" ? ctx.userId : testPersonaId
       const authorType = msg.role === "user" ? AuthorTypes.USER : AuthorTypes.PERSONA
       const message = await eventService.createMessage({
@@ -200,15 +206,17 @@ async function setupTestData(
         contentJson: parseMarkdown(msg.content),
         contentMarkdown: msg.content,
       })
-      if (msg.createdAt) {
-        await setMessageCreatedAt(message.id, msg.createdAt)
+      const syntheticCreatedAt =
+        msg.createdAt ?? (pinMs !== undefined ? new Date(pinMs - (history.length - i) * 1000).toISOString() : undefined)
+      if (syntheticCreatedAt) {
+        await setMessageCreatedAt(message.id, syntheticCreatedAt)
       }
     }
   }
 
   // Create conversation history if provided
   if (input.conversationHistory && input.conversationHistory.length > 0) {
-    await seedConversationHistory(testStreamId, input.conversationHistory)
+    await seedConversationHistory(testStreamId, input.conversationHistory, input.currentTime)
   }
 
   // Seed additional workspace context in separate streams for cross-stream retrieval tests
@@ -228,7 +236,7 @@ async function setupTestData(
       })
 
       await StreamMemberRepository.insert(pool, contextStreamId, ctx.userId)
-      await seedConversationHistory(contextStreamId, contextStream.conversationHistory)
+      await seedConversationHistory(contextStreamId, contextStream.conversationHistory, input.currentTime)
     }
   }
 

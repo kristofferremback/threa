@@ -275,7 +275,11 @@ const temporalGroundingCases: EvalCase<CompanionInput, CompanionExpected>[] = [
       shouldRespond: true,
       responseCharacteristics: {
         shouldContain: ["Postgres", "advisory"],
-        shouldNotContain: ["Redis is more recent"],
+        shouldNotContain: [
+          "Redis is more recent",
+          "redis was the more recent choice",
+          "the redis decision is more recent",
+        ],
       },
       reason:
         "Long-lived streams must interpret recent relative to the current November invocation, while preserving historical message dates",
