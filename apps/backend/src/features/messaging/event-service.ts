@@ -6,6 +6,22 @@ import { StreamMemberRepository } from "../streams"
 import { checkStreamAccess, resolveEffectiveAccessStream } from "../streams"
 import { MessageRepository, Message } from "./repository"
 import { ShareService, type ResolveEffectiveStream } from "./sharing"
+import { AttachmentRepository, isVideoAttachment } from "../attachments"
+import { OutboxRepository } from "../../lib/outbox"
+import { StreamPersonaParticipantRepository } from "../agents"
+import { eventId, messageId, messageVersionId } from "../../lib/id"
+import { MessageVersionRepository, type MessageVersion } from "./version-repository"
+import { serializeBigInt } from "@threa/backend-common"
+import { messagesTotal } from "../../lib/observability"
+import {
+  AttachmentSafetyStatuses,
+  AuthorTypes,
+  type AuthorType,
+  type EventType,
+  type SourceItem,
+  type JSONContent,
+  type ThreadSummary,
+} from "@threa/types"
 
 /**
  * Adapter that lets `ShareService.validateAndRecordShares` consume the
@@ -24,22 +40,6 @@ const resolveEffectiveStreamAdapter: ResolveEffectiveStream = async (db, source)
     rootStreamId: resolved.rootStreamId,
   }
 }
-import { AttachmentRepository, isVideoAttachment } from "../attachments"
-import { OutboxRepository } from "../../lib/outbox"
-import { StreamPersonaParticipantRepository } from "../agents"
-import { eventId, messageId, messageVersionId } from "../../lib/id"
-import { MessageVersionRepository, type MessageVersion } from "./version-repository"
-import { serializeBigInt } from "@threa/backend-common"
-import { messagesTotal } from "../../lib/observability"
-import {
-  AttachmentSafetyStatuses,
-  AuthorTypes,
-  type AuthorType,
-  type EventType,
-  type SourceItem,
-  type JSONContent,
-  type ThreadSummary,
-} from "@threa/types"
 
 // Event payloads
 export interface AttachmentSummary {
