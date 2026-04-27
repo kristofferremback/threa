@@ -777,6 +777,14 @@ export class EventService {
         }
       })
 
+      // Pre-generate the destination tombstone's event ID so it can be
+      // stamped onto each relocated `message_created` payload via
+      // `movedFrom.moveTombstoneId`. The destination side relies on the
+      // per-message origin badge + a context-menu drill-in (rather than an
+      // inline tombstone row) — that drill-in needs to look up the
+      // tombstone in IDB by ID, so the message has to know which one.
+      const destinationTombstoneId = eventId()
+
       const movedAt = new Date()
       const movedEvents = await StreamEventRepository.moveMessageCreatedEvents(client, {
         sourceStreamId: params.sourceStreamId,
@@ -788,6 +796,7 @@ export class EventService {
           movedAt: movedAt.toISOString(),
           movedBy: params.actorId,
           movedByType: AuthorTypes.USER,
+          moveTombstoneId: destinationTombstoneId,
         },
       })
       const movedAgentSessionEvents = await StreamEventRepository.moveEventsById(client, {
@@ -852,9 +861,15 @@ export class EventService {
       // per-message list. Same payload shape on both sides; the renderer
       // infers role from `event.streamId === sourceStreamId` (outbound)
       // vs `=== destinationStreamId` (inbound).
-      const orderedSelectedMessages = uniqueMessageIds
-        .map((id) => selectedMessages.find((message) => message.id === id))
-        .filter((message): message is Message => message !== undefined)
+      // Sort by sequence so the drill-in drawer shows messages in the
+      // chronological order they were originally sent — not the order the
+      // user happened to tick checkboxes in. Sequences come from the source
+      // stream's monotonic counter, so ascending sort = oldest first.
+      const orderedSelectedMessages = [...selectedMessages].sort((a, b) => {
+        if (a.sequence < b.sequence) return -1
+        if (a.sequence > b.sequence) return 1
+        return 0
+      })
       const movedMessagePreviews: MovedMessagePreview[] = orderedSelectedMessages.map((message) => ({
         id: message.id,
         authorId: message.authorId,
@@ -885,7 +900,7 @@ export class EventService {
         createdAt: movedAt,
       })
       const destinationTombstone = await StreamEventRepository.insert(client, {
-        id: eventId(),
+        id: destinationTombstoneId,
         streamId: destinationThread.id,
         eventType: "messages:moved",
         payload: tombstonePayload,

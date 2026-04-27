@@ -329,11 +329,13 @@ export const StreamEventRepository = {
       updates: MoveEventSequenceUpdate[]
       /**
        * Stamps `movedFrom: { sourceStreamId, sourceStreamSlug,
-       * sourceStreamDisplayName, movedAt, movedBy, movedByType }` onto each
-       * relocated `message_created` payload so the destination timeline
-       * can render a per-message origin badge without a join. Uses jsonb
-       * concat (`||`) so re-moves overwrite the previous provenance — we
-       * surface the most recent origin, not a chain.
+       * sourceStreamDisplayName, movedAt, movedBy, movedByType,
+       * moveTombstoneId }` onto each relocated `message_created` payload
+       * so the destination timeline can render a per-message origin badge
+       * without a join, and so the badge's context-menu can open the
+       * drill-in drawer keyed off the destination tombstone's event id.
+       * Uses jsonb concat (`||`) so re-moves overwrite the previous
+       * provenance — we surface the most recent origin, not a chain.
        *
        * `sourceStreamId` is reused from the top-level param (they're
        * always equal, this helper rejects mixed sources implicitly) so
@@ -345,6 +347,7 @@ export const StreamEventRepository = {
         movedAt: string
         movedBy: string
         movedByType: string
+        moveTombstoneId: string
       }
     }
   ): Promise<StreamEvent[]> {
@@ -364,7 +367,8 @@ export const StreamEventRepository = {
                'sourceStreamDisplayName', $6::text,
                'movedAt', $7::text,
                'movedBy', $8::text,
-               'movedByType', $9::text
+               'movedByType', $9::text,
+               'moveTombstoneId', $10::text
              )
            )
        FROM (
@@ -384,6 +388,7 @@ export const StreamEventRepository = {
         params.movedFrom.movedAt,
         params.movedFrom.movedBy,
         params.movedFrom.movedByType,
+        params.movedFrom.moveTombstoneId,
       ]
     )
     return result.rows.map(mapRowToEvent)

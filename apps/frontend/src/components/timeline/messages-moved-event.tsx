@@ -1,18 +1,8 @@
 import { useState } from "react"
-import { Link } from "react-router-dom"
-import { CornerDownRight, X } from "lucide-react"
-import type { StreamEvent, MessagesMovedEventPayload, MovedMessagePreview } from "@threa/types"
-import {
-  ResponsiveDialog,
-  ResponsiveDialogContent,
-  ResponsiveDialogClose,
-  ResponsiveDialogTitle,
-  ResponsiveDialogDescription,
-} from "@/components/ui/responsive-dialog"
-import { ActorAvatar } from "@/components/actor-avatar"
-import { RelativeTime } from "@/components/relative-time"
-import { useActors, type ActorLookup } from "@/hooks"
-import { stripMarkdownToInline } from "@/lib/markdown/strip"
+import { CornerDownRight } from "lucide-react"
+import type { StreamEvent, MessagesMovedEventPayload } from "@threa/types"
+import { useActors } from "@/hooks"
+import { MovedMessagesDrawer } from "./moved-messages-drawer"
 
 interface MessagesMovedEventProps {
   event: StreamEvent
@@ -20,29 +10,30 @@ interface MessagesMovedEventProps {
   streamId: string
 }
 
-function formatStreamName(displayName: string | null, slug: string | null): string | null {
-  if (displayName) return displayName
-  if (slug) return `#${slug}`
-  return null
-}
-
 /**
- * Minimal in-timeline trace of a move operation. Renders as a single line
- * — "Actor moved N messages" — that opens a drawer with full per-message
- * detail. The icon is the same `CornerDownRight` used by the move action
- * everywhere so the visual identity is consistent.
+ * Source-side `messages:moved` tombstone. Renders as a single line —
+ * "Actor moved N messages" — that opens the move drill-in drawer.
+ *
+ * The destination-side row is intentionally NOT rendered: at the
+ * destination the user already sees the moved messages themselves, plus
+ * a per-message origin badge (`MovedFromIndicator`) and a "Show move
+ * details" entry on each moved message's context menu — duplicating the
+ * tombstone inline there would be visual noise on top of the messages
+ * the user is already looking at. The `stream_events` row is still
+ * cached in IDB so the per-message context-menu drill-in can find it
+ * via `movedFrom.moveTombstoneId`.
  */
 export function MessagesMovedEvent({ event, workspaceId, streamId }: MessagesMovedEventProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const payload = event.payload as MessagesMovedEventPayload
-  // Single `useActors` subscription for both the tombstone summary and
-  // every drawer row. `MovedMessagesDrawer` is rendered unconditionally
-  // (only its `open` prop toggles visibility), so calling `useActors`
-  // inside it would create a parallel IDB subscription on every
-  // tombstone in the timeline.
+  // Always called so hook order is stable, even though we may early-return
+  // for destination rows below. Cost is one IDB subscription per source-
+  // side tombstone in the timeline (typically rare).
   const actors = useActors(workspaceId)
-  const moverName = actors.getActorName(event.actorId, event.actorType)
 
+  const payload = event.payload as MessagesMovedEventPayload
+  if (streamId === payload.destinationStreamId) return null
+
+  const moverName = actors.getActorName(event.actorId, event.actorType)
   const count = payload.messages.length
   const noun = count === 1 ? "message" : "messages"
 
@@ -61,147 +52,15 @@ export function MessagesMovedEvent({ event, workspaceId, streamId }: MessagesMov
           </span>
         </button>
       </div>
-      <MovedMessagesDrawer
-        open={drawerOpen}
-        onOpenChange={setDrawerOpen}
-        event={event}
-        payload={payload}
-        workspaceId={workspaceId}
-        currentStreamId={streamId}
-        moverName={moverName}
-        actors={actors}
-      />
+      {drawerOpen && (
+        <MovedMessagesDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          event={event}
+          workspaceId={workspaceId}
+          currentStreamId={streamId}
+        />
+      )}
     </>
-  )
-}
-
-interface MovedMessagesDrawerProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  event: StreamEvent
-  payload: MessagesMovedEventPayload
-  workspaceId: string
-  currentStreamId: string
-  moverName: string
-  actors: ActorLookup
-}
-
-function MovedMessagesDrawer({
-  open,
-  onOpenChange,
-  event,
-  payload,
-  workspaceId,
-  currentStreamId,
-  moverName,
-  actors,
-}: MovedMessagesDrawerProps) {
-  const sourceLabel = formatStreamName(payload.sourceStreamDisplayName, payload.sourceStreamSlug) ?? "another stream"
-  const destinationLabel =
-    formatStreamName(payload.destinationStreamDisplayName, payload.destinationStreamSlug) ?? "a thread"
-  const isOutbound = currentStreamId === payload.sourceStreamId
-  const count = payload.messages.length
-  const noun = count === 1 ? "message" : "messages"
-
-  return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent
-        desktopClassName="max-w-2xl max-h-[85vh] sm:flex flex-col p-0 gap-0 [&>button:last-child]:hidden"
-        drawerClassName="flex flex-col p-0"
-        hideCloseButton
-      >
-        <div className="px-4 sm:px-6 py-4 border-b shrink-0 flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <ResponsiveDialogTitle className="text-base font-semibold flex items-center gap-2">
-              <CornerDownRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-              {moverName} moved {count} {noun}
-            </ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="mt-1 text-xs text-muted-foreground inline-flex items-center gap-1.5 flex-wrap">
-              <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
-              <span aria-hidden="true">•</span>
-              <Link
-                to={`/w/${workspaceId}/s/${payload.sourceStreamId}`}
-                className="font-medium text-foreground hover:underline underline-offset-2"
-              >
-                {sourceLabel}
-              </Link>
-              <span aria-hidden="true">→</span>
-              <Link
-                to={`/w/${workspaceId}/s/${payload.destinationStreamId}`}
-                className="font-medium text-foreground hover:underline underline-offset-2"
-              >
-                {destinationLabel}
-              </Link>
-              {isOutbound && <span className="text-muted-foreground">(outbound)</span>}
-              {!isOutbound && <span className="text-muted-foreground">(inbound)</span>}
-            </ResponsiveDialogDescription>
-          </div>
-          <ResponsiveDialogClose className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0">
-            <X className="w-5 h-5" />
-            <span className="sr-only">Close</span>
-          </ResponsiveDialogClose>
-        </div>
-        <div className="flex-1 min-h-0 overflow-y-auto px-2 sm:px-3 py-2">
-          <ul className="flex flex-col gap-1">
-            {payload.messages.map((message) => (
-              <MovedMessageRow
-                key={message.id}
-                message={message}
-                workspaceId={workspaceId}
-                destinationStreamId={payload.destinationStreamId}
-                actors={actors}
-                onNavigate={() => onOpenChange(false)}
-              />
-            ))}
-          </ul>
-        </div>
-      </ResponsiveDialogContent>
-    </ResponsiveDialog>
-  )
-}
-
-interface MovedMessageRowProps {
-  message: MovedMessagePreview
-  workspaceId: string
-  destinationStreamId: string
-  actors: ActorLookup
-  onNavigate: () => void
-}
-
-function MovedMessageRow({ message, workspaceId, destinationStreamId, actors, onNavigate }: MovedMessageRowProps) {
-  const authorName = actors.getActorName(message.authorId, message.authorType)
-  // Preview field is markdown by design — INV-60 carve-out for preview
-  // surfaces. Strip + truncate at render so display stays plain text.
-  const stripped = stripMarkdownToInline(message.contentMarkdown).trim()
-  const previewText = stripped.length > 0 ? stripped : "(empty message)"
-
-  return (
-    <li>
-      <Link
-        to={`/w/${workspaceId}/s/${destinationStreamId}?m=${message.id}`}
-        onClick={onNavigate}
-        className="block px-3 py-2 rounded-md hover:bg-muted/60 transition-colors group"
-      >
-        <div className="flex items-start gap-3 min-w-0">
-          <ActorAvatar
-            actorId={message.authorId}
-            actorType={message.authorType}
-            workspaceId={workspaceId}
-            size="sm"
-            alt={authorName}
-            className="shrink-0 mt-0.5"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2 min-w-0">
-              <span className="font-medium text-sm truncate">{authorName}</span>
-              <RelativeTime date={message.createdAt} className="text-xs text-muted-foreground shrink-0" />
-            </div>
-            <p className="text-sm text-muted-foreground line-clamp-2 group-hover:text-foreground transition-colors">
-              {previewText}
-            </p>
-          </div>
-        </div>
-      </Link>
-    </li>
   )
 }

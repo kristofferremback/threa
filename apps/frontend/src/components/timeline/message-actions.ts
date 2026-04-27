@@ -95,6 +95,13 @@ export interface MessageActionContext {
    * surface (e.g. not on archived streams).
    */
   onMoveToThread?: () => void
+  /**
+   * Open the move drill-in drawer for a message that arrived in this
+   * stream via a move. Set only when `payload.movedFrom` is present —
+   * this is the destination-side discovery path, since destination
+   * streams don't render an inline `messages:moved` tombstone.
+   */
+  onShowMoveDetails?: () => void
 }
 
 /** A top-level action in the message context menu. */
@@ -280,6 +287,16 @@ export const messageActions: MessageAction[] = [
     icon: CornerDownRight,
     when: (ctx) => !!ctx.onMoveToThread,
     action: (ctx) => ctx.onMoveToThread?.(),
+  },
+  {
+    // Destination-side discovery for messages that arrived via a move.
+    // The destination doesn't render an inline tombstone — this entry
+    // opens the same drill-in drawer the source-side tombstone does.
+    id: "show-move-details",
+    label: "Show move details",
+    icon: CornerDownRight,
+    when: (ctx) => !!ctx.onShowMoveDetails,
+    action: (ctx) => ctx.onShowMoveDetails?.(),
   },
   {
     id: "edit-message",

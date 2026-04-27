@@ -22,6 +22,7 @@ import { useFormattedDate } from "@/hooks/use-formatted-date"
 import { useEditLastMessage } from "./edit-last-message-context"
 import {
   useActors,
+  useMovedTombstone,
   useWorkspaceUserId,
   useMessageReactions,
   stripColons,
@@ -50,6 +51,7 @@ import { UnsentMessageEditForm } from "./unsent-message-edit-form"
 import { UnsentMessageActionDrawer } from "./unsent-message-action-drawer"
 import { EditedIndicator } from "./edited-indicator"
 import { MovedFromIndicator } from "./moved-from-indicator"
+import { MovedMessagesDrawer } from "./moved-messages-drawer"
 import { SavedIndicator } from "@/components/saved/saved-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
 import { MessageReactions } from "./message-reactions"
@@ -768,6 +770,11 @@ function SentMessageEvent({
   const [mobilePickerOpen, setMobilePickerOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [moveDetailsOpen, setMoveDetailsOpen] = useState(false)
+  // Hydrate the destination tombstone on demand for the per-message
+  // "Show move details" action. Reactive — populates as soon as the row
+  // lands in IDB (live socket apply or bootstrap).
+  const movedTombstoneEvent = useMovedTombstone(payload.movedFrom?.moveTombstoneId)
 
   // Mobile: long-press opens action drawer instead of dropdown
   const isMobile = useIsMobile()
@@ -1037,6 +1044,12 @@ function SentMessageEvent({
         !batch?.enabled && !isThreadParentProp && !currentStream?.archivedAt
           ? () => dispatchStartBatchSelect(streamId, payload.messageId)
           : undefined,
+      // Destination-side discovery for moved messages. The drawer only
+      // renders once the tombstone hydrates from IDB, so gate the menu
+      // entry on the full lookup rather than just the id — keeps the
+      // user from clicking into a no-op while bootstrap is still in
+      // flight.
+      onShowMoveDetails: movedTombstoneEvent ? () => setTimeout(() => setMoveDetailsOpen(true), 0) : undefined,
     }),
     [
       payload.contentMarkdown,
@@ -1072,6 +1085,7 @@ function SentMessageEvent({
       handleDiscussWithAriadne,
       batch?.enabled,
       currentStream?.archivedAt,
+      movedTombstoneEvent,
     ]
   )
 
@@ -1253,6 +1267,15 @@ function SentMessageEvent({
             contentMarkdown: payload.contentMarkdown,
             editedAt: payload.editedAt,
           }}
+        />
+      )}
+      {moveDetailsOpen && movedTombstoneEvent && (
+        <MovedMessagesDrawer
+          open={moveDetailsOpen}
+          onOpenChange={setMoveDetailsOpen}
+          event={movedTombstoneEvent}
+          workspaceId={workspaceId}
+          currentStreamId={streamId}
         />
       )}
       {isMobile && (

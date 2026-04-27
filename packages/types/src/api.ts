@@ -320,6 +320,14 @@ export interface MovedFromProvenance {
    * is ever reused.
    */
   movedByType: AuthorType
+  /**
+   * `event.id` of the destination-side `messages:moved` tombstone. The
+   * destination doesn't render the tombstone inline — it shows a small
+   * origin badge per message instead — so a per-message context-menu
+   * action ("Show move details") looks the tombstone up by id from IDB
+   * to populate the drill-in drawer.
+   */
+  moveTombstoneId: string
 }
 
 export interface ValidateMoveMessagesToThreadInput {

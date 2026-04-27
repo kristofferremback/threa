@@ -195,6 +195,9 @@ describe("message move integration", () => {
     }
     expect(sourceTombstonePayload.sourceStreamId).toBe(sourceStreamId)
     expect(sourceTombstonePayload.destinationStreamId).toBe(result.thread.id)
+    // Order is by source-stream sequence (chronological), not the order the
+    // user happened to click checkboxes in. The validate request above
+    // passed `[movedB, movedA]` deliberately to verify this.
     expect(sourceTombstonePayload.messages.map((message) => message.id)).toEqual([movedA.id, movedB.id])
 
     const destinationTombstoneRows = await StreamEventRepository.list(pool, result.thread.id, {
@@ -230,6 +233,7 @@ describe("message move integration", () => {
           movedAt: string
           movedBy: string
           movedByType: string
+          moveTombstoneId: string
         }
       }
       expect(payload.movedFrom?.sourceStreamId).toBe(sourceStreamId)
@@ -238,6 +242,9 @@ describe("message move integration", () => {
       expect(payload.movedFrom?.movedBy).toBe(actor.id)
       expect(payload.movedFrom?.movedByType).toBe("user")
       expect(typeof payload.movedFrom?.movedAt).toBe("string")
+      // `moveTombstoneId` points at the destination-side tombstone so the
+      // per-message context-menu drill-in can fetch it from IDB.
+      expect(payload.movedFrom?.moveTombstoneId).toBe(destinationTombstone?.id)
     }
   })
 
