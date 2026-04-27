@@ -244,6 +244,10 @@ interface MessagesMovedPayload {
   thread: Stream
   events: StreamEvent[]
   removedEventIds: string[]
+  /** Authoritative replyCount for the drop-target after the move (see backend payload doc). */
+  parentReplyCount: number
+  /** Recomputed thread summary for the drop-target — same shape as `message:updated` ships. */
+  parentThreadSummary: ThreadSummary | null
 }
 
 interface ReactionPayload {
@@ -508,15 +512,18 @@ export function registerStreamSocketHandlers(
     await db.transaction("rw", [db.events, db.streams], async () => {
       if (payload.sourceStreamId === streamId) {
         await db.events.bulkDelete(payload.removedEventIds)
-        // Patch only `threadId` here. `replyCount` is owned by the
-        // `message:updated` event that always precedes `messages:moved` in
-        // the outbox (same transaction, lower sequence) and carries the
-        // authoritative count. Adding it again here doubled it on the
-        // source client — manifested as "2 replies" after a single-message
-        // move — see PR #420 review.
+        // SET replyCount + threadSummary directly from the payload (not
+        // additive) so the patch is idempotent against the sibling
+        // `message:updated` event — they carry the same authoritative
+        // values, and whichever arrives second just overwrites with the
+        // identical result. This makes `messages:moved` self-sufficient:
+        // the thread card surfaces with the right count even if
+        // `message:updated` is delayed or lost.
         await updateMessageEvent(streamId, payload.targetMessageId, (p) => ({
           ...p,
           threadId: payload.thread.id,
+          replyCount: payload.parentReplyCount,
+          threadSummary: payload.parentThreadSummary,
         }))
       }
 

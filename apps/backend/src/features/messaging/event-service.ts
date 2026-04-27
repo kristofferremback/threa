@@ -800,6 +800,19 @@ export class EventService {
         parentMessageId: params.targetMessageId,
       })
 
+      // Snapshot the post-increment reply count + thread summary so we can
+      // ship them inside `messages:moved` itself. Without this, source
+      // clients depend on the sibling `message:updated` event arriving
+      // before the card is rendered — and any delay there produces a
+      // visible regression where the new thread doesn't appear until the
+      // next bootstrap.
+      const updatedTargetMessage = await MessageRepository.findById(client, params.targetMessageId)
+      const parentReplyCount = updatedTargetMessage?.replyCount ?? uniqueMessageIds.length
+      const parentThreadSummary = await StreamRepository.findThreadSummaryByParentMessage(
+        client,
+        params.targetMessageId
+      )
+
       if (sourceStream.parentStreamId && sourceStream.parentMessageId) {
         await MessageRepository.decrementReplyCountBy(client, sourceStream.parentMessageId, uniqueMessageIds.length)
         await this.publishParentThreadUpdate(client, {
@@ -835,6 +848,8 @@ export class EventService {
         thread: destinationThread,
         events: serializedEvents,
         removedEventIds,
+        parentReplyCount,
+        parentThreadSummary,
       })
 
       return {
