@@ -511,13 +511,23 @@ function MessageLayout({
   const batchEnabled = batch?.enabled ?? false
 
   const handleBatchToggle = useCallback(
-    (event: React.MouseEvent) => {
+    (event: React.MouseEvent | React.KeyboardEvent) => {
       if (!batchEnabled) return
       event.preventDefault()
       event.stopPropagation()
       batch?.onToggleMessage(payload.messageId)
     },
     [batch, batchEnabled, payload.messageId]
+  )
+
+  const handleBatchKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!batchEnabled) return
+      if (event.key === "Enter" || event.key === " ") {
+        handleBatchToggle(event)
+      }
+    },
+    [batchEnabled, handleBatchToggle]
   )
 
   return (
@@ -537,6 +547,14 @@ function MessageLayout({
       // at the desktop breakpoint.
       className={cn("relative overflow-hidden sm:overflow-visible", containerClassName)}
       aria-label={rowAriaLabel}
+      // Batch mode turns the whole row into a toggle. Keyboard users get
+      // role="button" + tabIndex so they can Tab to messages, and Enter/Space
+      // fire the same handler the click path uses. aria-pressed mirrors the
+      // selection state so SR users hear "pressed" / "not pressed".
+      role={batchEnabled ? "button" : undefined}
+      tabIndex={batchEnabled ? 0 : undefined}
+      aria-pressed={batchEnabled ? isSelected : undefined}
+      onKeyDown={batchEnabled ? handleBatchKeyDown : undefined}
       {...touchHandlers}
       onClick={batchEnabled ? handleBatchToggle : undefined}
     >

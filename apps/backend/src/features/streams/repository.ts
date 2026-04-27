@@ -805,16 +805,25 @@ export const StreamRepository = {
 
   async moveChildThreadsToParent(
     db: Querier,
-    params: { sourceParentStreamId: string; destinationParentStreamId: string; parentMessageIds: string[] }
+    params: {
+      workspaceId: string
+      sourceParentStreamId: string
+      destinationParentStreamId: string
+      parentMessageIds: string[]
+    }
   ): Promise<void> {
     if (params.parentMessageIds.length === 0) return
 
     // Batch moves only reparent threads inside the same root stream; callers
-    // must keep source and destination roots aligned so root_stream_id remains valid.
+    // must keep source and destination roots aligned so root_stream_id remains
+    // valid. The `workspace_id` filter is defense-in-depth for INV-8 — even
+    // if a caller ever passes mismatched stream IDs, this UPDATE will refuse
+    // to cross workspace boundaries.
     await db.query(sql`
       UPDATE streams
       SET parent_stream_id = ${params.destinationParentStreamId}, updated_at = NOW()
-      WHERE parent_stream_id = ${params.sourceParentStreamId}
+      WHERE workspace_id = ${params.workspaceId}
+        AND parent_stream_id = ${params.sourceParentStreamId}
         AND parent_message_id = ANY(${params.parentMessageIds})
     `)
   },
