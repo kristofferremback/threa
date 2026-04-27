@@ -3,7 +3,7 @@ import { type AttachmentSummary, type JSONContent, type StreamType, type Visibil
 import { MessageRepository, type Message } from "../repository"
 import { resolveActorNames } from "../../agents"
 import { listAccessibleStreamIds, StreamRepository, type Stream } from "../../streams"
-import { AttachmentRepository, isVideoAttachment } from "../../attachments"
+import { AttachmentRepository, toAttachmentSummary } from "../../attachments"
 
 import { SharedMessageRepository } from "./repository"
 
@@ -249,13 +249,7 @@ export async function hydrateSharedMessageIds(
       AttachmentRepository.findByMessageIds(db, [...okMessages.keys()]),
     ])
     for (const [id, source] of okMessages) {
-      const attachments: AttachmentSummary[] = (attachmentsByMessageId.get(source.id) ?? []).map((a) => ({
-        id: a.id,
-        filename: a.filename,
-        mimeType: a.mimeType,
-        sizeBytes: a.sizeBytes,
-        ...(isVideoAttachment(a.mimeType, a.filename) && { processingStatus: a.processingStatus }),
-      }))
+      const attachments = (attachmentsByMessageId.get(source.id) ?? []).map(toAttachmentSummary)
       result[id] = {
         state: "ok",
         messageId: source.id,

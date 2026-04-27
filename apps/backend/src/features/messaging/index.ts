@@ -20,7 +20,6 @@ export type { MessageVersion } from "./version-repository"
 // Event Service
 export { EventService } from "./event-service"
 export type {
-  AttachmentSummary,
   MessageCreatedPayload,
   MessageEditedPayload,
   MessageDeletedPayload,
