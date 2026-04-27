@@ -1,12 +1,13 @@
 import type { Querier } from "../../../../db"
 import { ContextIntents, ContextRefKinds, type ContextRef } from "@threa/types"
 import { HttpError } from "../../../../lib/errors"
+import { AttachmentRepository } from "../../../attachments"
 import type { Message } from "../../../messaging"
 import { MessageRepository } from "../../../messaging"
 import { StreamRepository, checkStreamAccess } from "../../../streams"
 import { resolveActorNames } from "../../actor-names"
 import { fingerprintContent, fingerprintManifest as fingerprintInputs } from "../fingerprint"
-import type { RenderableMessage, Resolver, SummaryInput } from "../types"
+import type { RenderableAttachment, RenderableMessage, Resolver, SummaryInput } from "../types"
 
 type ThreadRef = Extract<ContextRef, { kind: typeof ContextRefKinds.THREAD }>
 
@@ -19,8 +20,13 @@ const MAX_FETCH = 500
  * is exactly the failure mode this windowing is supposed to fix. If the user
  * needs more, Ariadne can call `get_stream_messages` to pull additional
  * history into a tool result.
+ *
+ * Exported so callers that surface a "messages in source" count to the user
+ * (e.g. the context-pill label in `fetchStreamBag`) can clamp to the actual
+ * window size — otherwise the chip claims the AI sees thousands of messages
+ * when it's only ever sent ~50.
  */
-const DISCUSS_WINDOW_TOTAL = 50
+export const DISCUSS_WINDOW_TOTAL = 50
 
 /**
  * Thread resolver: materializes a thread/scratchpad/channel reference into the
@@ -86,17 +92,39 @@ export const ThreadResolver: Resolver<ThreadRef> = {
     const withRoot = root && !anchored.some((m) => m.id === root.id) ? [root, ...anchored] : anchored
 
     const authorIds = new Set(withRoot.map((m) => m.authorId))
-    const authorNames = await resolveActorNames(db, stream.workspaceId, authorIds)
+    const messageIds = withRoot.map((m) => m.id)
+    const [authorNames, attachmentsByMessage] = await Promise.all([
+      resolveActorNames(db, stream.workspaceId, authorIds),
+      // Without this the focal message in a "Discuss with Ariadne" window
+      // loses its attachments — the trace shows only the text and the model
+      // has no idea anything was attached. The renderer formats the metadata
+      // inline below; full extraction content stays behind the existing
+      // attachment tools so we don't duplicate the heavy enrichment path.
+      AttachmentRepository.findByMessageIds(db, messageIds),
+    ])
 
-    const items: RenderableMessage[] = withRoot.map((m) => ({
-      messageId: m.id,
-      authorId: m.authorId,
-      authorName: authorNames.get(m.authorId) ?? "Unknown",
-      contentMarkdown: m.contentMarkdown,
-      createdAt: m.createdAt.toISOString(),
-      editedAt: m.editedAt?.toISOString() ?? null,
-      sequence: m.sequence,
-    }))
+    const items: RenderableMessage[] = withRoot.map((m) => {
+      const messageAttachments = attachmentsByMessage.get(m.id)
+      const attachments: RenderableAttachment[] | undefined =
+        messageAttachments && messageAttachments.length > 0
+          ? messageAttachments.map((a) => ({
+              id: a.id,
+              filename: a.filename,
+              mimeType: a.mimeType,
+              sizeBytes: a.sizeBytes,
+            }))
+          : undefined
+      return {
+        messageId: m.id,
+        authorId: m.authorId,
+        authorName: authorNames.get(m.authorId) ?? "Unknown",
+        contentMarkdown: m.contentMarkdown,
+        createdAt: m.createdAt.toISOString(),
+        editedAt: m.editedAt?.toISOString() ?? null,
+        sequence: m.sequence,
+        ...(attachments && { attachments }),
+      }
+    })
 
     const inputs: SummaryInput[] = items.map((item) => ({
       messageId: item.messageId,

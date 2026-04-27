@@ -231,10 +231,16 @@ export function useDraftComposer({
   // delay on the first turn), and `error` means the server couldn't resolve
   // the ref (we'd produce a turn without context). `ready` and `inline`
   // are safe.
+  //
+  // A context ref alone is enough to send: "Discuss with Ariadne" can be
+  // dispatched with just the attached thread chip — no body text, no upload
+  // required. Treating refs as a third payload type lets the user fire off
+  // "what's going on here?" without typing.
   const contextRefsReady = savedContextRefs.every(
     (ref: DraftContextRef) => ref.status === "ready" || ref.status === "inline"
   )
-  const canSend = (hasContent || uploadedIds.length > 0) && !isSending && !isUploading && contextRefsReady
+  const hasPayload = hasContent || uploadedIds.length > 0 || savedContextRefs.length > 0
+  const canSend = hasPayload && !isSending && !isUploading && contextRefsReady
 
   return {
     // Content

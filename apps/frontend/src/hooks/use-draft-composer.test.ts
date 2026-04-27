@@ -510,6 +510,32 @@ describe("useDraftComposer", () => {
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
       expect(result.current.canSend).toBe(true)
     })
+
+    it("should be true with only a ready context-ref (no body text, no attachments)", () => {
+      // Regression: clicking "Discuss with Ariadne" attaches a thread chip
+      // but doesn't fill the composer body. The send button shouldn't force
+      // the user to type a placeholder message — the chip itself is a
+      // sufficient payload to dispatch the discussion turn.
+      mockDraftStateByKey[`stream:${scopeId}`] = {
+        isLoaded: true,
+        contentJson: EMPTY_DOC,
+        attachments: [],
+        contextRefs: [
+          {
+            refKind: "thread",
+            streamId: "stream_src",
+            fromMessageId: null,
+            toMessageId: null,
+            status: "ready",
+            fingerprint: "fp_1",
+            errorMessage: null,
+          },
+        ],
+      }
+
+      const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
+      expect(result.current.canSend).toBe(true)
+    })
   })
 
   describe("isSending state", () => {

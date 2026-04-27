@@ -1,10 +1,18 @@
-import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { ContextIntents, ContextRefKinds, Visibilities } from "@threa/types"
 import { ThreadResolver } from "./thread-resolver"
+import { AttachmentRepository } from "../../../attachments"
 import { MessageRepository } from "../../../messaging"
 import { StreamRepository, StreamMemberRepository } from "../../../streams"
 import { UserRepository } from "../../../workspaces"
 import { PersonaRepository } from "../../persona-repository"
+
+// All ThreadResolver.fetch paths now batch-fetch attachments for the windowed
+// message ids. Default to an empty map so individual tests don't have to
+// re-stub it; tests that care about attachment rendering override locally.
+beforeEach(() => {
+  spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(new Map())
+})
 
 function makeStream(overrides: Record<string, any> = {}): any {
   return {
@@ -503,6 +511,45 @@ describe("ThreadResolver.fetch — DISCUSS_THREAD windowing", () => {
     // render path here, not the focal-section split.
     expect(result.items.map((i) => i.messageId)).toEqual(["msg_root", "msg_reply_1", "msg_reply_2"])
     expect(result.focalMessageId).toBeNull()
+  })
+
+  it("attaches attachment metadata onto the renderable items so the trace surfaces what was attached", async () => {
+    // Without this the focal message in a "Discuss with Ariadne" window
+    // renders as text-only — the trace lies about the attached PDF and the
+    // model has no idea anything was attached.
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
+    spyOn(MessageRepository, "list").mockResolvedValue([seq("msg_a", 1), seq("msg_b", 2)])
+    spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(
+      new Map([
+        [
+          "msg_a",
+          [
+            {
+              id: "att_1",
+              filename: "spec.pdf",
+              mimeType: "application/pdf",
+              sizeBytes: 12345,
+            } as any,
+          ],
+        ],
+      ])
+    )
+
+    const result = await ThreadResolver.fetch(
+      {} as any,
+      { kind: ContextRefKinds.THREAD, streamId: "stream_source" },
+      { intent: ContextIntents.DISCUSS_THREAD }
+    )
+
+    const itemA = result.items.find((i) => i.messageId === "msg_a")!
+    const itemB = result.items.find((i) => i.messageId === "msg_b")!
+    expect(itemA.attachments).toEqual([
+      { id: "att_1", filename: "spec.pdf", mimeType: "application/pdf", sizeBytes: 12345 },
+    ])
+    expect(itemB.attachments).toBeUndefined()
   })
 
   it("falls back to the stream tail (not a deletion-skewed slice) when the focal message is soft-deleted", async () => {
