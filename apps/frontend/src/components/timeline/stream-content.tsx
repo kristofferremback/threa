@@ -347,16 +347,19 @@ export function StreamContent({
     [messageEventMeta, selectedMessageIds, selectedSequenceFloor]
   )
 
-  const startBatchSelect = useCallback(() => {
-    setBatchMode(true)
-    setSelectedMessageIds(new Set())
-    setHoveredBatchTargetId(null)
-    setDragGhost(null)
-    // Selection and search share the same flush-top strip; keep one open at a
-    // time so they can't stack. Search bar's own listeners handle the reverse.
-    setIsSearchOpen(false)
-    clearSearch()
-  }, [clearSearch])
+  const startBatchSelect = useCallback(
+    (preselectedMessageId?: string) => {
+      setBatchMode(true)
+      setSelectedMessageIds(preselectedMessageId ? new Set([preselectedMessageId]) : new Set())
+      setHoveredBatchTargetId(null)
+      setDragGhost(null)
+      // Selection and search share the same flush-top strip; keep one open at a
+      // time so they can't stack. Search bar's own listeners handle the reverse.
+      setIsSearchOpen(false)
+      clearSearch()
+    },
+    [clearSearch]
+  )
 
   const toggleBatchMessage = useCallback((messageId: string) => {
     setSelectedMessageIds((prev) => {
@@ -391,7 +394,7 @@ export function StreamContent({
   useEffect(() => {
     return addStartBatchSelectListener((detail) => {
       if (detail.streamId !== streamId) return
-      startBatchSelect()
+      startBatchSelect(detail.preselectedMessageId)
     })
   }, [startBatchSelect, streamId])
 

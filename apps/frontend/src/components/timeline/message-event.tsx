@@ -48,6 +48,7 @@ import { MessageEditForm } from "./message-edit-form"
 import { UnsentMessageEditForm } from "./unsent-message-edit-form"
 import { UnsentMessageActionDrawer } from "./unsent-message-action-drawer"
 import { EditedIndicator } from "./edited-indicator"
+import { MovedFromIndicator } from "./moved-from-indicator"
 import { SavedIndicator } from "@/components/saved/saved-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
 import { MessageReactions } from "./message-reactions"
@@ -57,6 +58,7 @@ import { useSwipeAction } from "@/hooks/use-swipe-action"
 import type { BatchTimelineState } from "./event-list"
 import { useStreamFromStore } from "@/stores/stream-store"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
+import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
 
 interface MessagePayload {
   messageId: string
@@ -75,6 +77,17 @@ interface MessagePayload {
   editedAt?: string
   sentVia?: string
   reactions?: Record<string, string[]>
+  /**
+   * Stamped onto the relocated `message_created` payload by the move flow.
+   * Surfaces a small "moved from #X" indicator alongside the timestamp so
+   * scrollers-by can see this message wasn't authored in this stream. We
+   * keep only the most recent move — re-moves overwrite earlier provenance.
+   */
+  movedFrom?: {
+    sourceStreamId: string
+    movedAt: string
+    movedBy: string
+  }
 }
 
 interface MessageEventProps {
@@ -1019,6 +1032,14 @@ function SentMessageEvent({
             }
           : undefined,
       shareToParentLabel: showParentEntry && parentStream ? buildShareToStreamLabel(parentStream) : undefined,
+      // Per-message entry into the batch-move flow. Hidden during batch
+      // mode itself (the row's own checkbox handles that), on the thread
+      // parent (moving the parent into its own thread is nonsensical),
+      // and on archived streams to match the stream-header menu's gating.
+      onMoveToThread:
+        !batch?.enabled && !isThreadParentProp && !currentStream?.archivedAt
+          ? () => dispatchStartBatchSelect(streamId, payload.messageId)
+          : undefined,
     }),
     [
       payload.contentMarkdown,
@@ -1052,6 +1073,8 @@ function SentMessageEvent({
       location,
       isMobile,
       handleDiscussWithAriadne,
+      batch?.enabled,
+      currentStream?.archivedAt,
     ]
   )
 
@@ -1093,6 +1116,7 @@ function SentMessageEvent({
             {payload.editedAt && (
               <EditedIndicator editedAt={payload.editedAt} onShowHistory={() => setHistoryOpen(true)} />
             )}
+            {payload.movedFrom && <MovedFromIndicator workspaceId={workspaceId} movedFrom={payload.movedFrom} />}
             <SavedIndicator saved={savedForMessage ?? null} />
           </>
         }

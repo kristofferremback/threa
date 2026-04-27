@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, Search, CheckSquare } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, Search, CornerDownRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -160,9 +160,9 @@ export function StreamPage() {
   const streamMenuActions: SidebarActionItem[] = []
   if (!isArchived) {
     streamMenuActions.push({
-      id: "select-messages",
-      label: "Select messages",
-      icon: CheckSquare,
+      id: "move-messages",
+      label: "Move messages…",
+      icon: CornerDownRight,
       onSelect: handleSelectMessages,
     })
   }
@@ -322,15 +322,15 @@ export function StreamPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
-                  {/* Hide "Select messages" entirely on archived streams to
+                  {/* Hide "Move messages…" entirely on archived streams to
                     match the mobile drawer (which builds via
                     `streamMenuActions` and skips the entry when isArchived).
                     A disabled menu item would just confuse — there's no path
                     to enable it without unarchiving first. */}
                   {!isArchived && (
                     <DropdownMenuItem onClick={handleSelectMessages}>
-                      <CheckSquare className="mr-2 h-4 w-4" />
-                      Select messages
+                      <CornerDownRight className="mr-2 h-4 w-4" />
+                      Move messages…
                     </DropdownMenuItem>
                   )}
                   {isScratchpad && (

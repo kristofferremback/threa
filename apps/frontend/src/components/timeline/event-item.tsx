@@ -3,6 +3,7 @@ import type { MessageAgentActivity } from "@/hooks"
 import type { BatchTimelineState } from "./event-list"
 import { MessageEvent } from "./message-event"
 import { MembershipEvent } from "./membership-event"
+import { MessagesMovedEvent } from "./messages-moved-event"
 import { SystemEvent } from "./system-event"
 
 interface EventItemProps {
@@ -102,6 +103,13 @@ export function EventItem({
       return (
         <div data-event-id={event.id}>
           <SystemEvent event={event} />
+        </div>
+      )
+
+    case "messages_moved":
+      return (
+        <div data-event-id={event.id}>
+          <MessagesMovedEvent event={event} workspaceId={workspaceId} streamId={streamId} />
         </div>
       )
 

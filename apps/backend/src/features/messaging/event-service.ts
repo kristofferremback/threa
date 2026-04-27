@@ -80,6 +80,53 @@ export interface ThreadCreatedPayload {
   parentMessageId: string
 }
 
+/**
+ * Per-message preview embedded inside `MessagesMovedEventPayload.messages`.
+ * Carries enough to render a clickable list inside the move drill-in
+ * drawer without an extra fetch — author + a short markdown excerpt that
+ * the frontend strips and truncates at render (INV-46: structured data,
+ * formatting on the client).
+ */
+export interface MovedMessagePreview {
+  id: string
+  authorId: string | null
+  authorType: AuthorType | null
+  /** Capped raw markdown excerpt — kept short to bound wire size for big moves. */
+  contentMarkdown: string
+  createdAt: string
+}
+
+/**
+ * Payload for a `messages_moved` stream event. One row is inserted in the
+ * source stream and one in the destination thread; the renderer collapses
+ * each row to "Actor moved N messages" and opens a drill-in drawer when
+ * clicked. The same shape serves both sides — the renderer infers role
+ * from whether `event.streamId` equals `sourceStreamId` (outbound) vs
+ * `destinationStreamId` (inbound).
+ *
+ * `event.actorId` carries the mover's user ID and `event.createdAt`
+ * carries the move timestamp, so they aren't duplicated in the payload.
+ *
+ * Source/destination stream names are embedded so the tombstone can render
+ * without an extra round-trip when the linked stream isn't already cached.
+ * They're a snapshot — a later rename won't be reflected on existing
+ * tombstones, which is acceptable since tombstones are append-only history.
+ */
+export interface MessagesMovedEventPayload {
+  sourceStreamId: string
+  sourceStreamSlug: string | null
+  sourceStreamDisplayName: string | null
+  destinationStreamId: string
+  destinationStreamSlug: string | null
+  destinationStreamDisplayName: string | null
+  /**
+   * Per-message previews for the drill-in drawer. Each entry includes
+   * enough to render a clickable summary linking to the message in the
+   * destination thread. `messages.length` is the canonical count.
+   */
+  messages: MovedMessagePreview[]
+}
+
 // Service params
 export interface CreateMessageParams {
   workspaceId: string
@@ -166,9 +213,25 @@ export interface MoveMessagesToThreadResult {
   thread: import("../streams").Stream
   events: WireStreamEvent[]
   removedEventIds: string[]
+  /** The `messages_moved` tombstone inserted into the SOURCE stream. */
+  sourceTombstoneEvent: WireStreamEvent
 }
 
 const MOVE_MESSAGES_TO_THREAD_OPERATION = "messages.move_to_thread"
+
+/**
+ * Cap each moved-message content excerpt embedded in a `messages_moved`
+ * payload. Long messages are truncated server-side so the wire size is
+ * bounded for big moves; the drill-in drawer shows a one-liner per
+ * message anyway. We append `…` only when truncation actually happened
+ * to avoid lying about completeness on already-short messages.
+ */
+const MOVED_MESSAGE_PREVIEW_CHAR_CAP = 200
+
+function capMovedPreview(content: string): string {
+  if (content.length <= MOVED_MESSAGE_PREVIEW_CHAR_CAP) return content
+  return `${content.slice(0, MOVED_MESSAGE_PREVIEW_CHAR_CAP)}…`
+}
 
 function canonicalMoveLeasePayload(params: {
   sourceStreamId: string
@@ -749,10 +812,16 @@ export class EventService {
         }
       })
 
+      const movedAt = new Date()
       const movedEvents = await StreamEventRepository.moveMessageCreatedEvents(client, {
         sourceStreamId: params.sourceStreamId,
         destinationStreamId: destinationThread.id,
         updates,
+        movedFrom: {
+          sourceStreamId: params.sourceStreamId,
+          movedAt: movedAt.toISOString(),
+          movedBy: params.actorId,
+        },
       })
       const movedAgentSessionEvents = await StreamEventRepository.moveEventsById(client, {
         sourceStreamId: params.sourceStreamId,
@@ -810,13 +879,67 @@ export class EventService {
         })
       }
 
-      const orderedEvents = [...movedEvents, ...movedAgentSessionEvents].sort((a, b) => {
-        if (a.sequence < b.sequence) return -1
-        if (a.sequence > b.sequence) return 1
-        return a.id.localeCompare(b.id)
+      // Insert "messages_moved" tombstones in BOTH streams so each side of
+      // the move keeps a visible trace. Each row collapses in the timeline
+      // to "Actor moved N messages" and opens a drill-in drawer with the
+      // per-message list. Same payload shape on both sides; the renderer
+      // infers role from `event.streamId === sourceStreamId` (outbound)
+      // vs `=== destinationStreamId` (inbound).
+      const orderedSelectedMessages = uniqueMessageIds
+        .map((id) => selectedMessages.find((message) => message.id === id))
+        .filter((message): message is Message => message !== undefined)
+      const movedMessagePreviews: MovedMessagePreview[] = orderedSelectedMessages.map((message) => ({
+        id: message.id,
+        authorId: message.authorId,
+        authorType: message.authorType,
+        contentMarkdown: capMovedPreview(message.contentMarkdown),
+        createdAt: message.createdAt.toISOString(),
+      }))
+      const tombstonePayload: MessagesMovedEventPayload = {
+        sourceStreamId: params.sourceStreamId,
+        sourceStreamSlug: sourceStream.slug,
+        sourceStreamDisplayName: sourceStream.displayName,
+        destinationStreamId: destinationThread.id,
+        destinationStreamSlug: destinationThread.slug,
+        destinationStreamDisplayName: destinationThread.displayName,
+        messages: movedMessagePreviews,
+      }
+      const sourceTombstone = await StreamEventRepository.insert(client, {
+        id: eventId(),
+        streamId: params.sourceStreamId,
+        eventType: "messages_moved",
+        payload: tombstonePayload,
+        actorId: params.actorId,
+        actorType: AuthorTypes.USER,
       })
-      const serializedEvents = orderedEvents.map((event) => serializeBigInt(event) as unknown as WireStreamEvent)
-      const removedEventIds = orderedEvents.map((event) => event.id)
+      const destinationTombstone = await StreamEventRepository.insert(client, {
+        id: eventId(),
+        streamId: destinationThread.id,
+        eventType: "messages_moved",
+        payload: tombstonePayload,
+        actorId: params.actorId,
+        actorType: AuthorTypes.USER,
+      })
+
+      // Order the wire events that will be applied to the destination
+      // stream's IDB cache. The destination tombstone slots in by sequence
+      // alongside the relocated messages (it always sorts last since its
+      // sequence was allocated after the moves).
+      const orderedDestinationEvents = [...movedEvents, ...movedAgentSessionEvents, destinationTombstone].sort(
+        (a, b) => {
+          if (a.sequence < b.sequence) return -1
+          if (a.sequence > b.sequence) return 1
+          return a.id.localeCompare(b.id)
+        }
+      )
+      const serializedDestinationEvents = orderedDestinationEvents.map(
+        (event) => serializeBigInt(event) as unknown as WireStreamEvent
+      )
+      // `removedEventIds` is what the SOURCE stream cache must drop — only
+      // the relocated rows, not the source tombstone (which we want to
+      // keep visible there).
+      const removedEventIds = [...movedEvents, ...movedAgentSessionEvents].map((event) => event.id)
+      const serializedSourceTombstone = serializeBigInt(sourceTombstone) as unknown as WireStreamEvent
 
       await OutboxRepository.insert(client, "messages:moved", {
         workspaceId: params.workspaceId,
@@ -826,8 +949,9 @@ export class EventService {
         targetMessageId: params.targetMessageId,
         movedMessageIds: uniqueMessageIds,
         thread: destinationThread,
-        events: serializedEvents,
+        events: serializedDestinationEvents,
         removedEventIds,
+        sourceTombstoneEvent: serializedSourceTombstone,
         parentReplyCount,
         parentThreadSummary,
       })
@@ -838,8 +962,9 @@ export class EventService {
         targetMessageId: params.targetMessageId,
         movedMessageIds: uniqueMessageIds,
         thread: destinationThread,
-        events: serializedEvents,
+        events: serializedDestinationEvents,
         removedEventIds,
+        sourceTombstoneEvent: serializedSourceTombstone,
       }
     })
   }

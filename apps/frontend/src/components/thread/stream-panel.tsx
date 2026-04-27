@@ -1,7 +1,7 @@
 import { useSearchParams, useParams } from "react-router-dom"
 import { useMemo, useCallback, useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
-import { MessageSquare, ChevronLeft, MoreHorizontal, CheckSquare } from "lucide-react"
+import { MessageSquare, ChevronLeft, MoreHorizontal, CornerDownRight } from "lucide-react"
 import {
   SidePanel,
   SidePanelHeader,
@@ -190,9 +190,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
 
   const panelMenuActions: SidebarActionItem[] = [
     {
-      id: "select-messages",
-      label: "Select messages",
-      icon: CheckSquare,
+      id: "move-messages",
+      label: "Move messages…",
+      icon: CornerDownRight,
       onSelect: handleSelectMessages,
     },
   ]
@@ -418,8 +418,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
                 <DropdownMenuItem onClick={handleSelectMessages} disabled={!!stream.archivedAt}>
-                  <CheckSquare className="mr-2 h-4 w-4" />
-                  Select messages
+                  <CornerDownRight className="mr-2 h-4 w-4" />
+                  Move messages…
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

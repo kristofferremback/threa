@@ -242,6 +242,9 @@ export interface MoveMessagesToThreadResponse {
   thread: Stream
   events: StreamEvent[]
   removedEventIds: string[]
+  /** Tombstone event inserted into the source stream that the source-side
+   *  client appends to its cache so the move leaves a visible trace. */
+  sourceTombstoneEvent: StreamEvent
 }
 
 export interface ValidateMoveMessagesToThreadInput {
