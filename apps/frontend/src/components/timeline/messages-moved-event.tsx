@@ -7,33 +7,24 @@ import { MovedMessagesDrawer } from "./moved-messages-drawer"
 interface MessagesMovedEventProps {
   event: StreamEvent
   workspaceId: string
-  streamId: string
 }
 
 /**
  * Source-side `messages:moved` tombstone. Renders as a single line —
  * "Actor moved N messages" — that opens the move drill-in drawer.
  *
- * The destination-side row is intentionally NOT rendered: at the
- * destination the user already sees the moved messages themselves, plus
- * a per-message origin badge (`MovedFromIndicator`) and a "Show move
- * details" entry on each moved message's context menu — duplicating the
- * tombstone inline there would be visual noise on top of the messages
- * the user is already looking at. The `stream_events` row is still
- * cached in IDB so the per-message context-menu drill-in can find it
- * via `movedFrom.moveTombstoneId`.
+ * Destination-side rows are filtered out one level up in
+ * `event-item.tsx`, so this component is only mounted on the source
+ * stream. At the destination the user reaches the same drawer via the
+ * per-message origin badge or the "Show move details" context-menu
+ * entry on each moved message.
  */
-export function MessagesMovedEvent({ event, workspaceId, streamId }: MessagesMovedEventProps) {
+export function MessagesMovedEvent({ event, workspaceId }: MessagesMovedEventProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
-  // Always called so hook order is stable, even though we may early-return
-  // for destination rows below. Cost is one IDB subscription per source-
-  // side tombstone in the timeline (typically rare).
   const actors = useActors(workspaceId)
-
   const payload = event.payload as MessagesMovedEventPayload
-  if (streamId === payload.destinationStreamId) return null
-
   const moverName = actors.getActorName(event.actorId, event.actorType)
+
   const count = payload.messages.length
   const noun = count === 1 ? "message" : "messages"
 
@@ -53,13 +44,7 @@ export function MessagesMovedEvent({ event, workspaceId, streamId }: MessagesMov
         </button>
       </div>
       {drawerOpen && (
-        <MovedMessagesDrawer
-          open={drawerOpen}
-          onOpenChange={setDrawerOpen}
-          event={event}
-          workspaceId={workspaceId}
-          currentStreamId={streamId}
-        />
+        <MovedMessagesDrawer open={drawerOpen} onOpenChange={setDrawerOpen} event={event} workspaceId={workspaceId} />
       )}
     </>
   )

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { CornerDownRight, X } from "lucide-react"
+import { X } from "lucide-react"
 import type { StreamEvent, MessagesMovedEventPayload, MovedMessagePreview } from "@threa/types"
 import {
   ResponsiveDialog,
@@ -19,14 +19,12 @@ interface MovedMessagesDrawerProps {
   /** The `messages:moved` tombstone backing this drawer. */
   event: StreamEvent
   workspaceId: string
-  /** The stream the user is currently viewing — drives outbound vs inbound label. */
-  currentStreamId: string
 }
 
-function formatStreamName(displayName: string | null, slug: string | null): string | null {
+function formatStreamName(displayName: string | null, slug: string | null, fallback: string): string {
   if (displayName) return displayName
   if (slug) return `#${slug}`
-  return null
+  return fallback
 }
 
 /**
@@ -34,29 +32,28 @@ function formatStreamName(displayName: string | null, slug: string | null): stri
  *
  * - **Source-stream tombstone** — clicking the inline "Actor moved N
  *   messages" row opens this drawer with the source-side tombstone.
- * - **Destination per-message context menu** — the destination doesn't
- *   render an inline tombstone, so each moved message exposes a
- *   "Show move details" menu entry that opens this drawer with the
+ * - **Destination per-message indicator + context menu** — the
+ *   destination doesn't render an inline tombstone, so each moved
+ *   message exposes both a hover-clickable origin badge and a
+ *   "Show move details" menu entry that open this drawer with the
  *   destination tombstone (looked up by `movedFrom.moveTombstoneId`).
  *
  * Both callers mount conditionally (`{open && <Drawer .../>}`) so the
  * internal `useActors` subscription only runs when the drawer is
  * actually visible.
  */
-export function MovedMessagesDrawer({
-  open,
-  onOpenChange,
-  event,
-  workspaceId,
-  currentStreamId,
-}: MovedMessagesDrawerProps) {
+export function MovedMessagesDrawer({ open, onOpenChange, event, workspaceId }: MovedMessagesDrawerProps) {
   const actors = useActors(workspaceId)
   const payload = event.payload as MessagesMovedEventPayload
   const moverName = actors.getActorName(event.actorId, event.actorType)
-  const sourceLabel = formatStreamName(payload.sourceStreamDisplayName, payload.sourceStreamSlug) ?? "another stream"
-  const destinationLabel =
-    formatStreamName(payload.destinationStreamDisplayName, payload.destinationStreamSlug) ?? "a thread"
-  const isOutbound = currentStreamId === payload.sourceStreamId
+  // Source can be any stream type; destination is always a thread (the
+  // move flow only creates child threads). Fallbacks reflect that.
+  const sourceLabel = formatStreamName(payload.sourceStreamDisplayName, payload.sourceStreamSlug, "Untitled stream")
+  const destinationLabel = formatStreamName(
+    payload.destinationStreamDisplayName,
+    payload.destinationStreamSlug,
+    "Untitled thread"
+  )
   const count = payload.messages.length
   const noun = count === 1 ? "message" : "messages"
 
@@ -70,8 +67,17 @@ export function MovedMessagesDrawer({
         <div className="px-4 sm:px-6 py-4 border-b shrink-0 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <ResponsiveDialogTitle className="text-base font-semibold flex items-center gap-2">
-              <CornerDownRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-              {moverName} moved {count} {noun}
+              <ActorAvatar
+                actorId={event.actorId}
+                actorType={event.actorType}
+                workspaceId={workspaceId}
+                size="sm"
+                alt={moverName}
+                className="shrink-0"
+              />
+              <span className="truncate">
+                {moverName} moved {count} {noun}
+              </span>
             </ResponsiveDialogTitle>
             <ResponsiveDialogDescription className="mt-1 text-xs text-muted-foreground inline-flex items-center gap-1.5 flex-wrap">
               <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
@@ -89,8 +95,6 @@ export function MovedMessagesDrawer({
               >
                 {destinationLabel}
               </Link>
-              {isOutbound && <span className="text-muted-foreground">(outbound)</span>}
-              {!isOutbound && <span className="text-muted-foreground">(inbound)</span>}
             </ResponsiveDialogDescription>
           </div>
           <ResponsiveDialogClose className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0">
@@ -130,7 +134,7 @@ function MovedMessageRow({ message, workspaceId, destinationStreamId, actors, on
   // Preview field is markdown by design — INV-60 carve-out for preview
   // surfaces. Strip + truncate at render so display stays plain text.
   const stripped = stripMarkdownToInline(message.contentMarkdown).trim()
-  const previewText = stripped.length > 0 ? stripped : "(empty message)"
+  const hasContent = stripped.length > 0
 
   return (
     <li>
@@ -153,9 +157,13 @@ function MovedMessageRow({ message, workspaceId, destinationStreamId, actors, on
               <span className="font-medium text-sm truncate">{authorName}</span>
               <RelativeTime date={message.createdAt} className="text-xs text-muted-foreground shrink-0" />
             </div>
-            <p className="text-sm text-muted-foreground line-clamp-2 group-hover:text-foreground transition-colors">
-              {previewText}
-            </p>
+            {hasContent ? (
+              <p className="text-sm text-muted-foreground line-clamp-2 group-hover:text-foreground transition-colors">
+                {stripped}
+              </p>
+            ) : (
+              <p className="text-sm italic text-muted-foreground/70">no text content</p>
+            )}
           </div>
         </div>
       </Link>

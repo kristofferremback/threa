@@ -1127,7 +1127,13 @@ function SentMessageEvent({
             {payload.editedAt && (
               <EditedIndicator editedAt={payload.editedAt} onShowHistory={() => setHistoryOpen(true)} />
             )}
-            {payload.movedFrom && <MovedFromIndicator workspaceId={workspaceId} movedFrom={payload.movedFrom} />}
+            {payload.movedFrom && (
+              <MovedFromIndicator
+                workspaceId={workspaceId}
+                movedFrom={payload.movedFrom}
+                onClick={movedTombstoneEvent ? () => setMoveDetailsOpen(true) : undefined}
+              />
+            )}
             <SavedIndicator saved={savedForMessage ?? null} />
           </>
         }
@@ -1275,7 +1281,6 @@ function SentMessageEvent({
           onOpenChange={setMoveDetailsOpen}
           event={movedTombstoneEvent}
           workspaceId={workspaceId}
-          currentStreamId={streamId}
         />
       )}
       {isMobile && (
