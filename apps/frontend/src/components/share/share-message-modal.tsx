@@ -1,8 +1,13 @@
 import { useMemo, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { StreamTypes, Visibilities, type StreamType } from "@threa/types"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
 import { getStreamName, streamFallbackLabel, STREAM_ICONS } from "@/lib/streams"
@@ -32,9 +37,10 @@ interface ShareMessageModalProps {
  * `queueShareHandoff` and navigates; commentary + send happen in the
  * target's normal composer rather than a modal-owned editor.
  *
- * Renders as a centered Dialog on desktop and a bottom-sheet Drawer on
- * mobile so the affordance matches the rest of the app's mobile sheets
- * (`MessageActionDrawer`, `UnsentMessageActionDrawer`, etc.).
+ * Renders through `ResponsiveDialog`, which routes to a centered Dialog
+ * on desktop and a snap-pointed Drawer on mobile — same primitive the
+ * quick-switcher (a sibling stream picker) uses, so the affordance stays
+ * consistent.
  *
  * Privacy boundaries are enforced at send time: the backend rejects with
  * `SHARE_PRIVACY_CONFIRMATION_REQUIRED` and the queue surfaces a
@@ -46,6 +52,8 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
   const location = useLocation()
   const streams = useWorkspaceStreams(workspaceId)
   const memberships = useWorkspaceStreamMemberships(workspaceId)
+  // The Drawer/Dialog split is owned by ResponsiveDialog; isMobile here only
+  // governs the post-select navigation contract (mobile strips `?panel=…`).
   const isMobile = useIsMobile()
 
   const memberStreamIds = useMemo(() => {
@@ -99,56 +107,47 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
     navigateAfterShareHandoff({ workspaceId, targetStreamId, location, navigate, isMobile })
   }
 
-  const picker = (
-    <Command shouldFilter={false} className="rounded-none">
-      <CommandInput placeholder="Search streams…" value={search} onValueChange={setSearch} className="border-b" />
-      <CommandList className="max-h-[60vh]">
-        <CommandEmpty>No matching streams.</CommandEmpty>
-        {TARGET_GROUPS.map((group) => {
-          const list = streamsByGroup.get(group.type)
-          if (!list || list.length === 0) return null
-          return (
-            <CommandGroup key={group.id} heading={group.heading}>
-              {list.map((stream) => {
-                const Icon = STREAM_ICONS[stream.type]
-                const label = getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")
-                return (
-                  <CommandItem key={stream.id} value={stream.id} onSelect={() => handleSelect(stream.id)}>
-                    <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                    <span>{label}</span>
-                  </CommandItem>
-                )
-              })}
-            </CommandGroup>
-          )
-        })}
-      </CommandList>
-    </Command>
-  )
-
-  if (isMobile) {
-    return (
-      <Drawer open={open} onOpenChange={handleOpenChange}>
-        <DrawerContent>
-          <DrawerHeader className="px-4 pb-2 text-left">
-            <DrawerTitle className="text-base">Share message</DrawerTitle>
-            <DrawerDescription>Pick a stream to insert this share into the composer.</DrawerDescription>
-          </DrawerHeader>
-          {picker}
-        </DrawerContent>
-      </Drawer>
-    )
-  }
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="overflow-hidden p-0 sm:max-w-lg">
-        <DialogHeader className="border-b px-4 py-3">
-          <DialogTitle className="text-base">Share message</DialogTitle>
-          <DialogDescription>Pick a stream to insert this share into the composer.</DialogDescription>
-        </DialogHeader>
-        {picker}
-      </DialogContent>
-    </Dialog>
+    <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
+      <ResponsiveDialogContent
+        className="overflow-hidden p-0"
+        desktopClassName="sm:max-w-lg"
+        // Mobile drawer keeps ResponsiveDialog's default 80%-snap full-height
+        // shell; the `flex flex-col` lets the Command list claim the
+        // remaining space below the header rather than overflowing.
+        drawerClassName="flex flex-col"
+      >
+        <ResponsiveDialogHeader className="border-b px-4 py-3">
+          <ResponsiveDialogTitle className="text-base">Share message</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
+            Pick a stream to insert this share into the composer.
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
+        <Command shouldFilter={false} className="rounded-none">
+          <CommandInput placeholder="Search streams…" value={search} onValueChange={setSearch} className="border-b" />
+          <CommandList className="max-h-[60vh]">
+            <CommandEmpty>No matching streams.</CommandEmpty>
+            {TARGET_GROUPS.map((group) => {
+              const list = streamsByGroup.get(group.type)
+              if (!list || list.length === 0) return null
+              return (
+                <CommandGroup key={group.id} heading={group.heading}>
+                  {list.map((stream) => {
+                    const Icon = STREAM_ICONS[stream.type]
+                    const label = getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")
+                    return (
+                      <CommandItem key={stream.id} value={stream.id} onSelect={() => handleSelect(stream.id)}>
+                        <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                        <span>{label}</span>
+                      </CommandItem>
+                    )
+                  })}
+                </CommandGroup>
+              )
+            })}
+          </CommandList>
+        </Command>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }

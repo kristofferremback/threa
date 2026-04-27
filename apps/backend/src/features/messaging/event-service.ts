@@ -5,7 +5,25 @@ import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
 import { checkStreamAccess, resolveEffectiveAccessStream } from "../streams"
 import { MessageRepository, Message } from "./repository"
-import { ShareService } from "./sharing"
+import { ShareService, type ResolveEffectiveStream } from "./sharing"
+
+/**
+ * Adapter that lets `ShareService.validateAndRecordShares` consume the
+ * canonical `resolveEffectiveAccessStream` (which returns either the input
+ * shape or a full `Stream`) without leaking the streams-feature row shape
+ * into the sharing sub-feature (INV-52). Hoisted to module scope so the
+ * create + edit call paths share one allocation rather than re-declaring
+ * the closure per request (INV-13, INV-35).
+ */
+const resolveEffectiveStreamAdapter: ResolveEffectiveStream = async (db, source) => {
+  const resolved = await resolveEffectiveAccessStream(db, source)
+  return {
+    id: resolved.id,
+    workspaceId: resolved.workspaceId,
+    visibility: resolved.visibility,
+    rootStreamId: resolved.rootStreamId,
+  }
+}
 import { AttachmentRepository, isVideoAttachment } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
@@ -339,18 +357,7 @@ export class EventService {
         sharerId: params.authorId,
         contentJson: params.contentJson,
         findStream: (db, id) => StreamRepository.findById(db, id),
-        resolveEffectiveStream: async (db, source) => {
-          // The canonical helper returns the input shape OR a full Stream;
-          // narrow back to SharingStream so the sharing module stays
-          // ignorant of the streams-feature row shape (INV-52).
-          const resolved = await resolveEffectiveAccessStream(db, source)
-          return {
-            id: resolved.id,
-            workspaceId: resolved.workspaceId,
-            visibility: resolved.visibility,
-            rootStreamId: resolved.rootStreamId,
-          }
-        },
+        resolveEffectiveStream: resolveEffectiveStreamAdapter,
         isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
         countExposedMembers: (db, targetStreamId, sourceStreamId) =>
           StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
@@ -451,18 +458,7 @@ export class EventService {
           sharerId: params.actorId,
           contentJson: params.contentJson,
           findStream: (db, id) => StreamRepository.findById(db, id),
-          resolveEffectiveStream: async (db, source) => {
-            // The canonical helper returns the input shape OR a full Stream;
-            // narrow back to SharingStream so the sharing module stays
-            // ignorant of the streams-feature row shape (INV-52).
-            const resolved = await resolveEffectiveAccessStream(db, source)
-            return {
-              id: resolved.id,
-              workspaceId: resolved.workspaceId,
-              visibility: resolved.visibility,
-              rootStreamId: resolved.rootStreamId,
-            }
-          },
+          resolveEffectiveStream: resolveEffectiveStreamAdapter,
           isAncestor: (db, ancestorId, streamId) => StreamRepository.isAncestor(db, ancestorId, streamId),
           countExposedMembers: (db, targetStreamId, sourceStreamId) =>
             StreamMemberRepository.countMembersNotIn(db, targetStreamId, sourceStreamId),
