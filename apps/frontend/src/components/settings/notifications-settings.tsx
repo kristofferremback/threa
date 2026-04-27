@@ -1,9 +1,13 @@
 import { useState } from "react"
 import { useParams } from "react-router-dom"
+import { Bell, BellOff, CheckCircle2, Loader2, ServerCrash, TriangleAlert } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { ApiError, api } from "@/api/client"
 import { usePreferences } from "@/contexts"
 import { usePushNotifications } from "@/hooks/use-push-notifications"
 import { PREF_NOTIFICATION_LEVEL_OPTIONS, type PrefNotificationLevel } from "@threa/types"
@@ -20,37 +24,79 @@ const NOTIFICATION_DESCRIPTIONS: Record<PrefNotificationLevel, string> = {
   none: "Don't send any notifications",
 }
 
-const TEST_BUTTON_LABELS = { idle: "Test", sent: "Sent!", failed: "Failed" } as const
+interface TestPushResponse {
+  attempted: number
+  delivered: number
+  failed: number
+}
 
-function TestNotificationButton({ workspaceId }: { workspaceId: string }) {
-  const [label, setLabel] = useState<keyof typeof TEST_BUTTON_LABELS>("idle")
+type TestStatus =
+  | { kind: "idle" }
+  | { kind: "sending" }
+  | { kind: "ok"; delivered: number; attempted: number; failed: number }
+  | { kind: "error"; message: string }
+
+function TestPushButton({ workspaceId, disabled }: { workspaceId: string; disabled?: boolean }) {
+  const [state, setState] = useState<TestStatus>({ kind: "idle" })
 
   async function sendTest() {
+    setState({ kind: "sending" })
     try {
-      const registration = await navigator.serviceWorker?.ready
-      if (!registration) throw new Error("Service worker not available")
-
-      await registration.showNotification("Test notification", {
-        body: "If you can see this, push notifications are working!",
-        icon: "/threa-logo-192.png",
-        badge: "/threa-logo-192.png",
-        tag: "threa-test",
-        data: { workspaceId },
+      // Backend-driven test: actually exercises the full delivery loop
+      // (DB → web-push → device), not just the local SW path. The phone
+      // should receive the notification within a few seconds.
+      const result = await api.post<TestPushResponse>(`/api/workspaces/${workspaceId}/push/test`)
+      setState({
+        kind: "ok",
+        delivered: result.delivered,
+        attempted: result.attempted,
+        failed: result.failed,
       })
-
-      setLabel("sent")
     } catch (err) {
-      console.error("[Push] Test notification failed:", err)
-      setLabel("failed")
+      console.error("[Push] Test push failed:", err)
+      const message = ApiError.isApiError(err) ? err.message : "Failed to send test"
+      setState({ kind: "error", message })
     } finally {
-      setTimeout(() => setLabel("idle"), 3000)
+      setTimeout(() => setState({ kind: "idle" }), 5000)
     }
   }
 
+  let label: string
+  switch (state.kind) {
+    case "idle":
+      label = "Send test"
+      break
+    case "sending":
+      label = "Sending…"
+      break
+    case "ok":
+      if (state.attempted === 0) label = "No devices to test"
+      else if (state.failed === 0) label = `Sent to ${state.delivered} device${state.delivered === 1 ? "" : "s"}`
+      else label = `${state.delivered}/${state.attempted} delivered`
+      break
+    case "error":
+      label = state.message
+      break
+  }
+
   return (
-    <Button onClick={sendTest} variant="outline" size="sm">
-      {TEST_BUTTON_LABELS[label]}
+    <Button onClick={sendTest} variant="outline" size="sm" disabled={disabled || state.kind === "sending"}>
+      {state.kind === "sending" && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+      {label}
     </Button>
+  )
+}
+
+interface StatusInfo {
+  label: string
+  variant: "default" | "secondary" | "destructive" | "outline"
+}
+
+function PushStatusBadge({ info }: { info: StatusInfo }) {
+  return (
+    <Badge variant={info.variant} className="font-normal">
+      {info.label}
+    </Badge>
   )
 }
 
@@ -67,83 +113,145 @@ function PushNotificationSection({ workspaceId }: { workspaceId: string }) {
     retry,
   } = usePushNotifications(workspaceId)
 
+  const statusInfo = resolveStatusInfo({ permission, isSubscribed, status, optedOut, pushDisabledOnServer })
+
   return (
-    <section className="space-y-3">
-      <div>
-        <h3 className="text-sm font-medium">Push Notifications</h3>
-        <p className="text-sm text-muted-foreground">Get notified even when you're away from the app</p>
+    <section className="space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground">
+          {isSubscribed ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+        </div>
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium">Push notifications</h3>
+            <PushStatusBadge info={statusInfo} />
+          </div>
+          <p className="text-sm text-muted-foreground">Get notified on this device even when Threa isn't open.</p>
+        </div>
       </div>
-      {permission === "unsupported" && (
-        <p className="text-sm text-muted-foreground">Push notifications are not supported in this browser.</p>
-      )}
-      {permission === "denied" && (
-        <p className="text-sm text-muted-foreground">
-          Push notifications are blocked. Enable them in your browser settings to receive notifications.
-        </p>
-      )}
-      {permission === "default" && (
-        <div className="space-y-3">
+
+      <div className="rounded-lg border bg-card p-4">
+        {permission === "unsupported" && (
+          <p className="text-sm text-muted-foreground">Push notifications aren't supported in this browser.</p>
+        )}
+
+        {permission === "denied" && (
           <p className="text-sm text-muted-foreground">
-            Enable push notifications to get notified when you receive messages and mentions.
+            Notifications are blocked at the browser level. Open your browser's site settings and allow notifications
+            for Threa, then reload this page.
           </p>
-          <Button onClick={requestPermission} variant="outline" size="sm">
-            Enable push notifications
-          </Button>
-        </div>
-      )}
-      {permission === "granted" && isSubscribed && (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Push notifications are enabled for this device.</p>
-          <div className="flex gap-2">
-            <Button onClick={unsubscribe} variant="outline" size="sm">
-              Disable push notifications
+        )}
+
+        {permission === "default" && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Allow notifications so messages and mentions can reach you when the app is closed.
+            </p>
+            <Button onClick={requestPermission} variant="default" size="sm">
+              <Bell className="mr-2 h-3.5 w-3.5" />
+              Enable push notifications
             </Button>
-            <TestNotificationButton workspaceId={workspaceId} />
           </div>
-        </div>
-      )}
-      {permission === "granted" && !isSubscribed && optedOut && (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Push notifications are disabled for this device.</p>
-          <Button onClick={requestPermission} variant="outline" size="sm">
-            Enable push notifications
-          </Button>
-        </div>
-      )}
-      {permission === "granted" && !isSubscribed && !optedOut && pushDisabledOnServer && (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Push notifications are not available on this server.</p>
-          <Button onClick={retry} variant="outline" size="sm">
-            Check again
-          </Button>
-        </div>
-      )}
-      {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && status === "subscribing" && (
-        <p className="text-sm text-muted-foreground">Subscribing to push notifications...</p>
-      )}
-      {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && status === "error" && (
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <p className="text-sm text-destructive">Couldn't enable push notifications.</p>
-            {error && (
-              <p className="text-xs text-muted-foreground">
-                {error.message}
-                {error.code ? ` (${error.code})` : ""}
+        )}
+
+        {permission === "granted" && isSubscribed && (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 text-sm">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <p className="text-muted-foreground">
+                This device is subscribed. Use <span className="font-medium text-foreground">Send test</span> to verify
+                that your phone or other devices actually receive a push.
               </p>
-            )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <TestPushButton workspaceId={workspaceId} />
+              <Button onClick={unsubscribe} variant="outline" size="sm">
+                Disable for this device
+              </Button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={retry} variant="outline" size="sm">
-              Retry
-            </Button>
-            <Button onClick={unsubscribe} variant="ghost" size="sm">
-              Stop trying for this device
+        )}
+
+        {permission === "granted" && !isSubscribed && optedOut && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              You've turned off push for this device. Re-enable to start getting notifications again.
+            </p>
+            <Button onClick={requestPermission} variant="outline" size="sm">
+              <Bell className="mr-2 h-3.5 w-3.5" />
+              Re-enable
             </Button>
           </div>
-        </div>
-      )}
+        )}
+
+        {permission === "granted" && !isSubscribed && !optedOut && pushDisabledOnServer && (
+          <Alert>
+            <ServerCrash className="h-4 w-4" />
+            <AlertTitle>Not available on this server</AlertTitle>
+            <AlertDescription className="mt-1 space-y-3">
+              <p>The Threa server isn't configured to send push notifications.</p>
+              <Button onClick={retry} variant="outline" size="sm">
+                Check again
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {permission === "granted" &&
+          !isSubscribed &&
+          !optedOut &&
+          !pushDisabledOnServer &&
+          status === "subscribing" && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Subscribing this device…</span>
+            </div>
+          )}
+
+        {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && status === "error" && (
+          <Alert variant="destructive">
+            <TriangleAlert className="h-4 w-4" />
+            <AlertTitle>Couldn't enable push notifications</AlertTitle>
+            <AlertDescription className="mt-1 space-y-3">
+              {error && (
+                <p className="text-xs">
+                  {error.message}
+                  {error.code ? ` (${error.code})` : ""}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={retry} variant="outline" size="sm">
+                  Retry
+                </Button>
+                <Button onClick={unsubscribe} variant="ghost" size="sm">
+                  Stop trying for this device
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
     </section>
   )
+}
+
+function resolveStatusInfo(args: {
+  permission: ReturnType<typeof usePushNotifications>["permission"]
+  isSubscribed: boolean
+  status: ReturnType<typeof usePushNotifications>["status"]
+  optedOut: boolean
+  pushDisabledOnServer: boolean
+}): StatusInfo {
+  const { permission, isSubscribed, status, optedOut, pushDisabledOnServer } = args
+  if (permission === "unsupported") return { label: "Unsupported", variant: "outline" }
+  if (permission === "denied") return { label: "Blocked", variant: "destructive" }
+  if (permission === "default") return { label: "Off", variant: "outline" }
+  if (isSubscribed) return { label: "Enabled", variant: "default" }
+  if (optedOut) return { label: "Off", variant: "outline" }
+  if (pushDisabledOnServer) return { label: "Unavailable", variant: "outline" }
+  if (status === "subscribing") return { label: "Subscribing…", variant: "secondary" }
+  if (status === "error") return { label: "Error", variant: "destructive" }
+  return { label: "Off", variant: "outline" }
 }
 
 export function NotificationsSettings() {
@@ -156,7 +264,7 @@ export function NotificationsSettings() {
     <div className="space-y-6">
       <section className="space-y-3">
         <div>
-          <h3 className="text-sm font-medium">Notification Level</h3>
+          <h3 className="text-sm font-medium">Notification level</h3>
           <p className="text-sm text-muted-foreground">Choose when you want to be notified</p>
         </div>
         <RadioGroup

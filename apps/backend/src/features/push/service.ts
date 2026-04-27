@@ -115,6 +115,70 @@ export class PushService {
     return PushSubscriptionRepository.deleteByEndpointForUser(this.pool, endpoint, workosUserId)
   }
 
+  /**
+   * Sends a server-driven test push to all of the user's subscriptions in the
+   * workspace. Bypasses the focus-suppression and notification-preference logic
+   * because this is an explicit user diagnostic — we want to know whether the
+   * full delivery loop (DB → web-push → device) is working.
+   *
+   * Returns delivery stats so the caller can show "delivered to N devices" or
+   * "all N devices failed". Stale endpoints (404/410) are evicted so the next
+   * test reflects current registration state.
+   */
+  async deliverTestPush(workspaceId: string, userId: string): Promise<{ attempted: number; failed: number }> {
+    if (!this.canSend) {
+      throw new Error("Push notifications are not enabled on this server")
+    }
+
+    const subscriptions = await PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)
+    if (subscriptions.length === 0) {
+      return { attempted: 0, failed: 0 }
+    }
+
+    const pushPayload = JSON.stringify({
+      data: {
+        kind: "test" as const,
+        workspaceId,
+        sentAt: Date.now(),
+      },
+    })
+
+    let failed = 0
+    const staleIds: string[] = []
+    await Promise.allSettled(
+      subscriptions.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            pushPayload
+          )
+        } catch (err: unknown) {
+          failed++
+          const statusCode = (err as { statusCode?: number }).statusCode
+          if (statusCode === 404 || statusCode === 410) {
+            logger.info(
+              { subscriptionId: sub.id, statusCode },
+              "Marking stale subscription for removal during test push"
+            )
+            staleIds.push(sub.id)
+          } else {
+            logger.warn({ err, subscriptionId: sub.id }, "Test push failed")
+          }
+        }
+      })
+    )
+
+    if (staleIds.length > 0) {
+      try {
+        await PushSubscriptionRepository.deleteByIds(this.pool, workspaceId, staleIds)
+      } catch (deleteErr) {
+        logger.warn({ err: deleteErr, count: staleIds.length }, "Failed to delete stale subscriptions after test push")
+      }
+    }
+
+    return { attempted: subscriptions.length, failed }
+  }
+
   async upsertSession(params: {
     workspaceId: string
     userId: string
