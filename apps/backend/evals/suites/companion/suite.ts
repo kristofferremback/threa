@@ -42,6 +42,7 @@ import {
   averageQualityEvaluator,
 } from "./evaluators"
 import {
+  ARIADNE_AGENT_ID,
   COMPANION_MODEL_ID,
   COMPANION_TEMPERATURE,
   COMPANION_SUMMARY_MODEL_ID,
@@ -70,9 +71,6 @@ import { parseMarkdown } from "@threa/prosemirror"
 import { AuthorTypes, AgentTriggers, StreamTypes } from "@threa/types"
 import { ulid } from "ulid"
 import { personaId as generatePersonaId, streamId as generateStreamId } from "../../../src/lib/id"
-
-/** The production Ariadne system persona ID */
-const ARIADNE_PERSONA_ID = "persona_system_ariadne"
 
 /**
  * Get model configuration from context.
@@ -105,7 +103,9 @@ function mapStreamTypeToDbStreamType(
 
 /**
  * Set up test data for a companion eval case.
- * Creates persona, stream, and trigger message in the database.
+ * Creates a workspace-scoped eval persona row, stream, and trigger message.
+ * Prompt text and tools come from the built-in Ariadne config (see `built-in-agents.ts`),
+ * merged with any workspace agent overrides — same resolution as production.
  */
 async function setupTestData(
   input: CompanionInput,
@@ -118,17 +118,16 @@ async function setupTestData(
   const pool = ctx.pool
   const modelConfig = getModelConfig(ctx)
 
-  // Read the production Ariadne persona to get its system prompt
-  // This ensures evals use the EXACT production prompt (INV-44)
-  const productionPersona = await PersonaRepository.findById(pool, ARIADNE_PERSONA_ID)
-  if (!productionPersona) {
-    throw new Error(`Production persona ${ARIADNE_PERSONA_ID} not found - ensure migrations have run`)
+  // Resolve Ariadne as production does: built-in defaults in code plus optional workspace overrides.
+  const templatePersona = await PersonaRepository.findById(pool, ARIADNE_AGENT_ID, ctx.workspaceId)
+  if (!templatePersona) {
+    throw new Error(`Could not resolve built-in companion persona ${ARIADNE_AGENT_ID} (see built-in-agents.ts)`)
   }
-  if (!productionPersona.systemPrompt) {
-    throw new Error(`Production persona ${ARIADNE_PERSONA_ID} has no system prompt`)
+  if (!templatePersona.systemPrompt) {
+    throw new Error(`Built-in companion persona ${ARIADNE_AGENT_ID} has no system prompt`)
   }
 
-  // Create a test persona with production's system prompt but eval's model
+  // Create a test persona row with the resolved prompt and tools but the eval permutation model.
   const testPersonaId = generatePersonaId()
   await pool.query(
     `
@@ -142,11 +141,11 @@ async function setupTestData(
       testPersonaId,
       `eval-ariadne-${ulid().toLowerCase().slice(0, 8)}`,
       "Ariadne (Eval)",
-      productionPersona.description,
-      productionPersona.avatarEmoji,
-      productionPersona.systemPrompt,
+      templatePersona.description,
+      templatePersona.avatarEmoji,
+      templatePersona.systemPrompt,
       modelConfig.model,
-      productionPersona.enabledTools ?? ["send_message"],
+      templatePersona.enabledTools ?? ["send_message"],
     ]
   )
 
