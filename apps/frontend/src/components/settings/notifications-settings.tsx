@@ -55,8 +55,17 @@ function TestNotificationButton({ workspaceId }: { workspaceId: string }) {
 }
 
 function PushNotificationSection({ workspaceId }: { workspaceId: string }) {
-  const { permission, isSubscribed, optedOut, pushDisabledOnServer, requestPermission, unsubscribe } =
-    usePushNotifications(workspaceId)
+  const {
+    permission,
+    isSubscribed,
+    status,
+    error,
+    optedOut,
+    pushDisabledOnServer,
+    requestPermission,
+    unsubscribe,
+    retry,
+  } = usePushNotifications(workspaceId)
 
   return (
     <section className="space-y-3">
@@ -102,10 +111,36 @@ function PushNotificationSection({ workspaceId }: { workspaceId: string }) {
         </div>
       )}
       {permission === "granted" && !isSubscribed && !optedOut && pushDisabledOnServer && (
-        <p className="text-sm text-muted-foreground">Push notifications are not available on this server.</p>
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">Push notifications are not available on this server.</p>
+          <Button onClick={retry} variant="outline" size="sm">
+            Check again
+          </Button>
+        </div>
       )}
-      {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && (
+      {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && status === "subscribing" && (
         <p className="text-sm text-muted-foreground">Subscribing to push notifications...</p>
+      )}
+      {permission === "granted" && !isSubscribed && !optedOut && !pushDisabledOnServer && status === "error" && (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <p className="text-sm text-destructive">Couldn't enable push notifications.</p>
+            {error && (
+              <p className="text-xs text-muted-foreground">
+                {error.message}
+                {error.code ? ` (${error.code})` : ""}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={retry} variant="outline" size="sm">
+              Retry
+            </Button>
+            <Button onClick={unsubscribe} variant="ghost" size="sm">
+              Stop trying for this device
+            </Button>
+          </div>
+        </div>
       )}
     </section>
   )
