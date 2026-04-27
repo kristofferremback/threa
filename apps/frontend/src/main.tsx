@@ -21,12 +21,14 @@ navigator.serviceWorker?.addEventListener("message", (event) => {
   }
 })
 
-// Register the service worker with updateViaCache: 'none' so the browser always
-// byte-checks sw.js against the network instead of using the HTTP cache. This
-// prevents stale SW scripts from keeping old precache manifests alive indefinitely.
+// Register as soon as the main bundle runs — before React effects that call
+// `navigator.serviceWorker.ready` (push subscribe). Deferring to `window` "load"
+// can delay activation until all subresources finish; a slow page then races the
+// 15s push subscribe timeout. Google's SW guidance also recommends registering early.
+// updateViaCache: 'none' forces a network byte-check of sw.js instead of HTTP cache.
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch(() => {})
+  navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch((err) => {
+    console.error("[SW] Registration failed — push and offline updates will not work:", err)
   })
 }
 

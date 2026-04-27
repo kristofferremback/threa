@@ -263,6 +263,9 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       // Aborted attempts are expected when a newer subscribe() superseded us
       // — don't log or write state for them.
       if (controller.signal.aborted || !isLatest()) return
+      if (err instanceof SubscribeTimeoutError) {
+        controller.abort()
+      }
       console.error("[Push] Failed to subscribe:", err)
       setIsSubscribed(false)
       setError(toSubscriptionError(err))
