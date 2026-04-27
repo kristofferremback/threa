@@ -140,13 +140,16 @@ async function runSubscribeFlow(
   }
 
   // Reuse existing browser subscription if its VAPID key matches the server's.
-  // If VAPID keys were rotated, unsubscribe the stale one and create a fresh subscription.
+  // If VAPID keys were rotated, create the fresh subscription FIRST, then
+  // clean up the stale one — so a hung or failed subscribe() doesn't destroy
+  // the only working subscription and strand the user with no push delivery.
   const expectedKey = urlBase64ToUint8Array(vapidPublicKey).buffer as ArrayBuffer
   let existing = await registration.pushManager.getSubscription()
+  let staleSubscription: PushSubscription | null = null
   if (existing) {
     const existingKey = existing.options.applicationServerKey
     if (!existingKey || !arrayBuffersEqual(existingKey, expectedKey)) {
-      await existing.unsubscribe()
+      staleSubscription = existing
       existing = null
     }
   }
@@ -156,6 +159,13 @@ async function runSubscribeFlow(
       userVisibleOnly: true,
       applicationServerKey: expectedKey,
     }))
+
+  // Clean up the stale subscription only after the new one is confirmed.
+  // Guard against browsers that return the same subscription despite a
+  // different applicationServerKey (dedup by endpoint).
+  if (staleSubscription && subscription.endpoint !== staleSubscription.endpoint) {
+    staleSubscription.unsubscribe().catch(() => {})
+  }
 
   const json = subscription.toJSON()
   if (!json.keys?.p256dh || !json.keys?.auth) {
