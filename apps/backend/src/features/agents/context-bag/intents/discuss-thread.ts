@@ -6,17 +6,40 @@ import type { IntentConfig } from "../types"
  * thread loaded as context. Intent config drives the system-prompt preamble
  * and the inline-vs-summary threshold.
  *
+ * Summarisation is disabled here (`inlineCharThreshold: Infinity`) — the
+ * resolver windows the source stream to ~50 messages before this point, so
+ * we'd rather inline the windowed slice verbatim than summarise it. Keeping
+ * the threshold knob (instead of removing the summariser code path) leaves
+ * the door open for a later "summarise the surrounding history" mode without
+ * resurrecting plumbing we deleted.
+ *
  * The preamble explicitly tells the model that the volatile "Since last turn"
  * section overrides the main body — small prompt cost, but required to make
  * the append-only stable region safe when source messages are edited.
  */
 export const DiscussThreadIntent: IntentConfig = {
   intent: ContextIntents.DISCUSS_THREAD,
-  inlineCharThreshold: 8_000,
+  inlineCharThreshold: Number.POSITIVE_INFINITY,
   supportedKinds: [ContextRefKinds.THREAD],
   systemPreamble: [
-    "You are loaded with a private side-conversation about an existing thread.",
-    "The thread's messages are attached below as context so you can answer questions about it.",
+    "You are loaded with a private side-conversation about an existing source stream.",
+    "Below is a windowed slice of that stream's messages — roughly the 50 messages",
+    "around the user's anchor point, NOT the full history.",
+    "",
+    "When a `Focused message` section appears, the user opened this discussion from",
+    "that specific message — treat it as the most likely subject of their first",
+    "question. Messages above it are the lead-up; messages below it are what",
+    "followed. The focal message is also marked inline with a `►` chevron.",
+    "",
+    "When there is no focused message, the user opened this discussion as a",
+    "/discuss-with-ariadne slash command on the source stream itself — assume they",
+    "want to talk about the recent activity in that stream overall.",
+    "",
+    "If you need messages outside the window — earlier history, a related stream,",
+    "or a specific older message — call the `get_stream_messages` tool with the",
+    "source stream id (visible in the `## Context source` heading as",
+    "`thread:<stream_id>`). Do this BEFORE asking the user to paste content; they",
+    "expect you to fetch what you need.",
     "",
     "Internal ids for messages appear in the context as `[msg_…]` tags. They are for your",
     "grounding only — NEVER include them in your user-facing response. Refer to messages by",

@@ -61,13 +61,30 @@ export interface ResolvedRef {
   /** SHA-256 over the canonical `inputs` manifest. */
   fingerprint: string
   tailMessageId: string | null
+  /**
+   * The id of the message the discussion is anchored on (the user clicked
+   * "Discuss with Ariadne" on it). The renderer marks this message with a
+   * focal-message chevron and splits the inline list around it. Null when
+   * the bag has no focal — e.g. `/discuss-with-ariadne` slash command on a
+   * whole stream — or when the focal id falls outside the windowed slice.
+   */
+  focalMessageId: string | null
+}
+
+/**
+ * Options threaded through to a resolver. The intent drives intent-specific
+ * fetch behavior — e.g. DISCUSS_THREAD windows the source stream around the
+ * `originMessageId` instead of dumping the whole tail.
+ */
+export interface ResolverFetchOptions {
+  intent: ContextIntent
 }
 
 export interface Resolver<TRef extends ContextRef = ContextRef> {
   readonly kind: TRef["kind"]
   canonicalKey(ref: TRef): string
   assertAccess(db: Querier, ref: TRef, userId: string, workspaceId: string): Promise<void>
-  fetch(db: Querier, ref: TRef): Promise<Omit<ResolvedRef, "ref">>
+  fetch(db: Querier, ref: TRef, options?: ResolverFetchOptions): Promise<Omit<ResolvedRef, "ref">>
 }
 
 /**
