@@ -67,10 +67,28 @@ self.addEventListener("fetch", (event) => {
   )
 })
 
+// Prevent a failed precache fetch (network error, CDN blip, mixed content
+// rejection) from blocking service worker activation. precacheAndRoute adds
+// its own install listener below that calls event.waitUntil() with a fetch
+// promise — if any asset fails to fetch, the entire SW install is rejected
+// and the SW never activates (navigator.serviceWorker.ready hangs forever).
+//
+// This listener runs before precacheAndRoute's internal handler and wraps
+// event.waitUntil so the precache rejection is caught and activation proceeds.
+// Offline precache is best-effort; the network-first navigation handler
+// serves as fallback for any uncached assets.
+self.addEventListener("install", (event) => {
+  const orig = event.waitUntil.bind(event)
+  ;(event as any).waitUntil = (promise: Promise<any>) => {
+    orig(
+      promise.catch((err: unknown) => {
+        console.warn("[SW] Precache install failed, activating anyway:", err)
+      })
+    )
+  }
+})
+
 // Precache app shell assets injected by vite-plugin-pwa.
-// This still handles JS/CSS/image assets with cache-first (which is fine —
-// Vite content-hashes these filenames so they're immutable). Navigation
-// requests are intercepted by the listener above before reaching this.
 precacheAndRoute(self.__WB_MANIFEST)
 
 // ============================================================================
