@@ -292,8 +292,11 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       setOptedOut(true)
       localStorage.setItem(pushOptOutKey(workspaceId), "1")
     } catch (err) {
+      // Failure surfaces only to the console — the "subscribed" UI doesn't
+      // render the error field, so setting it would just leak stale state
+      // into the next mount. If users hit this, a follow-up should add a
+      // toast (sonner is already wired in).
       console.error("[Push] Failed to unsubscribe:", err)
-      setError(toSubscriptionError(err))
     }
   }, [workspaceId])
 

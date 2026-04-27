@@ -15,13 +15,14 @@ export class ApiError extends Error {
   }
 }
 
-// Response type for error responses
+// Response type for error responses.
+// Canonical shape emitted by the backend's `errorHandler` middleware
+// (packages/backend-common/src/middleware/error-handler.ts) and matched by
+// inline handler responses: `{ error: "<message>", code?: "<CODE>" }`.
 interface ErrorResponse {
-  error?: {
-    code: string
-    message: string
-    details?: Record<string, unknown>
-  }
+  error?: string
+  code?: string
+  details?: Record<string, unknown>
 }
 
 /**
@@ -58,9 +59,9 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   if (!response.ok) {
     throw new ApiError(
       response.status,
-      body.error?.code || "UNKNOWN_ERROR",
-      body.error?.message || `Request failed with status ${response.status}`,
-      body.error?.details
+      body.code || "UNKNOWN_ERROR",
+      body.error || `Request failed with status ${response.status}`,
+      body.details
     )
   }
 

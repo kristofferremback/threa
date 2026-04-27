@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { Bell, BellOff, CheckCircle2, Loader2, ServerCrash, TriangleAlert } from "lucide-react"
 import { Label } from "@/components/ui/label"
@@ -36,10 +36,33 @@ type TestStatus =
   | { kind: "ok"; delivered: number; attempted: number; failed: number }
   | { kind: "error"; message: string }
 
-function TestPushButton({ workspaceId, disabled }: { workspaceId: string; disabled?: boolean }) {
+function TestPushButton({ workspaceId }: { workspaceId: string }) {
   const [state, setState] = useState<TestStatus>({ kind: "idle" })
+  // Track the auto-reset timer so a second click clears any pending reset
+  // from the previous click — without this, a stale timer can fire mid-flight
+  // and clobber a "sending"/"ok" state with "idle".
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current)
+    },
+    []
+  )
+
+  function scheduleReset() {
+    if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current)
+    resetTimerRef.current = setTimeout(() => {
+      resetTimerRef.current = null
+      setState({ kind: "idle" })
+    }, 5000)
+  }
 
   async function sendTest() {
+    if (resetTimerRef.current !== null) {
+      clearTimeout(resetTimerRef.current)
+      resetTimerRef.current = null
+    }
     setState({ kind: "sending" })
     try {
       // Backend-driven test: actually exercises the full delivery loop
@@ -57,7 +80,7 @@ function TestPushButton({ workspaceId, disabled }: { workspaceId: string; disabl
       const message = ApiError.isApiError(err) ? err.message : "Failed to send test"
       setState({ kind: "error", message })
     } finally {
-      setTimeout(() => setState({ kind: "idle" }), 5000)
+      scheduleReset()
     }
   }
 
@@ -80,7 +103,7 @@ function TestPushButton({ workspaceId, disabled }: { workspaceId: string; disabl
   }
 
   return (
-    <Button onClick={sendTest} variant="outline" size="sm" disabled={disabled || state.kind === "sending"}>
+    <Button onClick={sendTest} variant="outline" size="sm" disabled={state.kind === "sending"}>
       {state.kind === "sending" && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
       {label}
     </Button>
