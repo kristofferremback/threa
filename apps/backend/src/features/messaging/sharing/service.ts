@@ -1,7 +1,7 @@
 import type { Querier } from "../../../db"
 import { HttpError } from "../../../lib/errors"
 import { sharedMessageId } from "../../../lib/id"
-import { type JSONContent, ShareFlavors, type ShareFlavor } from "@threa/types"
+import { type JSONContent, ShareFlavors, type ShareFlavor, ShareErrorCodes } from "@threa/types"
 import { MessageRepository } from "../repository"
 import {
   crossesPrivacyBoundary,
@@ -9,6 +9,7 @@ import {
   type CountExposedMembers,
   type FindStreamForSharing,
   type IsAncestorStream,
+  type ResolveEffectiveStream,
 } from "./access-check"
 import { SharedMessageRepository } from "./repository"
 
@@ -75,6 +76,12 @@ export interface ValidateAndRecordSharesParams {
    * between messaging and streams.
    */
   findStream: FindStreamForSharing
+  /**
+   * Resolves a source stream to its effective access stream (root for
+   * threads). Wraps the canonical helper in `streams/access.ts` so the
+   * thread→root rule lives in one place. See `ResolveEffectiveStream`.
+   */
+  resolveEffectiveStream: ResolveEffectiveStream
   /**
    * Ancestor check injected by the caller (same barrel-cycle reason as
    * {@link findStream}). Expected to resolve the chain in the DB layer via
@@ -164,13 +171,13 @@ export const ShareService = {
       if (!sourceMessage) {
         throw new HttpError("Source message not found", {
           status: 400,
-          code: "SHARE_SOURCE_MESSAGE_NOT_FOUND",
+          code: ShareErrorCodes.SOURCE_MESSAGE_NOT_FOUND,
         })
       }
       if (sourceMessage.streamId !== ref.sourceStreamId) {
         throw new HttpError("Source message does not belong to the referenced stream", {
           status: 400,
-          code: "SHARE_SOURCE_STREAM_MISMATCH",
+          code: ShareErrorCodes.SOURCE_STREAM_MISMATCH,
         })
       }
 
@@ -182,13 +189,13 @@ export const ShareService = {
       if (!sourceStream) {
         throw new HttpError("Source stream not found", {
           status: 400,
-          code: "SHARE_SOURCE_STREAM_NOT_FOUND",
+          code: ShareErrorCodes.SOURCE_STREAM_NOT_FOUND,
         })
       }
       if (sourceStream.workspaceId !== params.workspaceId) {
         throw new HttpError("Cannot share across workspaces", {
           status: 400,
-          code: "SHARE_CROSS_WORKSPACE_FORBIDDEN",
+          code: ShareErrorCodes.CROSS_WORKSPACE_FORBIDDEN,
         })
       }
 
@@ -204,7 +211,7 @@ export const ShareService = {
       if (!canRead) {
         throw new HttpError("You don't have access to the source message", {
           status: 403,
-          code: "SHARE_SOURCE_FORBIDDEN",
+          code: ShareErrorCodes.SOURCE_FORBIDDEN,
         })
       }
 
@@ -213,6 +220,7 @@ export const ShareService = {
         boundary = await crossesPrivacyBoundary(
           params.client,
           params.findStream,
+          params.resolveEffectiveStream,
           params.isAncestor,
           params.countExposedMembers,
           ref.sourceStreamId,
@@ -232,7 +240,7 @@ export const ShareService = {
       if (boundary.triggered && !params.confirmedPrivacyWarning) {
         throw new HttpError("Privacy confirmation required to share this message", {
           status: 409,
-          code: "SHARE_PRIVACY_CONFIRMATION_REQUIRED",
+          code: ShareErrorCodes.PRIVACY_CONFIRMATION_REQUIRED,
         })
       }
 

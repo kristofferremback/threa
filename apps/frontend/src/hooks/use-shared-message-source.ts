@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useLiveQuery } from "dexie-react-hooks"
 import { db } from "@/db"
 import { useSharedMessageHydration } from "@/components/shared-messages/context"
+import type { StreamType, Visibility } from "@threa/types"
 
 /**
  * Resolved preview for a shared-message pointer. `authorName` is optional at
@@ -32,11 +33,38 @@ export interface SharedMessagePending {
   showSkeleton: boolean
 }
 
+/**
+ * Viewer has no read path to the source message. The card renders a
+ * privacy-preserving placeholder showing only the source stream's `kind`
+ * and `visibility` — never the content, author, or stream name. Used for
+ * re-share chains where a downstream viewer can see the outer pointer
+ * but the inner one references a stream they don't have access to.
+ */
+export interface SharedMessagePrivate {
+  status: "private"
+  sourceStreamKind: StreamType
+  sourceVisibility: Visibility
+}
+
+/**
+ * Hydration stopped at the recursive depth cap for an accessible chain.
+ * The viewer can navigate to the source stream to keep reading. The
+ * `streamId` carries from the share-node's cached attrs so we always have
+ * a navigable target without an extra fetch.
+ */
+export interface SharedMessageTruncated {
+  status: "truncated"
+  streamId: string
+  messageId: string
+}
+
 export type SharedMessageSource =
   | SharedMessageResolved
   | SharedMessageDeleted
   | SharedMessageMissing
   | SharedMessagePending
+  | SharedMessagePrivate
+  | SharedMessageTruncated
 
 const SKELETON_DELAY_MS = 300
 
@@ -79,6 +107,20 @@ export function useSharedMessageSource(messageId: string, sourceStreamId: string
     if (hydrated) {
       if (hydrated.state === "deleted") return { status: "deleted" }
       if (hydrated.state === "missing") return { status: "missing" }
+      if (hydrated.state === "private") {
+        return {
+          status: "private",
+          sourceStreamKind: hydrated.sourceStreamKind,
+          sourceVisibility: hydrated.sourceVisibility,
+        }
+      }
+      if (hydrated.state === "truncated") {
+        return {
+          status: "truncated",
+          streamId: hydrated.streamId,
+          messageId: hydrated.messageId,
+        }
+      }
       if (hydrated.state === "ok") {
         return {
           status: "resolved",

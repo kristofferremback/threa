@@ -1,6 +1,9 @@
+import { Link, useParams } from "react-router-dom"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { type SharedMessageSource } from "@/hooks/use-shared-message-source"
+import { streamFallbackLabel } from "@/lib/streams"
+import type { StreamType, Visibility } from "@threa/types"
 
 /**
  * Body renderer shared between the two pointer-card surfaces:
@@ -43,6 +46,14 @@ export function SharedMessageCardBody({
     )
   }
 
+  if (source.status === "private") {
+    return <PrivatePlaceholder kind={source.sourceStreamKind} visibility={source.sourceVisibility} />
+  }
+
+  if (source.status === "truncated") {
+    return <TruncatedPlaceholder streamId={source.streamId} messageId={source.messageId} />
+  }
+
   if (source.status === "pending") {
     return (
       <>
@@ -76,4 +87,44 @@ export function SharedMessageCardBody({
 
 function AuthorLabel({ name }: { name: string }) {
   return <span className="text-xs font-medium text-foreground/80">{name}</span>
+}
+
+/**
+ * Privacy-preserving placeholder shown when the viewer hit an inner pointer
+ * in a re-share chain that they have no read path to. Reveals only the
+ * source stream's kind + visibility — never content, author, or stream
+ * name (minimizes the leak surface that a downstream re-share could
+ * otherwise expose).
+ */
+function PrivatePlaceholder({ kind, visibility }: { kind: StreamType; visibility: Visibility }) {
+  return (
+    <>
+      <AuthorLabel name="Private message" />
+      <p className="mt-0.5 italic text-muted-foreground">
+        This message references content in a {visibility} {streamFallbackLabel(kind, "noun")} you don't have access to.
+      </p>
+    </>
+  )
+}
+
+/**
+ * Placeholder for pointers past the recursive-hydration depth cap. The
+ * viewer has access (the chain only truncates on accessible paths), so
+ * the body is a navigation link rather than a privacy stub.
+ */
+function TruncatedPlaceholder({ streamId, messageId }: { streamId: string; messageId: string }) {
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const href = workspaceId ? `/w/${workspaceId}/s/${streamId}?m=${messageId}` : `#`
+  return (
+    <>
+      <AuthorLabel name="Nested share" />
+      <p className="mt-0.5 italic text-muted-foreground">
+        This message references a deeper share —{" "}
+        <Link to={href} className="underline underline-offset-2 hover:text-foreground">
+          open in source stream
+        </Link>
+        .
+      </p>
+    </>
+  )
 }

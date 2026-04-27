@@ -18,8 +18,13 @@ interface PendingMessagesContextValue {
   saveEditedMessage: (id: string, contentJson: JSONContent) => Promise<void>
   /** Cancel editing and return message to its previous queue state */
   cancelEditing: (id: string) => Promise<void>
-  /** Reset a failed message's retry count and re-enqueue it for sending */
-  retryMessage: (id: string) => Promise<void>
+  /**
+   * Reset a failed message's retry count and re-enqueue it for sending.
+   * Optionally patches additional fields onto the pending row first — used
+   * by the share-privacy toast to set `confirmedPrivacyWarning: true` and
+   * clear the `blocked-privacy` status in one atomic resume.
+   */
+  retryMessage: (id: string, patch?: Record<string, unknown>) => Promise<void>
   /** Permanently delete a failed/pending message from the outbox and timeline */
   deleteMessage: (id: string) => Promise<void>
   /** Kick the background message queue to process the next pending message */
@@ -275,7 +280,7 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
   )
 
   const retryMessage = useCallback(
-    async (id: string) => {
+    async (id: string, patch?: Record<string, unknown>) => {
       // Verify the message still exists — the user may have deleted it
       // while the retry button was visible. Without this guard, markPending
       // would lock the UI in "pending" with no queue record to resolve it.
@@ -286,7 +291,7 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
       // Dexie's deep KeyPaths inference hits a circular type on JSONContent.
       // Cast through unknown to bypass the broken type inference.
       type UpdateFn = (key: string, changes: Record<string, unknown>) => Promise<number>
-      await (db.pendingMessages.update as unknown as UpdateFn)(id, { retryCount: 0, retryAfter: 0 })
+      await (db.pendingMessages.update as unknown as UpdateFn)(id, { retryCount: 0, retryAfter: 0, ...patch })
       await db.events.update(id, { _status: "pending" })
       markPending(id)
       notifyQueue()

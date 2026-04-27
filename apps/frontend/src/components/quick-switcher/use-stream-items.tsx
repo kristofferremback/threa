@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Bell, FileText, Hash, MessageSquare, Plus, X, Archive } from "lucide-react"
+import { Hash, Plus, X, Archive } from "lucide-react"
 import { StreamTypes, getAvatarUrl } from "@threa/types"
 import type { Stream, StreamType } from "@threa/types"
-import { getStreamName, streamFallbackLabel } from "@/lib/streams"
+import { getStreamName, streamFallbackLabel, STREAM_ICONS } from "@/lib/streams"
 import { streamsApi } from "@/api"
 import { createDmDraftId, useUnreadCounts, useActivityCounts } from "@/hooks"
 import { useWorkspaceUnreadState } from "@/stores/workspace-store"
@@ -21,14 +21,6 @@ import {
 } from "./search-query-parser"
 import type { ModeContext, ModeResult, QuickSwitcherItem, WorkspaceStream } from "./types"
 import type { UrgencyLevel } from "@/components/layout/sidebar/types"
-
-const STREAM_ICONS: Record<StreamType, React.ComponentType<{ className?: string }>> = {
-  [StreamTypes.SCRATCHPAD]: FileText,
-  [StreamTypes.CHANNEL]: Hash,
-  [StreamTypes.DM]: MessageSquare,
-  [StreamTypes.THREAD]: MessageSquare,
-  [StreamTypes.SYSTEM]: Bell,
-}
 
 const FILTER_TYPES: { type: FilterType; label: string; icon: React.ReactNode }[] = [
   { type: "type", label: "Stream type", icon: <Hash className="h-4 w-4" /> },

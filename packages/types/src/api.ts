@@ -115,10 +115,17 @@ export interface StreamBootstrap {
 }
 
 /**
- * Wire-format variants for an individual pointer's hydrated content. `ok`
- * includes the source's current content; `deleted` and `missing` surface
- * tombstone states. Slice 2 will add `private` / `truncated` variants for
- * the recursive chain case.
+ * Wire-format variants for an individual pointer's hydrated content.
+ *
+ * - `ok`: viewer has access; current source content is inlined.
+ * - `deleted`: source row exists but is tombstoned.
+ * - `missing`: source row never existed (or was hard-deleted in a way that
+ *   leaves no tombstone — defended for, shouldn't normally occur).
+ * - `private`: viewer has no read access to the source and no share-grant
+ *   reaches them. Reveals only the source stream's `kind` + `visibility`,
+ *   never the content/author/stream-name. See plan D8.
+ * - `truncated`: hydration stopped at `MAX_HYDRATION_DEPTH` for an
+ *   accessible chain; viewer can follow `streamId` to read in source.
  */
 export type SharedMessageHydration =
   | {
@@ -134,6 +141,13 @@ export type SharedMessageHydration =
     }
   | { state: "deleted"; messageId: string; deletedAt: string }
   | { state: "missing"; messageId: string }
+  | {
+      state: "private"
+      messageId: string
+      sourceStreamKind: StreamType
+      sourceVisibility: Visibility
+    }
+  | { state: "truncated"; messageId: string; streamId: string }
 
 export interface EventsAroundResponse {
   events: StreamEvent[]
@@ -160,6 +174,14 @@ export interface CreateMessageInputJson {
   clientMessageId?: string
   /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
   metadata?: Record<string, string>
+  /**
+   * Set to `true` after the user has acknowledged that a share node in
+   * `contentJson` would expose its source to people outside the source
+   * stream. Required by the backend for shares that cross a privacy
+   * boundary; sends without it return 409 + code
+   * `SHARE_PRIVACY_CONFIRMATION_REQUIRED`.
+   */
+  confirmedPrivacyWarning?: boolean
 }
 
 export interface CreateDmMessageInputJson {
@@ -173,6 +195,8 @@ export interface CreateDmMessageInputJson {
   clientMessageId?: string
   /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
   metadata?: Record<string, string>
+  /** Same semantics as `CreateMessageInputJson.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 /**
@@ -213,6 +237,8 @@ export type CreateDmMessageInput = CreateDmMessageInputJson | CreateDmMessageInp
 export interface UpdateMessageInputJson {
   contentJson: JSONContent
   contentMarkdown?: string
+  /** See `CreateMessageInputJson.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 /**
@@ -220,6 +246,8 @@ export interface UpdateMessageInputJson {
  */
 export interface UpdateMessageInputMarkdown {
   content: string
+  /** See `CreateMessageInputJson.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 /**

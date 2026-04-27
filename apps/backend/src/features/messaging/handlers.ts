@@ -15,48 +15,51 @@ import { parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 import { messageMetadataSchema } from "./metadata-schema"
 
-// Schema for JSON input to an existing stream (from rich clients)
-const createMessageJsonToStreamSchema = z.object({
-  streamId: z.string().min(1, "streamId is required"),
-  contentJson: z.object({
-    type: z.literal("doc"),
-    content: z.array(z.any()),
-  }),
-  contentMarkdown: z.string().optional(),
+// Fields shared by every create/update variant. Defining once keeps the
+// six schemas from drifting when a per-message option is added.
+// `confirmedPrivacyWarning` is required when a share node crosses a privacy
+// boundary; the service returns 409 + `SHARE_PRIVACY_CONFIRMATION_REQUIRED`
+// otherwise.
+const commonMessageOptionsSchema = {
   attachmentIds: z.array(z.string()).optional(),
   clientMessageId: z.string().min(1).optional(),
   metadata: messageMetadataSchema.optional(),
+  confirmedPrivacyWarning: z.boolean().optional(),
+}
+
+const contentJsonSchema = z.object({
+  type: z.literal("doc"),
+  content: z.array(z.any()),
+})
+
+// Schema for JSON input to an existing stream (from rich clients)
+const createMessageJsonToStreamSchema = z.object({
+  streamId: z.string().min(1, "streamId is required"),
+  contentJson: contentJsonSchema,
+  contentMarkdown: z.string().optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Schema for markdown input to an existing stream (from AI/external)
 const createMessageMarkdownToStreamSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
   content: z.string().min(1, "content is required"),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Schema for JSON input to a DM target user (lazy stream creation on first message)
 const createMessageJsonToDmSchema = z.object({
   dmUserId: z.string().min(1, "dmUserId is required"),
-  contentJson: z.object({
-    type: z.literal("doc"),
-    content: z.array(z.any()),
-  }),
+  contentJson: contentJsonSchema,
   contentMarkdown: z.string().optional(),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Schema for markdown input to a DM target user (lazy stream creation on first message)
 const createMessageMarkdownToDmSchema = z.object({
   dmUserId: z.string().min(1, "dmUserId is required"),
   content: z.string().min(1, "content is required"),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Union schema - accepts either format
@@ -69,15 +72,14 @@ const createMessageSchema = z.union([
 
 // Update can also be either format
 const updateMessageJsonSchema = z.object({
-  contentJson: z.object({
-    type: z.literal("doc"),
-    content: z.array(z.any()),
-  }),
+  contentJson: contentJsonSchema,
   contentMarkdown: z.string().optional(),
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 const updateMessageMarkdownSchema = z.object({
   content: z.string().min(1, "content is required"),
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 const updateMessageSchema = z.union([updateMessageJsonSchema, updateMessageMarkdownSchema])
@@ -229,6 +231,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         attachmentIds,
         clientMessageId: data.clientMessageId,
         metadata: data.metadata,
+        confirmedPrivacyWarning: data.confirmedPrivacyWarning,
       })
 
       res.status(201).json({ message: serializeMessage(message) })
@@ -275,6 +278,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         contentJson,
         contentMarkdown,
         actorId: userId,
+        confirmedPrivacyWarning: result.data.confirmedPrivacyWarning,
       })
 
       if (!message) {

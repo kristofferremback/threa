@@ -1,5 +1,20 @@
 import { StreamTypes } from "@threa/types"
 import type { StreamType } from "@threa/types"
+import { Bell, FileText, Hash, MessageSquare } from "lucide-react"
+import type { ComponentType } from "react"
+
+/**
+ * Canonical icon for each stream type. Shared by the quick-switcher list
+ * and the share-message picker so the visual vocabulary doesn't drift
+ * between two surfaces that ultimately list the same streams.
+ */
+export const STREAM_ICONS: Record<StreamType, ComponentType<{ className?: string }>> = {
+  [StreamTypes.SCRATCHPAD]: FileText,
+  [StreamTypes.CHANNEL]: Hash,
+  [StreamTypes.DM]: MessageSquare,
+  [StreamTypes.THREAD]: MessageSquare,
+  [StreamTypes.SYSTEM]: Bell,
+}
 
 /**
  * Returns the resolved display name for a stream, or null if the stream
@@ -41,14 +56,20 @@ export function resolveDmDisplayName(
   return workspaceUsers.find((u) => u.id === peerUserId)?.name ?? null
 }
 
-type FallbackContext = "sidebar" | "activity" | "breadcrumb" | "generic"
+type FallbackContext = "sidebar" | "activity" | "breadcrumb" | "generic" | "noun"
 
 const FALLBACK_LABELS: Record<string, Record<FallbackContext, string>> = {
-  scratchpad: { sidebar: "New scratchpad", activity: "a scratchpad", breadcrumb: "Untitled", generic: "Untitled" },
-  thread: { sidebar: "New thread", activity: "a thread", breadcrumb: "Thread", generic: "Thread" },
-  channel: { sidebar: "Untitled", activity: "a channel", breadcrumb: "...", generic: "Untitled" },
-  dm: { sidebar: "Direct message", activity: "a conversation", breadcrumb: "DM", generic: "DM" },
-  system: { sidebar: "System", activity: "system", breadcrumb: "System", generic: "System" },
+  scratchpad: {
+    sidebar: "New scratchpad",
+    activity: "a scratchpad",
+    breadcrumb: "Untitled",
+    generic: "Untitled",
+    noun: "scratchpad",
+  },
+  thread: { sidebar: "New thread", activity: "a thread", breadcrumb: "Thread", generic: "Thread", noun: "thread" },
+  channel: { sidebar: "Untitled", activity: "a channel", breadcrumb: "...", generic: "Untitled", noun: "channel" },
+  dm: { sidebar: "Direct message", activity: "a conversation", breadcrumb: "DM", generic: "DM", noun: "DM" },
+  system: { sidebar: "System", activity: "system", breadcrumb: "System", generic: "System", noun: "system stream" },
 }
 
 /** Context-appropriate fallback text for streams that truly have no name yet. */

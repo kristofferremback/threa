@@ -56,6 +56,8 @@ import { useQuoteReply } from "./quote-reply-context"
 import { useSwipeAction } from "@/hooks/use-swipe-action"
 import { useStreamFromStore } from "@/stores/stream-store"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
+import { navigateAfterShareHandoff } from "@/lib/share-navigation"
+import { ShareMessageModal } from "@/components/share/share-message-modal"
 
 interface MessagePayload {
   messageId: string
@@ -464,43 +466,6 @@ interface MessageEventInnerProps {
 }
 
 /**
- * Decide what to do after `queueShareHandoff` for a share-to-parent /
- * share-to-root entry. The behavior diverges by viewport because the
- * meaning of the panel query (`?panel=…`) differs:
- *
- * - **Desktop two-pane:** the panel renders alongside the main view, so
- *   the parent composer is mounted and visible. Preserve `location.search`
- *   so the panel stays open across the navigation. Skip `navigate()` when
- *   pathname + search are unchanged — the existing composer subscribes to
- *   the handoff store and picks the share up in place.
- *
- * - **Mobile fullscreen:** the panel TAKES OVER the screen, so the parent
- *   composer is NOT visible even when the URL pathname matches the share
- *   target. Drop the search on mobile so navigating to the bare pathname
- *   swaps the view back to the parent's main composer. Without this, the
- *   share queues but the user is still looking at the thread and nothing
- *   visible happens.
- */
-function navigateAfterShareHandoff({
-  workspaceId,
-  targetStreamId,
-  location,
-  navigate,
-  isMobile,
-}: {
-  workspaceId: string
-  targetStreamId: string
-  location: ReturnType<typeof useLocation>
-  navigate: ReturnType<typeof useNavigate>
-  isMobile: boolean
-}): void {
-  const targetPathname = `/w/${workspaceId}/s/${targetStreamId}`
-  const search = isMobile ? "" : location.search
-  if (location.pathname === targetPathname && location.search === search) return
-  navigate(`${targetPathname}${search}`)
-}
-
-/**
  * Produce a user-facing label for the share-to-parent / share-to-root menu
  * entry based on the target stream's type. Channels read naturally as
  * "#slug"; DMs and scratchpads get a generic label to avoid awkward
@@ -563,6 +528,7 @@ function SentMessageEvent({
   const [mobilePickerOpen, setMobilePickerOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [shareModalOpen, setShareModalOpen] = useState(false)
 
   // Mobile: long-press opens action drawer instead of dropdown
   const isMobile = useIsMobile()
@@ -824,6 +790,7 @@ function SentMessageEvent({
             }
           : undefined,
       shareToParentLabel: showParentEntry && parentStream ? buildShareToStreamLabel(parentStream) : undefined,
+      onShare: () => setShareModalOpen(true),
     }),
     [
       payload.contentMarkdown,
@@ -1025,6 +992,20 @@ function SentMessageEvent({
           currentContent={{
             contentMarkdown: payload.contentMarkdown,
             editedAt: payload.editedAt,
+          }}
+        />
+      )}
+      {shareModalOpen && (
+        <ShareMessageModal
+          open={shareModalOpen}
+          onOpenChange={setShareModalOpen}
+          workspaceId={workspaceId}
+          attrs={{
+            messageId: payload.messageId,
+            streamId,
+            authorName: actorName,
+            authorId: event.actorId ?? "",
+            actorType: event.actorType ?? "user",
           }}
         />
       )}

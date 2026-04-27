@@ -538,5 +538,20 @@ export const ShareFlavors = {
   QUOTE: "quote",
 } as const satisfies Record<string, ShareFlavor>
 
+/**
+ * Wire-format error codes for the sharing feature. Centralised here because
+ * the privacy-confirmation code is matched on by the frontend message queue
+ * to surface the "Share anyway" / "Cancel" toast — keeping it as a magic
+ * string in two places would let typos drift the contract silently.
+ */
+export const ShareErrorCodes = {
+  PRIVACY_CONFIRMATION_REQUIRED: "SHARE_PRIVACY_CONFIRMATION_REQUIRED",
+  SOURCE_MESSAGE_NOT_FOUND: "SHARE_SOURCE_MESSAGE_NOT_FOUND",
+  SOURCE_STREAM_MISMATCH: "SHARE_SOURCE_STREAM_MISMATCH",
+  SOURCE_STREAM_NOT_FOUND: "SHARE_SOURCE_STREAM_NOT_FOUND",
+  CROSS_WORKSPACE_FORBIDDEN: "SHARE_CROSS_WORKSPACE_FORBIDDEN",
+  SOURCE_FORBIDDEN: "SHARE_SOURCE_FORBIDDEN",
+} as const
+
 // Inter-service authentication header (control-plane ↔ regional backend ↔ workspace-router)
 export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"

@@ -1,10 +1,15 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react"
+import type { StreamType, Visibility } from "@threa/types"
 
 /**
  * Hydrated payload for a pointer message. Kept structurally aligned with
- * the backend's `HydratedSharedMessage` discriminated union so future
- * states (private, truncated — slice 2) can be added here and in the
- * NodeView without API churn.
+ * the backend's `HydratedSharedMessage` discriminated union.
+ *
+ * - `ok`/`deleted`/`missing`: same as Slice 1.
+ * - `private`: viewer has no read path to the source. Reveals only the
+ *   source stream's kind + visibility. Plan D8.
+ * - `truncated`: hydration stopped at the depth cap; viewer has access and
+ *   can navigate to `streamId`.
  */
 export type HydratedSharedMessage =
   | {
@@ -21,6 +26,13 @@ export type HydratedSharedMessage =
     }
   | { state: "deleted"; messageId: string; deletedAt: string }
   | { state: "missing"; messageId: string }
+  | {
+      state: "private"
+      messageId: string
+      sourceStreamKind: StreamType
+      sourceVisibility: Visibility
+    }
+  | { state: "truncated"; messageId: string; streamId: string }
 
 interface SharedMessagesContextValue {
   get: (messageId: string) => HydratedSharedMessage | null

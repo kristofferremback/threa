@@ -183,10 +183,25 @@ export interface PendingMessage {
   retryCount: number
   /** Timestamp before which this message should not be retried (exponential backoff) */
   retryAfter?: number
-  /** When "editing", the queue skips this message so it isn't sent while the user edits it */
-  status?: "editing"
+  /**
+   * Queue-side status flags that gate retry behavior:
+   * - `editing` — user is actively editing the message in the composer; the
+   *   drain loop skips this entry until the user either sends or cancels.
+   * - `blocked-privacy` — backend rejected with
+   *   `SHARE_PRIVACY_CONFIRMATION_REQUIRED` on a share that crosses a
+   *   privacy boundary. Not auto-retried — surfaces a toast so the user
+   *   explicitly confirms or aborts. On confirm the toast clears
+   *   `status` and sets `confirmedPrivacyWarning: true`.
+   */
+  status?: "editing" | "blocked-privacy"
   /** Original queue state before entering editing mode; used to cancel stale edits on startup. */
   preEditStatus?: "pending" | "failed"
+  /**
+   * Set by the privacy-confirm toast after the user clicks "Share anyway".
+   * Forwarded as `confirmedPrivacyWarning` on the next send attempt so the
+   * backend's privacy-boundary check passes through to the share insert.
+   */
+  confirmedPrivacyWarning?: boolean
   /** When set, the queue creates this stream before sending the message */
   streamCreation?: PendingStreamCreation
   /** The draft ID to clean up after successful stream creation + message send */

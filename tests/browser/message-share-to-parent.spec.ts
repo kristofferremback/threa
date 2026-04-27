@@ -94,6 +94,10 @@ async function setUpSharedPointer(
   expect(threadMessageId, "thread reply should expose data-message-id").not.toBe("")
 
   await openMessageContextMenu(page, opts.threadText)
+  // The default `share` entry (modal) sits as the primary in the share group;
+  // share-to-root and share-to-parent ride alongside as alternatives behind
+  // the chevron sub-menu (aria-label "Other share").
+  await page.getByLabel("Other share").click()
   const shareEntry = page.getByRole("menuitem", { name: new RegExp(`share to #?${opts.channelName}`, "i") })
   await expect(shareEntry).toBeVisible()
   await shareEntry.click()

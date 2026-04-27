@@ -1,6 +1,7 @@
 import type { Querier } from "../../../db"
 import { sql } from "../../../db"
 import { type ShareFlavor } from "@threa/types"
+import { listAccessibleStreamIds } from "../../streams"
 
 // Internal row type (snake_case, not exported)
 interface SharedMessageRow {
@@ -103,5 +104,37 @@ export const SharedMessageRepository = {
       WHERE workspace_id = ${workspaceId}
         AND share_message_id = ${shareMessageId}
     `)
+  },
+
+  /**
+   * Returns the subset of `sourceMessageIds` for which the viewer has been
+   * granted read access via at least one share whose `target_stream_id` the
+   * viewer can access. Composes with {@link listAccessibleStreamIds} so the
+   * "can the viewer read this stream?" rule lives in one place.
+   *
+   * Used by recursive pointer hydration to decide per-viewer access at each
+   * level of a re-share chain: a viewer who isn't a member of the source
+   * stream still sees the source content if any share grant reaches them.
+   */
+  async listSourcesGrantedToViewer(
+    db: Querier,
+    workspaceId: string,
+    userId: string,
+    sourceMessageIds: readonly string[]
+  ): Promise<Set<string>> {
+    if (sourceMessageIds.length === 0) return new Set()
+    const candidates = await db.query<{ source_message_id: string; target_stream_id: string }>(sql`
+      SELECT DISTINCT source_message_id, target_stream_id
+      FROM shared_messages
+      WHERE workspace_id = ${workspaceId}
+        AND source_message_id = ANY(${sourceMessageIds as string[]})
+    `)
+    if (candidates.rows.length === 0) return new Set()
+    const targetIds = [...new Set(candidates.rows.map((r) => r.target_stream_id))]
+    const accessibleTargets = await listAccessibleStreamIds(db, workspaceId, userId, targetIds)
+    if (accessibleTargets.size === 0) return new Set()
+    return new Set(
+      candidates.rows.filter((r) => accessibleTargets.has(r.target_stream_id)).map((r) => r.source_message_id)
+    )
   },
 }
