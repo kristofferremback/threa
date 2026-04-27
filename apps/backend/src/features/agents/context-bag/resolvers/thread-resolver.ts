@@ -108,12 +108,15 @@ export const ThreadResolver: Resolver<ThreadRef> = {
     const fingerprint = fingerprintInputs(inputs)
     const tail = items[items.length - 1]
 
-    // The focal message is only meaningful when it actually shows up in the
-    // window — if the user pasted/typed an originMessageId that points
-    // somewhere we couldn't fetch (different stream, soft-deleted, etc.)
-    // we drop the focal rather than letting the renderer flag a phantom.
+    // The focal message is only meaningful when it actually shows up inside
+    // the windowed slice. We check `messages` (the discuss window) rather
+    // than `items` (which has the thread root prepended): if the user
+    // clicked on a thread root, `findSurrounding` won't locate it inside
+    // the thread stream and we'll have fallen through to the recent-tail
+    // path — even though the prepended root will land in `items`, that's
+    // not "the origin is in the window," so don't fabricate a focal section.
     const focalMessageId =
-      useDiscussWindow && ref.originMessageId && items.some((i) => i.messageId === ref.originMessageId)
+      useDiscussWindow && ref.originMessageId && messages.some((m) => m.id === ref.originMessageId)
         ? ref.originMessageId
         : null
 
@@ -160,9 +163,15 @@ async function fetchDiscussWindow(db: Querier, ref: ThreadRef): Promise<Message[
 
   const targetIdx = surrounding.findIndex((m) => m.id === ref.originMessageId)
   if (targetIdx < 0) {
-    // Defensive: target should always be in the surrounding slice when
-    // present. Treat as no-focal fallback.
-    return surrounding.slice(-DISCUSS_WINDOW_TOTAL)
+    // The target's sequence resolved (so `findSurrounding` returned its
+    // neighbors) but the target row itself is missing from the slice. The
+    // common cause is a soft-deleted focal: `findSurrounding` looks the
+    // sequence up without a `deleted_at` filter, but its neighbor query
+    // does, so a tombstoned target produces surrounding-without-target.
+    // Slicing `surrounding` here would give a window skewed around the
+    // deletion point; the slash-command tail is more honest — the user's
+    // anchor is unrecoverable, fall back to "what's recent in this stream."
+    return MessageRepository.list(db, ref.streamId, { limit: DISCUSS_WINDOW_TOTAL })
   }
 
   const beforeAvailable = targetIdx
