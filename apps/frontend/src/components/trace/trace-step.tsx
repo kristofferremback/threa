@@ -453,12 +453,14 @@ function renderStepContent(
           )
         }
         return (
-          <span>
+          <div className="space-y-1.5">
             <strong>{tool}</strong>
             {"args" in structured && (
-              <span className="text-muted-foreground ml-1 text-xs font-mono">{JSON.stringify(structured.args)}</span>
+              <pre className="rounded bg-muted/50 px-3 py-2 text-xs font-mono overflow-x-auto whitespace-pre">
+                <code>{JSON.stringify(structured.args, null, 2)}</code>
+              </pre>
             )}
-          </span>
+          </div>
         )
       }
       return <span>{content}</span>
