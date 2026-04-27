@@ -154,6 +154,35 @@ describe("TraceStep", () => {
     )
   })
 
+  it("renders tool_call args as a pretty-printed code block to prevent overflow", () => {
+    // Regression for the case where wide JSON args (e.g. GitHub tool calls
+    // with long repo paths) were rendered as a single inline span, which
+    // forced the trace dialog to scroll horizontally. The fix renders args
+    // in a <pre> with overflow-x-auto so the scroll is contained.
+    render(
+      <MemoryRouter>
+        <TraceStep
+          step={createStep({
+            stepType: "tool_call",
+            content: JSON.stringify({
+              tool: "github_list_pull_requests",
+              args: { repo: "kristofferremback/threa", path: null, author: null, page: 1 },
+            }),
+          })}
+          workspaceId="ws_1"
+          streamId="stream_1"
+        />
+      </MemoryRouter>
+    )
+
+    const code = screen.getByText(/"repo": "kristofferremback\/threa"/)
+    const pre = code.closest("pre")
+    expect(pre).not.toBeNull()
+    expect(pre?.className).toMatch(/overflow-x-auto/)
+    // Pretty-printed (multiline) rather than a single long line.
+    expect(code.textContent).toContain("\n")
+  })
+
   it("renders workspace_search content that arrives as a raw object without crashing", () => {
     // Regression for the crash where a step row's content was persisted as a
     // JSONB object (bypassing the pre-stringify convention), node-postgres
