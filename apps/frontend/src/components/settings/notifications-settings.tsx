@@ -84,29 +84,45 @@ function TestPushButton({ workspaceId }: { workspaceId: string }) {
     }
   }
 
-  let label: string
-  switch (state.kind) {
-    case "idle":
-      label = "Send test"
-      break
-    case "sending":
-      label = "Sending…"
-      break
-    case "ok":
-      if (state.attempted === 0) label = "No devices to test"
-      else if (state.failed === 0) label = `Sent to ${state.delivered} device${state.delivered === 1 ? "" : "s"}`
-      else label = `${state.delivered}/${state.attempted} delivered`
-      break
-    case "error":
-      label = state.message
-      break
+  // Keep the button label fixed so a long backend message (e.g. "Push
+  // notifications are not enabled on this server") never blows out the layout
+  // — surface the message in an adjacent line instead.
+  let buttonLabel: string
+  if (state.kind === "sending") buttonLabel = "Sending…"
+  else if (state.kind === "error") buttonLabel = "Retry test"
+  else buttonLabel = "Send test"
+
+  let resultLine: { tone: "muted" | "destructive"; text: string } | null = null
+  if (state.kind === "ok") {
+    if (state.attempted === 0) {
+      resultLine = { tone: "muted", text: "No devices subscribed yet." }
+    } else if (state.failed === 0) {
+      resultLine = {
+        tone: "muted",
+        text: `Sent to ${state.delivered} device${state.delivered === 1 ? "" : "s"}.`,
+      }
+    } else {
+      resultLine = {
+        tone: "destructive",
+        text: `Delivered to ${state.delivered} of ${state.attempted} devices — ${state.failed} failed.`,
+      }
+    }
+  } else if (state.kind === "error") {
+    resultLine = { tone: "destructive", text: state.message }
   }
 
   return (
-    <Button onClick={sendTest} variant="outline" size="sm" disabled={state.kind === "sending"}>
-      {state.kind === "sending" && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-      {label}
-    </Button>
+    <div className="flex flex-col gap-1">
+      <Button onClick={sendTest} variant="outline" size="sm" disabled={state.kind === "sending"} className="self-start">
+        {state.kind === "sending" && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+        {buttonLabel}
+      </Button>
+      {resultLine && (
+        <p className={resultLine.tone === "destructive" ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+          {resultLine.text}
+        </p>
+      )}
+    </div>
   )
 }
 

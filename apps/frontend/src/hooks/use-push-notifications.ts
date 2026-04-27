@@ -113,11 +113,16 @@ type SubscribeOutcome = { kind: "subscribed" } | { kind: "disabled-on-server" }
  * Runs the full subscribe handshake: fetch VAPID config, reconcile the browser
  * subscription, and register it with the backend. Pure flow — all state
  * transitions live in the caller.
+ *
+ * Accepts an `AbortSignal` so a stale attempt (newer subscribe() superseded it)
+ * can cancel its in-flight HTTP work instead of running to completion in the
+ * background and racing the newer attempt's terminal state.
  */
 async function runSubscribeFlow(
   workspaceId: string,
   registration: ServiceWorkerRegistration,
-  vapidCacheRef: React.MutableRefObject<{ workspaceId: string; config: VapidConfig } | null>
+  vapidCacheRef: React.RefObject<{ workspaceId: string; config: VapidConfig } | null>,
+  signal: AbortSignal
 ): Promise<SubscribeOutcome> {
   // Cache VAPID config per workspace to avoid redundant fetches (key doesn't change)
   let vapidPublicKey: string | null
@@ -125,7 +130,7 @@ async function runSubscribeFlow(
   if (vapidCacheRef.current?.workspaceId === workspaceId) {
     ;({ vapidPublicKey, enabled } = vapidCacheRef.current.config)
   } else {
-    const config = await api.get<VapidConfig>(`/api/workspaces/${workspaceId}/push/vapid-key`)
+    const config = await api.get<VapidConfig>(`/api/workspaces/${workspaceId}/push/vapid-key`, { signal })
     vapidCacheRef.current = { workspaceId, config }
     ;({ vapidPublicKey, enabled } = config)
   }
@@ -161,13 +166,17 @@ async function runSubscribeFlow(
 
   // Backend upsert (ON CONFLICT DO UPDATE) — idempotent for re-registrations
   // toJSON().keys returns base64url encoding, matching web-push library's contract
-  await api.post(`/api/workspaces/${workspaceId}/push/subscribe`, {
-    endpoint: subscription.endpoint,
-    p256dh: json.keys.p256dh,
-    auth: json.keys.auth,
-    deviceKey,
-    userAgent: navigator.userAgent,
-  })
+  await api.post(
+    `/api/workspaces/${workspaceId}/push/subscribe`,
+    {
+      endpoint: subscription.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+      deviceKey,
+      userAgent: navigator.userAgent,
+    },
+    { signal }
+  )
 
   return { kind: "subscribed" }
 }
@@ -185,17 +194,34 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
   const [status, setStatus] = useState<SubscriptionStatus>("idle")
   const [error, setError] = useState<PushSubscriptionError | null>(null)
   const vapidCacheRef = useRef<{ workspaceId: string; config: VapidConfig } | null>(null)
+  // Per-attempt generation counter: every subscribe() bumps this and gates its
+  // terminal state writes on it. Combined with the per-attempt AbortController,
+  // a stale attempt (e.g. an early auto-subscribe whose timeout fires after the
+  // user already retried successfully) can't clobber the latest result.
+  const subscribeGenRef = useRef(0)
+  const currentAbortRef = useRef<AbortController | null>(null)
 
   // Re-sync opt-out state when workspaceId changes (initializer only runs on mount)
   useEffect(() => {
     setOptedOut(workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId)) === "1" : false)
   }, [workspaceId])
 
+  // Cancel any in-flight subscribe on unmount
+  useEffect(() => () => currentAbortRef.current?.abort(), [])
+
   // Subscribe to push notifications. Owns the full flow including waiting for
   // the service worker to be ready, so a hung SW activation is covered by the
   // same 15s timeout as the subscribe handshake itself.
   const subscribe = useCallback(async () => {
     if (!workspaceId) return
+
+    // Bump generation and abort any prior attempt's HTTP work so it stops
+    // racing toward a terminal state we no longer want.
+    const gen = ++subscribeGenRef.current
+    const isLatest = () => subscribeGenRef.current === gen
+    currentAbortRef.current?.abort()
+    const controller = new AbortController()
+    currentAbortRef.current = controller
 
     setStatus("subscribing")
     setError(null)
@@ -216,10 +242,12 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
             throw new Error("Service workers are not available in this browser")
           }
           const registration = await navigator.serviceWorker.ready
-          return runSubscribeFlow(workspaceId, registration, vapidCacheRef)
+          return runSubscribeFlow(workspaceId, registration, vapidCacheRef, controller.signal)
         })(),
         timeoutPromise,
       ])
+
+      if (!isLatest()) return
 
       if (result.kind === "disabled-on-server") {
         setIsSubscribed(false)
@@ -232,12 +260,16 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       setIsSubscribed(true)
       setStatus("subscribed")
     } catch (err) {
+      // Aborted attempts are expected when a newer subscribe() superseded us
+      // — don't log or write state for them.
+      if (controller.signal.aborted || !isLatest()) return
       console.error("[Push] Failed to subscribe:", err)
       setIsSubscribed(false)
       setError(toSubscriptionError(err))
       setStatus("error")
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId)
+      if (currentAbortRef.current === controller) currentAbortRef.current = null
     }
   }, [workspaceId])
 

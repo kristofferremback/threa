@@ -11,6 +11,7 @@ import {
   type StreamType,
 } from "@threa/types"
 import { logger } from "../../lib/logger"
+import { HttpError } from "../../lib/errors"
 import type { ActivityCreatedOutboxPayload, SavedReminderFiredOutboxPayload } from "../../lib/outbox"
 
 /** Maximum push subscriptions per user per workspace to bound parallel delivery calls */
@@ -127,7 +128,10 @@ export class PushService {
    */
   async deliverTestPush(workspaceId: string, userId: string): Promise<{ attempted: number; failed: number }> {
     if (!this.canSend) {
-      throw new Error("Push notifications are not enabled on this server")
+      // Mirror handlers.ts contract (INV-32) so non-handler callers (workers,
+      // internal APIs) get the same status/code semantics instead of a generic
+      // 500 from a plain Error bubbling through the error middleware.
+      throw new HttpError("Push notifications are not enabled", { status: 503, code: "PUSH_DISABLED" })
     }
 
     const subscriptions = await PushSubscriptionRepository.findByUserId(this.pool, workspaceId, userId)

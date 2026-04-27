@@ -24,18 +24,23 @@ describe("apiFetch error parsing", () => {
       mockResponse(503, { error: "Push notifications are not enabled", code: "PUSH_DISABLED" })
     )
 
-    const err = await api.get("/anything").catch((e) => e)
+    const err = (await api.get("/anything").catch((e) => e)) as ApiError
     expect(err).toBeInstanceOf(ApiError)
-    expect((err as ApiError).status).toBe(503)
-    expect((err as ApiError).code).toBe("PUSH_DISABLED")
-    expect((err as ApiError).message).toBe("Push notifications are not enabled")
+    expect(err).toMatchObject({
+      status: 503,
+      code: "PUSH_DISABLED",
+      message: "Push notifications are not enabled",
+    })
   })
 
   it("falls back to a generic message when the body is missing fields", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockResponse(500, {}))
     const err = (await api.get("/anything").catch((e) => e)) as ApiError
-    expect(err.code).toBe("UNKNOWN_ERROR")
-    expect(err.message).toBe("Request failed with status 500")
+    expect(err).toMatchObject({
+      status: 500,
+      code: "UNKNOWN_ERROR",
+      message: "Request failed with status 500",
+    })
   })
 
   it("captures details when the handler ships them alongside error/code", async () => {
@@ -48,8 +53,11 @@ describe("apiFetch error parsing", () => {
     )
 
     const err = (await api.get("/anything").catch((e) => e)) as ApiError
-    expect(err.message).toBe("Validation failed")
-    expect(err.code).toBe("VALIDATION_ERROR")
-    expect(err.details).toEqual({ fieldErrors: { endpoint: ["Required"] } })
+    expect(err).toMatchObject({
+      status: 400,
+      code: "VALIDATION_ERROR",
+      message: "Validation failed",
+      details: { fieldErrors: { endpoint: ["Required"] } },
+    })
   })
 })

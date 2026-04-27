@@ -327,7 +327,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/push/vapid-key", ...authed, push.getVapidKey)
   app.post("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.subscribe)
   app.post("/api/workspaces/:workspaceId/push/unsubscribe", ...authed, push.unsubscribe)
-  app.post("/api/workspaces/:workspaceId/push/test", ...authed, push.sendTest)
+  app.post("/api/workspaces/:workspaceId/push/test", ...authed, rateLimits.pushTest, push.sendTest)
   // Non-workspace-scoped: cleans up all push subscriptions for a browser endpoint (used on logout)
   app.post("/api/push/cleanup-endpoint", auth, push.cleanupEndpoint)
 
