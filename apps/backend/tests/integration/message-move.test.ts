@@ -179,7 +179,7 @@ describe("message move integration", () => {
     // messages" + a drill-in drawer; this assertion locks in the wire shape
     // (per-message previews + stream metadata) the drawer depends on.
     const sourceTombstones = await StreamEventRepository.list(pool, sourceStreamId, {
-      types: ["messages_moved"],
+      types: ["messages:moved"],
     })
     expect(sourceTombstones).toHaveLength(1)
     const sourceTombstone = sourceTombstones[0]
@@ -195,7 +195,7 @@ describe("message move integration", () => {
     expect(sourceTombstonePayload.messages.map((message) => message.id)).toEqual([movedA.id, movedB.id])
 
     const destinationTombstones = await StreamEventRepository.list(pool, result.thread.id, {
-      types: ["messages_moved"],
+      types: ["messages:moved"],
     })
     expect(destinationTombstones).toHaveLength(1)
     expect(destinationTombstones[0].payload).toEqual(sourceTombstonePayload)

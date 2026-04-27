@@ -27,6 +27,8 @@ import {
   type JSONContent,
   type ThreadSummary,
   type StreamEvent as WireStreamEvent,
+  type MessagesMovedEventPayload,
+  type MovedMessagePreview,
 } from "@threa/types"
 
 // Event payloads
@@ -80,52 +82,8 @@ export interface ThreadCreatedPayload {
   parentMessageId: string
 }
 
-/**
- * Per-message preview embedded inside `MessagesMovedEventPayload.messages`.
- * Carries enough to render a clickable list inside the move drill-in
- * drawer without an extra fetch — author + a short markdown excerpt that
- * the frontend strips and truncates at render (INV-46: structured data,
- * formatting on the client).
- */
-export interface MovedMessagePreview {
-  id: string
-  authorId: string | null
-  authorType: AuthorType | null
-  /** Capped raw markdown excerpt — kept short to bound wire size for big moves. */
-  contentMarkdown: string
-  createdAt: string
-}
-
-/**
- * Payload for a `messages_moved` stream event. One row is inserted in the
- * source stream and one in the destination thread; the renderer collapses
- * each row to "Actor moved N messages" and opens a drill-in drawer when
- * clicked. The same shape serves both sides — the renderer infers role
- * from whether `event.streamId` equals `sourceStreamId` (outbound) vs
- * `destinationStreamId` (inbound).
- *
- * `event.actorId` carries the mover's user ID and `event.createdAt`
- * carries the move timestamp, so they aren't duplicated in the payload.
- *
- * Source/destination stream names are embedded so the tombstone can render
- * without an extra round-trip when the linked stream isn't already cached.
- * They're a snapshot — a later rename won't be reflected on existing
- * tombstones, which is acceptable since tombstones are append-only history.
- */
-export interface MessagesMovedEventPayload {
-  sourceStreamId: string
-  sourceStreamSlug: string | null
-  sourceStreamDisplayName: string | null
-  destinationStreamId: string
-  destinationStreamSlug: string | null
-  destinationStreamDisplayName: string | null
-  /**
-   * Per-message previews for the drill-in drawer. Each entry includes
-   * enough to render a clickable summary linking to the message in the
-   * destination thread. `messages.length` is the canonical count.
-   */
-  messages: MovedMessagePreview[]
-}
+// `MovedMessagePreview` and `MessagesMovedEventPayload` are wire types
+// shared with the frontend — see `packages/types/src/api.ts`.
 
 // Service params
 export interface CreateMessageParams {
@@ -213,14 +171,14 @@ export interface MoveMessagesToThreadResult {
   thread: import("../streams").Stream
   events: WireStreamEvent[]
   removedEventIds: string[]
-  /** The `messages_moved` tombstone inserted into the SOURCE stream. */
+  /** The `messages:moved` tombstone inserted into the SOURCE stream. */
   sourceTombstoneEvent: WireStreamEvent
 }
 
 const MOVE_MESSAGES_TO_THREAD_OPERATION = "messages.move_to_thread"
 
 /**
- * Cap each moved-message content excerpt embedded in a `messages_moved`
+ * Cap each moved-message content excerpt embedded in a `messages:moved`
  * payload. Long messages are truncated server-side so the wire size is
  * bounded for big moves; the drill-in drawer shows a one-liner per
  * message anyway. We append `…` only when truncation actually happened
@@ -819,6 +777,8 @@ export class EventService {
         updates,
         movedFrom: {
           sourceStreamId: params.sourceStreamId,
+          sourceStreamSlug: sourceStream.slug,
+          sourceStreamDisplayName: sourceStream.displayName,
           movedAt: movedAt.toISOString(),
           movedBy: params.actorId,
         },
@@ -879,7 +839,7 @@ export class EventService {
         })
       }
 
-      // Insert "messages_moved" tombstones in BOTH streams so each side of
+      // Insert "messages:moved" tombstones in BOTH streams so each side of
       // the move keeps a visible trace. Each row collapses in the timeline
       // to "Actor moved N messages" and opens a drill-in drawer with the
       // per-message list. Same payload shape on both sides; the renderer
@@ -907,7 +867,7 @@ export class EventService {
       const sourceTombstone = await StreamEventRepository.insert(client, {
         id: eventId(),
         streamId: params.sourceStreamId,
-        eventType: "messages_moved",
+        eventType: "messages:moved",
         payload: tombstonePayload,
         actorId: params.actorId,
         actorType: AuthorTypes.USER,
@@ -915,7 +875,7 @@ export class EventService {
       const destinationTombstone = await StreamEventRepository.insert(client, {
         id: eventId(),
         streamId: destinationThread.id,
-        eventType: "messages_moved",
+        eventType: "messages:moved",
         payload: tombstonePayload,
         actorId: params.actorId,
         actorType: AuthorTypes.USER,

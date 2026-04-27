@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { CornerDownRight, X } from "lucide-react"
-import type { StreamEvent, AuthorType } from "@threa/types"
+import type { StreamEvent, MessagesMovedEventPayload, MovedMessagePreview } from "@threa/types"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -11,26 +11,8 @@ import {
 } from "@/components/ui/responsive-dialog"
 import { ActorAvatar } from "@/components/actor-avatar"
 import { RelativeTime } from "@/components/relative-time"
-import { useActors } from "@/hooks"
+import { useActors, type ActorLookup } from "@/hooks"
 import { stripMarkdownToInline } from "@/lib/markdown/strip"
-
-interface MovedMessagePreview {
-  id: string
-  authorId: string | null
-  authorType: AuthorType | null
-  contentMarkdown: string
-  createdAt: string
-}
-
-interface MessagesMovedEventPayload {
-  sourceStreamId: string
-  sourceStreamSlug: string | null
-  sourceStreamDisplayName: string | null
-  destinationStreamId: string
-  destinationStreamSlug: string | null
-  destinationStreamDisplayName: string | null
-  messages: MovedMessagePreview[]
-}
 
 interface MessagesMovedEventProps {
   event: StreamEvent
@@ -106,6 +88,12 @@ function MovedMessagesDrawer({
   currentStreamId,
   moverName,
 }: MovedMessagesDrawerProps) {
+  // One `useActors` call for the whole drawer — without this hoist each
+  // `MovedMessageRow` would subscribe its own copy of the workspace
+  // users/personas/bots live queries, so a 50-message move would create
+  // 150 redundant IDB subscriptions for identical data. Mirrors the
+  // membership-event.tsx pattern (single call at the parent).
+  const actors = useActors(workspaceId)
   const sourceLabel = formatStreamName(payload.sourceStreamDisplayName, payload.sourceStreamSlug) ?? "another stream"
   const destinationLabel =
     formatStreamName(payload.destinationStreamDisplayName, payload.destinationStreamSlug) ?? "a thread"
@@ -159,6 +147,7 @@ function MovedMessagesDrawer({
                 message={message}
                 workspaceId={workspaceId}
                 destinationStreamId={payload.destinationStreamId}
+                actors={actors}
                 onNavigate={() => onOpenChange(false)}
               />
             ))}
@@ -173,12 +162,14 @@ interface MovedMessageRowProps {
   message: MovedMessagePreview
   workspaceId: string
   destinationStreamId: string
+  actors: ActorLookup
   onNavigate: () => void
 }
 
-function MovedMessageRow({ message, workspaceId, destinationStreamId, onNavigate }: MovedMessageRowProps) {
-  const { getActorName } = useActors(workspaceId)
-  const authorName = getActorName(message.authorId, message.authorType)
+function MovedMessageRow({ message, workspaceId, destinationStreamId, actors, onNavigate }: MovedMessageRowProps) {
+  const authorName = actors.getActorName(message.authorId, message.authorType)
+  // Preview field is markdown by design — INV-60 carve-out for preview
+  // surfaces. Strip + truncate at render so display stays plain text.
   const stripped = stripMarkdownToInline(message.contentMarkdown).trim()
   const previewText = stripped.length > 0 ? stripped : "(empty message)"
 

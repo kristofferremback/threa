@@ -106,7 +106,7 @@ export function EventItem({
         </div>
       )
 
-    case "messages_moved":
+    case "messages:moved":
       return (
         <div data-event-id={event.id}>
           <MessagesMovedEvent event={event} workspaceId={workspaceId} streamId={streamId} />

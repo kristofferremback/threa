@@ -6,6 +6,7 @@ import {
   type JSONContent,
   type LinkPreviewSummary,
   type ThreadSummary,
+  type MovedFromProvenance,
 } from "@threa/types"
 import { toast } from "sonner"
 import { enqueueOperation } from "@/sync/operation-queue"
@@ -83,11 +84,7 @@ interface MessagePayload {
    * scrollers-by can see this message wasn't authored in this stream. We
    * keep only the most recent move — re-moves overwrite earlier provenance.
    */
-  movedFrom?: {
-    sourceStreamId: string
-    movedAt: string
-    movedBy: string
-  }
+  movedFrom?: MovedFromProvenance
 }
 
 interface MessageEventProps {

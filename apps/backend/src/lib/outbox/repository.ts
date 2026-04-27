@@ -142,7 +142,7 @@ export interface MessagesMovedOutboxPayload extends StreamScopedPayload {
   events: WireStreamEvent[]
   removedEventIds: string[]
   /**
-   * The `messages_moved` tombstone inserted into the SOURCE stream. Source
+   * The `messages:moved` tombstone inserted into the SOURCE stream. Source
    * clients append this to their IDB cache after applying `removedEventIds`
    * so the timeline keeps a "moved 3 messages → thread" trace where the
    * messages used to be. Not part of `events` because that array is the

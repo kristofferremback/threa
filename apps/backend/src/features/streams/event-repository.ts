@@ -319,13 +319,20 @@ export const StreamEventRepository = {
       destinationStreamId: string
       updates: MoveEventSequenceUpdate[]
       /**
-       * When provided, stamps `movedFrom: { sourceStreamId, movedAt, movedBy }`
-       * onto each relocated `message_created` payload so the destination
-       * timeline can render a per-message origin badge without a join. Uses
-       * jsonb concat (`||`) so re-moves overwrite the previous provenance —
-       * we surface the most recent origin, not a chain.
+       * Stamps `movedFrom: { sourceStreamId, sourceStreamSlug,
+       * sourceStreamDisplayName, movedAt, movedBy }` onto each relocated
+       * `message_created` payload so the destination timeline can render a
+       * per-message origin badge without a join. Uses jsonb concat (`||`)
+       * so re-moves overwrite the previous provenance — we surface the
+       * most recent origin, not a chain.
        */
-      movedFrom?: { sourceStreamId: string; movedAt: string; movedBy: string }
+      movedFrom: {
+        sourceStreamId: string
+        sourceStreamSlug: string | null
+        sourceStreamDisplayName: string | null
+        movedAt: string
+        movedBy: string
+      }
     }
   ): Promise<StreamEvent[]> {
     if (params.updates.length === 0) return []
@@ -333,41 +340,19 @@ export const StreamEventRepository = {
     const messageIds = params.updates.map((update) => update.messageId)
     const sequences = params.updates.map((update) => update.sequence.toString())
 
-    if (params.movedFrom) {
-      const result = await db.query<StreamEventRow>(
-        `UPDATE stream_events e
-         SET stream_id = $1,
-             sequence = updates.new_sequence,
-             payload = e.payload || jsonb_build_object(
-               'movedFrom', jsonb_build_object(
-                 'sourceStreamId', $5::text,
-                 'movedAt', $6::text,
-                 'movedBy', $7::text
-               )
-             )
-         FROM (
-           SELECT * FROM unnest($2::text[], $3::bigint[]) AS u(message_id, new_sequence)
-         ) updates
-         WHERE e.stream_id = $4
-           AND e.event_type = 'message_created'
-           AND e.payload->>'messageId' = updates.message_id
-         RETURNING id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at`,
-        [
-          params.destinationStreamId,
-          messageIds,
-          sequences,
-          params.sourceStreamId,
-          params.movedFrom.sourceStreamId,
-          params.movedFrom.movedAt,
-          params.movedFrom.movedBy,
-        ]
-      )
-      return result.rows.map(mapRowToEvent)
-    }
-
     const result = await db.query<StreamEventRow>(
       `UPDATE stream_events e
-       SET stream_id = $1, sequence = updates.new_sequence
+       SET stream_id = $1,
+           sequence = updates.new_sequence,
+           payload = e.payload || jsonb_build_object(
+             'movedFrom', jsonb_build_object(
+               'sourceStreamId', $5::text,
+               'sourceStreamSlug', $6::text,
+               'sourceStreamDisplayName', $7::text,
+               'movedAt', $8::text,
+               'movedBy', $9::text
+             )
+           )
        FROM (
          SELECT * FROM unnest($2::text[], $3::bigint[]) AS u(message_id, new_sequence)
        ) updates
@@ -375,7 +360,17 @@ export const StreamEventRepository = {
          AND e.event_type = 'message_created'
          AND e.payload->>'messageId' = updates.message_id
        RETURNING id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at`,
-      [params.destinationStreamId, messageIds, sequences, params.sourceStreamId]
+      [
+        params.destinationStreamId,
+        messageIds,
+        sequences,
+        params.sourceStreamId,
+        params.movedFrom.sourceStreamId,
+        params.movedFrom.sourceStreamSlug,
+        params.movedFrom.sourceStreamDisplayName,
+        params.movedFrom.movedAt,
+        params.movedFrom.movedBy,
+      ]
     )
     return result.rows.map(mapRowToEvent)
   },
