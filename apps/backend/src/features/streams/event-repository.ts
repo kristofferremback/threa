@@ -37,6 +37,13 @@ export interface InsertEventParams {
   payload: unknown
   actorId?: string
   actorType?: AuthorType
+  /**
+   * Override the row's `created_at`. Defaults to DB `NOW()` when omitted.
+   * Used by the move flow to give a single timestamp to source + destination
+   * tombstones and to per-message `movedFrom` provenance, so all three
+   * surfaces render the same "X moved messages 2m ago" time.
+   */
+  createdAt?: Date
 }
 
 export interface MoveEventSequenceUpdate {
@@ -107,9 +114,10 @@ export const StreamEventRepository = {
 
   async insert(db: Querier, params: InsertEventParams): Promise<StreamEvent> {
     const sequence = await this.getNextSequence(db, params.streamId)
+    const createdAt = params.createdAt ?? new Date()
 
     const result = await db.query<StreamEventRow>(sql`
-      INSERT INTO stream_events (id, stream_id, sequence, event_type, payload, actor_id, actor_type)
+      INSERT INTO stream_events (id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at)
       VALUES (
         ${params.id},
         ${params.streamId},
@@ -117,7 +125,8 @@ export const StreamEventRepository = {
         ${params.eventType},
         ${JSON.stringify(params.payload)},
         ${params.actorId ?? null},
-        ${params.actorType ?? null}
+        ${params.actorType ?? null},
+        ${createdAt}
       )
       RETURNING id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
     `)
@@ -314,7 +323,33 @@ export const StreamEventRepository = {
 
   async moveMessageCreatedEvents(
     db: Querier,
-    params: { sourceStreamId: string; destinationStreamId: string; updates: MoveEventSequenceUpdate[] }
+    params: {
+      sourceStreamId: string
+      destinationStreamId: string
+      updates: MoveEventSequenceUpdate[]
+      /**
+       * Stamps `movedFrom: { sourceStreamId, sourceStreamSlug,
+       * sourceStreamDisplayName, movedAt, movedBy, movedByType,
+       * moveTombstoneId }` onto each relocated `message_created` payload
+       * so the destination timeline can render a per-message origin badge
+       * without a join, and so the badge's context-menu can open the
+       * drill-in drawer keyed off the destination tombstone's event id.
+       * Uses jsonb concat (`||`) so re-moves overwrite the previous
+       * provenance — we surface the most recent origin, not a chain.
+       *
+       * `sourceStreamId` is reused from the top-level param (they're
+       * always equal, this helper rejects mixed sources implicitly) so
+       * there's only one source-of-truth on the wire.
+       */
+      movedFrom: {
+        sourceStreamSlug: string | null
+        sourceStreamDisplayName: string | null
+        movedAt: string
+        movedBy: string
+        movedByType: string
+        moveTombstoneId: string
+      }
+    }
   ): Promise<StreamEvent[]> {
     if (params.updates.length === 0) return []
 
@@ -323,7 +358,19 @@ export const StreamEventRepository = {
 
     const result = await db.query<StreamEventRow>(
       `UPDATE stream_events e
-       SET stream_id = $1, sequence = updates.new_sequence
+       SET stream_id = $1,
+           sequence = updates.new_sequence,
+           payload = e.payload || jsonb_build_object(
+             'movedFrom', jsonb_build_object(
+               'sourceStreamId', $4::text,
+               'sourceStreamSlug', $5::text,
+               'sourceStreamDisplayName', $6::text,
+               'movedAt', $7::text,
+               'movedBy', $8::text,
+               'movedByType', $9::text,
+               'moveTombstoneId', $10::text
+             )
+           )
        FROM (
          SELECT * FROM unnest($2::text[], $3::bigint[]) AS u(message_id, new_sequence)
        ) updates
@@ -331,7 +378,18 @@ export const StreamEventRepository = {
          AND e.event_type = 'message_created'
          AND e.payload->>'messageId' = updates.message_id
        RETURNING id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at`,
-      [params.destinationStreamId, messageIds, sequences, params.sourceStreamId]
+      [
+        params.destinationStreamId,
+        messageIds,
+        sequences,
+        params.sourceStreamId,
+        params.movedFrom.sourceStreamSlug,
+        params.movedFrom.sourceStreamDisplayName,
+        params.movedFrom.movedAt,
+        params.movedFrom.movedBy,
+        params.movedFrom.movedByType,
+        params.movedFrom.moveTombstoneId,
+      ]
     )
     return result.rows.map(mapRowToEvent)
   },

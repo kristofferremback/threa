@@ -3,6 +3,7 @@ import type { MessageAgentActivity } from "@/hooks"
 import type { BatchTimelineState } from "./event-list"
 import { MessageEvent } from "./message-event"
 import { MembershipEvent } from "./membership-event"
+import { MessagesMovedEvent } from "./messages-moved-event"
 import { SystemEvent } from "./system-event"
 
 interface EventItemProps {
@@ -104,6 +105,22 @@ export function EventItem({
           <SystemEvent event={event} />
         </div>
       )
+
+    case "messages:moved": {
+      // Destination-side rows render no inline tombstone — the destination
+      // already shows the moved messages themselves, plus a per-message
+      // origin badge + "Show move details" context-menu entry. Short-
+      // circuiting here (rather than inside `MessagesMovedEvent`) avoids
+      // mounting the component at all on destination rows, so the
+      // tombstone's `useActors` subscription only runs where it's used.
+      const movedPayload = event.payload as { destinationStreamId?: string }
+      if (movedPayload.destinationStreamId === streamId) return null
+      return (
+        <div data-event-id={event.id}>
+          <MessagesMovedEvent event={event} workspaceId={workspaceId} />
+        </div>
+      )
+    }
 
     case "reaction_added":
     case "reaction_removed":

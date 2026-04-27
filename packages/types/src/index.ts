@@ -268,6 +268,9 @@ export type {
   MoveMessagesToThreadResponse,
   ValidateMoveMessagesToThreadInput,
   ValidateMoveMessagesToThreadResponse,
+  MovedMessagePreview,
+  MessagesMovedEventPayload,
+  MovedFromProvenance,
   // Workspaces
   CreateWorkspaceInput,
   WorkspaceBootstrap,

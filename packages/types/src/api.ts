@@ -270,6 +270,92 @@ export interface MoveMessagesToThreadResponse {
   thread: Stream
   events: StreamEvent[]
   removedEventIds: string[]
+  /** Tombstone event inserted into the source stream that the source-side
+   *  client appends to its cache so the move leaves a visible trace. */
+  sourceTombstoneEvent: StreamEvent
+}
+
+/**
+ * Per-message preview embedded in a `messages:moved` stream event payload.
+ *
+ * Carries enough to render a clickable summary in the move drill-in
+ * drawer without an extra fetch. `contentMarkdown` is a capped raw
+ * markdown excerpt — preview surfaces are exempt from INV-58 (canonical
+ * content lives in `contentJson` on the actual message row); per INV-60
+ * they ship as markdown and the frontend strips at render via
+ * `stripMarkdownToInline`.
+ */
+export interface MovedMessagePreview {
+  id: string
+  authorId: string | null
+  authorType: AuthorType | null
+  contentMarkdown: string
+  createdAt: string
+}
+
+/**
+ * Payload for a `messages:moved` stream event. One row is inserted in the
+ * source stream and one in the destination thread on every move; the
+ * renderer collapses each row to "Actor moved N messages" and opens a
+ * drill-in drawer when clicked. The same shape serves both sides — the
+ * renderer infers role from whether `event.streamId === sourceStreamId`
+ * (outbound) vs `=== destinationStreamId` (inbound).
+ *
+ * `event.actorId` carries the mover's user ID and `event.createdAt`
+ * carries the move timestamp, so they aren't duplicated in the payload.
+ *
+ * Source/destination stream names are embedded so the tombstone can
+ * render without an extra round-trip when the linked stream isn't
+ * already cached. They're a snapshot — a later rename won't be reflected
+ * on existing tombstones, which is acceptable since tombstones are
+ * append-only history.
+ */
+export interface MessagesMovedEventPayload {
+  sourceStreamId: string
+  sourceStreamSlug: string | null
+  sourceStreamDisplayName: string | null
+  destinationStreamId: string
+  destinationStreamSlug: string | null
+  destinationStreamDisplayName: string | null
+  /**
+   * Per-message previews for the drill-in drawer.
+   * `messages.length` is the canonical count.
+   */
+  messages: MovedMessagePreview[]
+}
+
+/**
+ * Provenance stamped onto a relocated `message_created` event payload by
+ * the move flow. Surfaces a per-message origin badge in the destination
+ * timeline without a join. Re-moves overwrite earlier provenance — we
+ * surface the most recent origin, not a chain.
+ *
+ * Source-stream metadata (slug + display name) is snapshotted alongside
+ * the IDs so the badge can render the origin name without a separate
+ * lookup. Like the tombstone payload, this snapshot is intentional —
+ * later renames don't reflect on existing badges.
+ */
+export interface MovedFromProvenance {
+  sourceStreamId: string
+  sourceStreamSlug: string | null
+  sourceStreamDisplayName: string | null
+  movedAt: string
+  movedBy: string
+  /**
+   * Author type of `movedBy`. Today the move handler is gated to user
+   * actors, so this is always `"user"` — but persisting the type alongside
+   * the id avoids silently mislabelling bot/agent movers if the move flow
+   * is ever reused.
+   */
+  movedByType: AuthorType
+  /**
+   * `event.id` of the destination-side `messages:moved` tombstone. The
+   * destination doesn't render the tombstone inline — it shows a small
+   * origin badge per message instead — so a per-message context-menu
+   * action ("Show move details") looks the tombstone up by id from IDB
+   * to populate the drill-in drawer.
+   */
+  moveTombstoneId: string
 }
 
 export interface ValidateMoveMessagesToThreadInput {

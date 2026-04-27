@@ -6,6 +6,7 @@ import {
   type JSONContent,
   type LinkPreviewSummary,
   type ThreadSummary,
+  type MovedFromProvenance,
 } from "@threa/types"
 import { toast } from "sonner"
 import { enqueueOperation } from "@/sync/operation-queue"
@@ -21,6 +22,7 @@ import { useFormattedDate } from "@/hooks/use-formatted-date"
 import { useEditLastMessage } from "./edit-last-message-context"
 import {
   useActors,
+  useMovedTombstone,
   useWorkspaceUserId,
   useMessageReactions,
   stripColons,
@@ -48,6 +50,8 @@ import { MessageEditForm } from "./message-edit-form"
 import { UnsentMessageEditForm } from "./unsent-message-edit-form"
 import { UnsentMessageActionDrawer } from "./unsent-message-action-drawer"
 import { EditedIndicator } from "./edited-indicator"
+import { MovedFromIndicator } from "./moved-from-indicator"
+import { MovedMessagesDrawer } from "./moved-messages-drawer"
 import { SavedIndicator } from "@/components/saved/saved-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
 import { MessageReactions } from "./message-reactions"
@@ -59,6 +63,7 @@ import { queueShareHandoff } from "@/stores/share-handoff-store"
 import { navigateAfterShareHandoff } from "@/lib/share-navigation"
 import { ShareMessageModal } from "@/components/share/share-message-modal"
 import type { BatchTimelineState } from "./event-list"
+import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
 
 interface MessagePayload {
   messageId: string
@@ -77,6 +82,13 @@ interface MessagePayload {
   editedAt?: string
   sentVia?: string
   reactions?: Record<string, string[]>
+  /**
+   * Stamped onto the relocated `message_created` payload by the move flow.
+   * Surfaces a small "moved from #X" indicator alongside the timestamp so
+   * scrollers-by can see this message wasn't authored in this stream. We
+   * keep only the most recent move — re-moves overwrite earlier provenance.
+   */
+  movedFrom?: MovedFromProvenance
 }
 
 interface MessageEventProps {
@@ -724,6 +736,11 @@ function SentMessageEvent({
   const [isDeleting, setIsDeleting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [moveDetailsOpen, setMoveDetailsOpen] = useState(false)
+  // Hydrate the destination tombstone on demand for the per-message
+  // "Show move details" action. Reactive — populates as soon as the row
+  // lands in IDB (live socket apply or bootstrap).
+  const movedTombstoneEvent = useMovedTombstone(payload.movedFrom?.moveTombstoneId)
 
   // Mobile: long-press opens action drawer instead of dropdown
   const isMobile = useIsMobile()
@@ -986,6 +1003,20 @@ function SentMessageEvent({
           : undefined,
       shareToParentLabel: showParentEntry && parentStream ? buildShareToStreamLabel(parentStream) : undefined,
       onShare: () => setShareModalOpen(true),
+      // Per-message entry into the batch-move flow. Hidden during batch
+      // mode itself (the row's own checkbox handles that), on the thread
+      // parent (moving the parent into its own thread is nonsensical),
+      // and on archived streams to match the stream-header menu's gating.
+      onMoveToThread:
+        !batch?.enabled && !isThreadParentProp && !currentStream?.archivedAt
+          ? () => dispatchStartBatchSelect(streamId, payload.messageId)
+          : undefined,
+      // Destination-side discovery for moved messages. The drawer only
+      // renders once the tombstone hydrates from IDB, so gate the menu
+      // entry on the full lookup rather than just the id — keeps the
+      // user from clicking into a no-op while bootstrap is still in
+      // flight.
+      onShowMoveDetails: movedTombstoneEvent ? () => setTimeout(() => setMoveDetailsOpen(true), 0) : undefined,
     }),
     [
       payload.contentMarkdown,
@@ -1019,6 +1050,9 @@ function SentMessageEvent({
       location,
       isMobile,
       handleDiscussWithAriadne,
+      batch?.enabled,
+      currentStream?.archivedAt,
+      movedTombstoneEvent,
     ]
   )
 
@@ -1058,6 +1092,13 @@ function SentMessageEvent({
             <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
             {payload.editedAt && (
               <EditedIndicator editedAt={payload.editedAt} onShowHistory={() => setHistoryOpen(true)} />
+            )}
+            {payload.movedFrom && (
+              <MovedFromIndicator
+                workspaceId={workspaceId}
+                movedFrom={payload.movedFrom}
+                onClick={movedTombstoneEvent ? () => setMoveDetailsOpen(true) : undefined}
+              />
             )}
             <SavedIndicator saved={savedForMessage ?? null} />
           </>
@@ -1213,6 +1254,14 @@ function SentMessageEvent({
             authorId: event.actorId ?? "",
             actorType: event.actorType ?? "user",
           }}
+        />
+      )}
+      {moveDetailsOpen && movedTombstoneEvent && (
+        <MovedMessagesDrawer
+          open={moveDetailsOpen}
+          onOpenChange={setMoveDetailsOpen}
+          event={movedTombstoneEvent}
+          workspaceId={workspaceId}
         />
       )}
       {isMobile && (

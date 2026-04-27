@@ -244,6 +244,9 @@ interface MessagesMovedPayload {
   thread: Stream
   events: StreamEvent[]
   removedEventIds: string[]
+  /** Tombstone event inserted into the source stream — appended to the
+   *  source-side IDB cache so the timeline keeps a "moved → thread" trace. */
+  sourceTombstoneEvent: StreamEvent
   /** Authoritative replyCount for the drop-target after the move (see backend payload doc). */
   parentReplyCount: number
   /** Recomputed thread summary for the drop-target — same shape as `message:updated` ships. */
@@ -512,6 +515,17 @@ export function registerStreamSocketHandlers(
     await db.transaction("rw", [db.events, db.streams], async () => {
       if (payload.sourceStreamId === streamId) {
         await db.events.bulkDelete(payload.removedEventIds)
+        // Append the source tombstone after the deletes so the timeline
+        // shows a "moved 3 messages → thread" trace where the messages
+        // used to be. The event was assigned a fresh sequence in the
+        // source stream so it sorts naturally at the bottom of the
+        // post-move state.
+        await db.events.put({
+          ...payload.sourceTombstoneEvent,
+          workspaceId,
+          _sequenceNum: sequenceToNum(payload.sourceTombstoneEvent.sequence),
+          _cachedAt: now,
+        })
         // SET replyCount + threadSummary directly from the payload (not
         // additive) so the patch is idempotent against the sibling
         // `message:updated` event — they carry the same authoritative

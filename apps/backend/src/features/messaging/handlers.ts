@@ -338,6 +338,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         thread: moveResult.thread,
         events: moveResult.events,
         removedEventIds: moveResult.removedEventIds,
+        sourceTombstoneEvent: moveResult.sourceTombstoneEvent,
       })
     },
 
