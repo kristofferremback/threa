@@ -284,7 +284,7 @@ async function resolveAuthorDisplayNames(
   }
   if (byType.persona.size > 0) {
     fetches.push(
-      PersonaRepository.findByIds(pool, [...byType.persona]).then((personas) => {
+      PersonaRepository.findByIds(pool, [...byType.persona], workspaceId).then((personas) => {
         for (const p of personas) nameMap.set(p.id, p.name)
       })
     )

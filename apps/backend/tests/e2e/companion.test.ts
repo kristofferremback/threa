@@ -10,8 +10,9 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, setDefaultTimeout } from "bun:test"
 
-// Companion jobs run asynchronously, need longer timeout
-setDefaultTimeout(30000)
+// Companion jobs are queued; full e2e runs many files and can delay persona.agent.
+// Must exceed waitForCompanionResponse (60s) plus setup or Bun kills the test first.
+setDefaultTimeout(120_000)
 import { io, Socket } from "socket.io-client"
 import {
   TestClient,
@@ -87,7 +88,7 @@ function waitForEvent<T = unknown>(socket: Socket, eventName: string, timeoutMs:
 function waitForCompanionResponse(
   socket: Socket,
   streamId: string,
-  timeoutMs: number = 20000
+  timeoutMs: number = 60_000
 ): Promise<{ event: any }> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -123,10 +124,13 @@ describe("Companion Agent", () => {
     workspaceId = workspace.id
   })
 
-  beforeEach(async () => {
-    socket = createSocket(client)
-    await connectSocket(socket)
-  })
+  beforeEach(
+    async () => {
+      socket = createSocket(client)
+      await connectSocket(socket)
+    },
+    { timeout: 30_000 }
+  )
 
   afterEach(() => {
     if (socket) {

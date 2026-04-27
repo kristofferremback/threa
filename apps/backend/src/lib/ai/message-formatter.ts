@@ -59,7 +59,7 @@ export class MessageFormatter {
 
     const [users, personas] = await Promise.all([
       UserRepository.findByIds(client, workspaceId, [...userIds]),
-      PersonaRepository.findByIds(client, [...personaIds]),
+      PersonaRepository.findByIds(client, [...personaIds], workspaceId),
     ])
 
     const nameById = new Map<string, string>()
