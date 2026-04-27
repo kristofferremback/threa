@@ -181,14 +181,22 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.QUEUE_LIGHT_TOKENS = "10"
   process.env.QUEUE_HEAVY_TOKENS = "5"
 
-  // S3/MinIO for e2e: always use local MinIO, never workspace `.env` AWS values.
-  // Bun loads `.env` before tests; inheriting S3_* would send HeadBucket/CreateBucket
-  // to real S3 and fail with 403 (or hit the wrong account).
-  process.env.S3_BUCKET = "threa-test-uploads"
-  process.env.S3_REGION = "us-east-1"
-  process.env.S3_ACCESS_KEY_ID = "minioadmin"
-  process.env.S3_SECRET_ACCESS_KEY = "minioadmin"
-  process.env.S3_ENDPOINT = "http://localhost:9099"
+  // S3/MinIO for e2e
+  // - CI (`.github/workflows/ci.yml`) exports MinIO on :9000 — must not override.
+  // - Local dev: Bun loads `.env` with real AWS; force our compose MinIO (:9099) or HeadBucket 403s.
+  if (process.env.CI) {
+    process.env.S3_BUCKET = process.env.S3_BUCKET || "threa-test-uploads"
+    process.env.S3_REGION = process.env.S3_REGION || "us-east-1"
+    process.env.S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "minioadmin"
+    process.env.S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "minioadmin"
+    process.env.S3_ENDPOINT = process.env.S3_ENDPOINT || "http://localhost:9000"
+  } else {
+    process.env.S3_BUCKET = "threa-test-uploads"
+    process.env.S3_REGION = "us-east-1"
+    process.env.S3_ACCESS_KEY_ID = "minioadmin"
+    process.env.S3_SECRET_ACCESS_KEY = "minioadmin"
+    process.env.S3_ENDPOINT = "http://localhost:9099"
+  }
 
   // Ensure MinIO bucket exists
   await ensureMinioBucketExists()
