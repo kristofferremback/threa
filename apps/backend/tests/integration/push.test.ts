@@ -985,4 +985,105 @@ describe("Push Notifications", () => {
       expect(remaining).toHaveLength(0)
     })
   })
+
+  describe("PushService.deliverTestPush", () => {
+    function createService() {
+      return new PushService({
+        pool,
+        vapidConfig: {
+          publicKey: "BM1RQ2UEVpAlbEgYOQ3bDrGAOrJGBmmh4_4UkmtGRzhi-5WPFmPuJbA6zv4kCp0iycvTaH6eveCXedCE0xSnZbk",
+          privateKey: "eHUfakWGHrS4ft0HiSGyhTOBCQJ9VAKWl4XK53qsjMg",
+          subject: "mailto:test@threa.app",
+        },
+        lookups: {
+          getUserNotificationLevel: async () => PrefNotificationLevels.ALL,
+          getStreamType: async () => StreamTypes.CHANNEL,
+        },
+      })
+    }
+
+    test("returns zero attempted when user has no subscriptions", async () => {
+      const service = createService()
+      const result = await service.deliverTestPush(testWorkspaceId, testUserId)
+      expect(result).toEqual({ attempted: 0, failed: 0 })
+      expect(sendSpy).not.toHaveBeenCalled()
+    })
+
+    test("sends a test payload to every subscription regardless of session state", async () => {
+      const service = createService()
+
+      // Two subs, neither device has any session — normal delivery would skip these
+      // (session_expired path), but a test push should bypass that gating.
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/test-1",
+        p256dh: "p",
+        auth: "a",
+        deviceKey: "d1",
+      })
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/test-2",
+        p256dh: "p",
+        auth: "a",
+        deviceKey: "d2",
+      })
+
+      const result = await service.deliverTestPush(testWorkspaceId, testUserId)
+
+      expect(result).toEqual({ attempted: 2, failed: 0 })
+      expect(sendSpy).toHaveBeenCalledTimes(2)
+      const payload = JSON.parse(sendSpy.mock.calls[0]![1] as string)
+      expect(payload.data.kind).toBe("test")
+      expect(payload.data.workspaceId).toBe(testWorkspaceId)
+    })
+
+    test("counts failures and evicts subscriptions returning 410 Gone", async () => {
+      const service = createService()
+
+      const liveSub = await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/live",
+        p256dh: "p",
+        auth: "a",
+        deviceKey: "d-live",
+      })
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/stale",
+        p256dh: "p",
+        auth: "a",
+        deviceKey: "d-stale",
+      })
+
+      sendSpy.mockImplementation(async (sub: any) => {
+        if (sub.endpoint.endsWith("/stale")) {
+          throw Object.assign(new Error("Gone"), { statusCode: 410 })
+        }
+        return {} as any
+      })
+
+      const result = await service.deliverTestPush(testWorkspaceId, testUserId)
+
+      expect(result).toEqual({ attempted: 2, failed: 1 })
+      const remaining = await PushSubscriptionRepository.findByUserId(pool, testWorkspaceId, testUserId)
+      expect(remaining.map((s) => s.id)).toEqual([liveSub.id])
+    })
+
+    test("throws when push is not enabled on the server", async () => {
+      const service = new PushService({
+        pool,
+        vapidConfig: null,
+        lookups: {
+          getUserNotificationLevel: async () => PrefNotificationLevels.ALL,
+          getStreamType: async () => StreamTypes.CHANNEL,
+        },
+      })
+      await expect(service.deliverTestPush(testWorkspaceId, testUserId)).rejects.toThrow(/not enabled/i)
+    })
+  })
 })

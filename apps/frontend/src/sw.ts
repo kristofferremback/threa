@@ -296,6 +296,8 @@ interface PushData {
   messages?: Array<{ authorName?: string; contentPreview?: string }>
   /** Backend-driven action: "clear" dismisses notifications for the stream; "session_expired" prompts re-login. */
   action?: "clear" | "session_expired"
+  /** Payload kind: "test" is sent by the in-app diagnostic to verify end-to-end delivery. */
+  kind?: "test"
 }
 
 self.addEventListener("push", (event) => {
@@ -322,6 +324,23 @@ self.addEventListener("push", (event) => {
       ]).then(([streamNotifs, mentionNotifs]) => {
         for (const n of [...streamNotifs, ...mentionNotifs]) n.close()
       })
+    )
+    return
+  }
+
+  // Test push from the in-app diagnostic. Always display, even with the app
+  // focused — the user explicitly asked to verify the delivery loop, so
+  // suppressing it would defeat the purpose.
+  if (data.kind === "test") {
+    event.waitUntil(
+      self.registration.showNotification("Threa test notification", {
+        body: "Push delivery is working — you should see this on every subscribed device.",
+        icon: "/threa-logo-192.png",
+        badge: "/threa-logo-192.png",
+        tag: "threa-test",
+        renotify: true,
+        data: { ...data, kind: "test" },
+      } as ExtendedNotificationOptions)
     )
     return
   }

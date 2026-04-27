@@ -1,8 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { DEVICE_KEY_LENGTH } from "@threa/types"
-import { api } from "@/api/client"
+import { ApiError, api } from "@/api/client"
 
 type PushPermission = NotificationPermission | "unsupported"
+
+/**
+ * Lifecycle of the workspace's push subscription:
+ * - `idle`        → not currently working; either pre-permission, opted-out, or disabled-on-server
+ * - `subscribing` → actively negotiating with browser + backend
+ * - `subscribed`  → browser registration confirmed and backend record stored
+ * - `error`       → last attempt failed; `error` field carries diagnostics; `retry()` to try again
+ */
+type SubscriptionStatus = "idle" | "subscribing" | "subscribed" | "error"
+
+interface PushSubscriptionError {
+  message: string
+  code?: string
+  status?: number
+}
 
 interface VapidConfig {
   vapidPublicKey: string | null
@@ -12,12 +27,42 @@ interface VapidConfig {
 interface UsePushNotificationsResult {
   permission: PushPermission
   isSubscribed: boolean
+  status: SubscriptionStatus
+  error: PushSubscriptionError | null
   /** True when the user has explicitly opted out of push for this workspace. */
   optedOut: boolean
   /** True when push is disabled on the backend (no VAPID keys configured). */
   pushDisabledOnServer: boolean
   requestPermission: () => Promise<void>
   unsubscribe: () => Promise<void>
+  /** Retry the subscription flow after a transient failure. */
+  retry: () => Promise<void>
+}
+
+/** Hard cap on the subscribe round-trip so a hung fetch never strands the UI in "subscribing". */
+const SUBSCRIBE_TIMEOUT_MS = 15_000
+
+class SubscribeTimeoutError extends Error {
+  constructor() {
+    super("Timed out while subscribing to push notifications")
+    this.name = "SubscribeTimeoutError"
+  }
+}
+
+function toSubscriptionError(err: unknown): PushSubscriptionError {
+  if (ApiError.isApiError(err)) {
+    return { message: err.message, code: err.code, status: err.status }
+  }
+  if (err instanceof SubscribeTimeoutError) {
+    return { message: err.message, code: "TIMEOUT" }
+  }
+  if (err instanceof DOMException) {
+    return { message: err.message || err.name, code: err.name }
+  }
+  if (err instanceof Error) {
+    return { message: err.message }
+  }
+  return { message: "Unknown error while subscribing to push notifications" }
 }
 
 /**
@@ -62,6 +107,80 @@ function pushOptOutKey(workspaceId: string): string {
   return `threa:push-opted-out:${workspaceId}`
 }
 
+type SubscribeOutcome = { kind: "subscribed" } | { kind: "disabled-on-server" }
+
+/**
+ * Runs the full subscribe handshake: fetch VAPID config, reconcile the browser
+ * subscription, and register it with the backend. Pure flow — all state
+ * transitions live in the caller.
+ *
+ * Accepts an `AbortSignal` so a stale attempt (newer subscribe() superseded it)
+ * can cancel its in-flight HTTP work instead of running to completion in the
+ * background and racing the newer attempt's terminal state.
+ */
+async function runSubscribeFlow(
+  workspaceId: string,
+  registration: ServiceWorkerRegistration,
+  vapidCacheRef: React.RefObject<{ workspaceId: string; config: VapidConfig } | null>,
+  signal: AbortSignal
+): Promise<SubscribeOutcome> {
+  // Cache VAPID config per workspace to avoid redundant fetches (key doesn't change)
+  let vapidPublicKey: string | null
+  let enabled: boolean
+  if (vapidCacheRef.current?.workspaceId === workspaceId) {
+    ;({ vapidPublicKey, enabled } = vapidCacheRef.current.config)
+  } else {
+    const config = await api.get<VapidConfig>(`/api/workspaces/${workspaceId}/push/vapid-key`, { signal })
+    vapidCacheRef.current = { workspaceId, config }
+    ;({ vapidPublicKey, enabled } = config)
+  }
+
+  if (!enabled || !vapidPublicKey) {
+    return { kind: "disabled-on-server" }
+  }
+
+  // Reuse existing browser subscription if its VAPID key matches the server's.
+  // If VAPID keys were rotated, unsubscribe the stale one and create a fresh subscription.
+  const expectedKey = urlBase64ToUint8Array(vapidPublicKey).buffer as ArrayBuffer
+  let existing = await registration.pushManager.getSubscription()
+  if (existing) {
+    const existingKey = existing.options.applicationServerKey
+    if (!existingKey || !arrayBuffersEqual(existingKey, expectedKey)) {
+      await existing.unsubscribe()
+      existing = null
+    }
+  }
+  const subscription =
+    existing ??
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: expectedKey,
+    }))
+
+  const json = subscription.toJSON()
+  if (!json.keys?.p256dh || !json.keys?.auth) {
+    throw new Error("Browser returned a push subscription without encryption keys")
+  }
+
+  const deviceKey = await getDeviceKey()
+
+  // Backend upsert (ON CONFLICT DO UPDATE) — idempotent for re-registrations
+  // toJSON().keys returns base64url encoding, matching web-push library's contract
+  await api.post(
+    `/api/workspaces/${workspaceId}/push/subscribe`,
+    {
+      endpoint: subscription.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+      deviceKey,
+      userAgent: navigator.userAgent,
+    },
+    { signal }
+  )
+
+  return { kind: "subscribed" }
+}
+
 export function usePushNotifications(workspaceId: string | undefined): UsePushNotificationsResult {
   const [permission, setPermission] = useState<PushPermission>(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return "unsupported"
@@ -72,82 +191,94 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId)) === "1" : false
   )
   const [pushDisabledOnServer, setPushDisabledOnServer] = useState(false)
+  const [status, setStatus] = useState<SubscriptionStatus>("idle")
+  const [error, setError] = useState<PushSubscriptionError | null>(null)
   const vapidCacheRef = useRef<{ workspaceId: string; config: VapidConfig } | null>(null)
+  // Per-attempt generation counter: every subscribe() bumps this and gates its
+  // terminal state writes on it. Combined with the per-attempt AbortController,
+  // a stale attempt (e.g. an early auto-subscribe whose timeout fires after the
+  // user already retried successfully) can't clobber the latest result.
+  const subscribeGenRef = useRef(0)
+  const currentAbortRef = useRef<AbortController | null>(null)
 
   // Re-sync opt-out state when workspaceId changes (initializer only runs on mount)
   useEffect(() => {
     setOptedOut(workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId)) === "1" : false)
   }, [workspaceId])
 
-  // Subscribe to push notifications
-  const subscribe = useCallback(
-    async (registration: ServiceWorkerRegistration) => {
-      if (!workspaceId) return
+  // Cancel any in-flight subscribe on unmount
+  useEffect(() => () => currentAbortRef.current?.abort(), [])
 
-      try {
-        // Cache VAPID config per workspace to avoid redundant fetches (key doesn't change)
-        let vapidPublicKey: string | null
-        let enabled: boolean
-        if (vapidCacheRef.current?.workspaceId === workspaceId) {
-          ;({ vapidPublicKey, enabled } = vapidCacheRef.current.config)
-        } else {
-          const config = await api.get<VapidConfig>(`/api/workspaces/${workspaceId}/push/vapid-key`)
-          vapidCacheRef.current = { workspaceId, config }
-          ;({ vapidPublicKey, enabled } = config)
-        }
+  // Subscribe to push notifications. Owns the full flow including waiting for
+  // the service worker to be ready, so a hung SW activation is covered by the
+  // same 15s timeout as the subscribe handshake itself.
+  const subscribe = useCallback(async () => {
+    if (!workspaceId) return
 
-        if (!enabled || !vapidPublicKey) {
-          setIsSubscribed(false)
-          setPushDisabledOnServer(true)
-          return
-        }
-        setPushDisabledOnServer(false)
+    // Bump generation and abort any prior attempt's HTTP work so it stops
+    // racing toward a terminal state we no longer want.
+    const gen = ++subscribeGenRef.current
+    const isLatest = () => subscribeGenRef.current === gen
+    currentAbortRef.current?.abort()
+    const controller = new AbortController()
+    currentAbortRef.current = controller
 
-        // Reuse existing browser subscription if its VAPID key matches the server's.
-        // If VAPID keys were rotated, unsubscribe the stale one and create a fresh subscription.
-        const expectedKey = urlBase64ToUint8Array(vapidPublicKey).buffer as ArrayBuffer
-        let existing = await registration.pushManager.getSubscription()
-        if (existing) {
-          const existingKey = existing.options.applicationServerKey
-          if (!existingKey || !arrayBuffersEqual(existingKey, expectedKey)) {
-            await existing.unsubscribe()
-            existing = null
+    setStatus("subscribing")
+    setError(null)
+
+    // Hard timeout — covers both the serviceWorker.ready wait and the
+    // subscribe handshake. Without this, a never-resolving SW activation
+    // (mobile Firefox on a fresh domain, blocked SW install, etc.) leaves
+    // the UI in "subscribing" forever.
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new SubscribeTimeoutError()), SUBSCRIBE_TIMEOUT_MS)
+    })
+
+    try {
+      const result = await Promise.race([
+        (async () => {
+          if (!("serviceWorker" in navigator)) {
+            throw new Error("Service workers are not available in this browser")
           }
-        }
-        const subscription =
-          existing ??
-          (await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: expectedKey,
-          }))
+          const registration = await navigator.serviceWorker.ready
+          return runSubscribeFlow(workspaceId, registration, vapidCacheRef, controller.signal)
+        })(),
+        timeoutPromise,
+      ])
 
-        const json = subscription.toJSON()
-        if (!json.keys?.p256dh || !json.keys?.auth) return
+      if (!isLatest()) return
 
-        const deviceKey = await getDeviceKey()
-
-        // Backend upsert (ON CONFLICT DO UPDATE) — idempotent for re-registrations
-        // toJSON().keys returns base64url encoding, matching web-push library's contract
-        await api.post(`/api/workspaces/${workspaceId}/push/subscribe`, {
-          endpoint: subscription.endpoint,
-          p256dh: json.keys.p256dh,
-          auth: json.keys.auth,
-          deviceKey,
-          userAgent: navigator.userAgent,
-        })
-
-        setIsSubscribed(true)
-      } catch (err) {
-        console.error("[Push] Failed to subscribe:", err)
+      if (result.kind === "disabled-on-server") {
+        setIsSubscribed(false)
+        setPushDisabledOnServer(true)
+        setStatus("idle")
+        return
       }
-    },
-    [workspaceId]
-  )
+
+      setPushDisabledOnServer(false)
+      setIsSubscribed(true)
+      setStatus("subscribed")
+    } catch (err) {
+      // Aborted attempts are expected when a newer subscribe() superseded us
+      // — don't log or write state for them.
+      if (controller.signal.aborted || !isLatest()) return
+      console.error("[Push] Failed to subscribe:", err)
+      setIsSubscribed(false)
+      setError(toSubscriptionError(err))
+      setStatus("error")
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
+      if (currentAbortRef.current === controller) currentAbortRef.current = null
+    }
+  }, [workspaceId])
 
   // Reset subscription state when permission is revoked or workspaceId changes
   useEffect(() => {
     if (permission !== "granted" || !workspaceId) {
       setIsSubscribed(false)
+      setStatus("idle")
+      setError(null)
     }
   }, [permission, workspaceId])
 
@@ -156,22 +287,14 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
   useEffect(() => {
     if (permission !== "granted" || !workspaceId || optedOut) return
 
-    const doSubscribe = () => {
-      navigator.serviceWorker?.ready
-        .then(async (registration) => {
-          // Always call subscribe — it upserts on the backend, so it handles both
-          // new subscriptions and re-registering after pushsubscriptionchange events.
-          await subscribe(registration)
-        })
-        .catch((err) => {
-          console.error("[Push] Failed to check subscription:", err)
-        })
-    }
-
-    doSubscribe()
+    // subscribe() owns the SW-ready wait and timeout, so callers don't need
+    // to gate on it themselves — they just kick off the flow.
+    void subscribe()
 
     // Re-register when the SW notifies us of a subscription change (avoids full page reload)
-    const handleSubscriptionChange = () => doSubscribe()
+    const handleSubscriptionChange = () => {
+      void subscribe()
+    }
     window.addEventListener("pushsubscriptionchanged", handleSubscriptionChange)
     return () => window.removeEventListener("pushsubscriptionchanged", handleSubscriptionChange)
   }, [permission, workspaceId, subscribe, optedOut])
@@ -194,11 +317,17 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       }
 
       setIsSubscribed(false)
+      setStatus("idle")
+      setError(null)
 
       // Persist opt-out so auto-subscribe doesn't re-register on next mount
       setOptedOut(true)
       localStorage.setItem(pushOptOutKey(workspaceId), "1")
     } catch (err) {
+      // Failure surfaces only to the console — the "subscribed" UI doesn't
+      // render the error field, so setting it would just leak stale state
+      // into the next mount. If users hit this, a follow-up should add a
+      // toast (sonner is already wired in).
       console.error("[Push] Failed to unsubscribe:", err)
     }
   }, [workspaceId])
@@ -221,13 +350,34 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       setPermission(result)
 
       if (result === "granted") {
-        const registration = await navigator.serviceWorker.ready
-        await subscribe(registration)
+        await subscribe()
       }
     } catch (err) {
       console.error("[Push] Failed to request permission:", err)
+      setError(toSubscriptionError(err))
+      setStatus("error")
     }
   }, [subscribe, workspaceId])
 
-  return { permission, isSubscribed, optedOut, pushDisabledOnServer, requestPermission, unsubscribe }
+  // Manually retry the subscription flow after a failure. Clears the cached VAPID
+  // config so a server config change (e.g. push enabled after env vars added) is
+  // picked up without a full reload.
+  const retry = useCallback(async () => {
+    if (!workspaceId) return
+    vapidCacheRef.current = null
+    setPushDisabledOnServer(false)
+    await subscribe()
+  }, [subscribe, workspaceId])
+
+  return {
+    permission,
+    isSubscribed,
+    status,
+    error,
+    optedOut,
+    pushDisabledOnServer,
+    requestPermission,
+    unsubscribe,
+    retry,
+  }
 }

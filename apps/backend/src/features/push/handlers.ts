@@ -116,5 +116,21 @@ export function createPushHandlers({ pushService }: Dependencies) {
         enabled: pushService.isEnabled(),
       })
     },
+
+    /**
+     * Send a real push notification to all of the caller's devices in this
+     * workspace. Used by the in-app "Send test" diagnostic so the user can
+     * verify the full delivery loop, not just the local SW notification path.
+     */
+    async sendTest(req: Request, res: Response) {
+      if (!pushService.isEnabled()) {
+        throw new HttpError("Push notifications are not enabled", { status: 503, code: "PUSH_DISABLED" })
+      }
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+
+      const { attempted, failed } = await pushService.deliverTestPush(workspaceId, userId)
+      res.json({ attempted, failed, delivered: attempted - failed })
+    },
   }
 }
