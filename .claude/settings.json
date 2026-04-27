@@ -1,6 +1,4 @@
 {
-  "enabledPlugins": {},
-  "plansDirectory": ".claude/plans",
   "hooks": {
     "SessionStart": [
       {
@@ -14,5 +12,9 @@
         ]
       }
     ]
-  }
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
+  },
+  "plansDirectory": ".claude/plans"
 }
