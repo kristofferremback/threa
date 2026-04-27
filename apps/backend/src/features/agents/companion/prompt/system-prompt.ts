@@ -111,6 +111,9 @@ Safety rules:
 
   // Add web search tool instructions if enabled
   if (isToolEnabled(persona.enabledTools, AgentToolNames.WEB_SEARCH)) {
+    const recencyGroundingBullet = context.temporal
+      ? `- For latest/recent/current/news questions, ground your search and answer against the Current Time section; do not mix stale search results or training-cutoff facts into a "recent" answer`
+      : `- For latest/recent/current/news questions, ground recency in web_search tool metadata and fresh results; do not mix stale results or training-cutoff facts into a "recent" answer`
     prompt += `
 
 ## Web Search
@@ -120,6 +123,7 @@ You have a \`web_search\` tool to search the web for current information.
 When using web search:
 - Search when you need up-to-date information not in your training data
 - Search for facts, current events, or specific details you're uncertain about
+${recencyGroundingBullet}
 - Cite sources in your responses using markdown links: [Title](URL)
 - Use the snippets to answer accurately`
   }

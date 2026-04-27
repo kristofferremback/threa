@@ -36,6 +36,7 @@ import {
   hallucinationRateEvaluator,
 } from "./evaluators"
 import {
+  ARIADNE_AGENT_ID,
   COMPANION_MODEL_ID,
   COMPANION_TEMPERATURE,
   COMPANION_SUMMARY_MODEL_ID,
@@ -72,9 +73,6 @@ import {
   attachmentId as generateAttachmentId,
   extractionId as generateExtractionId,
 } from "../../../src/lib/id"
-
-/** The production Ariadne system persona ID */
-const ARIADNE_PERSONA_ID = "persona_system_ariadne"
 
 /** Default vision model for eval (must support image input) */
 const VISION_MODEL_ID = "openrouter:anthropic/claude-sonnet-4.5"
@@ -135,7 +133,8 @@ function createMockStorage(images: Map<string, Buffer>): StorageProvider {
 
 /**
  * Set up test data for a multimodal vision eval case.
- * Creates persona, stream, trigger message with image attachment, and populates mock storage.
+ * Creates eval persona row, stream, trigger message with image attachment, and populates mock storage.
+ * Template config comes from built-in Ariadne (`built-in-agents.ts`) plus workspace overrides.
  */
 async function setupTestData(
   input: MultimodalVisionInput,
@@ -149,19 +148,15 @@ async function setupTestData(
   const pool = ctx.pool
   const modelConfig = getModelConfig(ctx)
 
-  // Read the production Ariadne persona to get its system prompt (INV-44)
-  const productionPersona = await PersonaRepository.findById(pool, ARIADNE_PERSONA_ID)
-  if (!productionPersona) {
-    throw new Error(`Production persona ${ARIADNE_PERSONA_ID} not found - ensure migrations have run`)
+  const templatePersona = await PersonaRepository.findById(pool, ARIADNE_AGENT_ID, ctx.workspaceId)
+  if (!templatePersona) {
+    throw new Error(`Could not resolve built-in companion persona ${ARIADNE_AGENT_ID} (see built-in-agents.ts)`)
   }
-  if (!productionPersona.systemPrompt) {
-    throw new Error(`Production persona ${ARIADNE_PERSONA_ID} has no system prompt`)
+  if (!templatePersona.systemPrompt) {
+    throw new Error(`Built-in companion persona ${ARIADNE_AGENT_ID} has no system prompt`)
   }
 
-  // Create a test persona that uses production Ariadne's config (system prompt, tools, etc.)
-  // but with the eval's model. This is intentional: vision evals need vision-capable models,
-  // which may differ from production. We copy production config to ensure the eval tests
-  // realistic behavior, while model variation lets us test across different vision models.
+  // Copy resolved config into a throwaway row with the eval permutation model (vision-capable).
   const testPersonaId = generatePersonaId()
   await pool.query(
     `
@@ -175,11 +170,11 @@ async function setupTestData(
       testPersonaId,
       `eval-vision-${ulid().toLowerCase().slice(0, 8)}`,
       "Ariadne (Vision Eval)",
-      productionPersona.description,
-      productionPersona.avatarEmoji,
-      productionPersona.systemPrompt,
+      templatePersona.description,
+      templatePersona.avatarEmoji,
+      templatePersona.systemPrompt,
       modelConfig.model,
-      productionPersona.enabledTools ?? ["send_message"],
+      templatePersona.enabledTools ?? ["send_message"],
     ]
   )
 

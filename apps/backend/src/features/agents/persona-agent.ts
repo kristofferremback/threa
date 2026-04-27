@@ -101,6 +101,8 @@ export interface PersonaAgentInput {
   trigger?: typeof AgentTriggers.MENTION
   supersedesSessionId?: string
   rerunContext?: AgentSessionRerunContext
+  /** Invocation time override for deterministic evals/tests. Production leaves this unset. */
+  currentTime?: Date
 }
 
 export interface PersonaAgentResult {
@@ -143,7 +145,17 @@ export class PersonaAgent {
       deleteMessage,
       createThread,
     } = this.deps
-    const { workspaceId, streamId, messageId, personaId, serverId, trigger, supersedesSessionId, rerunContext } = input
+    const {
+      workspaceId,
+      streamId,
+      messageId,
+      personaId,
+      serverId,
+      trigger,
+      supersedesSessionId,
+      rerunContext,
+      currentTime,
+    } = input
 
     // Step 1: Load and validate persona + stream
     const precheck = await withClient(pool, async (client) => {
@@ -226,7 +238,7 @@ export class PersonaAgent {
         // Build all context the agent needs
         const agentContext = await buildAgentContext(
           { db: pool, userPreferencesService, conversationSummaryService },
-          { workspaceId, streamId, stream, messageId, persona, trigger }
+          { workspaceId, streamId, stream, messageId, persona, trigger, currentTime }
         )
 
         // Resolve an attached ContextBag (if any) so `stable + delta` flow into
@@ -375,6 +387,8 @@ export class PersonaAgent {
         const tools = buildToolSet({
           enabledTools: persona.enabledTools,
           tavilyApiKey,
+          currentTime: agentContext.streamContext.temporal?.currentTime,
+          timezone: agentContext.streamContext.temporal?.timezone,
           runWorkspaceAgent,
           workspace: workspaceDeps,
           github: githubDeps,

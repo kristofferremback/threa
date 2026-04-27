@@ -67,6 +67,28 @@ describe("web-search-tool", () => {
     expect(body.include_answer).toBe(true)
   })
 
+  it("should expose invocation time in the tool description and output", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ query: "AI news 2026", results: [], response_time: 0.1 }),
+      } as Response)
+    ) as unknown as typeof fetch
+
+    const tool = createWebSearchTool({
+      tavilyApiKey: "test-api-key",
+      currentTime: "2026-11-15T10:00:00.000Z",
+      timezone: "Europe/Stockholm",
+    })
+    const { output } = await tool.config.execute({ query: "AI news 2026" }, toolOpts)
+    const parsed = JSON.parse(output)
+
+    expect(tool.config.description).toContain("Current invocation time is 2026-11-15T10:00:00.000Z")
+    expect(tool.config.description).toContain("include the current date/year")
+    expect(parsed.searchedAt).toBe("2026-11-15T10:00:00.000Z")
+    expect(parsed.timezone).toBe("Europe/Stockholm")
+  })
+
   it("should return error on API failure", async () => {
     globalThis.fetch = mock(() =>
       Promise.resolve({
