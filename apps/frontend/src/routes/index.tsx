@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { createBrowserRouter, Navigate, useLocation, useParams } from "react-router-dom"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { FallbackLoader } from "@/components/fallback-loader"
 import { useSidebar } from "@/contexts"
 import { useLastStream } from "@/hooks"
 
@@ -15,16 +16,19 @@ export const router = createBrowserRouter([
   },
   {
     path: "/login",
+    HydrateFallback: FallbackLoader,
     lazy: async () => ({ Component: (await import("@/pages/login")).LoginPage }),
     errorElement: <ErrorBoundary />,
   },
   {
     path: "/workspaces",
+    HydrateFallback: FallbackLoader,
     lazy: async () => ({ Component: (await import("@/pages/workspace-select")).WorkspaceSelectPage }),
     errorElement: <ErrorBoundary />,
   },
   {
     path: "/share",
+    HydrateFallback: FallbackLoader,
     lazy: async () => ({ Component: (await import("@/pages/share-target")).ShareTargetPage }),
     errorElement: <ErrorBoundary />,
   },
@@ -32,11 +36,13 @@ export const router = createBrowserRouter([
     // Setup page lives outside WorkspaceLayout — it's a lightweight form that
     // doesn't need the full workspace bootstrap (socket, sidebar, etc.)
     path: "/w/:workspaceId/setup",
+    HydrateFallback: FallbackLoader,
     lazy: async () => ({ Component: (await import("@/pages/user-setup")).UserSetupPage }),
     errorElement: <ErrorBoundary />,
   },
   {
     path: "/w/:workspaceId",
+    HydrateFallback: FallbackLoader,
     lazy: async () => ({ Component: (await import("@/pages/workspace-layout")).WorkspaceLayout }),
     errorElement: <ErrorBoundary />,
     children: [
@@ -46,22 +52,27 @@ export const router = createBrowserRouter([
       },
       {
         path: "drafts",
+        HydrateFallback: FallbackLoader,
         lazy: async () => ({ Component: (await import("@/pages/drafts")).DraftsPage }),
       },
       {
         path: "saved/:tab?",
+        HydrateFallback: FallbackLoader,
         lazy: async () => ({ Component: (await import("@/pages/saved")).SavedPage }),
       },
       {
         path: "threads",
+        HydrateFallback: FallbackLoader,
         lazy: async () => ({ Component: (await import("@/pages/threads")).ThreadsPage }),
       },
       {
         path: "activity/:filter?",
+        HydrateFallback: FallbackLoader,
         lazy: async () => ({ Component: (await import("@/pages/activity")).ActivityPage }),
       },
       {
         path: "memory",
+        HydrateFallback: FallbackLoader,
         lazy: async () => ({ Component: (await import("@/pages/memory")).MemoryPage }),
       },
       {
@@ -70,14 +81,17 @@ export const router = createBrowserRouter([
       },
       {
         path: "s/:streamId",
+        HydrateFallback: FallbackLoader,
         lazy: async () => ({ Component: (await import("@/pages/stream")).StreamPage }),
       },
       {
         path: "share",
+        HydrateFallback: FallbackLoader,
         lazy: async () => ({ Component: (await import("@/pages/share-picker")).SharePickerPage }),
       },
       {
         path: "admin/ai-usage",
+        HydrateFallback: FallbackLoader,
         lazy: async () => ({ Component: (await import("@/pages/ai-usage-admin")).AIUsageAdminPage }),
       },
     ],
