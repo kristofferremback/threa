@@ -44,7 +44,12 @@ export async function loadStreamEvents(streamId: string, fromSequenceNum: number
   const unsent = await db.events
     .where("streamId")
     .equals(streamId)
-    .filter((e) => (e._status === "pending" || e._status === "failed") && !loadedIds.has(e.id))
+    .filter(
+      (e) =>
+        (e._status === "pending" || e._status === "failed") &&
+        !loadedIds.has(e.id) &&
+        (fromSequenceNum == null || e._sequenceNum >= fromSequenceNum)
+    )
     .toArray()
 
   const merged = unsent.length > 0 ? [...reversed, ...unsent] : reversed

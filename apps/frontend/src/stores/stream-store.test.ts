@@ -183,4 +183,22 @@ describe("loadStreamEvents", () => {
     // (seqs 51..200 — 200 reals capped to latest 150 = seqs 51..200).
     expect(ids[0]).toBe("temp_low")
   })
+
+  it("excludes pending events below the floor when one is provided", async () => {
+    // Floor-bounded reads must not pull in unsent events with
+    // `_sequenceNum < fromSequenceNum`, or the window contract breaks.
+    const streamId = "stream_floored"
+    await db.events.bulkPut([
+      makeRealEvent(streamId, "100"),
+      makeRealEvent(streamId, "101"),
+      // Pending event below the floor — must be filtered out.
+      makeOptimisticEvent(streamId, "temp_below", "50"),
+      // Pending event above the floor — must be kept.
+      makeOptimisticEvent(streamId, "temp_above", "999999"),
+    ])
+
+    const events = await loadStreamEvents(streamId, 100)
+
+    expect(events.map((e) => e.id)).toEqual(["evt_stream_floored_100", "evt_stream_floored_101", "temp_above"])
+  })
 })
