@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useLiveQuery } from "dexie-react-hooks"
 import { db } from "@/db"
 import { useSharedMessageHydration } from "@/components/shared-messages/context"
-import type { StreamType, Visibility } from "@threa/types"
+import type { AttachmentSummary, StreamType, Visibility } from "@threa/types"
 
 /**
  * Resolved preview for a shared-message pointer. `authorName` is optional at
@@ -16,6 +16,15 @@ export interface SharedMessageResolved {
   actorType: string
   authorName?: string
   editedAt: string | null
+  /**
+   * Attachments on the source message. Always present from the server-side
+   * hydration map; absent only on the IndexedDB-cache fallback (cached
+   * events store attachment metadata under the same key but the cache
+   * fallback below intentionally doesn't reach for it — the timeline
+   * renders attachments via its own `payload.attachments` path, so the
+   * shared-message card only needs them when hydrated from the server).
+   */
+  attachments?: AttachmentSummary[]
 }
 
 export interface SharedMessageDeleted {
@@ -129,6 +138,7 @@ export function useSharedMessageSource(messageId: string, sourceStreamId: string
           actorType: hydrated.authorType,
           authorName: hydrated.authorName,
           editedAt: hydrated.editedAt,
+          attachments: hydrated.attachments,
         }
       }
     }

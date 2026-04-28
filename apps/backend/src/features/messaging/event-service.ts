@@ -6,7 +6,7 @@ import { StreamMemberRepository } from "../streams"
 import { checkStreamAccess, resolveEffectiveAccessStream } from "../streams"
 import { MessageRepository, Message } from "./repository"
 import { ShareService, type ResolveEffectiveStream } from "./sharing"
-import { AttachmentRepository, isVideoAttachment } from "../attachments"
+import { AttachmentRepository, toAttachmentSummary } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
 import { eventId, messageId, messageVersionId } from "../../lib/id"
@@ -16,6 +16,7 @@ import { messagesTotal } from "../../lib/observability"
 import {
   AttachmentSafetyStatuses,
   AuthorTypes,
+  type AttachmentSummary,
   type AuthorType,
   type EventType,
   type SourceItem,
@@ -42,14 +43,6 @@ const resolveEffectiveStreamAdapter: ResolveEffectiveStream = async (db, source)
 }
 
 // Event payloads
-export interface AttachmentSummary {
-  id: string
-  filename: string
-  mimeType: string
-  sizeBytes: number
-  processingStatus?: string
-}
-
 export interface MessageCreatedPayload {
   messageId: string
   contentJson: JSONContent
@@ -257,13 +250,7 @@ export class EventService {
           throw new Error("Invalid attachment IDs: must be clean, unattached, and belong to this workspace")
         }
 
-        attachmentSummaries = attachments.map((a) => ({
-          id: a.id,
-          filename: a.filename,
-          mimeType: a.mimeType,
-          sizeBytes: a.sizeBytes,
-          ...(isVideoAttachment(a.mimeType, a.filename) && { processingStatus: a.processingStatus }),
-        }))
+        attachmentSummaries = attachments.map(toAttachmentSummary)
       }
 
       // Non-empty metadata only — keep payloads and projections clean of `{}`.

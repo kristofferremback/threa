@@ -58,6 +58,7 @@ describe("MarkdownContent — sharedMessage paragraph swap", () => {
         contentMarkdown: "hi from the source",
         editedAt: null,
         createdAt: "2026-04-23T10:00:00Z",
+        attachments: [],
       },
     })
 
@@ -107,6 +108,7 @@ describe("MarkdownContent — sharedMessage paragraph swap", () => {
         contentMarkdown: "**Hey** with [a link](https://example.com)",
         editedAt: null,
         createdAt: "2026-04-23T10:00:00Z",
+        attachments: [],
       },
     })
 
