@@ -67,7 +67,18 @@ function formatInlineMessage(item: RenderableMessage, options?: { focal?: boolea
   // alongside the section header. Bullet stays a simple dash everywhere
   // else for prompt-cache stability across non-focal renders.
   const bullet = options?.focal ? "►" : "-"
-  return `${bullet} [${item.messageId}] ${item.authorName} at ${ts}${edited}:\n  ${item.contentMarkdown.replaceAll("\n", "\n  ")}`
+  // Attachments render as a sibling line under the message body so the model
+  // (and the trace UI) can see what was attached. We only carry filename +
+  // mime + size — full text is loaded on demand through the existing
+  // attachment tools, keeping the stable region small.
+  const attachments =
+    item.attachments && item.attachments.length > 0 ? `\n  ${formatAttachments(item.attachments)}` : ""
+  return `${bullet} [${item.messageId}] ${item.authorName} at ${ts}${edited}:\n  ${item.contentMarkdown.replaceAll("\n", "\n  ")}${attachments}`
+}
+
+function formatAttachments(attachments: NonNullable<RenderableMessage["attachments"]>): string {
+  const parts = attachments.map((a) => `[${a.id}] ${a.filename} (${a.mimeType}, ${a.sizeBytes} bytes)`)
+  return `Attachments: ${parts.join("; ")}`
 }
 
 export interface DeltaRenderInput {

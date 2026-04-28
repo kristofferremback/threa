@@ -1,11 +1,12 @@
 import type { Querier } from "../../../db"
-import { ContextRefKinds, type ContextIntent } from "@threa/types"
+import { ContextIntents, ContextRefKinds, type ContextIntent } from "@threa/types"
 import { HttpError } from "../../../lib/errors"
 import { StreamRepository, checkStreamAccess } from "../../streams"
 import { MessageRepository } from "../../messaging"
 import { logger } from "../../../lib/logger"
 import { ContextBagRepository } from "./repository"
 import { getResolver } from "./registry"
+import { DISCUSS_WINDOW_TOTAL } from "./resolvers/thread-resolver"
 
 export interface ContextRefSource {
   streamId: string
@@ -124,10 +125,20 @@ export async function fetchStreamBag(
   ])
   const streamById = new Map(sourceStreams.map((s) => [s.id, s]))
 
+  // For DISCUSS_THREAD, the resolver only sends ~DISCUSS_WINDOW_TOTAL messages
+  // to the model regardless of how big the source stream is. Surfacing the
+  // raw stream total in the context pill ("487 messages in #intro") is
+  // misleading because the AI never sees more than the window — clamp the
+  // displayed count to what's actually shared so the chip matches reality.
+  const isWindowedIntent = bag.intent === ContextIntents.DISCUSS_THREAD
+
   const enriched: EnrichedContextRef[] = []
   for (const ref of visibleRefs) {
     const sourceStream = streamById.get(ref.streamId)
     if (!sourceStream) continue
+
+    const totalCount = itemCounts.get(ref.streamId) ?? 0
+    const itemCount = isWindowedIntent ? Math.min(totalCount, DISCUSS_WINDOW_TOTAL) : totalCount
 
     enriched.push({
       kind: ContextRefKinds.THREAD,
@@ -140,7 +151,7 @@ export async function fetchStreamBag(
         displayName: sourceStream.displayName ?? null,
         slug: sourceStream.slug ?? null,
         type: sourceStream.type,
-        itemCount: itemCounts.get(ref.streamId) ?? 0,
+        itemCount,
       },
     })
   }

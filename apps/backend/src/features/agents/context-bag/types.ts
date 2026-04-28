@@ -1,6 +1,7 @@
 import type { ContextBag, ContextIntent, ContextRef, ContextRefKind } from "@threa/types"
 import type { Querier } from "../../../db"
 import type { AI, CostContext } from "../../../lib/ai/ai"
+import type { AttachmentSummary } from "../../messaging"
 
 /**
  * Persisted bag row (before resolution). `lastRendered` is the snapshot
@@ -40,6 +41,12 @@ export interface LastRenderedSnapshot {
 /**
  * Minimal renderable unit for the thread resolver. Kept narrow so the resolver
  * doesn't leak the full Message shape into the render step.
+ *
+ * Attachments use the same `AttachmentSummary` shape that message_created
+ * events carry on the wire — no need for a parallel context-bag-only type.
+ * Without `attachments` here the focal message in a "Discuss with Ariadne"
+ * window renders as text-only, which makes the trace lie about what the
+ * user attached.
  */
 export interface RenderableMessage {
   messageId: string
@@ -49,6 +56,8 @@ export interface RenderableMessage {
   createdAt: string
   editedAt: string | null
   sequence: bigint
+  /** Attachments on this source message, if any. Omitted when the message has none. */
+  attachments?: AttachmentSummary[]
 }
 
 /**

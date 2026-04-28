@@ -61,6 +61,29 @@ describe("renderStable", () => {
     expect(rendered).toContain("A short summary [msg_a]")
     expect(rendered).not.toContain("Messages (chronological)")
   })
+
+  test("renders attachment metadata under each message that has attachments", () => {
+    // Without this the Discuss-with-Ariadne trace shows text-only messages
+    // even when the focal message had a PDF attached, which makes the model
+    // (and the human reading the trace) think nothing was shared.
+    const rendered = renderStable({
+      preamble: "p",
+      inlineItems: [
+        item({
+          messageId: "msg_a",
+          contentMarkdown: "see attached",
+          attachments: [{ id: "att_1", filename: "spec.pdf", mimeType: "application/pdf", sizeBytes: 12345 }],
+        }),
+        item({ messageId: "msg_b", contentMarkdown: "no attachments here" }),
+      ],
+      refLabel: "thread:stream_x",
+    })
+    expect(rendered).toContain("[att_1] spec.pdf")
+    expect(rendered).toContain("application/pdf")
+    expect(rendered).toContain("12345 bytes")
+    // Messages without attachments should NOT get an empty attachments line.
+    expect(rendered).not.toMatch(/no attachments here\n\s+Attachments:/)
+  })
 })
 
 describe("renderDelta", () => {

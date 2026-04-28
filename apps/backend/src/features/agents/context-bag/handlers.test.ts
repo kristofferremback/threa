@@ -200,6 +200,45 @@ describe("createContextBagHandlers.getStreamBag", () => {
     })
   })
 
+  it("clamps itemCount to the discuss-window size for DISCUSS_THREAD bags", async () => {
+    // Regression: the resolver only sends ~50 messages to the AI for the
+    // discuss-thread intent, but the chip used to show the raw stream total
+    // (e.g. "487 messages in #intro") which lied about what the model
+    // actually sees. Pin the clamp here so the chip matches reality.
+    stubWithClient()
+    stubAccessOk()
+    spyOn(StreamRepository, "findByIds").mockResolvedValue([
+      {
+        id: "stream_src",
+        workspaceId: "ws_1",
+        type: "channel",
+        slug: "intro",
+        displayName: "Intro",
+      } as any,
+    ])
+    spyOn(ContextBagRepository, "findByStream").mockResolvedValue({
+      id: "sca_1",
+      workspaceId: "ws_1",
+      streamId: "stream_scratch",
+      intent: ContextIntents.DISCUSS_THREAD,
+      refs: [{ kind: ContextRefKinds.THREAD, streamId: "stream_src" }],
+      lastRendered: null,
+      createdBy: "usr_1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    spyOn(ThreadResolver, "assertAccess").mockResolvedValue(undefined)
+    spyOn(MessageRepository, "countByStreams").mockResolvedValue(new Map([["stream_src", 487]]))
+
+    const handlers = createContextBagHandlers({ pool: {} as any, ai: {} as any })
+    const req = mockReq(undefined, { streamId: "stream_scratch" })
+    const res = mockRes() as any
+    await handlers.getStreamBag(req, res)
+
+    expect(res.statusCode).toBe(200)
+    expect((res.body as any).refs[0].source.itemCount).toBe(50)
+  })
+
   it("returns an empty bag when the stream has no attachment", async () => {
     stubWithClient()
     stubAccessOk()
