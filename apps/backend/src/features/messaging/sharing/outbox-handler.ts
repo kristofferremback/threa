@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import type { Server } from "socket.io"
-import type { OutboxEvent } from "../../../lib/outbox"
+import { isOutboxEventType, type OutboxEvent } from "../../../lib/outbox"
 import { SharedMessageRepository } from "./repository"
 
 /**
@@ -30,18 +30,18 @@ export const POINTER_INVALIDATED_EVENT = "pointer:invalidated"
  * nothing to re-fetch.
  */
 function extractMessageIdsForInvalidation(event: OutboxEvent): string[] {
-  if (event.eventType === "message:edited") {
-    const inner = (event.payload as { event?: { payload?: { messageId?: string } } }).event
-    const id = inner?.payload?.messageId
-    return id ? [id] : []
+  if (isOutboxEventType(event, "message:edited")) {
+    // event.payload.event is a StreamEvent whose inner `payload` is typed
+    // as `unknown` (event-shape varies by event type). Narrow only that
+    // field; the outer envelope is fully typed via isOutboxEventType.
+    const inner = event.payload.event?.payload as { messageId?: string } | undefined
+    return inner?.messageId ? [inner.messageId] : []
   }
-  if (event.eventType === "message:deleted") {
-    const id = (event.payload as { messageId?: string }).messageId
-    return id ? [id] : []
+  if (isOutboxEventType(event, "message:deleted")) {
+    return event.payload.messageId ? [event.payload.messageId] : []
   }
-  if (event.eventType === "messages:moved") {
-    const ids = (event.payload as { movedMessageIds?: string[] }).movedMessageIds
-    return ids ?? []
+  if (isOutboxEventType(event, "messages:moved")) {
+    return event.payload.movedMessageIds
   }
   return []
 }

@@ -321,6 +321,52 @@ describe("hydrateSharedMessageIds", () => {
     })
   })
 
+  it("emits private (not truncated) when a past-cap source has been moved into an inaccessible stream", async () => {
+    // Past-cap source M lives in stream_private after a move; the cached
+    // streamId on the share-node attrs is "stream_cached", but the viewer
+    // can only read the streams reachable along the BFS chain. Surfacing
+    // the live `stream_private` without an access check would leak the
+    // existence of the new private stream the viewer has no rights to.
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockImplementation(async (_db, _ws, ids) => {
+      const map = new Map<string, any>()
+      for (const id of ids) {
+        const next = id.replace(/^msg_(\d+)$/, (_m, n) => `msg_${Number(n) + 1}`)
+        const past = id === `msg_${MAX_HYDRATION_DEPTH}`
+        map.set(
+          id,
+          makeMessage({
+            id,
+            streamId: past ? "stream_private" : "stream_chain",
+            contentJson: past
+              ? { type: "doc", content: [] }
+              : {
+                  type: "doc",
+                  content: [{ type: "sharedMessage", attrs: { messageId: next, streamId: "stream_cached" } }],
+                },
+          })
+        )
+      }
+      return map
+    })
+    stubAuthorLookups()
+    spyOn(streamsBarrel, "listAccessibleStreamIds").mockImplementation(async (_db, _ws, _uid, candidates) => {
+      // Viewer can read the BFS chain's stream but NOT the post-move private one.
+      return new Set([...candidates].filter((id) => id !== "stream_private"))
+    })
+    spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(new Set())
+    spyOn(StreamRepository, "findByIds").mockResolvedValue([
+      { id: "stream_private", type: "channel", visibility: "private", rootStreamId: null } as any,
+    ])
+
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", VIEWER_ID, ["msg_0"])
+    expect(result[`msg_${MAX_HYDRATION_DEPTH}`]).toEqual({
+      state: "private",
+      messageId: `msg_${MAX_HYDRATION_DEPTH}`,
+      sourceStreamKind: "channel",
+      sourceVisibility: "private",
+    })
+  })
+
   it("skips truncated emission for a private inner pointer (no extra access leak)", async () => {
     // A two-hop chain where the viewer can read msg_outer but not msg_inner.
     // The plan says inner should render as `private`, not as `truncated`.
