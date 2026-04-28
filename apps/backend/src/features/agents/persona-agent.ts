@@ -1,8 +1,10 @@
 import type { Pool } from "pg"
+import crypto from "crypto"
 import { z } from "zod"
 import { withClient, type Querier } from "../../db"
 import {
   AgentStepTypes,
+  AgentToolNames,
   AgentTriggers,
   AuthorTypes,
   StreamTypes,
@@ -29,6 +31,7 @@ import type { AttachmentService } from "../attachments"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
+import { GeneralResearcher } from "./general-researcher"
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
 import { resolveBagForStream, persistSnapshot, appendBagToSystemPrompt, type ResolvedBag } from "./context-bag"
@@ -54,6 +57,7 @@ export interface PersonaAgentDeps {
   sessionAbortRegistry: SessionAbortRegistry
   userPreferencesService: UserPreferencesService
   workspaceAgent: WorkspaceAgent
+  generalResearcher?: GeneralResearcher
   searchService: SearchService
   conversationSummaryService: ConversationSummaryService
   attachmentService: AttachmentService
@@ -132,6 +136,7 @@ export class PersonaAgent {
       sessionAbortRegistry,
       userPreferencesService,
       workspaceAgent,
+      generalResearcher,
       searchService,
       conversationSummaryService,
       attachmentService,
@@ -339,6 +344,78 @@ export class PersonaAgent {
         }
 
         const targetStreamId = sessionStreamId
+
+        const checkForNewResearchMessages = async (sinceSequence: bigint) => {
+          const events = await StreamEventRepository.list(pool, targetStreamId, {
+            types: ["message_created", "message_edited", "message_deleted"],
+            afterSequence: sinceSequence,
+            limit: 50,
+          })
+          const filteredEvents = events.filter((event) => event.actorId !== persona.id)
+          if (filteredEvents.length === 0) {
+            return { messages: [], lastSeenSequence: sinceSequence }
+          }
+          const changedMessageIds = filteredEvents
+            .map((event) => (event.payload as { messageId?: string }).messageId)
+            .filter((id): id is string => typeof id === "string")
+          const messagesById = await MessageRepository.findByIds(pool, changedMessageIds)
+          const userIds = [
+            ...new Set(
+              filteredEvents
+                .filter((event) => event.actorType === "user" && event.actorId)
+                .map((event) => event.actorId!)
+            ),
+          ]
+          const personaIds = [
+            ...new Set(
+              filteredEvents
+                .filter((event) => event.actorType === "persona" && event.actorId)
+                .map((event) => event.actorId!)
+            ),
+          ]
+          const [members, personas] = await Promise.all([
+            userIds.length > 0 ? UserRepository.findByIds(pool, workspaceId, userIds) : Promise.resolve([]),
+            personaIds.length > 0 ? PersonaRepository.findByIds(pool, personaIds) : Promise.resolve([]),
+          ])
+          const names = new Map<string, string>()
+          for (const member of members) names.set(member.id, member.name)
+          for (const eventPersona of personas) names.set(eventPersona.id, eventPersona.name)
+          const maxSequence = filteredEvents.reduce(
+            (max, event) => (event.sequence > max ? event.sequence : max),
+            sinceSequence
+          )
+          await AgentSessionRepository.updateLastSeenSequence(pool, session.id, maxSequence)
+          return {
+            lastSeenSequence: maxSequence,
+            messages: filteredEvents.flatMap((event) => {
+              const messageId = (event.payload as { messageId?: string }).messageId
+              if (!messageId) return []
+              const message = messagesById.get(messageId)
+              const authorId = event.actorId ?? message?.authorId ?? "system"
+              const authorType = event.actorType ?? message?.authorType ?? AuthorTypes.SYSTEM
+              const authorName = names.get(authorId) ?? (authorType === AuthorTypes.SYSTEM ? "System" : "Unknown")
+              let content = "[Message updated]"
+              if (event.eventType === "message_deleted") {
+                content = "[Message deleted]"
+              } else if (event.eventType === "message_created" && !message?.contentMarkdown) {
+                content = "[Message created]"
+              } else if (event.eventType === "message_edited" && !message?.contentMarkdown) {
+                content = "[Message edited]"
+              } else if (message?.contentMarkdown) {
+                content = message.contentMarkdown
+              }
+              return [
+                {
+                  sequence: event.sequence,
+                  authorName,
+                  changeType: event.eventType,
+                  content,
+                },
+              ]
+            }),
+          }
+        }
+
         const supersededMessagePlan = await this.loadSupersededMessagePlan(db, {
           supersedesSessionId,
           streamId: targetStreamId,
@@ -415,6 +492,37 @@ export class PersonaAgent {
           currentTime: agentContext.streamContext.temporal?.currentTime,
           timezone: agentContext.streamContext.temporal?.timezone,
           runWorkspaceAgent,
+          runGeneralResearch:
+            generalResearcher && agentContext.triggerMessage
+              ? (query, opts) =>
+                  generalResearcher.research({
+                    workspaceId,
+                    streamId: targetStreamId,
+                    sessionId: session.id,
+                    toolCallId: opts.toolCallId,
+                    invocationKey: `query:${crypto.createHash("sha256").update(query).digest("hex")}`,
+                    query,
+                    conversationSummary: agentContext.streamContext.conversationHistory
+                      .slice(-8)
+                      .map((m) => `${m.authorType}: ${m.contentMarkdown}`)
+                      .join("\n"),
+                    invokingUserId: agentContext.invokingUserId,
+                    signal: opts.signal,
+                    onSubstep: opts.onSubstep,
+                    deadlineAt: opts.deadlineAt,
+                    runWorkspaceAgent,
+                    github: githubDeps,
+                    tavilyApiKey,
+                    costContext: {
+                      workspaceId,
+                      userId: agentContext.invokingUserId,
+                      sessionId: session.id,
+                      origin: agentContext.invokingUserId ? "user" : "system",
+                    },
+                    checkForNewMessages: checkForNewResearchMessages,
+                    initialLastSeenSequence: session.lastSeenSequence ?? initialSequence,
+                  })
+              : undefined,
           workspace: workspaceDeps,
           github: githubDeps,
           supportsVision: modelRegistry.supportsVision(persona.model),
@@ -502,10 +610,11 @@ export class PersonaAgent {
             return null
           },
           toolSignalProvider: (_toolCallId, toolName) => {
-            // Only wire graceful-abort for workspace_research in V1. Future long-running
-            // tools can opt in here. The registry is lazily populated so sessions that
-            // never invoke research don't allocate a controller.
-            if (toolName !== "workspace_research") return undefined
+            // The registry is lazily populated so sessions that never invoke
+            // long-running research tools do not allocate a controller.
+            if (toolName !== AgentToolNames.WORKSPACE_RESEARCH && toolName !== AgentToolNames.GENERAL_RESEARCH) {
+              return undefined
+            }
             const controller = sessionAbortRegistry.register(session.id, {
               workspaceId,
               streamId: sessionStreamId,
@@ -678,8 +787,8 @@ export class PersonaAgent {
           }
         } finally {
           // Release the graceful-abort controller (if any was registered by the
-          // toolSignalProvider during workspace_research tool invocation). Safe to
-          // call when nothing is registered.
+          // toolSignalProvider during workspace_research or general_research).
+          // Safe to call when nothing is registered.
           sessionAbortRegistry.unregister(session.id)
         }
       }

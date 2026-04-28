@@ -142,6 +142,23 @@ When to use read_url:
 - To verify information or get complete context from a source`
   }
 
+  if (isToolEnabled(persona.enabledTools, AgentToolNames.GENERAL_RESEARCH)) {
+    prompt += `
+
+## General research
+
+You have a \`general_research\` tool for bounded, multi-step research across workspace context (when available), the public web, and connected integrations (e.g. GitHub) in one pass.
+
+Use general_research when:
+- The user wants a synthesized answer that may require several lookups or sources
+- The question spans internal workspace knowledge plus external or integration data
+- Workspace-only search (\`workspace_research\`) is not enough on its own
+
+Prefer simpler tools (\`workspace_research\`, \`web_search\`, \`read_url\`, GitHub tools) when a single surface clearly suffices.
+
+The tool may return partial results if the user stops research or time runs out — acknowledge limits briefly and answer with what you have.`
+  }
+
   // Add attachment tool instructions if enabled
   if (isToolEnabled(persona.enabledTools, AgentToolNames.SEARCH_ATTACHMENTS)) {
     prompt += `

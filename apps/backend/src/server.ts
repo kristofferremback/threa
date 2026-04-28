@@ -74,6 +74,7 @@ import {
   createOrphanSessionCleanup,
   createPersonaAgentWorker,
   WorkspaceAgent,
+  GeneralResearcher,
   PersonaAgent,
   TraceEmitter,
   SessionAbortRegistry,
@@ -465,6 +466,13 @@ export async function startServer(): Promise<ServerInstance> {
 
   // Create workspace agent for on-demand workspace knowledge retrieval
   const workspaceAgent = new WorkspaceAgent({ pool, ai, configResolver, embeddingService })
+  const generalResearcher = new GeneralResearcher({
+    pool,
+    ai,
+    storage,
+    workspaceAgent,
+    leaseOwner: serverId,
+  })
 
   const traceEmitter = new TraceEmitter({ io, pool })
   const conversationSummaryService = new ConversationSummaryService({
@@ -479,6 +487,7 @@ export async function startServer(): Promise<ServerInstance> {
     sessionAbortRegistry,
     userPreferencesService,
     workspaceAgent,
+    generalResearcher,
     searchService,
     conversationSummaryService,
     attachmentService,
@@ -858,6 +867,7 @@ export async function startServer(): Promise<ServerInstance> {
     await outboxRetentionWorker.stop()
     await outboxDispatcher.stop()
     await jobQueue.stop()
+    await generalResearcher.releaseLeases()
     logger.info("Closing socket.io...")
 
     // Close socket.io with callback - add timeout since it can hang with postgres adapter

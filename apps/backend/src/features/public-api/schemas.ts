@@ -7,7 +7,9 @@
  */
 import { z } from "zod"
 import { STREAM_TYPES, MEMO_TYPES, KNOWLEDGE_TYPES, EXTRACTION_CONTENT_TYPES } from "@threa/types"
-import { messageMetadataSchema, messageMetadataFilterSchema } from "../messaging"
+// Import directly to avoid loading messaging handlers while public-api schemas are initializing.
+// eslint-disable-next-line no-restricted-imports
+import { messageMetadataSchema, messageMetadataFilterSchema } from "../messaging/metadata-schema"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
 const PUBLIC_ATTACHMENT_SEARCH_MAX_LIMIT = 50

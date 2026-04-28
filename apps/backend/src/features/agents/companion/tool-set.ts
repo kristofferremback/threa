@@ -1,10 +1,12 @@
 import { AgentToolNames } from "@threa/types"
 import type { AgentTool } from "../runtime"
 import type { WorkspaceAgentResult } from "../researcher"
-import type { GitHubToolDeps, RunWorkspaceAgentOptions } from "../tools"
+import type { GeneralResearchResult } from "../general-researcher"
+import type { GitHubToolDeps, RunGeneralResearchOptions, RunWorkspaceAgentOptions } from "../tools"
 import type { WorkspaceToolDeps } from "../tools/tool-deps"
 import { logger } from "../../../lib/logger"
 import {
+  createGeneralResearchTool,
   createWebSearchTool,
   createReadUrlTool,
   createSearchMessagesTool,
@@ -43,6 +45,7 @@ export interface ToolSetConfig {
   currentTime?: string
   timezone?: string
   runWorkspaceAgent?: (query: string, opts: RunWorkspaceAgentOptions) => Promise<WorkspaceAgentResult>
+  runGeneralResearch?: (query: string, opts: RunGeneralResearchOptions) => Promise<GeneralResearchResult>
   workspace?: WorkspaceToolDeps
   github?: GitHubToolDeps
   supportsVision?: boolean
@@ -54,8 +57,17 @@ export interface ToolSetConfig {
  * Returns AgentTool[] — send_message is NOT included (the runtime handles it).
  */
 export function buildToolSet(config: ToolSetConfig): AgentTool[] {
-  const { enabledTools, tavilyApiKey, currentTime, timezone, runWorkspaceAgent, workspace, github, supportsVision } =
-    config
+  const {
+    enabledTools,
+    tavilyApiKey,
+    currentTime,
+    timezone,
+    runWorkspaceAgent,
+    runGeneralResearch,
+    workspace,
+    github,
+    supportsVision,
+  } = config
 
   if (!github && enabledTools !== null) {
     const requestedGithubTools = enabledTools.filter((t) => t.startsWith("github_"))
@@ -70,6 +82,9 @@ export function buildToolSet(config: ToolSetConfig): AgentTool[] {
   const tools: Array<AgentTool | null> = [
     // Workspace research (available when agent has trigger context)
     runWorkspaceAgent ? createWorkspaceResearchTool({ runWorkspaceAgent }) : null,
+    runGeneralResearch && isToolEnabled(enabledTools, AgentToolNames.GENERAL_RESEARCH)
+      ? createGeneralResearchTool({ runGeneralResearch })
+      : null,
 
     // Web tools
     tavilyApiKey && isToolEnabled(enabledTools, AgentToolNames.WEB_SEARCH)

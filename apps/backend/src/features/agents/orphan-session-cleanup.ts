@@ -1,10 +1,12 @@
 import type { Pool } from "pg"
 import { AgentSessionRepository, SessionStatuses } from "./session-repository"
+import { GeneralResearchRepository } from "./general-researcher"
 import { logger } from "../../lib/logger"
 
 export interface OrphanSessionCleanup {
   start(): void
   stop(): void
+  runOnce(): Promise<void>
 }
 
 /**
@@ -37,8 +39,22 @@ export function createOrphanSessionCleanup(
 
       logger.info({ count: orphaned.length }, "Found orphaned sessions, marking as failed")
 
+      // If research state cannot be read, do not mark sessions FAILED; the next
+      // tick can retry rather than terminating resumable work incorrectly.
+      const activeResearchSessionIds = await GeneralResearchRepository.listActiveRunSessionIds(
+        pool,
+        orphaned.map((session) => session.id)
+      )
+
       for (const session of orphaned) {
         try {
+          if (activeResearchSessionIds.has(session.id)) {
+            logger.info(
+              { sessionId: session.id, streamId: session.streamId },
+              "Leaving orphaned session running because resumable general research is active"
+            )
+            continue
+          }
           await AgentSessionRepository.updateStatus(pool, session.id, SessionStatuses.FAILED, {
             error: "Session orphaned (stale heartbeat)",
           })
@@ -68,5 +84,7 @@ export function createOrphanSessionCleanup(
         logger.info("Stopped orphan session cleanup")
       }
     },
+
+    runOnce: cleanup,
   }
 }

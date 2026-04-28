@@ -46,6 +46,12 @@ export {
   type RunWorkspaceAgentOptions,
 } from "./workspace-research-tool"
 export {
+  createGeneralResearchTool,
+  type GeneralResearchToolInput,
+  type GeneralResearchCallbacks,
+  type RunGeneralResearchOptions,
+} from "./general-research-tool"
+export {
   createGithubListReposTool,
   createGithubListBranchesTool,
   createGithubListCommitsTool,

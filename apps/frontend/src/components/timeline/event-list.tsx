@@ -2,7 +2,6 @@ import { useMemo } from "react"
 import {
   COMMAND_EVENT_TYPES,
   AGENT_SESSION_EVENT_TYPES,
-  AgentStepTypes,
   type CommandEventType,
   type AgentSessionEventType,
   type AgentSessionStartedPayload,
@@ -19,6 +18,7 @@ import { AgentSessionEvent } from "./agent-session-event"
 import { CommandEvent } from "./command-event"
 import { UnreadDivider } from "./unread-divider"
 import { Skeleton } from "@/components/ui/skeleton"
+import { isAbortableAgentStep } from "@/lib/step-config"
 
 interface EventListProps {
   timelineItems: TimelineItem[]
@@ -423,9 +423,7 @@ export function EventList({
           messageCount: activity.messageCount,
         })
         substeps.set(activity.sessionId, activity.substep)
-        // V1: only workspace_search supports graceful abort. The registry is generic
-        // so other tools can opt in by adding their step type here.
-        canAbort.set(activity.sessionId, activity.currentStepType === AgentStepTypes.WORKSPACE_SEARCH)
+        canAbort.set(activity.sessionId, isAbortableAgentStep(activity.currentStepType))
       }
     }
     return { sessionLiveCounts: counts, sessionLiveSubsteps: substeps, sessionCanAbort: canAbort }

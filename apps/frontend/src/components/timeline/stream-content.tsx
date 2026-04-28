@@ -38,12 +38,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { isAbortableAgentStep } from "@/lib/step-config"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
 import {
   StreamTypes,
   Visibilities,
-  AgentStepTypes,
   type Stream,
   type StreamEvent,
   type StreamMember,
@@ -1294,7 +1294,7 @@ function VirtuosoMessageList({
           messageCount: activity.messageCount,
         })
         substeps.set(activity.sessionId, activity.substep)
-        canAbort.set(activity.sessionId, activity.currentStepType === AgentStepTypes.WORKSPACE_SEARCH)
+        canAbort.set(activity.sessionId, isAbortableAgentStep(activity.currentStepType))
       }
     }
     return { sessionLiveCounts: counts, sessionLiveSubsteps: substeps, sessionCanAbort: canAbort }

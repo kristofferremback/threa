@@ -3,12 +3,13 @@
  * Single source of truth for all step type display properties.
  * Both inline activity indicators and trace dialog use this config.
  */
-import type { AgentStepType } from "@threa/types"
+import { AgentStepTypes, type AgentStepType } from "@threa/types"
 import {
   Inbox,
   Lightbulb,
   RotateCcw,
   Search,
+  Compass,
   FileText,
   Building2,
   Github,
@@ -82,6 +83,14 @@ export const STEP_DISPLAY_CONFIG: Record<AgentStepType, StepDisplayConfig> = {
     saturation: 60,
     lightness: 50,
   },
+  general_research: {
+    label: "Research",
+    inlineLabel: "Researching...",
+    icon: Compass,
+    hue: 250,
+    saturation: 70,
+    lightness: 55,
+  },
   github_access: {
     label: "GitHub",
     inlineLabel: "Reading GitHub...",
@@ -131,4 +140,8 @@ export const STEP_DISPLAY_CONFIG: Record<AgentStepType, StepDisplayConfig> = {
 export function getStepInlineLabel(stepType: AgentStepType | null): string {
   if (!stepType) return "Working..."
   return STEP_DISPLAY_CONFIG[stepType]?.inlineLabel ?? "Working..."
+}
+
+export function isAbortableAgentStep(stepType: AgentStepType | null): boolean {
+  return stepType === AgentStepTypes.WORKSPACE_SEARCH || stepType === AgentStepTypes.GENERAL_RESEARCH
 }
