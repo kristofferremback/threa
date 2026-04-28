@@ -1,7 +1,6 @@
-import type { ContextBag, ContextIntent, ContextRef, ContextRefKind } from "@threa/types"
+import type { AttachmentSummary, ContextBag, ContextIntent, ContextRef, ContextRefKind } from "@threa/types"
 import type { Querier } from "../../../db"
 import type { AI, CostContext } from "../../../lib/ai/ai"
-import type { AttachmentSummary } from "../../messaging"
 
 /**
  * Persisted bag row (before resolution). `lastRendered` is the snapshot

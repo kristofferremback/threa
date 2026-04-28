@@ -3,14 +3,40 @@ import type { Pool } from "pg"
 import { withClient } from "../../../db"
 import type { AI, CostContext } from "../../../lib/ai/ai"
 import { logger } from "../../../lib/logger"
-import type { ContextRefKind } from "@threa/types"
+import { ContextIntents, type ContextRefKind } from "@threa/types"
+import { MessageRepository } from "../../messaging"
+import { StreamRepository } from "../../streams"
 import { ContextBagRepository } from "./repository"
 import { SummaryRepository } from "./summary-repository"
 import { getIntentConfig, getResolver } from "./registry"
 import { diffInputs } from "./diff"
 import { buildSnapshot, renderDelta, renderStable } from "./render"
 import { summarizeThread } from "./summarizer"
+import { DISCUSS_WINDOW_TOTAL } from "./resolvers/thread-resolver"
 import type { LastRenderedSnapshot, RenderableMessage, ResolvedRef, StoredContextBag, SummaryInput } from "./types"
+
+/**
+ * Per-ref grouping returned alongside the flat `items` list. Callers that need
+ * to render "what's attached to this turn" — most notably the agent-session
+ * trace's `context_received` step — use this to keep the source-stream
+ * metadata (displayName/slug/itemCount) and the actual messages associated.
+ *
+ * `source` mirrors the shape that `fetchStreamBag` produces for the timeline
+ * pill so the trace can render an identical "50 messages in #foo" chip with
+ * no extra lookups on the frontend.
+ */
+export interface ResolvedBagRef {
+  streamId: string
+  fromMessageId: string | null
+  toMessageId: string | null
+  source: {
+    displayName: string | null
+    slug: string | null
+    type: string
+    itemCount: number
+  }
+  items: RenderableMessage[]
+}
 
 export interface ResolvedBag {
   bagId: string
@@ -26,6 +52,12 @@ export interface ResolvedBag {
    * stable region inlined them or collapsed them into a summary.
    */
   items: RenderableMessage[]
+  /**
+   * Per-ref breakdown of `items` paired with source-stream metadata. The
+   * agent-session trace renders one chip per entry and lists the underlying
+   * messages so users can see exactly what context was fed to the turn.
+   */
+  refs: ResolvedBagRef[]
   /**
    * Snapshot the caller should persist after the agent turn completes. This
    * is NOT co-committed with the message insert — see `persistSnapshot` for
@@ -90,20 +122,39 @@ export async function resolveBagForStream(
       resolveds.push({ ref, ...part })
     }
 
-    return { bag, config, resolveds }
+    // Source-stream enrichment for the trace UI's "X messages in #foo" pill.
+    // Mirrors `fetchStreamBag` so the agent-session trace renders the same
+    // label as the inline message badge — INV-35: don't fork the formatting
+    // logic, share the data shape via `formatContextRefLabel` on the FE.
+    const refStreamIds = [...new Set(resolveds.map((r) => r.ref.streamId))]
+    const [sourceStreams, itemCounts] = refStreamIds.length
+      ? await Promise.all([
+          StreamRepository.findByIds(db, refStreamIds),
+          MessageRepository.countByStreams(db, refStreamIds),
+        ])
+      : [[], new Map<string, number>()]
+    const streamById = new Map(sourceStreams.map((s) => [s.id, s]))
+
+    return { bag, config, resolveds, streamById, itemCounts }
   })
 
   if (!phase1 || phase1 === "already-rendered") return null
 
-  const { bag, config, resolveds } = phase1
+  const { bag, config, resolveds, streamById, itemCounts } = phase1
 
   // Phase 2 (maybe AI): for each ref, decide inline vs summary. Summaries use
   // the shared cache keyed by (workspace, refKind, refKey, fingerprint).
   const stableParts: string[] = []
   const deltaParts: string[] = []
   const allItems: RenderableMessage[] = []
+  const groupedRefs: ResolvedBagRef[] = []
   const nextItems: SummaryInput[] = []
   let nextTail: string | null = null
+
+  // Match `fetchStreamBag`'s clamp: DISCUSS_THREAD only ever sends ~50 messages
+  // to the model regardless of source size, so the chip should claim the same
+  // window the AI actually saw. Other intents surface the raw count.
+  const isWindowedIntent = bag.intent === ContextIntents.DISCUSS_THREAD
 
   for (const resolved of resolveds) {
     const inlineSize = resolved.items.reduce((acc, m) => acc + m.contentMarkdown.length, 0)
@@ -142,6 +193,21 @@ export async function resolveBagForStream(
     allItems.push(...resolved.items)
     nextItems.push(...resolved.inputs)
     if (resolved.tailMessageId) nextTail = resolved.tailMessageId
+
+    const sourceStream = streamById.get(resolved.ref.streamId)
+    const totalCount = itemCounts.get(resolved.ref.streamId) ?? 0
+    groupedRefs.push({
+      streamId: resolved.ref.streamId,
+      fromMessageId: resolved.ref.fromMessageId ?? null,
+      toMessageId: resolved.ref.toMessageId ?? null,
+      source: {
+        displayName: sourceStream?.displayName ?? null,
+        slug: sourceStream?.slug ?? null,
+        type: sourceStream?.type ?? "thread",
+        itemCount: isWindowedIntent ? Math.min(totalCount, DISCUSS_WINDOW_TOTAL) : totalCount,
+      },
+      items: resolved.items,
+    })
   }
 
   return {
@@ -150,6 +216,7 @@ export async function resolveBagForStream(
     stable: stableParts.join("\n\n"),
     delta: deltaParts.join("\n\n"),
     items: allItems,
+    refs: groupedRefs,
     nextSnapshot: buildSnapshot(nextItems, nextTail),
   }
 }
