@@ -202,12 +202,26 @@ export async function hydrateSharedMessageIds(
   }
 
   // Anything still in frontier has been collected from depth=MAX-1's
-  // accessible content but we won't recurse into it. Emit truncated using
-  // the streamId cached on the share-node attrs — no extra DB call.
-  for (const [id, streamId] of frontier) {
-    if (visited.has(id) || result[id]) continue
-    if (!streamId) continue
-    result[id] = { state: "truncated", messageId: id, streamId }
+  // accessible content but we won't recurse into it. The cached `streamId`
+  // from the share-node attrs goes stale when the source message gets moved
+  // (batch move-to-thread doesn't rewrite cached attrs), so resolve current
+  // streamIds in one batched lookup. Surfaces deleted/missing past the cap
+  // too, instead of handing out a truncated link to a tombstone.
+  const truncatedIds = [...frontier.keys()].filter((id) => !visited.has(id) && !result[id])
+  if (truncatedIds.length > 0) {
+    const truncatedMessages = await MessageRepository.findByIdsInWorkspace(db, workspaceId, truncatedIds)
+    for (const id of truncatedIds) {
+      const msg = truncatedMessages.get(id)
+      if (!msg) {
+        result[id] = { state: "missing", messageId: id }
+        continue
+      }
+      if (msg.deletedAt) {
+        result[id] = { state: "deleted", messageId: id, deletedAt: msg.deletedAt }
+        continue
+      }
+      result[id] = { state: "truncated", messageId: id, streamId: msg.streamId }
+    }
   }
 
   if (privateBuckets.size > 0) {

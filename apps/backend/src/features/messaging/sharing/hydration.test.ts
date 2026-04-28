@@ -213,6 +213,12 @@ describe("hydrateSharedMessageIds", () => {
   it("recurses into nested pointers up to MAX_HYDRATION_DEPTH and emits truncated past the cap", async () => {
     // Build a chain msg_0 → msg_1 → msg_2 → msg_3 → msg_4 (4 levels deep beyond seed)
     // With MAX_HYDRATION_DEPTH = 3, msg_0..msg_2 hydrate as ok and msg_3 is truncated.
+    //
+    // The cached `streamId` on every share node attr is "stream_cached", but
+    // the live row for the past-cap source lives in "stream_live" (simulating
+    // a post-move state where the cached attr went stale). The truncated
+    // payload must report the live streamId, not the cached one — otherwise
+    // the "open in source stream" link drops the user on the wrong stream.
     const findByIds = spyOn(MessageRepository, "findByIdsInWorkspace").mockImplementation(async (_db, _ws, ids) => {
       const map = new Map<string, any>()
       for (const id of ids) {
@@ -221,9 +227,10 @@ describe("hydrateSharedMessageIds", () => {
           id,
           makeMessage({
             id,
+            streamId: id === `msg_${MAX_HYDRATION_DEPTH}` ? "stream_live" : "stream_source",
             contentJson: {
               type: "doc",
-              content: [{ type: "sharedMessage", attrs: { messageId: next, streamId: "stream_next" } }],
+              content: [{ type: "sharedMessage", attrs: { messageId: next, streamId: "stream_cached" } }],
             },
           })
         )
@@ -239,15 +246,79 @@ describe("hydrateSharedMessageIds", () => {
     for (let i = 0; i < MAX_HYDRATION_DEPTH; i++) {
       expect(result[`msg_${i}`]).toMatchObject({ state: "ok" })
     }
-    // The first un-fetched ref is the truncated entry, using the streamId from
-    // the parent's share-node attrs so we don't pay an extra DB lookup.
+    // The truncated entry reports the LIVE streamId from the row, not the
+    // stale cached attr — the fix for "shared_messages cached streamId goes
+    // stale after batch move-to-thread".
     expect(result[`msg_${MAX_HYDRATION_DEPTH}`]).toEqual({
       state: "truncated",
       messageId: `msg_${MAX_HYDRATION_DEPTH}`,
-      streamId: "stream_next",
+      streamId: "stream_live",
     })
-    // Caller saw exactly MAX_HYDRATION_DEPTH batched message lookups.
-    expect(findByIds).toHaveBeenCalledTimes(MAX_HYDRATION_DEPTH)
+    // MAX_HYDRATION_DEPTH BFS lookups + 1 batched lookup for past-cap entries.
+    expect(findByIds).toHaveBeenCalledTimes(MAX_HYDRATION_DEPTH + 1)
+  })
+
+  it("emits deleted (not truncated) when a past-cap source has been tombstoned", async () => {
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockImplementation(async (_db, _ws, ids) => {
+      const map = new Map<string, any>()
+      for (const id of ids) {
+        const next = id.replace(/^msg_(\d+)$/, (_m, n) => `msg_${Number(n) + 1}`)
+        const past = id === `msg_${MAX_HYDRATION_DEPTH}`
+        map.set(
+          id,
+          makeMessage({
+            id,
+            deletedAt: past ? new Date("2026-04-01") : null,
+            contentJson: past
+              ? { type: "doc", content: [] }
+              : {
+                  type: "doc",
+                  content: [{ type: "sharedMessage", attrs: { messageId: next, streamId: "stream_cached" } }],
+                },
+          })
+        )
+      }
+      return map
+    })
+    stubAuthorLookups()
+    stubFullAccess()
+
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", VIEWER_ID, ["msg_0"])
+    expect(result[`msg_${MAX_HYDRATION_DEPTH}`]).toEqual({
+      state: "deleted",
+      messageId: `msg_${MAX_HYDRATION_DEPTH}`,
+      deletedAt: new Date("2026-04-01"),
+    })
+  })
+
+  it("emits missing when a past-cap source row is gone entirely", async () => {
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockImplementation(async (_db, _ws, ids) => {
+      const map = new Map<string, any>()
+      for (const id of ids) {
+        // Simulate the past-cap source being deleted from the row set.
+        if (id === `msg_${MAX_HYDRATION_DEPTH}`) continue
+        const next = id.replace(/^msg_(\d+)$/, (_m, n) => `msg_${Number(n) + 1}`)
+        map.set(
+          id,
+          makeMessage({
+            id,
+            contentJson: {
+              type: "doc",
+              content: [{ type: "sharedMessage", attrs: { messageId: next, streamId: "stream_cached" } }],
+            },
+          })
+        )
+      }
+      return map
+    })
+    stubAuthorLookups()
+    stubFullAccess()
+
+    const result = await hydrateSharedMessageIds({} as any, "ws_1", VIEWER_ID, ["msg_0"])
+    expect(result[`msg_${MAX_HYDRATION_DEPTH}`]).toEqual({
+      state: "missing",
+      messageId: `msg_${MAX_HYDRATION_DEPTH}`,
+    })
   })
 
   it("skips truncated emission for a private inner pointer (no extra access leak)", async () => {

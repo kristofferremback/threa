@@ -481,6 +481,29 @@ export const MessageRepository = {
         AND target_message_id = ANY(${params.messageIds})
     `)
 
+    // shared_messages denormalizes both the source's stream and the share
+    // message's stream. A move can hit either side: the moved message can be
+    // a SOURCE (someone else's message embeds it) or the SHARE MESSAGE itself
+    // (its body contains a `sharedMessage` node). Re-stamp both columns so the
+    // pointer-invalidation broadcaster (`outbox-handler.ts`) targets the room
+    // where the share actually lives, and so any future joins on
+    // `source_stream_id` for navigation/UI resolve to the current stream.
+    await db.query(sql`
+      UPDATE shared_messages
+      SET source_stream_id = ${params.destinationStreamId}
+      WHERE workspace_id = ${params.workspaceId}
+        AND source_stream_id = ${params.sourceStreamId}
+        AND source_message_id = ANY(${params.messageIds})
+    `)
+
+    await db.query(sql`
+      UPDATE shared_messages
+      SET target_stream_id = ${params.destinationStreamId}
+      WHERE workspace_id = ${params.workspaceId}
+        AND target_stream_id = ${params.sourceStreamId}
+        AND share_message_id = ANY(${params.messageIds})
+    `)
+
     await db.query(sql`
       UPDATE agent_sessions
       SET stream_id = ${params.destinationStreamId}
