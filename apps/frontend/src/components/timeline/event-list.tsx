@@ -33,6 +33,24 @@ interface EventListProps {
   hideSessionCards?: boolean
   /** Event IDs that just arrived via socket and should flash briefly */
   newMessageIds?: Set<string>
+  batch?: BatchTimelineState
+}
+
+/**
+ * Shared batch-selection state passed from `StreamContent` into timeline rows.
+ * Enabled rows render selection controls and expose drag/drop target feedback.
+ */
+export interface BatchTimelineState {
+  /** Whether batch-selection mode is active. */
+  enabled: boolean
+  /** Message IDs currently selected for the batch operation. */
+  selectedMessageIds: Set<string>
+  /** Message IDs that are not valid drop targets during a drag. */
+  invalidTargetIds: Set<string>
+  /** Valid drop target currently hovered during drag, or `null`. */
+  hoveredTargetId: string | null
+  /** Toggles one message in the current selection. */
+  onToggleMessage: (messageId: string) => void
 }
 
 function isCommandEvent(event: StreamEvent): boolean {
@@ -315,6 +333,7 @@ export interface TimelineItemRenderContext {
   /** Click handler for the Stop research button. */
   onAbortResearch?: (sessionId: string) => void
   phase: string
+  batch?: BatchTimelineState
 }
 
 function isFirstUnread(item: TimelineItem, firstUnreadEventId?: string): boolean {
@@ -357,6 +376,7 @@ export function TimelineItemContent({ item, ctx }: { item: TimelineItem; ctx: Ti
           agentActivity={ctx.hideSessionCards ? ctx.agentActivity : undefined}
           isNew={ctx.newMessageIds?.has(item.event.id)}
           deferSecondaryHydration={ctx.phase !== "ready"}
+          batch={ctx.batch}
           // Continuations directly under an UnreadDivider promote back to head so
           // the first unread message in a run still reads as a fresh turn for the
           // viewer (fixes the "continuation starting an unread block" edge case).
@@ -386,6 +406,7 @@ export function EventList({
   agentActivity,
   hideSessionCards,
   newMessageIds,
+  batch,
 }: EventListProps) {
   const { phase } = useCoordinatedLoading()
   const socket = useSocket()
@@ -470,6 +491,7 @@ export function EventList({
     sessionCanAbort,
     onAbortResearch: handleAbortResearch,
     phase,
+    batch,
   }
 
   return (

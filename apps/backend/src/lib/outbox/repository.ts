@@ -5,6 +5,7 @@ import type { User } from "../../features/workspaces"
 import type { ConversationWithStaleness } from "../../features/conversations"
 import type {
   Memo as WireMemo,
+  StreamEvent as WireStreamEvent,
   UserPreferences,
   LastMessagePreview,
   Bot as WireBot,
@@ -19,6 +20,7 @@ export type OutboxEventType =
   | "message:created"
   | "message:edited"
   | "message:deleted"
+  | "messages:moved"
   | "message:updated"
   | "reaction:added"
   | "reaction:removed"
@@ -68,6 +70,7 @@ export type StreamScopedEventType =
   | "message:created"
   | "message:edited"
   | "message:deleted"
+  | "messages:moved"
   | "message:updated"
   | "reaction:added"
   | "reaction:removed"
@@ -128,6 +131,39 @@ export interface MessageEditedOutboxPayload extends StreamScopedPayload {
 export interface MessageDeletedOutboxPayload extends StreamScopedPayload {
   messageId: string
   deletedAt: string
+}
+
+export interface MessagesMovedOutboxPayload extends StreamScopedPayload {
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: Stream
+  events: WireStreamEvent[]
+  removedEventIds: string[]
+  /**
+   * The `messages:moved` tombstone inserted into the SOURCE stream. Source
+   * clients append this to their IDB cache after applying `removedEventIds`
+   * so the timeline keeps a "moved 3 messages → thread" trace where the
+   * messages used to be. Not part of `events` because that array is the
+   * destination-side write set.
+   */
+  sourceTombstoneEvent: WireStreamEvent
+  /**
+   * Authoritative `replyCount` for the drop-target message (the thread
+   * parent), recomputed AFTER the move's `incrementReplyCountBy`. Frontend
+   * sets this directly on the parent message in the source stream. Including
+   * it in `messages:moved` makes this event self-sufficient: ThreadCard
+   * surfaces with the right count even if the sibling `message:updated`
+   * outbox event is delayed, dropped, or processed out of order.
+   */
+  parentReplyCount: number
+  /**
+   * Recomputed thread summary for the drop-target — same field shape
+   * `message:updated` ships, included here so the card preview/participants
+   * land alongside the move without waiting for a second event.
+   */
+  parentThreadSummary: import("@threa/types").ThreadSummary | null
 }
 
 export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
@@ -404,6 +440,7 @@ export interface OutboxEventPayloadMap {
   "message:created": MessageCreatedOutboxPayload
   "message:edited": MessageEditedOutboxPayload
   "message:deleted": MessageDeletedOutboxPayload
+  "messages:moved": MessagesMovedOutboxPayload
   "message:updated": MessageUpdatedOutboxPayload
   "reaction:added": ReactionOutboxPayload
   "reaction:removed": ReactionOutboxPayload
@@ -482,6 +519,7 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "message:created",
   "message:edited",
   "message:deleted",
+  "messages:moved",
   "message:updated",
   "reaction:added",
   "reaction:removed",

@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import type { Server } from "socket.io"
-import type { OutboxEvent } from "../../../lib/outbox"
+import { isOutboxEventType, type OutboxEvent } from "../../../lib/outbox"
 import { SharedMessageRepository } from "./repository"
 
 /**
@@ -13,26 +13,37 @@ import { SharedMessageRepository } from "./repository"
 export const POINTER_INVALIDATED_EVENT = "pointer:invalidated"
 
 /**
- * Extract the source messageId from an outbox event that signals the source
- * has changed. Returns null when the event is for a different type or when
- * the payload shape is unexpected.
+ * Extract every source messageId from an outbox event that signals a source
+ * change pointer consumers care about. Returns an empty array when the event
+ * type is unrelated or the payload shape is unexpected.
  *
- * Only `message:edited` (content change) and `message:deleted` (tombstone)
- * affect what a hydrated pointer renders. `message:updated` is reserved for
- * thread-reply-count bumps (`event-service.ts:163`) and never carries a
- * content delta, so including it here would fan out a `pointer:invalidated`
- * to every target stream of every shared parent message on every reply —
- * a pure cache-bust with nothing to re-fetch.
+ * - `message:edited` / `message:deleted` carry one messageId.
+ * - `messages:moved` carries N: a moved message's `streamId` changes, which
+ *   changes what hydrated pointers' "open in source stream" link should
+ *   target. Content/author/createdAt are unchanged, so the invalidation is
+ *   purely a cache-bust hint to re-fetch the hydration payload.
+ *
+ * `message:updated` is reserved for thread-reply-count bumps
+ * (`event-service.ts:163`) and never carries a content/streamId delta, so
+ * including it here would fan out `pointer:invalidated` to every target
+ * stream of every shared parent on every reply — a pure cache-bust with
+ * nothing to re-fetch.
  */
-function extractMessageIdForInvalidation(event: OutboxEvent): string | null {
-  if (event.eventType === "message:edited") {
-    const inner = (event.payload as { event?: { payload?: { messageId?: string } } }).event
-    return inner?.payload?.messageId ?? null
+function extractMessageIdsForInvalidation(event: OutboxEvent): string[] {
+  if (isOutboxEventType(event, "message:edited")) {
+    // event.payload.event is a StreamEvent whose inner `payload` is typed
+    // as `unknown` (event-shape varies by event type). Narrow only that
+    // field; the outer envelope is fully typed via isOutboxEventType.
+    const inner = event.payload.event?.payload as { messageId?: string } | undefined
+    return inner?.messageId ? [inner.messageId] : []
   }
-  if (event.eventType === "message:deleted") {
-    return (event.payload as { messageId?: string }).messageId ?? null
+  if (isOutboxEventType(event, "message:deleted")) {
+    return event.payload.messageId ? [event.payload.messageId] : []
   }
-  return null
+  if (isOutboxEventType(event, "messages:moved")) {
+    return event.payload.movedMessageIds
+  }
+  return []
 }
 
 /**
@@ -46,19 +57,34 @@ function extractMessageIdForInvalidation(event: OutboxEvent): string | null {
  * message's own broadcast.
  */
 export async function invalidatePointersForEvent(event: OutboxEvent, db: Pool, io: Server): Promise<void> {
-  const sourceMessageId = extractMessageIdForInvalidation(event)
-  if (!sourceMessageId) return
+  const sourceMessageIds = extractMessageIdsForInvalidation(event)
+  if (sourceMessageIds.length === 0) return
 
   const { workspaceId } = event.payload as { workspaceId: string }
-  const shares = await SharedMessageRepository.listBySourceMessageIds(db, workspaceId, [sourceMessageId])
+  const shares = await SharedMessageRepository.listBySourceMessageIds(db, workspaceId, sourceMessageIds)
   if (shares.length === 0) return
 
-  const targetStreamIds = new Set(shares.map((s) => s.targetStreamId))
-  for (const targetStreamId of targetStreamIds) {
-    io.to(`ws:${workspaceId}:stream:${targetStreamId}`).emit(POINTER_INVALIDATED_EVENT, {
-      workspaceId,
-      targetStreamId,
-      sourceMessageId,
-    })
+  // Group affected target streams by the source whose pointer they host so
+  // each invalidation event names the specific source the client should
+  // refetch. One emit per (targetStream, source) pair — clients subscribe
+  // by stream, not by source, so collapsing across sources here would force
+  // every pointer in the room to refetch on every per-source change.
+  const sourcesByTarget = new Map<string, Set<string>>()
+  for (const share of shares) {
+    let sources = sourcesByTarget.get(share.targetStreamId)
+    if (!sources) {
+      sources = new Set()
+      sourcesByTarget.set(share.targetStreamId, sources)
+    }
+    sources.add(share.sourceMessageId)
+  }
+  for (const [targetStreamId, sources] of sourcesByTarget) {
+    for (const sourceMessageId of sources) {
+      io.to(`ws:${workspaceId}:stream:${targetStreamId}`).emit(POINTER_INVALIDATED_EVENT, {
+        workspaceId,
+        targetStreamId,
+        sourceMessageId,
+      })
+    }
   }
 }

@@ -3,7 +3,10 @@ name: Staging
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed, labeled, unlabeled]
-    branches: [main]
+    # No `branches:` filter: stacked PRs (rooted on a feature branch instead
+    # of `main`) still need staging environments. The `staging` label gate
+    # below already restricts which PRs deploy, so the base-branch filter
+    # would only cause false negatives.
 
 # Cancel in-progress runs for the same PR
 concurrency:

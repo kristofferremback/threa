@@ -202,12 +202,41 @@ export async function hydrateSharedMessageIds(
   }
 
   // Anything still in frontier has been collected from depth=MAX-1's
-  // accessible content but we won't recurse into it. Emit truncated using
-  // the streamId cached on the share-node attrs — no extra DB call.
-  for (const [id, streamId] of frontier) {
-    if (visited.has(id) || result[id]) continue
-    if (!streamId) continue
-    result[id] = { state: "truncated", messageId: id, streamId }
+  // accessible content but we won't recurse into it. The cached `streamId`
+  // from the share-node attrs goes stale when the source message gets moved
+  // (batch move-to-thread doesn't rewrite cached attrs), so resolve the
+  // current streamId from the live row.
+  //
+  // Mirror the BFS access check so this branch can't surface a streamId the
+  // viewer can't read (post-move, the source might live in a private thread
+  // the viewer was never a member of) or a `deleted` tombstone for an
+  // inaccessible source. Inaccessible entries route into the existing
+  // privateBuckets path so the wire shape stays uniform.
+  const truncatedIds = [...frontier.keys()].filter((id) => !visited.has(id) && !result[id])
+  if (truncatedIds.length > 0) {
+    const truncatedMessages = await MessageRepository.findByIdsInWorkspace(db, workspaceId, truncatedIds)
+    const fetchedStreamIds = [...truncatedMessages.values()].map((m) => m.streamId)
+    const [accessibleStreams, grantedSources] = await Promise.all([
+      listAccessibleStreamIds(db, workspaceId, viewerId, fetchedStreamIds),
+      SharedMessageRepository.listSourcesGrantedToViewer(db, workspaceId, viewerId, truncatedIds),
+    ])
+    for (const id of truncatedIds) {
+      const msg = truncatedMessages.get(id)
+      if (!msg) {
+        result[id] = { state: "missing", messageId: id }
+        continue
+      }
+      const hasAccess = accessibleStreams.has(msg.streamId) || grantedSources.has(id)
+      if (!hasAccess) {
+        privateBuckets.set(id, msg.streamId)
+        continue
+      }
+      if (msg.deletedAt) {
+        result[id] = { state: "deleted", messageId: id, deletedAt: msg.deletedAt }
+        continue
+      }
+      result[id] = { state: "truncated", messageId: id, streamId: msg.streamId }
+    }
   }
 
   if (privateBuckets.size > 0) {

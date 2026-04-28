@@ -13,6 +13,7 @@ import {
   BookmarkX,
   Bell,
   Share2,
+  CornerDownRight,
 } from "lucide-react"
 import { toast } from "sonner"
 import { stripMarkdown } from "@/lib/markdown"
@@ -92,6 +93,21 @@ export interface MessageActionContext {
   isSaved?: boolean
   /** Callback to start a private "Discuss with Ariadne" scratchpad seeded with this thread */
   onDiscussWithAriadne?: () => void | Promise<void>
+  /**
+   * Callback to enter batch-select mode with this message preselected, so
+   * the user can extend the selection or drop straight onto a target. The
+   * stream-level "Move messages…" entry uses the same flow with no
+   * preselection. Only present when the move action is reachable from this
+   * surface (e.g. not on archived streams).
+   */
+  onMoveToThread?: () => void
+  /**
+   * Open the move drill-in drawer for a message that arrived in this
+   * stream via a move. Set only when `payload.movedFrom` is present —
+   * this is the destination-side discovery path, since destination
+   * streams don't render an inline `messages:moved` tombstone.
+   */
+  onShowMoveDetails?: () => void
 }
 
 /** A top-level action in the message context menu. */
@@ -279,6 +295,26 @@ export const messageActions: MessageAction[] = [
     icon: Bell,
     when: (ctx) => !!ctx.onRequestReminder,
     action: (ctx) => ctx.onRequestReminder?.(),
+  },
+  {
+    // Per-message entry into the move-to-thread flow. Mirrors the stream
+    // header entry but seeds the selection with this single message so the
+    // common "I just want this one in a thread" path is one tap shorter.
+    id: "move-to-thread",
+    label: "Move to thread…",
+    icon: CornerDownRight,
+    when: (ctx) => !!ctx.onMoveToThread,
+    action: (ctx) => ctx.onMoveToThread?.(),
+  },
+  {
+    // Destination-side discovery for messages that arrived via a move.
+    // The destination doesn't render an inline tombstone — this entry
+    // opens the same drill-in drawer the source-side tombstone does.
+    id: "show-move-details",
+    label: "Show move details",
+    icon: CornerDownRight,
+    when: (ctx) => !!ctx.onShowMoveDetails,
+    action: (ctx) => ctx.onShowMoveDetails?.(),
   },
   {
     id: "edit-message",

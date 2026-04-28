@@ -66,6 +66,7 @@ export const EVENT_TYPES = [
   "agent_session:completed",
   "agent_session:failed",
   "agent_session:deleted",
+  "messages:moved",
 ] as const
 export type EventType = (typeof EVENT_TYPES)[number]
 

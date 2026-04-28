@@ -1,4 +1,10 @@
-// Metadata (export before heavier modules so barrels can import schemas without TDZ cycles)
+// Metadata schemas come FIRST so that consumers reaching this barrel via a
+// cycle (e.g. public-api/schemas.ts → messaging → event-service →
+// public-api/...) find `messageMetadataSchema` already bound. With the
+// heavy modules above, evaluating `event-service` could transitively load
+// public-api/schemas.ts before `metadata-schema.ts` had a chance to run,
+// producing a TDZ ("Cannot access 'messageMetadataSchema' before
+// initialization") at integration-test boot.
 export {
   messageMetadataSchema,
   messageMetadataFilterSchema,
@@ -30,11 +36,20 @@ export type {
   DeleteMessageParams,
   AddReactionParams,
   RemoveReactionParams,
+  MoveMessagesToThreadParams,
+  ValidateMoveMessagesToThreadParams,
+  MoveMessagesToThreadResult,
 } from "./event-service"
 
 // Handlers
 export { createMessageHandlers } from "./handlers"
-export { createMessageSchema, updateMessageSchema, addReactionSchema } from "./handlers"
+export {
+  createMessageSchema,
+  updateMessageSchema,
+  addReactionSchema,
+  moveMessagesToThreadSchema,
+  validateMoveMessagesToThreadSchema,
+} from "./handlers"
 
 // Sharing sub-feature
 export {

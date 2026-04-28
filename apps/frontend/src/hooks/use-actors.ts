@@ -10,7 +10,7 @@ interface ActorAvatarInfo {
   avatarUrl?: string
 }
 
-interface ActorLookup {
+export interface ActorLookup {
   getActorName: (actorId: string | null, actorType: AuthorType | null) => string
   getActorInitials: (actorId: string | null, actorType: AuthorType | null) => string
   /** Returns avatar info including fallback text and persona slug (for SVG icon support) */

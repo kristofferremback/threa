@@ -5,6 +5,7 @@
 
 import type { Socket } from "socket.io-client"
 import { INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
+import type { MoveMessagesToThreadResponse, ValidateMoveMessagesToThreadResponse } from "@threa/types"
 
 function getBaseUrl(): string {
   // Read at call time, not import time, so setup.ts can set it
@@ -395,6 +396,53 @@ export async function deleteMessage(client: TestClient, workspaceId: string, mes
   if (status !== 204) {
     throw new Error(`Delete message failed with status ${status}`)
   }
+}
+
+export async function moveMessagesToThread(
+  client: TestClient,
+  workspaceId: string,
+  sourceStreamId: string,
+  targetMessageId: string,
+  messageIds: string[]
+): Promise<MoveMessagesToThreadResponse> {
+  const validation = await validateMoveMessagesToThread(
+    client,
+    workspaceId,
+    sourceStreamId,
+    targetMessageId,
+    messageIds
+  )
+  if (validation.status !== 200) {
+    throw new Error(`Validate move messages failed: ${JSON.stringify(validation.data)}`)
+  }
+
+  const { status, data } = await client.post<MoveMessagesToThreadResponse>(
+    `/api/workspaces/${workspaceId}/messages/move-to-thread`,
+    {
+      sourceStreamId,
+      targetMessageId,
+      messageIds,
+      leaseKey: validation.data.leaseKey,
+    }
+  )
+  if (status !== 200) {
+    throw new Error(`Move messages failed: ${JSON.stringify(data)}`)
+  }
+  return data
+}
+
+export async function validateMoveMessagesToThread<T = ValidateMoveMessagesToThreadResponse>(
+  client: TestClient,
+  workspaceId: string,
+  sourceStreamId: string,
+  targetMessageId: string,
+  messageIds: string[]
+): Promise<{ status: number; data: T; headers: Headers }> {
+  return client.post<T>(`/api/workspaces/${workspaceId}/messages/move-to-thread/validate`, {
+    sourceStreamId,
+    targetMessageId,
+    messageIds,
+  })
 }
 
 export async function uploadAttachment(

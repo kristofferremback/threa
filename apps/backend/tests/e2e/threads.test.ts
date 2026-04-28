@@ -16,6 +16,9 @@ import {
   sendMessage,
   createThread,
   getBootstrap,
+  listEvents,
+  moveMessagesToThread,
+  validateMoveMessagesToThread,
 } from "../client"
 
 // Generate unique identifier for this test run to avoid collisions
@@ -220,6 +223,61 @@ describe("Thread E2E Tests", () => {
       // Thread should have 2 message_created events
       const messageEvents = bootstrap.events.filter((e) => e.eventType === "message_created")
       expect(messageEvents.length).toBe(2)
+    })
+  })
+
+  describe("Move messages to thread", () => {
+    test("should move sparse selected messages into a new direct child thread", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("move-to-thread"), "Move To Thread Test")
+      const workspace = await createWorkspace(client, `Move To Thread WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
+
+      const target = await sendMessage(client, workspace.id, scratchpad.id, "Target")
+      const keep = await sendMessage(client, workspace.id, scratchpad.id, "Keep")
+      const movedA = await sendMessage(client, workspace.id, scratchpad.id, "Move A")
+      const movedB = await sendMessage(client, workspace.id, scratchpad.id, "Move B")
+
+      const result = await moveMessagesToThread(client, workspace.id, scratchpad.id, target.id, [movedB.id, movedA.id])
+
+      expect(result.thread.type).toBe("thread")
+      expect(result.thread.parentStreamId).toBe(scratchpad.id)
+      expect(result.thread.parentMessageId).toBe(target.id)
+      expect(result.destinationStreamId).toBe(result.thread.id)
+      expect(new Set(result.movedMessageIds)).toEqual(new Set([movedA.id, movedB.id]))
+
+      const sourceEvents = await listEvents(client, workspace.id, scratchpad.id, ["message_created"])
+      const sourceMessageIds = new Set(sourceEvents.map((event) => (event.payload as MessageCreatedPayload).messageId))
+      expect(sourceMessageIds).toEqual(new Set([target.id, keep.id]))
+
+      const threadEvents = await listEvents(client, workspace.id, result.thread.id, ["message_created"])
+      const threadMessageIds = threadEvents.map((event) => (event.payload as MessageCreatedPayload).messageId)
+      expect(threadMessageIds).toEqual([movedA.id, movedB.id])
+
+      const bootstrap = await getBootstrap(client, workspace.id, scratchpad.id)
+      const targetEvent = bootstrap.events.find(
+        (event) =>
+          event.eventType === "message_created" && (event.payload as MessageCreatedPayload).messageId === target.id
+      )
+      expect((targetEvent!.payload as MessageCreatedPayload).threadId).toBe(result.thread.id)
+      expect((targetEvent!.payload as MessageCreatedPayload).replyCount).toBe(2)
+    })
+
+    test("should reject moving messages onto a following message", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("move-following"), "Move Following Test")
+      const workspace = await createWorkspace(client, `Move Following WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
+
+      const selected = await sendMessage(client, workspace.id, scratchpad.id, "Selected")
+      const following = await sendMessage(client, workspace.id, scratchpad.id, "Following")
+
+      const response = await validateMoveMessagesToThread(client, workspace.id, scratchpad.id, following.id, [
+        selected.id,
+      ])
+
+      expect(response.status).toBe(400)
+      expect(JSON.stringify(response.data)).toContain("TARGET_MUST_PRECEDE_SELECTION")
     })
   })
 })

@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Virtuoso } from "react-virtuoso"
-import { MessageSquare, ArrowDown } from "lucide-react"
+import { MessageSquare, ArrowDown, X, Move, Loader2, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -22,10 +22,21 @@ import {
   workspaceKeys,
 } from "@/hooks"
 import { useSocket, useCoordinatedLoading } from "@/contexts"
+import { useMessageService } from "@/contexts"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
@@ -49,6 +60,7 @@ import {
   filterVisibleItems,
   type TimelineItem,
   type TimelineItemRenderContext,
+  type BatchTimelineState,
 } from "./event-list"
 import { MessageInput } from "./message-input"
 import { JoinChannelBar } from "./join-channel-bar"
@@ -60,6 +72,8 @@ import { TextSelectionQuote } from "./text-selection-quote"
 import { StreamSearchBar } from "./stream-search-bar"
 import { useStreamSearch } from "@/hooks/use-stream-search"
 import { useSearchHighlight } from "@/hooks/use-search-highlight"
+import { stripMarkdownToInline } from "@/lib/markdown"
+import { addStartBatchSelectListener } from "@/lib/batch-selection-events"
 
 interface StreamContentProps {
   workspaceId: string
@@ -82,9 +96,40 @@ export function StreamContent({
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
   const socket = useSocket()
+  const messageService = useMessageService()
   const jumpTriggeredRef = useRef<string | null>(null)
   const user = useUser()
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [batchMode, setBatchMode] = useState(false)
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set())
+  const [hoveredBatchTargetId, setHoveredBatchTargetId] = useState<string | null>(null)
+  const [dragGhost, setDragGhost] = useState<{ x: number; y: number } | null>(null)
+  // Single source of truth for the move flow: opens the dialog immediately on
+  // drop with the real message count from selection (no need to wait for the
+  // server). `leaseKey` stays null while validate is in flight, then gets
+  // patched in on success — that transition is what flips the inline footer
+  // status from "Verifying…" to "Verified" with the check pop-in.
+  const [moveAttempt, setMoveAttempt] = useState<{
+    targetMessageId: string
+    messageIds: string[]
+    leaseKey: string | null
+  } | null>(null)
+  const [isMoveConfirming, setIsMoveConfirming] = useState(false)
+  // Cancellation guard: when the user dismisses the dialog while validation
+  // is still in flight, we increment this token. The async handler reads the
+  // ref at resolution time and bails out if the token has moved on. Cheaper
+  // than threading AbortSignal through the api client just for one path.
+  const moveAttemptTokenRef = useRef(0)
+  const suppressNextBatchClickRef = useRef(false)
+  const suppressNextBatchClickTimerRef = useRef<number | null>(null)
+  const batchPointerRef = useRef<{
+    id: number
+    messageId: string
+    x: number
+    y: number
+    dragging: boolean
+    wasSelected: boolean
+  } | null>(null)
 
   // Clear highlight param after delay (works for both main view and panels)
   useEffect(() => {
@@ -252,7 +297,300 @@ export function StreamContent({
   // Compute timeline items in StreamContent so the virtualizer can use count + keys.
   // After grouping commands/sessions, annotate consecutive same-author message runs
   // with `groupContinuation` so MessageEvent can collapse the repeated header row.
-  const timelineItems = useMemo(() => annotateAuthorGroups(groupTimelineItems(events, user?.id)), [events, user?.id])
+  const displayEvents = useMemo(() => {
+    if (!isThread) return events
+    return [...events].sort((a, b) => {
+      const timeDelta = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      if (timeDelta !== 0) return timeDelta
+      return a.id.localeCompare(b.id)
+    })
+  }, [events, isThread])
+
+  const timelineItems = useMemo(
+    () => annotateAuthorGroups(groupTimelineItems(displayEvents, user?.id)),
+    [displayEvents, user?.id]
+  )
+
+  // `order` is the position in the rendered timeline. Non-thread streams
+  // happen to sort by sequence already, but threads re-sort by
+  // (createdAt, id) — once moved messages land in a thread, their sequence
+  // (assigned in the destination's event log) can diverge from their visual
+  // position. Validating "target precedes selection" against `order` keeps
+  // batch UI consistent with what the user sees.
+  const messageEventMeta = useMemo(() => {
+    const meta = new Map<string, { order: number; content: string }>()
+    let order = 0
+    for (const event of displayEvents) {
+      if (event.eventType !== "message_created") continue
+      const payload = event.payload as { messageId?: string; contentMarkdown?: string; deletedAt?: string }
+      if (!payload.messageId || payload.deletedAt) continue
+      meta.set(payload.messageId, { order: order++, content: payload.contentMarkdown ?? "" })
+    }
+    return meta
+  }, [displayEvents])
+
+  const selectedOrderFloor = useMemo(() => {
+    let min: number | null = null
+    for (const messageId of selectedMessageIds) {
+      const order = messageEventMeta.get(messageId)?.order
+      if (order === undefined) continue
+      min = min === null || order < min ? order : min
+    }
+    return min
+  }, [messageEventMeta, selectedMessageIds])
+
+  const invalidBatchTargetIds = useMemo(() => {
+    const invalid = new Set<string>()
+    if (!batchMode || !dragGhost || selectedOrderFloor === null) return invalid
+    for (const [messageId, meta] of messageEventMeta) {
+      if (selectedMessageIds.has(messageId) || meta.order >= selectedOrderFloor) {
+        invalid.add(messageId)
+      }
+    }
+    return invalid
+  }, [batchMode, dragGhost, messageEventMeta, selectedMessageIds, selectedOrderFloor])
+
+  const isValidBatchTarget = useCallback(
+    (messageId: string | null) => {
+      if (!messageId || selectedOrderFloor === null) return false
+      const meta = messageEventMeta.get(messageId)
+      return !!meta && !selectedMessageIds.has(messageId) && meta.order < selectedOrderFloor
+    },
+    [messageEventMeta, selectedMessageIds, selectedOrderFloor]
+  )
+
+  const startBatchSelect = useCallback(
+    (preselectedMessageId?: string) => {
+      setBatchMode(true)
+      setSelectedMessageIds(preselectedMessageId ? new Set([preselectedMessageId]) : new Set())
+      setHoveredBatchTargetId(null)
+      setDragGhost(null)
+      // Selection and search share the same flush-top strip; keep one open at a
+      // time so they can't stack. Search bar's own listeners handle the reverse.
+      setIsSearchOpen(false)
+      clearSearch()
+    },
+    [clearSearch]
+  )
+
+  const toggleBatchMessage = useCallback((messageId: string) => {
+    setSelectedMessageIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(messageId)) {
+        next.delete(messageId)
+      } else {
+        next.add(messageId)
+      }
+      return next
+    })
+  }, [])
+
+  const cancelBatchMode = useCallback(() => {
+    setBatchMode(false)
+    setSelectedMessageIds(new Set())
+    setHoveredBatchTargetId(null)
+    setDragGhost(null)
+    // Bump the cancellation token so any in-flight validate becomes a no-op
+    // before clearing the attempt — otherwise its setMoveAttempt could race
+    // back in after we've moved on.
+    moveAttemptTokenRef.current += 1
+    setMoveAttempt(null)
+    batchPointerRef.current = null
+    suppressNextBatchClickRef.current = false
+    if (suppressNextBatchClickTimerRef.current !== null) {
+      window.clearTimeout(suppressNextBatchClickTimerRef.current)
+      suppressNextBatchClickTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return addStartBatchSelectListener((detail) => {
+      if (detail.streamId !== streamId) return
+      startBatchSelect(detail.preselectedMessageId)
+    })
+  }, [startBatchSelect, streamId])
+
+  useEffect(() => {
+    cancelBatchMode()
+    suppressNextBatchClickRef.current = false
+  }, [streamId, cancelBatchMode])
+
+  const batchState = useMemo<BatchTimelineState | undefined>(
+    () => ({
+      enabled: batchMode,
+      selectedMessageIds,
+      invalidTargetIds: invalidBatchTargetIds,
+      hoveredTargetId: hoveredBatchTargetId,
+      onToggleMessage: toggleBatchMessage,
+    }),
+    [batchMode, selectedMessageIds, invalidBatchTargetIds, hoveredBatchTargetId, toggleBatchMessage]
+  )
+
+  const findMessageIdFromPoint = useCallback((x: number, y: number) => {
+    const element = document.elementFromPoint(x, y)
+    return element?.closest<HTMLElement>("[data-message-id]")?.dataset.messageId ?? null
+  }, [])
+
+  const dropBatchOnTarget = useCallback(
+    async (targetMessageId: string) => {
+      const messageIds = Array.from(selectedMessageIds)
+      if (messageIds.length === 0 || moveAttempt) return
+      // Open the dialog immediately with the client-side count so the question
+      // is on screen the moment the user releases — validation runs in the
+      // background and patches in the lease when it returns.
+      const token = ++moveAttemptTokenRef.current
+      setMoveAttempt({ targetMessageId, messageIds, leaseKey: null })
+      try {
+        const validation = await messageService.validateMoveToThread(workspaceId, {
+          sourceStreamId: streamId,
+          targetMessageId,
+          messageIds,
+        })
+        if (moveAttemptTokenRef.current !== token) return
+        setMoveAttempt((prev) => (prev ? { ...prev, leaseKey: validation.leaseKey } : null))
+      } catch (error) {
+        if (moveAttemptTokenRef.current !== token) return
+        console.error("validateMoveToThread failed", { error, streamId, targetMessageId, messageIds })
+        toast.error(error instanceof Error ? error.message : "Could not validate this move")
+        setMoveAttempt(null)
+      }
+    },
+    [messageService, moveAttempt, selectedMessageIds, streamId, workspaceId]
+  )
+
+  const confirmPendingMove = useCallback(async () => {
+    if (!moveAttempt?.leaseKey || isMoveConfirming) return
+    const { targetMessageId, messageIds, leaseKey } = moveAttempt
+    setIsMoveConfirming(true)
+    try {
+      await messageService.moveToThread(workspaceId, {
+        sourceStreamId: streamId,
+        targetMessageId,
+        messageIds,
+        leaseKey,
+      })
+      toast.success(`Moved ${messageIds.length} message${messageIds.length === 1 ? "" : "s"} to thread`)
+      cancelBatchMode()
+    } catch (error) {
+      console.error("moveToThread failed", { error, streamId, moveAttempt })
+      toast.error(error instanceof Error ? error.message : "Could not move messages")
+    } finally {
+      setIsMoveConfirming(false)
+    }
+  }, [cancelBatchMode, isMoveConfirming, messageService, moveAttempt, streamId, workspaceId])
+
+  const closePendingMove = useCallback(() => {
+    if (isMoveConfirming) return
+    // Bump the token so any in-flight validation no-ops on resolve.
+    moveAttemptTokenRef.current += 1
+    setMoveAttempt(null)
+  }, [isMoveConfirming])
+
+  // Phase derived from the single source of truth. Drives the inline status
+  // row in the footer and the disabled/aria-busy state of the Move button.
+  let movePhase: MovePhase
+  if (isMoveConfirming) {
+    movePhase = "moving"
+  } else if (moveAttempt?.leaseKey) {
+    movePhase = "validated"
+  } else {
+    movePhase = "validating"
+  }
+  const moveDialogOpen = !!moveAttempt
+  const moveMessageCount = moveAttempt?.messageIds.length ?? 0
+  const moveMessageCountLabel = `${moveMessageCount} selected message${moveMessageCount === 1 ? "" : "s"}`
+
+  const batchPointerHandlers = batchMode
+    ? {
+        onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+          const target = event.target as HTMLElement
+          if (target.closest("[data-batch-control]")) return
+          const messageId = target.closest<HTMLElement>("[data-message-id]")?.dataset.messageId
+          if (!messageId) return
+          event.preventDefault()
+          batchPointerRef.current = {
+            id: event.pointerId,
+            messageId,
+            x: event.clientX,
+            y: event.clientY,
+            dragging: false,
+            wasSelected: selectedMessageIds.has(messageId),
+          }
+          if (!selectedMessageIds.has(messageId)) {
+            setSelectedMessageIds((prev) => new Set(prev).add(messageId))
+          }
+        },
+        onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+          const pointer = batchPointerRef.current
+          if (!pointer || pointer.id !== event.pointerId) return
+          const distance = Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y)
+          if (!pointer.dragging && distance < 6) return
+          event.preventDefault()
+          if (!pointer.dragging && !selectedMessageIds.has(pointer.messageId)) {
+            setSelectedMessageIds((prev) => new Set(prev).add(pointer.messageId))
+          }
+          pointer.dragging = true
+          setDragGhost({ x: event.clientX, y: event.clientY })
+          const targetId = findMessageIdFromPoint(event.clientX, event.clientY)
+          const validTargetId = isValidBatchTarget(targetId) ? targetId : null
+          setHoveredBatchTargetId((previous) => {
+            if (previous !== validTargetId && validTargetId && "vibrate" in navigator) {
+              navigator.vibrate?.(10)
+            }
+            return validTargetId
+          })
+        },
+        onPointerUp: (event: React.PointerEvent<HTMLElement>) => {
+          const pointer = batchPointerRef.current
+          if (!pointer || pointer.id !== event.pointerId) return
+          event.preventDefault()
+          suppressNextBatchClickRef.current = true
+          if (suppressNextBatchClickTimerRef.current !== null) {
+            window.clearTimeout(suppressNextBatchClickTimerRef.current)
+          }
+          suppressNextBatchClickTimerRef.current = window.setTimeout(() => {
+            suppressNextBatchClickRef.current = false
+            suppressNextBatchClickTimerRef.current = null
+          }, 350)
+          const targetId = hoveredBatchTargetId
+          const wasDragging = pointer.dragging
+          batchPointerRef.current = null
+          setDragGhost(null)
+          setHoveredBatchTargetId(null)
+          if (!wasDragging) {
+            setSelectedMessageIds((prev) => {
+              const next = new Set(prev)
+              if (pointer.wasSelected) {
+                next.delete(pointer.messageId)
+              } else {
+                next.add(pointer.messageId)
+              }
+              return next
+            })
+            return
+          }
+          if (wasDragging && targetId && isValidBatchTarget(targetId)) {
+            void dropBatchOnTarget(targetId)
+          }
+        },
+        onPointerCancel: () => {
+          batchPointerRef.current = null
+          setDragGhost(null)
+          setHoveredBatchTargetId(null)
+          suppressNextBatchClickRef.current = false
+          if (suppressNextBatchClickTimerRef.current !== null) {
+            window.clearTimeout(suppressNextBatchClickTimerRef.current)
+            suppressNextBatchClickTimerRef.current = null
+          }
+        },
+        onClickCapture: (event: React.MouseEvent<HTMLElement>) => {
+          if (!suppressNextBatchClickRef.current) return
+          suppressNextBatchClickRef.current = false
+          event.preventDefault()
+          event.stopPropagation()
+        },
+      }
+    : {}
 
   // For drafts with pending events, compute timeline items from those events. Drafts
   // are a single-author transcript already, but running the same pipeline keeps the
@@ -627,6 +965,7 @@ export function StreamContent({
               {isSearchOpen && (
                 <StreamSearchBar search={streamSearch} onClose={handleSearchClose} onNavigate={handleSearchNavigate} />
               )}
+              {batchMode && <BatchSelectionBar count={selectedMessageIds.size} onCancel={cancelBatchMode} />}
               {isDraft && (
                 <div
                   className="h-full overflow-y-auto overflow-x-hidden overscroll-y-contain"
@@ -638,6 +977,7 @@ export function StreamContent({
                       isLoading={false}
                       workspaceId={workspaceId}
                       streamId={streamId}
+                      batch={batchState}
                     />
                   ) : (
                     <Empty className="h-full border-0">
@@ -681,6 +1021,8 @@ export function StreamContent({
                     hideSessionCards={isChannel}
                     newMessageIds={newMessageIds}
                     isSearchOpen={isSearchOpen}
+                    batch={batchState}
+                    batchPointerHandlers={batchPointerHandlers}
                   />
                   {/* Overlay loading indicators — absolutely positioned so they
                     don't cause layout shift when prepending older messages. */}
@@ -717,11 +1059,13 @@ export function StreamContent({
                   ref={plainScrollRef}
                   className={cn(
                     "h-full overflow-y-auto overflow-x-hidden overscroll-y-contain",
-                    isSearchOpen && "pt-11"
+                    (isSearchOpen || batchMode) && "pt-11",
+                    batchMode && "select-none"
                   )}
                   style={{ paddingBottom: "var(--composer-height, 0px)" }}
                   data-suppress-pull-refresh="true"
                   onScroll={plainHandleScroll}
+                  {...batchPointerHandlers}
                 >
                   {isThread && parentMessage && parentStreamId && (
                     <ThreadParentMessage
@@ -747,6 +1091,7 @@ export function StreamContent({
                     agentActivity={agentActivity}
                     hideSessionCards={isChannel}
                     newMessageIds={newMessageIds}
+                    batch={batchState}
                   />
                   {isFetchingNewer && (
                     <div className="flex justify-center py-2">
@@ -774,6 +1119,67 @@ export function StreamContent({
                 </Button>
               </div>
             )}
+            {dragGhost && (
+              <div
+                className="pointer-events-none fixed z-50 max-w-[280px] rounded-md border bg-popover/95 px-3 py-2 text-sm shadow-lg"
+                style={{ left: dragGhost.x + 12, top: dragGhost.y + 12 }}
+              >
+                <div className="font-medium">{selectedMessageIds.size} selected</div>
+                <div className="line-clamp-1 text-xs text-muted-foreground">
+                  {Array.from(selectedMessageIds)
+                    .map((messageId) => {
+                      const content = messageEventMeta.get(messageId)?.content
+                      return content ? stripMarkdownToInline(content) : null
+                    })
+                    .filter(Boolean)
+                    .slice(0, 1)
+                    .join("")}
+                </div>
+              </div>
+            )}
+            <AlertDialog
+              open={moveDialogOpen}
+              onOpenChange={(open) => {
+                if (open) return
+                // Cancel + Esc are allowed during validating (we just bump the
+                // cancellation token and the in-flight request becomes a no-op
+                // on resolve). Only the irreversible commit phase blocks
+                // dismiss — there is no rollback once moveToThread succeeds.
+                if (isMoveConfirming) return
+                closePendingMove()
+              }}
+            >
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Move messages?</AlertDialogTitle>
+                  <AlertDialogDescription>{`Move ${moveMessageCountLabel} into this thread?`}</AlertDialogDescription>
+                </AlertDialogHeader>
+                {/* Custom footer: status row (left) + actions (right). Replaces
+                  shadcn's AlertDialogFooter, which forces flex-col-reverse on
+                  mobile and would invert our vertical stacking. */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <MoveStatusRow phase={movePhase} />
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-2">
+                    <AlertDialogCancel disabled={movePhase === "moving"}>Cancel</AlertDialogCancel>
+                    {/* `preventDefault` keeps the dialog open through the
+                      moving phase so the inline status row can transition
+                      to "Moving…" — Radix's default Action behavior would
+                      auto-close on click. confirmPendingMove closes the
+                      dialog itself on success via cancelBatchMode. */}
+                    <AlertDialogAction
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void confirmPendingMove()
+                      }}
+                      disabled={movePhase !== "validated"}
+                      aria-busy={movePhase === "moving"}
+                    >
+                      Move
+                    </AlertDialogAction>
+                  </div>
+                </div>
+              </AlertDialogContent>
+            </AlertDialog>
             {membershipResolved && !isMember && isPublicChannel && (
               <div className="absolute inset-x-0 z-10" style={{ bottom: "var(--composer-height, 0px)" }}>
                 <JoinChannelBar
@@ -828,6 +1234,8 @@ function VirtuosoMessageList({
   hideSessionCards,
   newMessageIds,
   isSearchOpen,
+  batch,
+  batchPointerHandlers,
 }: {
   visibleItems: TimelineItem[]
   isLoading: boolean
@@ -858,6 +1266,8 @@ function VirtuosoMessageList({
   hideSessionCards?: boolean
   newMessageIds?: Set<string>
   isSearchOpen: boolean
+  batch?: BatchTimelineState
+  batchPointerHandlers?: React.HTMLAttributes<HTMLElement>
 }) {
   const { phase } = useCoordinatedLoading()
   const socket = useSocket()
@@ -908,6 +1318,7 @@ function VirtuosoMessageList({
       sessionCanAbort,
       onAbortResearch: handleAbortResearch,
       phase,
+      batch,
     }),
     [
       workspaceId,
@@ -924,6 +1335,7 @@ function VirtuosoMessageList({
       sessionCanAbort,
       handleAbortResearch,
       phase,
+      batch,
     ]
   )
 
@@ -1020,6 +1432,26 @@ function VirtuosoMessageList({
     [handleRangeChanged, firstItemIndex, visibleItems.length, handleStartReached, handleEndReached]
   )
 
+  // Virtuoso positions items absolutely inside its scroller, so plain CSS
+  // `padding-top` on the wrapper is silently ignored — the topmost item still
+  // renders flush at scroller-top, where the floating BatchSelectionBar /
+  // StreamSearchBar overlap it. The official escape hatch is the `Header`
+  // component, which renders before the first item and is treated as
+  // scrollable content. We swap it in only while one of the bars is open.
+  // Must sit above the early returns below so the hook order stays stable.
+  const reservedTopSpacer = isSearchOpen || batch?.enabled
+  const components = useMemo(
+    () => ({
+      // When no bar is open, fall back to StreamHeaderSpacer so the head
+      // row's hover toolbar (which floats above the message via
+      // `bottom-[calc(100%-20px)]`) doesn't get clipped by the scroller's
+      // top edge. Bar-open state uses the taller h-11 spacer.
+      Header: reservedTopSpacer ? BarTopSpacer : StreamHeaderSpacer,
+      Footer: ComposerFooterSpacer,
+    }),
+    [reservedTopSpacer]
+  )
+
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
@@ -1056,7 +1488,7 @@ function VirtuosoMessageList({
     <Virtuoso
       ref={virtuosoRef}
       scrollerRef={handleVirtuosoScrollerRef}
-      className={cn("h-full", isSearchOpen && "pt-11")}
+      className={cn("h-full", batch?.enabled && "select-none")}
       data-suppress-pull-refresh="true"
       firstItemIndex={firstItemIndex}
       initialTopMostItemIndex={initialTopMostItemIndex}
@@ -1072,7 +1504,8 @@ function VirtuosoMessageList({
       endReached={handleEndReached}
       atBottomThreshold={30}
       increaseViewportBy={{ top: 600, bottom: 600 }}
-      components={virtuosoComponents}
+      components={components}
+      {...batchPointerHandlers}
     />
   )
 }
@@ -1084,4 +1517,123 @@ const StreamHeaderSpacer = () => <div className="h-3 sm:h-6" aria-hidden />
 
 const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--composer-height, 0px)" }} />
 
-const virtuosoComponents = { Header: StreamHeaderSpacer, Footer: ComposerFooterSpacer }
+// 44px scrollable spacer used as Virtuoso's Header while the search or
+// batch-selection bar is open. Both bars render `absolute top-0` outside the
+// scroller; Header reserves matching room *inside* the scroller so the
+// topmost item never sits permanently underneath either bar. h-11 keeps the
+// numbers aligned with `StreamSearchBar` / `BatchSelectionBar`.
+const BarTopSpacer = () => <div aria-hidden className="h-11" />
+
+/**
+ * Three-phase state for the batch-move confirmation dialog. Drives the
+ * inline footer status row (`MoveStatusRow`) and the disabled / aria-busy
+ * state of the Move button.
+ *
+ * - `validating` — drop just landed, server validate is in flight, lease
+ *   not yet returned. Move button disabled, Cancel still allowed.
+ * - `validated`  — lease in hand, user gates the irreversible commit.
+ * - `moving`     — moveToThread in flight. Both buttons disabled, Move
+ *   carries `aria-busy` for assistive tech.
+ */
+type MovePhase = "validating" | "validated" | "moving"
+
+/**
+ * Inline status indicator pinned to the left of the dialog footer. The
+ * dialog body (title + description) stays constant across all three
+ * phases — this row is the only thing that changes, so the user never
+ * has to re-read the question. `min-h-[1.75rem]` locks the row height
+ * so the icon swap from spinner → check pill doesn't jiggle the buttons.
+ *
+ * Accessibility: `role="status"` + `aria-live="polite"` + `aria-atomic`
+ * causes assistive tech to announce each phase transition once, as a
+ * complete sentence ("Verifying…", "Verified", "Moving…"). Icons are
+ * decorative (`aria-hidden`) — the text label carries the meaning.
+ */
+function MoveStatusRow({ phase }: { phase: MovePhase }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className="flex min-h-[1.75rem] items-center gap-2 text-[13px] leading-none tabular-nums"
+    >
+      {phase === "validating" && (
+        <>
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground/80" aria-hidden />
+          <span className="text-muted-foreground">Verifying…</span>
+        </>
+      )}
+      {phase === "validated" && (
+        <>
+          <span
+            aria-hidden
+            className={cn(
+              "grid h-4 w-4 shrink-0 place-content-center rounded-full",
+              "bg-emerald-500/15 text-emerald-600",
+              "animate-in fade-in zoom-in-50 duration-300"
+            )}
+          >
+            <Check className="h-2.5 w-2.5" strokeWidth={3.5} />
+          </span>
+          <span className="font-medium text-emerald-600">Verified</span>
+        </>
+      )}
+      {phase === "moving" && (
+        <>
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+          <span className="text-foreground">Moving…</span>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Flush-top toolbar shown while batch-selection mode is active. Mirrors the
+ * `StreamSearchBar` pattern (h-11 strip, border-b, blurred translucent
+ * background) so the scroller's matching `pt-11` keeps every previously
+ * visible message reachable — the topmost item slides under the bar instead
+ * of disappearing.
+ */
+function BatchSelectionBar({ count, onCancel }: { count: number; onCancel: () => void }) {
+  const hint = count === 0 ? "Tap messages to select" : "Drag onto a message above to move"
+
+  return (
+    <div
+      className={cn(
+        "absolute top-0 left-0 right-0 z-20",
+        "flex items-center gap-2 px-2 py-1.5 sm:px-4 sm:py-2",
+        "bg-background/95 backdrop-blur-sm border-b shadow-sm"
+      )}
+      // Outer toolbar listens for nothing — its children handle their own
+      // events. Setting select-none here prevents accidental text selection
+      // when the user starts dragging from a message and crosses the bar.
+      style={{ userSelect: "none" }}
+    >
+      <div className="flex items-center gap-2 shrink-0">
+        <span
+          className={cn(
+            "inline-flex items-center justify-center h-6 min-w-6 px-1.5 rounded-full",
+            "text-xs font-medium tabular-nums tracking-tight transition-colors",
+            count > 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+          )}
+          aria-live="polite"
+        >
+          {count}
+        </span>
+        <span className="hidden sm:inline text-sm font-medium">
+          {count === 1 ? "message selected" : "messages selected"}
+        </span>
+      </div>
+
+      <div className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <Move className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span className="truncate">{hint}</span>
+      </div>
+
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onCancel} aria-label="Cancel selection">
+        <X className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
+}

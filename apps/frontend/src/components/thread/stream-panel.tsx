@@ -1,7 +1,7 @@
 import { useSearchParams, useParams } from "react-router-dom"
 import { useMemo, useCallback, useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
-import { MessageSquare, ChevronLeft } from "lucide-react"
+import { MessageSquare, ChevronLeft, MoreHorizontal, CornerDownRight } from "lucide-react"
 import {
   SidePanel,
   SidePanelHeader,
@@ -10,6 +10,8 @@ import {
   SidePanelContent,
 } from "@/components/ui/side-panel"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { SidebarActionDrawer, type SidebarActionItem } from "@/components/layout/sidebar/sidebar-actions"
 import {
   useStreamBootstrap,
   useDraftComposer,
@@ -24,6 +26,7 @@ import { useUser } from "@/auth"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { onDraftPromoted } from "@/lib/draft-promotions"
+import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
 import { StreamLoadingIndicator } from "@/components/loading"
 import {
   StreamContent,
@@ -176,8 +179,23 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
 
   // Draft thread expand state
   const [draftExpanded, setDraftExpanded] = useState(false)
+  const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false)
   const draftExpandedRef = useRef<HTMLDivElement>(null)
   const draftPortalTargetRef = useRef<HTMLElement | null>(null)
+
+  const handleSelectMessages = useCallback(() => {
+    if (!panelId) return
+    dispatchStartBatchSelect(panelId)
+  }, [panelId])
+
+  const panelMenuActions: SidebarActionItem[] = [
+    {
+      id: "move-messages",
+      label: "Move messages…",
+      icon: CornerDownRight,
+      onSelect: handleSelectMessages,
+    },
+  ]
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
     draftPortalTargetRef.current = el
   }, [])
@@ -359,6 +377,53 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
           </Button>
         )}
         {headerContent}
+        {!isDraft &&
+          stream &&
+          !stream.archivedAt &&
+          (isMobile ? (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 flex-shrink-0"
+                aria-label="Stream actions"
+                onClick={() => setIsMenuDrawerOpen(true)}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+              <SidebarActionDrawer
+                open={isMenuDrawerOpen}
+                onOpenChange={setIsMenuDrawerOpen}
+                actions={panelMenuActions}
+                title="Stream actions"
+                description="Choose an action for this stream."
+                header={
+                  <div className="px-4 pt-2 pb-3">
+                    <p className="truncate text-base font-semibold text-foreground">
+                      {getStreamName(stream) ?? streamFallbackLabel(stream.type as StreamType, "generic")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {stream.type === StreamTypes.THREAD ? "Thread" : "Stream"} actions
+                    </p>
+                  </div>
+                }
+              />
+            </>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" aria-label="Stream actions">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={handleSelectMessages} disabled={!!stream.archivedAt}>
+                  <CornerDownRight className="mr-2 h-4 w-4" />
+                  Move messages…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ))}
         {/* Hide X close button on mobile (back button used instead) */}
         {!isMobile && <SidePanelClose onClose={onClose} />}
       </SidePanelHeader>

@@ -234,6 +234,25 @@ interface MessageDeletedPayload {
   deletedAt: string
 }
 
+interface MessagesMovedPayload {
+  workspaceId: string
+  streamId: string
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: Stream
+  events: StreamEvent[]
+  removedEventIds: string[]
+  /** Tombstone event inserted into the source stream — appended to the
+   *  source-side IDB cache so the timeline keeps a "moved → thread" trace. */
+  sourceTombstoneEvent: StreamEvent
+  /** Authoritative replyCount for the drop-target after the move (see backend payload doc). */
+  parentReplyCount: number
+  /** Recomputed thread summary for the drop-target — same shape as `message:updated` ships. */
+  parentThreadSummary: ThreadSummary | null
+}
+
 interface ReactionPayload {
   workspaceId: string
   streamId: string
@@ -489,6 +508,73 @@ export function registerStreamSocketHandlers(
     }))
   }
 
+  const handleMessagesMoved = async (payload: MessagesMovedPayload) => {
+    if (payload.sourceStreamId !== streamId && payload.destinationStreamId !== streamId) return
+
+    const now = Date.now()
+    await db.transaction("rw", [db.events, db.streams], async () => {
+      if (payload.sourceStreamId === streamId) {
+        await db.events.bulkDelete(payload.removedEventIds)
+        // Append the source tombstone after the deletes so the timeline
+        // shows a "moved 3 messages → thread" trace where the messages
+        // used to be. The event was assigned a fresh sequence in the
+        // source stream so it sorts naturally at the bottom of the
+        // post-move state.
+        await db.events.put({
+          ...payload.sourceTombstoneEvent,
+          workspaceId,
+          _sequenceNum: sequenceToNum(payload.sourceTombstoneEvent.sequence),
+          _cachedAt: now,
+        })
+        // SET replyCount + threadSummary directly from the payload (not
+        // additive) so the patch is idempotent against the sibling
+        // `message:updated` event — they carry the same authoritative
+        // values, and whichever arrives second just overwrites with the
+        // identical result. This makes `messages:moved` self-sufficient:
+        // the thread card surfaces with the right count even if
+        // `message:updated` is delayed or lost.
+        await updateMessageEvent(streamId, payload.targetMessageId, (p) => ({
+          ...p,
+          threadId: payload.thread.id,
+          replyCount: payload.parentReplyCount,
+          threadSummary: payload.parentThreadSummary,
+        }))
+      }
+
+      if (payload.destinationStreamId === streamId) {
+        await db.events.bulkPut(
+          payload.events.map((event) => ({
+            ...event,
+            workspaceId,
+            _sequenceNum: sequenceToNum(event.sequence),
+            _cachedAt: now,
+          }))
+        )
+      }
+
+      const streamUpdate = { ...payload.thread, _cachedAt: now }
+      const updated = await db.streams.update(payload.thread.id, streamUpdate)
+      if (updated === 0) {
+        await db.streams.put(streamUpdate)
+      }
+    })
+
+    queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+      if (!old) return old
+      const streamExists = old.streams.some((stream) => stream.id === payload.thread.id)
+      return {
+        ...old,
+        streams: streamExists
+          ? old.streams.map((stream) =>
+              stream.id === payload.thread.id
+                ? { ...stream, ...payload.thread, lastMessagePreview: stream.lastMessagePreview }
+                : stream
+            )
+          : [...old.streams, { ...payload.thread, lastMessagePreview: null }],
+      }
+    })
+  }
+
   const handleReactionAdded = async (payload: ReactionPayload) => {
     if (payload.streamId !== streamId) return
     await updateMessageEvent(streamId, payload.messageId, (p) => {
@@ -524,6 +610,23 @@ export function registerStreamSocketHandlers(
       ...p,
       threadId: stream.id,
     }))
+
+    await db.streams.put({ ...stream, _cachedAt: Date.now() })
+
+    queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+      if (!old) return old
+      const streamExists = old.streams.some((existing) => existing.id === stream.id)
+      return {
+        ...old,
+        streams: streamExists
+          ? old.streams.map((existing) =>
+              existing.id === stream.id
+                ? { ...existing, ...stream, lastMessagePreview: existing.lastMessagePreview }
+                : existing
+            )
+          : [...old.streams, { ...stream, lastMessagePreview: null }],
+      }
+    })
   }
 
   const handleMessageUpdated = async (payload: MessageUpdatedPayload) => {
@@ -585,6 +688,7 @@ export function registerStreamSocketHandlers(
   socket.on("message:created", handleMessageCreated)
   socket.on("message:edited", handleMessageEdited)
   socket.on("message:deleted", handleMessageDeleted)
+  socket.on("messages:moved", handleMessagesMoved)
   socket.on("reaction:added", handleReactionAdded)
   socket.on("reaction:removed", handleReactionRemoved)
   socket.on("stream:created", handleStreamCreated)
@@ -606,6 +710,7 @@ export function registerStreamSocketHandlers(
     socket.off("message:created", handleMessageCreated)
     socket.off("message:edited", handleMessageEdited)
     socket.off("message:deleted", handleMessageDeleted)
+    socket.off("messages:moved", handleMessagesMoved)
     socket.off("reaction:added", handleReactionAdded)
     socket.off("reaction:removed", handleReactionRemoved)
     socket.off("stream:created", handleStreamCreated)
