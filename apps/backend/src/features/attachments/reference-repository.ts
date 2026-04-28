@@ -68,30 +68,6 @@ export const AttachmentReferenceRepository = {
     return result.rowCount ?? 0
   },
 
-  /**
-   * Returns the subset of `attachmentIds` accessible to the viewer because
-   * the attachment is referenced from at least one message in a stream the
-   * viewer can read. Composes with stream-access filtering: pass in the
-   * already-resolved accessible stream ids so the access rule lives in the
-   * caller (mirroring `SharedMessageRepository.listSourcesGrantedToViewer`).
-   */
-  async listAttachmentsAccessibleViaReferences(
-    db: Querier,
-    workspaceId: string,
-    accessibleStreamIds: readonly string[],
-    attachmentIds: readonly string[]
-  ): Promise<Set<string>> {
-    if (attachmentIds.length === 0 || accessibleStreamIds.length === 0) return new Set()
-    const result = await db.query<{ attachment_id: string }>(sql`
-      SELECT DISTINCT attachment_id
-      FROM attachment_references
-      WHERE workspace_id = ${workspaceId}
-        AND attachment_id = ANY(${attachmentIds as string[]})
-        AND stream_id = ANY(${accessibleStreamIds as string[]})
-    `)
-    return new Set(result.rows.map((r) => r.attachment_id))
-  },
-
   async findByAttachmentId(db: Querier, attachmentId: string): Promise<AttachmentReference[]> {
     const result = await db.query<AttachmentReferenceRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}

@@ -71,7 +71,7 @@ describe("EventService attachment safety checks", () => {
     ] as any)
     // checkStreamAccess() resolves to the source stream as long as the
     // stream row exists and is public (or the user is a member).
-    const findByIdSpy = spyOn(StreamRepository, "findById").mockResolvedValue({
+    spyOn(StreamRepository, "findById").mockResolvedValue({
       id: "stream_source",
       workspaceId: "ws_1",
       rootStreamId: null,
@@ -129,7 +129,6 @@ describe("EventService attachment safety checks", () => {
     expect(callArgs).toHaveLength(1)
     expect(callArgs[0]?.attachmentId).toBe("attach_1")
     expect(callArgs[0]?.streamId).toBe("stream_target")
-    findByIdSpy.mockRestore()
   })
 
   it("rejects re-referencing an attachment the author cannot read", async () => {

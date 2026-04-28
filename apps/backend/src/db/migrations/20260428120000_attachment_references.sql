@@ -23,14 +23,10 @@ CREATE TABLE attachment_references (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Compound unique index serves both the INSERT ... ON CONFLICT idempotency
+-- and `WHERE attachment_id = X` lookups (Postgres uses the leftmost prefix).
 CREATE UNIQUE INDEX attachment_references_pair_idx
     ON attachment_references (attachment_id, message_id);
-CREATE INDEX attachment_references_attachment_idx
-    ON attachment_references (attachment_id);
-CREATE INDEX attachment_references_stream_idx
-    ON attachment_references (stream_id);
-CREATE INDEX attachment_references_workspace_idx
-    ON attachment_references (workspace_id, created_at DESC);
 
 -- Backfill: every existing attachment whose message_id is set already counts
 -- as a reference from that message. New rows get inserted at message-create
