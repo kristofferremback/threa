@@ -17,12 +17,13 @@ export interface SharedMessageResolved {
   authorName?: string
   editedAt: string | null
   /**
-   * Attachments on the source message. Always present from the server-side
-   * hydration map; absent only on the IndexedDB-cache fallback (cached
-   * events store attachment metadata under the same key but the cache
-   * fallback below intentionally doesn't reach for it — the timeline
-   * renders attachments via its own `payload.attachments` path, so the
-   * shared-message card only needs them when hydrated from the server).
+   * Attachments on the source message. Populated from the server-side
+   * hydration map when available, and falls back to the cached event
+   * payload's `attachments` array otherwise. The shared-message card needs
+   * these directly — it doesn't share the timeline's `payload.attachments`
+   * render path — so without this fallback, image thumbnails would silently
+   * drop whenever a pointer hydrates from IDB cache (e.g. in a thread whose
+   * parent message lives in another stream's bootstrap).
    */
   attachments?: AttachmentSummary[]
 }
@@ -144,7 +145,7 @@ export function useSharedMessageSource(messageId: string, sourceStreamId: string
     }
 
     if (cachedEvent) {
-      const payload = cachedEvent.payload as { contentMarkdown?: string } | null
+      const payload = cachedEvent.payload as { contentMarkdown?: string; attachments?: AttachmentSummary[] } | null
       // Only surface a resolved record when the cached event actually has the
       // fields we need. Fabricating `authorId = ""` / `actorType = "user"` when
       // the schema guarantees them would silently misattribute any event that
@@ -157,6 +158,7 @@ export function useSharedMessageSource(messageId: string, sourceStreamId: string
           authorId: cachedEvent.actorId,
           actorType: cachedEvent.actorType,
           editedAt: null,
+          attachments: payload.attachments,
         }
       }
       return { status: "missing" }
