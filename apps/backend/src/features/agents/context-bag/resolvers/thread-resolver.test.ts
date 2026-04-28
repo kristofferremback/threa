@@ -552,6 +552,38 @@ describe("ThreadResolver.fetch — DISCUSS_THREAD windowing", () => {
     expect(itemB.attachments).toBeUndefined()
   })
 
+  it("sorts attachments by id so the rendered context-bag stays byte-stable across resolves", async () => {
+    // `findByMessageIds` doesn't ORDER BY, so PG row order can drift between
+    // calls. The stable region MUST hash identically across turns to preserve
+    // prompt-cache reuse — pin the deterministic sort here.
+    spyOn(StreamRepository, "findById").mockResolvedValue(makeStream())
+    spyOn(UserRepository, "findByIds").mockResolvedValue([{ id: "usr_author", name: "Author" }] as any)
+    spyOn(PersonaRepository, "findByIds").mockResolvedValue([])
+    spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
+    spyOn(MessageRepository, "list").mockResolvedValue([seq("msg_a", 1)])
+    spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(
+      new Map([
+        [
+          "msg_a",
+          [
+            { id: "att_3", filename: "c.pdf", mimeType: "application/pdf", sizeBytes: 3 } as any,
+            { id: "att_1", filename: "a.pdf", mimeType: "application/pdf", sizeBytes: 1 } as any,
+            { id: "att_2", filename: "b.pdf", mimeType: "application/pdf", sizeBytes: 2 } as any,
+          ],
+        ],
+      ])
+    )
+
+    const result = await ThreadResolver.fetch(
+      {} as any,
+      { kind: ContextRefKinds.THREAD, streamId: "stream_source" },
+      { intent: ContextIntents.DISCUSS_THREAD }
+    )
+
+    const itemA = result.items.find((i) => i.messageId === "msg_a")!
+    expect(itemA.attachments?.map((a) => a.id)).toEqual(["att_1", "att_2", "att_3"])
+  })
+
   it("falls back to the stream tail (not a deletion-skewed slice) when the focal message is soft-deleted", async () => {
     // Regression: `MessageRepository.findSurrounding` looks the target's
     // sequence up without a `deleted_at` filter but excludes the target

@@ -105,14 +105,20 @@ export const ThreadResolver: Resolver<ThreadRef> = {
 
     const items: RenderableMessage[] = withRoot.map((m) => {
       const messageAttachments = attachmentsByMessage.get(m.id)
+      // Sort by id (ULID, time-ordered) so the rendered attachments line is
+      // byte-identical across resolves — `findByMessageIds` doesn't ORDER BY,
+      // so PG row order would otherwise drift and break prompt-cache reuse
+      // on the stable region.
       const attachments: AttachmentSummary[] | undefined =
         messageAttachments && messageAttachments.length > 0
-          ? messageAttachments.map((a) => ({
-              id: a.id,
-              filename: a.filename,
-              mimeType: a.mimeType,
-              sizeBytes: a.sizeBytes,
-            }))
+          ? [...messageAttachments]
+              .sort((a, b) => a.id.localeCompare(b.id))
+              .map((a) => ({
+                id: a.id,
+                filename: a.filename,
+                mimeType: a.mimeType,
+                sizeBytes: a.sizeBytes,
+              }))
           : undefined
       return {
         messageId: m.id,
