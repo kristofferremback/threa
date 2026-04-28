@@ -319,6 +319,17 @@ export type {
 // Push Notifications
 export { DEVICE_KEY_LENGTH } from "./api"
 
+// Asset explorer (read-side projection over attachments)
+export { ASSET_KINDS, AssetKinds } from "./asset-explorer"
+export type {
+  AssetKind,
+  AssetSearchScope,
+  AssetSearchFilters,
+  AssetSearchRequest,
+  AssetSearchResult,
+  AssetSearchResponse,
+} from "./asset-explorer"
+
 // Command kind constants
 export { CommandKinds } from "./api"
 

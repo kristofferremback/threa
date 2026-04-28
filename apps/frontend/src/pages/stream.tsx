@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, Search, CornerDownRight } from "lucide-react"
+import {
+  MoreHorizontal,
+  Pencil,
+  Archive,
+  MessageCircle,
+  X,
+  ArchiveX,
+  Search,
+  CornerDownRight,
+  Image as ImageIcon,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -21,6 +31,7 @@ import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ThreadPanelSlot, SidebarToggle } from "@/components/layout"
 import { ConversationList } from "@/components/conversations"
+import { AssetExplorerPanel } from "@/components/asset-explorer"
 import { StreamErrorView } from "@/components/stream-error-view"
 import { StreamTypes, type StreamType } from "@threa/types"
 import { getStreamName, resolveDmDisplayName, streamFallbackLabel } from "@/lib/streams"
@@ -77,6 +88,20 @@ export function StreamPage() {
         newParams.set("convView", "open")
       } else {
         newParams.delete("convView")
+      }
+      return newParams
+    })
+  }
+
+  const isAssetExplorerOpen = searchParams.get("assets") === "open"
+
+  const setAssetExplorerOpen = (open: boolean) => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev)
+      if (open) {
+        newParams.set("assets", "open")
+      } else {
+        newParams.delete("assets")
       }
       return newParams
     })
@@ -288,6 +313,17 @@ export function StreamPage() {
               <MessageCircle className="h-4 w-4" />
             </Button>
           )}
+          {!isThread && !isDraft && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              title="Browse assets"
+              onClick={() => setAssetExplorerOpen(!isAssetExplorerOpen)}
+            >
+              <ImageIcon className="h-4 w-4" />
+            </Button>
+          )}
           {stream &&
             !isDraft &&
             !(isArchived && !isScratchpad) &&
@@ -406,6 +442,15 @@ export function StreamPage() {
     </>
   )
 
+  const assetExplorerPanel = stream && !isThread && !isDraft && (
+    <AssetExplorerPanel
+      workspaceId={workspaceId!}
+      streamId={streamId!}
+      open={isAssetExplorerOpen}
+      onClose={() => setAssetExplorerOpen(false)}
+    />
+  )
+
   // On mobile, thread panel takes over the full screen
   if (isMobile && isPanelOpen) {
     return (
@@ -414,6 +459,7 @@ export function StreamPage() {
           <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
         </div>
         {conversationPanel}
+        {assetExplorerPanel}
       </>
     )
   }
@@ -439,6 +485,7 @@ export function StreamPage() {
         </ThreadPanelSlot>
       </div>
       {conversationPanel}
+      {assetExplorerPanel}
     </>
   )
 }
