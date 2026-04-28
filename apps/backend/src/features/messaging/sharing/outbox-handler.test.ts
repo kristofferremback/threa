@@ -48,9 +48,9 @@ describe("invalidatePointersForEvent", () => {
 
   it("emits pointer:invalidated once per distinct target stream when pointers exist", async () => {
     spyOn(SharedMessageRepository, "listBySourceMessageIds").mockResolvedValue([
-      { targetStreamId: "stream_t1" },
-      { targetStreamId: "stream_t2" },
-      { targetStreamId: "stream_t1" }, // duplicate → deduped
+      { sourceMessageId: "msg_a", targetStreamId: "stream_t1" },
+      { sourceMessageId: "msg_a", targetStreamId: "stream_t2" },
+      { sourceMessageId: "msg_a", targetStreamId: "stream_t1" }, // duplicate → deduped
     ] as any)
     const { io, emits } = fakeIo()
     await invalidatePointersForEvent(
@@ -85,5 +85,54 @@ describe("invalidatePointersForEvent", () => {
       io
     )
     expect(list).toHaveBeenCalledWith({}, "ws_1", ["msg_edited"])
+  })
+
+  it("fans out a per-source pointer:invalidated for each share when a messages:moved event lands", async () => {
+    spyOn(SharedMessageRepository, "listBySourceMessageIds").mockResolvedValue([
+      { sourceMessageId: "msg_a", targetStreamId: "stream_t1" },
+      { sourceMessageId: "msg_b", targetStreamId: "stream_t1" },
+      { sourceMessageId: "msg_a", targetStreamId: "stream_t2" },
+    ] as any)
+    const { io, emits } = fakeIo()
+    await invalidatePointersForEvent(
+      {
+        eventType: "messages:moved",
+        payload: {
+          workspaceId: "ws_1",
+          streamId: "stream_src",
+          movedMessageIds: ["msg_a", "msg_b", "msg_c"],
+        },
+      } as any,
+      {} as any,
+      io
+    )
+    // One emit per (target, source) pair: (t1,a), (t1,b), (t2,a). msg_c has
+    // no shares so it doesn't surface.
+    expect(emits).toHaveLength(3)
+    const pairs = emits.map((e) => `${e.room}|${(e.payload as { sourceMessageId: string }).sourceMessageId}`).sort()
+    expect(pairs).toEqual([
+      "ws:ws_1:stream:stream_t1|msg_a",
+      "ws:ws_1:stream:stream_t1|msg_b",
+      "ws:ws_1:stream:stream_t2|msg_a",
+    ])
+    expect(emits.every((e) => e.event === POINTER_INVALIDATED_EVENT)).toBe(true)
+  })
+
+  it("passes every moved message id to the share lookup when a messages:moved event lands", async () => {
+    const list = spyOn(SharedMessageRepository, "listBySourceMessageIds").mockResolvedValue([])
+    const { io } = fakeIo()
+    await invalidatePointersForEvent(
+      {
+        eventType: "messages:moved",
+        payload: {
+          workspaceId: "ws_1",
+          streamId: "stream_src",
+          movedMessageIds: ["msg_a", "msg_b"],
+        },
+      } as any,
+      {} as any,
+      io
+    )
+    expect(list).toHaveBeenCalledWith({}, "ws_1", ["msg_a", "msg_b"])
   })
 })
