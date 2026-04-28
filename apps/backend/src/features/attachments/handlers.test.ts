@@ -1,6 +1,7 @@
-import { describe, expect, it, mock } from "bun:test"
+import { describe, expect, it, mock, spyOn } from "bun:test"
 import { AttachmentSafetyStatuses } from "@threa/types"
 import { createAttachmentHandlers } from "./handlers"
+import { SharedMessageRepository } from "../messaging"
 
 function createResponse() {
   const res: any = {}
@@ -194,5 +195,78 @@ describe("attachment handlers safety gating", () => {
 
     expect(attachmentService.getDownloadUrl).toHaveBeenCalled()
     expect(res.body).toEqual({ url: "https://download", expiresIn: 900 })
+  })
+
+  it("denies download when user has no direct stream access nor share grant", async () => {
+    const attachment = {
+      ...buildAttachment(AttachmentSafetyStatuses.CLEAN),
+      streamId: "str_source",
+      messageId: "msg_source",
+    }
+    const attachmentService = {
+      getById: mock(() => Promise.resolve(attachment)),
+      getDownloadUrl: mock(() => Promise.resolve("https://download")),
+      getSharingBlockReason: mock(() => null),
+    } as any
+    const streamService = {
+      tryAccess: mock(() => Promise.resolve(null)),
+    } as any
+    const grantSpy = spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(new Set())
+
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
+    const res = createResponse()
+
+    await handlers.getDownloadUrl(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        params: { attachmentId: "attach_1" },
+        query: {},
+      } as any,
+      res
+    )
+
+    expect(grantSpy).toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(403)
+    expect(res.body).toEqual({ error: "Access denied" })
+    expect(attachmentService.getDownloadUrl).not.toHaveBeenCalled()
+    grantSpy.mockRestore()
+  })
+
+  it("returns download URL when access is granted via a shared-message", async () => {
+    const attachment = {
+      ...buildAttachment(AttachmentSafetyStatuses.CLEAN),
+      streamId: "str_source",
+      messageId: "msg_source",
+    }
+    const attachmentService = {
+      getById: mock(() => Promise.resolve(attachment)),
+      getDownloadUrl: mock(() => Promise.resolve("https://download")),
+      getSharingBlockReason: mock(() => null),
+    } as any
+    const streamService = {
+      tryAccess: mock(() => Promise.resolve(null)),
+    } as any
+    const grantSpy = spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(
+      new Set(["msg_source"])
+    )
+
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
+    const res = createResponse()
+
+    await handlers.getDownloadUrl(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        params: { attachmentId: "attach_1" },
+        query: {},
+      } as any,
+      res
+    )
+
+    expect(grantSpy).toHaveBeenCalled()
+    expect(attachmentService.getDownloadUrl).toHaveBeenCalled()
+    expect(res.body).toEqual({ url: "https://download", expiresIn: 900 })
+    grantSpy.mockRestore()
   })
 })
