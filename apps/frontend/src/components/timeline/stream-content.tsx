@@ -226,9 +226,19 @@ export function StreamContent({
   // waiting for a full bootstrap refetch. Bootstrap entries take precedence
   // when both maps carry the same source-message id since bootstrap reflects
   // the latest backend response while paged data may be older.
+  //
+  // For threads, also fold in the parent stream's `sharedMessages` so any
+  // pointer embedded in the parent message hydrates with full data
+  // (including attachments) rather than falling through to the IDB-cache
+  // fallback. The parent bootstrap is fetched above for the parent message
+  // anyway; the hydration map rides along on the same response.
   const mergedSharedMessages = useMemo(
-    () => ({ ...pagedSharedMessages, ...(bootstrap?.sharedMessages ?? {}) }),
-    [pagedSharedMessages, bootstrap?.sharedMessages]
+    () => ({
+      ...pagedSharedMessages,
+      ...(parentBootstrap?.sharedMessages ?? {}),
+      ...(bootstrap?.sharedMessages ?? {}),
+    }),
+    [pagedSharedMessages, parentBootstrap?.sharedMessages, bootstrap?.sharedMessages]
   )
 
   // For drafts, query pending/failed events directly from IDB so optimistic

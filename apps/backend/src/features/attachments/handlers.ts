@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { Pool } from "pg"
 import { buildContentDisposition, type AttachmentService } from "./service"
 import type { StreamService } from "../streams"
+import { SharedMessageRepository } from "../messaging"
 import { VideoTranscodeJobRepository } from "./video"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 
@@ -82,10 +83,27 @@ export function createAttachmentHandlers({ attachmentService, streamService, sto
       // thread access were previously blocked here because plain `isMember`
       // missed both. `tryAccess` is the canonical read-access check
       // (visibility + workspace match + thread root inheritance).
+      //
+      // If direct access is denied but the attachment's message has been
+      // shared into a stream the viewer can read, grant access — otherwise
+      // the recipient of a shared message would see "Failed to load image"
+      // even though hydration already let them see the message body.
+      // `listSourcesGrantedToViewer` composes the same accessible-target
+      // check used by recursive pointer hydration so the rule lives in one
+      // place.
       if (attachment.streamId) {
         const accessible = await streamService.tryAccess(attachment.streamId, workspaceId, userId)
         if (!accessible) {
-          return res.status(403).json({ error: "Access denied" })
+          const grantedViaShare =
+            attachment.messageId !== null &&
+            (
+              await SharedMessageRepository.listSourcesGrantedToViewer(pool, workspaceId, userId, [
+                attachment.messageId,
+              ])
+            ).has(attachment.messageId)
+          if (!grantedViaShare) {
+            return res.status(403).json({ error: "Access denied" })
+          }
         }
       }
 
