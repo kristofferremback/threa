@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react"
-import type { StreamType, Visibility } from "@threa/types"
+import type { AttachmentSummary, StreamType, Visibility } from "@threa/types"
 
 /**
  * Hydrated payload for a pointer message. Kept structurally aligned with
@@ -23,6 +23,7 @@ export type HydratedSharedMessage =
       contentMarkdown: string
       editedAt: string | null
       createdAt: string
+      attachments: AttachmentSummary[]
     }
   | { state: "deleted"; messageId: string; deletedAt: string }
   | { state: "missing"; messageId: string }

@@ -9,6 +9,7 @@ import type { ContextBag, ContextIntent } from "./context-bag"
 import type { UserId } from "./ids"
 import type { JSONContent } from "./prosemirror"
 import type {
+  AttachmentSummary,
   Stream,
   StreamWithPreview,
   StreamEvent,
@@ -139,6 +140,7 @@ export type SharedMessageHydration =
       contentMarkdown: string
       editedAt: string | null
       createdAt: string
+      attachments: AttachmentSummary[]
     }
   | { state: "deleted"; messageId: string; deletedAt: string }
   | { state: "missing"; messageId: string }

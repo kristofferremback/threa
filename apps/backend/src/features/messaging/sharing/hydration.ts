@@ -1,8 +1,9 @@
 import type { Querier } from "../../../db"
-import { type JSONContent, type StreamType, type Visibility, StreamTypes } from "@threa/types"
+import { type AttachmentSummary, type JSONContent, type StreamType, type Visibility, StreamTypes } from "@threa/types"
 import { MessageRepository, type Message } from "../repository"
 import { resolveActorNames } from "../../agents"
 import { listAccessibleStreamIds, StreamRepository, type Stream } from "../../streams"
+import { AttachmentRepository, toAttachmentSummary } from "../../attachments"
 
 import { SharedMessageRepository } from "./repository"
 
@@ -42,6 +43,13 @@ export type HydratedSharedMessage =
       contentMarkdown: string
       editedAt: Date | null
       createdAt: Date
+      /**
+       * Attachments on the source message. Always present (possibly empty)
+       * so the wire shape is uniform; rides only on `ok` payloads where
+       * viewer access to the source is already established by the access
+       * resolver above, so no privacy gap.
+       */
+      attachments: AttachmentSummary[]
     }
   | { state: "deleted"; messageId: string; deletedAt: Date }
   | { state: "missing"; messageId: string }
@@ -231,8 +239,17 @@ export async function hydrateSharedMessageIds(
   if (okMessages.size > 0) {
     const actorIds = new Set<string>()
     for (const msg of okMessages.values()) actorIds.add(msg.authorId)
-    const authorNames = await resolveActorNames(db, workspaceId, actorIds)
+    // One round-trip for author names and one for attachments across every
+    // ok-state message, regardless of chain depth (INV-56). Mirrors
+    // `event-service.ts`'s `attachmentSummaries` shape so the wire payload
+    // for a shared message matches what `message_created` would have
+    // emitted on the source stream.
+    const [authorNames, attachmentsByMessageId] = await Promise.all([
+      resolveActorNames(db, workspaceId, actorIds),
+      AttachmentRepository.findByMessageIds(db, [...okMessages.keys()]),
+    ])
     for (const [id, source] of okMessages) {
+      const attachments = (attachmentsByMessageId.get(source.id) ?? []).map(toAttachmentSummary)
       result[id] = {
         state: "ok",
         messageId: source.id,
@@ -244,6 +261,7 @@ export async function hydrateSharedMessageIds(
         contentMarkdown: source.contentMarkdown,
         editedAt: source.editedAt,
         createdAt: source.createdAt,
+        attachments,
       }
     }
   }
