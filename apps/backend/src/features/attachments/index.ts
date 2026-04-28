@@ -2,6 +2,9 @@
 export { AttachmentRepository } from "./repository"
 export type { Attachment, InsertAttachmentParams, AttachmentWithExtraction } from "./repository"
 
+export { AttachmentReferenceRepository } from "./reference-repository"
+export type { AttachmentReference, InsertAttachmentReferenceParams } from "./reference-repository"
+
 // Wire-shape mappers
 export { toAttachmentSummary } from "./summary"
 

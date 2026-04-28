@@ -2,6 +2,7 @@ import { Pool } from "pg"
 import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { AttachmentRepository, type Attachment } from "./repository"
+import { AttachmentReferenceRepository } from "./reference-repository"
 import { AttachmentExtractionRepository } from "./extraction-repository"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import { AttachmentSafetyStatuses, ProcessingStatuses } from "@threa/types"
@@ -162,16 +163,28 @@ export class AttachmentService {
    * Fetch an attachment and enforce workspace, stream-access, and sharing-safety
    * boundaries in one call. Returns null when any check fails so callers never
    * need to replicate the access-control logic inline.
+   *
+   * Stream-access check is satisfied either by the attachment's owning stream
+   * being in `accessibleStreamIds`, or by an `attachment_references` row that
+   * points at any accessible stream — keeping this consistent with the
+   * `getDownloadUrl` chain so agent tools and public-api handlers honour
+   * resends/Ariadne re-surfacings.
    */
   async getAccessible(
     id: string,
     { workspaceId, accessibleStreamIds }: { workspaceId: string; accessibleStreamIds: string[] }
   ): Promise<Attachment | null> {
     const attachment = await AttachmentRepository.findById(this.pool, id)
-    if (!attachment || attachment.workspaceId !== workspaceId || !attachment.streamId) {
+    if (!attachment || attachment.workspaceId !== workspaceId) {
       return null
     }
-    if (!accessibleStreamIds.includes(attachment.streamId)) {
+    const accessibleSet = new Set(accessibleStreamIds)
+    let directlyAccessible = !!attachment.streamId && accessibleSet.has(attachment.streamId)
+    if (!directlyAccessible) {
+      const refs = await AttachmentReferenceRepository.findByAttachmentId(this.pool, id)
+      directlyAccessible = refs.some((ref) => accessibleSet.has(ref.streamId))
+    }
+    if (!directlyAccessible) {
       return null
     }
     if (this.getSharingBlockReason(attachment)) {

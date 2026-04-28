@@ -46,6 +46,7 @@ export {
   savedMessageId,
   reminderQueueId,
   sharedMessageId,
+  attachmentReferenceId,
   streamContextAttachmentId,
   contextSummaryId,
 } from "@threa/backend-common"

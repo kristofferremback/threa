@@ -5,11 +5,11 @@ import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
 import { checkStreamAccess, resolveEffectiveAccessStream } from "../streams"
 import { MessageRepository, type Message, type MoveMessageSequenceUpdate } from "./repository"
-import { ShareService, type ResolveEffectiveStream } from "./sharing"
-import { AttachmentRepository, toAttachmentSummary } from "../attachments"
+import { ShareService, SharedMessageRepository, type ResolveEffectiveStream } from "./sharing"
+import { AttachmentRepository, AttachmentReferenceRepository, toAttachmentSummary } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
-import { eventId, messageId, messageVersionId, streamId as generateStreamId } from "../../lib/id"
+import { attachmentReferenceId, eventId, messageId, messageVersionId, streamId as generateStreamId } from "../../lib/id"
 import { MessageVersionRepository, type MessageVersion } from "./version-repository"
 import { serializeBigInt } from "@threa/backend-common"
 import { messagesTotal } from "../../lib/observability"
@@ -31,6 +31,50 @@ import {
   type MessagesMovedEventPayload,
   type MovedMessagePreview,
 } from "@threa/types"
+
+/**
+ * "Can this user read this attachment?" — mirrors the access chain used by
+ * `getDownloadUrl`, deduplicated so the create-message validator and the
+ * download endpoint stay in lockstep.
+ *
+ * Order of approval (cheapest first):
+ *  1. Direct read access to the attachment's owning stream.
+ *  2. The owning message has been shared into a stream the user can read.
+ *  3. The attachment is referenced inline from a message in a stream the
+ *     user can read (the new attachment_references projection).
+ *
+ * `accessibleStreamIds` is mutated as a per-call cache: if multiple
+ * attachments validated together share a source stream we only resolve its
+ * accessibility once. Pass an empty `Set` on the first call.
+ */
+async function isAttachmentReadableByAuthor(
+  client: import("pg").PoolClient,
+  attachment: import("../attachments").Attachment,
+  workspaceId: string,
+  userId: string,
+  accessibleStreamIds: Set<string>
+): Promise<boolean> {
+  // 1. Direct access to the owning stream.
+  if (attachment.streamId) {
+    if (accessibleStreamIds.has(attachment.streamId)) return true
+    const stream = await checkStreamAccess(client, attachment.streamId, workspaceId, userId)
+    if (stream) {
+      accessibleStreamIds.add(attachment.streamId)
+      return true
+    }
+  }
+
+  // 2. The owning message has been shared into a stream the user can read.
+  if (attachment.messageId) {
+    const granted = await SharedMessageRepository.listSourcesGrantedToViewer(client, workspaceId, userId, [
+      attachment.messageId,
+    ])
+    if (granted.has(attachment.messageId)) return true
+  }
+
+  // 3. Inline reference in any stream the user can read.
+  return AttachmentReferenceRepository.hasViewerAccessByReference(client, workspaceId, userId, attachment.id)
+}
 
 /**
  * Adapter that lets `ShareService.validateAndRecordShares` consume the
@@ -325,21 +369,59 @@ export class EventService {
       // 0. Get stream for thread handling (metrics deferred until after conflict check)
       const stream = await StreamRepository.findById(client, params.streamId)
 
-      // 1. Validate and prepare attachments FIRST (before creating event)
+      // 1. Validate and prepare attachments FIRST (before creating event).
+      //    Two flavors are allowed:
+      //    - "new" (`messageId === null`): a fresh upload owned by this send.
+      //      The attachment row gets its `message_id` / `stream_id` set in
+      //      step 6 via `attachToMessage`, anchoring ownership to this message.
+      //    - "referenced" (`messageId !== null`): the message body re-uses an
+      //      attachment that already belongs to a previous message — typical
+      //      after copy-paste of a message containing `[Image #1](attachment:id)`.
+      //      Ownership stays with the original message; an
+      //      `attachment_references` row in step 6b records the pointer so
+      //      recipients of the new message can resolve download access via the
+      //      same workspace/stream gate that already covers shared messages.
+      //
+      //    Verifying the author can read the referenced attachment closes the
+      //    obvious abuse — submitting an arbitrary id from someone else's
+      //    workspace would otherwise bypass `getDownloadUrl`'s access check by
+      //    being silently summarised on the wire.
       let attachmentSummaries: AttachmentSummary[] | undefined
+      const attachmentsToAttach: string[] = []
+      const attachmentsToReference: string[] = []
       if (params.attachmentIds && params.attachmentIds.length > 0) {
         const attachments = await AttachmentRepository.findByIds(client, params.attachmentIds)
-        const allValid =
-          attachments.length === params.attachmentIds.length &&
-          attachments.every(
-            (a) =>
-              a.workspaceId === params.workspaceId &&
-              a.messageId === null &&
-              a.safetyStatus === AttachmentSafetyStatuses.CLEAN
+        if (attachments.length !== params.attachmentIds.length) {
+          throw new Error("Invalid attachment IDs: not all attachments were found")
+        }
+        const accessibleStreamIds: Set<string> = new Set()
+        for (const a of attachments) {
+          if (a.workspaceId !== params.workspaceId) {
+            throw new Error("Invalid attachment IDs: must belong to this workspace")
+          }
+          if (a.safetyStatus !== AttachmentSafetyStatuses.CLEAN) {
+            throw new Error("Invalid attachment IDs: must be malware-scan clean")
+          }
+          if (a.messageId === null) {
+            attachmentsToAttach.push(a.id)
+            continue
+          }
+          // Referenced from another message: gate on the author's ability to
+          // read it. We accept reads via direct stream access (`tryAccess`),
+          // a recorded share into a stream the author can read, or an
+          // attachment_references row pointing at such a stream — the same
+          // chain `getDownloadUrl` honours.
+          const accessible = await isAttachmentReadableByAuthor(
+            client,
+            a,
+            params.workspaceId,
+            params.authorId,
+            accessibleStreamIds
           )
-
-        if (!allValid) {
-          throw new Error("Invalid attachment IDs: must be clean, unattached, and belong to this workspace")
+          if (!accessible) {
+            throw new Error("Invalid attachment IDs: cannot reference an attachment without read access")
+          }
+          attachmentsToReference.push(a.id)
         }
 
         attachmentSummaries = attachments.map(toAttachmentSummary)
@@ -411,17 +493,34 @@ export class EventService {
         await StreamPersonaParticipantRepository.recordParticipation(client, params.streamId, params.authorId)
       }
 
-      // 6. Link attachments to message (also sets streamId)
-      if (params.attachmentIds && params.attachmentIds.length > 0) {
-        const attached = await AttachmentRepository.attachToMessage(
-          client,
-          params.attachmentIds,
-          msgId,
-          params.streamId
-        )
-        if (attached !== params.attachmentIds.length) {
+      // 6. Link first-time attachments to this message (also sets streamId).
+      //    Re-referenced attachments deliberately skip this step — their
+      //    `message_id`/`stream_id` already point at the original owner and
+      //    overwriting that would orphan the original `attachment:` link in
+      //    other messages.
+      if (attachmentsToAttach.length > 0) {
+        const attached = await AttachmentRepository.attachToMessage(client, attachmentsToAttach, msgId, params.streamId)
+        if (attached !== attachmentsToAttach.length) {
           throw new Error("Failed to attach all files")
         }
+      }
+
+      // 6b. Record an attachment_references row for every attachment in this
+      //     message — both newly-attached and re-referenced. Lookups for
+      //     "is this attachment visible to a viewer of stream X?" can then
+      //     consult one index without caring about original ownership.
+      const attachmentReferenceIds = [...attachmentsToAttach, ...attachmentsToReference]
+      if (attachmentReferenceIds.length > 0) {
+        await AttachmentReferenceRepository.insertMany(
+          client,
+          attachmentReferenceIds.map((aid) => ({
+            id: attachmentReferenceId(),
+            workspaceId: params.workspaceId,
+            attachmentId: aid,
+            messageId: msgId,
+            streamId: params.streamId,
+          }))
+        )
       }
 
       // 7. Validate and record any cross-stream share references carried in

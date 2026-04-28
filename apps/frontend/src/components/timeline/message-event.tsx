@@ -19,6 +19,7 @@ import { ActorAvatar } from "@/components/actor-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
+import { useMessageMarkdownCopy } from "@/hooks/use-message-markdown-copy"
 import { useEditLastMessage } from "./edit-last-message-context"
 import {
   useActors,
@@ -428,30 +429,38 @@ function MessageLayout({
   const renderAsContinuation = isGroupContinuation && !isEditing
 
   const hasSwipe = swipeOffset !== undefined && swipeOffset !== 0
+  // Make a whole-message native copy lossless: attached to the wrapper that
+  // contains the rendered body, so a `select-all + Ctrl+C` writes
+  // `contentMarkdown` instead of the rendered text (which has stripped the
+  // structural quote:/shared-message:/attachment: URLs the composer needs to
+  // reconstruct nodes on paste). Partial selections fall through.
+  const copyRef = useMessageMarkdownCopy(payload.contentMarkdown)
   const messageBody = children ?? (
-    <LinkPreviewProvider>
-      <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-        <MarkdownContent
-          content={payload.contentMarkdown}
-          messageId={payload.messageId}
-          className="text-sm leading-relaxed"
-        />
-        {payload.attachments && payload.attachments.length > 0 && (
-          <AttachmentList
-            attachments={payload.attachments}
-            workspaceId={workspaceId}
-            deferHydration={deferSecondaryHydration}
+    <div ref={copyRef}>
+      <LinkPreviewProvider>
+        <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
+          <MarkdownContent
+            content={payload.contentMarkdown}
+            messageId={payload.messageId}
+            className="text-sm leading-relaxed"
           />
-        )}
-        {isFirstMessage && <MessageContextBadge workspaceId={workspaceId} streamId={streamId} />}
-        <MessageLinkPreviews
-          messageId={payload.messageId}
-          workspaceId={workspaceId}
-          previews={payload.linkPreviews}
-          hydrateFromApi={!deferSecondaryHydration}
-        />
-      </AttachmentProvider>
-    </LinkPreviewProvider>
+          {payload.attachments && payload.attachments.length > 0 && (
+            <AttachmentList
+              attachments={payload.attachments}
+              workspaceId={workspaceId}
+              deferHydration={deferSecondaryHydration}
+            />
+          )}
+          {isFirstMessage && <MessageContextBadge workspaceId={workspaceId} streamId={streamId} />}
+          <MessageLinkPreviews
+            messageId={payload.messageId}
+            workspaceId={workspaceId}
+            previews={payload.linkPreviews}
+            hydrateFromApi={!deferSecondaryHydration}
+          />
+        </AttachmentProvider>
+      </LinkPreviewProvider>
+    </div>
   )
 
   const sentAt = new Date(event.createdAt)

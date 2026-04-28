@@ -509,6 +509,27 @@ export function parseMarkdown(
       continue
     }
 
+    // Shared message pointer line — inverse of the `sharedMessage`
+    // serializer above. Letting paste roundtrip into a `sharedMessage` node
+    // (instead of a generic paragraph + link) means re-sending a copied
+    // message keeps the cross-stream pointer; the backend share-recording
+    // step then re-validates and records the share grant.
+    const sharedMessageMatch = parseSharedMessageLine(line)
+    if (sharedMessageMatch) {
+      content.push({
+        type: "sharedMessage",
+        attrs: {
+          messageId: sharedMessageMatch.messageId,
+          streamId: sharedMessageMatch.streamId,
+          authorName: sharedMessageMatch.authorName,
+          authorId: "",
+          actorType: "user",
+        },
+      })
+      i++
+      continue
+    }
+
     // Regular paragraph
     content.push({
       type: "paragraph",
@@ -518,6 +539,20 @@ export function parseMarkdown(
   }
 
   return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] }
+}
+
+/**
+ * Match the canonical shared-message pointer line:
+ *   `Shared a message from [Author](shared-message:streamId/messageId)`
+ *
+ * Returns the parsed metadata or `null` when the line is anything else.
+ * Author names containing `]` are escaped as `\]` per the serializer.
+ */
+function parseSharedMessageLine(line: string): { authorName: string; streamId: string; messageId: string } | null {
+  const match = line.match(/^Shared a message from \[((?:\\.|[^\]])+)\]\(shared-message:([\w-]+)\/([\w-]+)\)\s*$/)
+  if (!match) return null
+  const authorName = match[1].replace(/\\([\]\\])/g, "$1")
+  return { authorName, streamId: match[2], messageId: match[3] }
 }
 
 function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONContent[] {

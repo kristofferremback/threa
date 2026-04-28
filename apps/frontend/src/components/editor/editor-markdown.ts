@@ -58,6 +58,21 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
       return `${quotedLines}\n>\n> — [${escapedAuthor}](quote:${streamId}/${messageId}/${authorId}/${actorType})`
     }
 
+    case "sharedMessage": {
+      // Mirror the wire serializer in `@threa/prosemirror`. The frontend's
+      // local serializer is used for in-editor copy/cut (rich-editor.tsx) —
+      // dropping this case would mean copying a draft containing a shared
+      // message would lose the node, breaking lossless paste roundtrips.
+      const { messageId, streamId, authorName } = node.attrs as {
+        messageId: string
+        streamId: string
+        authorName?: string
+      }
+      const rawName = authorName && authorName.length > 0 ? authorName : "another stream"
+      const escapedName = rawName.replace(/\\/g, "\\\\").replace(/\]/g, "\\]")
+      return `Shared a message from [${escapedName}](shared-message:${streamId}/${messageId})`
+    }
+
     case "bulletList":
       return (
         node.content
@@ -457,6 +472,27 @@ export function parseMarkdown(
       continue
     }
 
+    // Shared message pointer line: serializer always emits a single-line
+    // paragraph of the form `Shared a message from [Author](shared-message:streamId/messageId)`.
+    // Recognising it here keeps copy-paste of a shared message lossless —
+    // without this, paste would land it as a regular paragraph + link and
+    // sending would no longer trigger share recording.
+    const sharedMessageMatch = parseSharedMessageLine(line)
+    if (sharedMessageMatch) {
+      content.push({
+        type: "sharedMessage",
+        attrs: {
+          messageId: sharedMessageMatch.messageId,
+          streamId: sharedMessageMatch.streamId,
+          authorName: sharedMessageMatch.authorName,
+          authorId: "",
+          actorType: "user",
+        },
+      })
+      i++
+      continue
+    }
+
     // Regular paragraph
     content.push({
       type: "paragraph",
@@ -466,6 +502,20 @@ export function parseMarkdown(
   }
 
   return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] }
+}
+
+/**
+ * Match the canonical shared-message pointer line:
+ *   `Shared a message from [Author](shared-message:streamId/messageId)`
+ *
+ * Returns the parsed metadata or `null` when the line is anything else.
+ * Author names containing `]` are escaped as `\]` per the serializer.
+ */
+function parseSharedMessageLine(line: string): { authorName: string; streamId: string; messageId: string } | null {
+  const match = line.match(/^Shared a message from \[((?:\\.|[^\]])+)\]\(shared-message:([\w-]+)\/([\w-]+)\)\s*$/)
+  if (!match) return null
+  const authorName = match[1].replace(/\\([\]\\])/g, "$1")
+  return { authorName, streamId: match[2], messageId: match[3] }
 }
 
 function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONContent[] {

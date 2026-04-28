@@ -267,6 +267,52 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     })
   })
 
+  it("round-trips a sharedMessage node losslessly", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "sharedMessage",
+          attrs: {
+            messageId: "msg_01ABC",
+            streamId: "stream_01XYZ",
+            authorName: "Ariadne",
+            authorId: "",
+            actorType: "user",
+          },
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "FYI" }],
+        },
+      ],
+    }
+
+    const markdown = serializeToMarkdown(doc)
+    expect(markdown).toBe("Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)\n\nFYI")
+
+    const parsed = parseMarkdown(markdown)
+    expect(parsed.content?.[0]).toEqual({
+      type: "sharedMessage",
+      attrs: {
+        messageId: "msg_01ABC",
+        streamId: "stream_01XYZ",
+        authorName: "Ariadne",
+        authorId: "",
+        actorType: "user",
+      },
+    })
+    expect(parsed.content?.[1]?.type).toBe("paragraph")
+  })
+
+  it("does not match shared-message line when prefix or trailing text differs", () => {
+    const onlyParagraph = parseMarkdown("Hi! [Ariadne](shared-message:stream_01XYZ/msg_01ABC)")
+    expect(onlyParagraph.content?.[0]?.type).toBe("paragraph")
+
+    const withTrailing = parseMarkdown("Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC) extra")
+    expect(withTrailing.content?.[0]?.type).toBe("paragraph")
+  })
+
   it("treats blockquote without quote: protocol as regular blockquote", () => {
     const markdown = "> Just a regular quote"
     const parsed = parseMarkdown(markdown)

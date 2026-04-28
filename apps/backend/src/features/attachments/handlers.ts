@@ -2,6 +2,7 @@ import type { Request, Response } from "express"
 import { z } from "zod"
 import type { Pool } from "pg"
 import { buildContentDisposition, type AttachmentService } from "./service"
+import { AttachmentReferenceRepository } from "./reference-repository"
 import type { StreamService } from "../streams"
 import { SharedMessageRepository } from "../messaging"
 import { VideoTranscodeJobRepository } from "./video"
@@ -84,24 +85,35 @@ export function createAttachmentHandlers({ attachmentService, streamService, sto
       // missed both. `tryAccess` is the canonical read-access check
       // (visibility + workspace match + thread root inheritance).
       //
-      // If direct access is denied but the attachment's message has been
-      // shared into a stream the viewer can read, grant access — otherwise
-      // the recipient of a shared message would see "Failed to load image"
-      // even though hydration already let them see the message body.
-      // `listSourcesGrantedToViewer` composes the same accessible-target
-      // check used by recursive pointer hydration so the rule lives in one
-      // place.
+      // If direct access is denied, fall back to two further chains:
+      //  - The attachment's owning message has been shared into a stream the
+      //    viewer can read (existing behavior — without this the recipient
+      //    of a shared message would see "Failed to load image" even though
+      //    hydration already let them see the message body).
+      //  - The attachment is referenced inline from a message in a stream
+      //    the viewer can read. This covers copy-paste resends and any
+      //    future Ariadne flow that re-surfaces an existing attachment from
+      //    one stream into another.
       if (attachment.streamId) {
         const accessible = await streamService.tryAccess(attachment.streamId, workspaceId, userId)
         if (!accessible) {
-          const grantedViaShare =
-            attachment.messageId !== null &&
-            (
+          let granted = false
+          if (attachment.messageId) {
+            granted = (
               await SharedMessageRepository.listSourcesGrantedToViewer(pool, workspaceId, userId, [
                 attachment.messageId,
               ])
             ).has(attachment.messageId)
-          if (!grantedViaShare) {
+          }
+          if (!granted) {
+            granted = await AttachmentReferenceRepository.hasViewerAccessByReference(
+              pool,
+              workspaceId,
+              userId,
+              attachmentId
+            )
+          }
+          if (!granted) {
             return res.status(403).json({ error: "Access denied" })
           }
         }

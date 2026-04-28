@@ -565,6 +565,39 @@ describe("editor-markdown", () => {
       expect(roundTrip("---")).toBe("---")
     })
 
+    it("should round-trip a sharedMessage node losslessly", () => {
+      const doc: JSONContent = {
+        type: "doc",
+        content: [
+          {
+            type: "sharedMessage",
+            attrs: {
+              messageId: "msg_01ABC",
+              streamId: "stream_01XYZ",
+              authorName: "Ariadne",
+              authorId: "",
+              actorType: "user",
+            },
+          },
+        ],
+      }
+
+      const md = serializeToMarkdown(doc)
+      expect(md).toBe("Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)")
+
+      const parsed = parseMarkdown(md)
+      expect(parsed.content?.[0]).toEqual({
+        type: "sharedMessage",
+        attrs: {
+          messageId: "msg_01ABC",
+          streamId: "stream_01XYZ",
+          authorName: "Ariadne",
+          authorId: "",
+          actorType: "user",
+        },
+      })
+    })
+
     it("should preserve mixed document", () => {
       const md = `# Heading
 
