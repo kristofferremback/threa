@@ -24,6 +24,7 @@ import { FileText } from "lucide-react"
 import { AttachmentPill } from "@/components/composer/attachment-pill"
 import { formatContextRefLabel } from "@/lib/context-bag/format-label"
 import { buildContextRefSourceHref } from "@/lib/context-bag/source-link"
+import { stripMarkdownToInline } from "@/lib/markdown/strip"
 import { StopResearchButton } from "./stop-research-button"
 
 interface TraceStepProps {
@@ -966,7 +967,11 @@ function AttachedContextRef({ contextRef, workspaceId }: { contextRef: AttachedC
 }
 
 function AttachedContextMessage({ message }: { message: AttachedContextRefInfo["messages"][number] }) {
-  const preview = message.content.length > 150 ? message.content.slice(0, 150) + "..." : message.content
+  // INV-60: preview surfaces strip markdown to inline plain text so literal
+  // syntax (`**bold**`, fenced code) doesn't leak as characters and so a
+  // 150-char hard cut can't slice through markup mid-token.
+  const stripped = stripMarkdownToInline(message.content)
+  const preview = stripped.length > 150 ? stripped.slice(0, 150) + "…" : stripped
   return (
     <div className="rounded px-3 py-2 text-xs bg-muted/50">
       <div className="flex items-center gap-2 mb-1">
@@ -975,7 +980,7 @@ function AttachedContextMessage({ message }: { message: AttachedContextRefInfo["
           <RelativeTime date={message.createdAt} className="text-[10px] text-muted-foreground" />
         </span>
       </div>
-      <MarkdownContent content={preview} className="text-xs leading-relaxed text-foreground/90" />
+      <p className="text-xs leading-relaxed text-foreground/90">{preview}</p>
     </div>
   )
 }

@@ -12,7 +12,6 @@ import { getIntentConfig, getResolver } from "./registry"
 import { diffInputs } from "./diff"
 import { buildSnapshot, renderDelta, renderStable } from "./render"
 import { summarizeThread } from "./summarizer"
-import { DISCUSS_WINDOW_TOTAL } from "./resolvers/thread-resolver"
 import type { LastRenderedSnapshot, RenderableMessage, ResolvedRef, StoredContextBag, SummaryInput } from "./types"
 
 /**
@@ -153,9 +152,12 @@ export async function resolveBagForStream(
   const nextItems: SummaryInput[] = []
   let nextTail: string | null = null
 
-  // Match `fetchStreamBag`'s clamp: DISCUSS_THREAD only ever sends ~50 messages
-  // to the model regardless of source size, so the chip should claim the same
-  // window the AI actually saw. Other intents surface the raw count.
+  // For windowed bags (DISCUSS_THREAD), the trace pill should report the
+  // actual resolved item count, not the global cap. `ThreadResolver` prepends
+  // the thread root on top of the discuss window, so the resolved length can
+  // exceed `DISCUSS_WINDOW_TOTAL` by one — the trace exists to show what the
+  // AI actually saw, so the chip and the disclosure must agree on the same
+  // number. Non-windowed intents fall back to the raw source-stream count.
   const isWindowedIntent = bag.intent === ContextIntents.DISCUSS_THREAD
 
   for (const resolved of resolveds) {
@@ -207,7 +209,7 @@ export async function resolveBagForStream(
         displayName: sourceStream?.displayName ?? null,
         slug: sourceStream?.slug ?? null,
         type: sourceStream?.type ?? "thread",
-        itemCount: isWindowedIntent ? Math.min(totalCount, DISCUSS_WINDOW_TOTAL) : totalCount,
+        itemCount: isWindowedIntent ? resolved.items.length : totalCount,
       },
       items: resolved.items,
     })

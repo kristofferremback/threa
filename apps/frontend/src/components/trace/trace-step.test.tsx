@@ -109,7 +109,9 @@ describe("TraceStep", () => {
                         messageId: "msg_dm_1",
                         authorName: "Pierre",
                         createdAt: "2026-02-19T17:30:00.000Z",
-                        content: "AI for Prometheus rules looks great",
+                        // Markdown syntax that must NOT leak as literal characters
+                        // into the trace preview surface (INV-60).
+                        content: "**AI** for Prometheus rules looks great",
                       },
                       {
                         messageId: "msg_dm_2",
@@ -141,6 +143,8 @@ describe("TraceStep", () => {
     await user.click(screen.getByRole("button", { name: /Show 2 messages fed to the model/i }))
     expect(screen.getByText(/AI for Prometheus rules looks great/)).toBeInTheDocument()
     expect(screen.getByText(/PromQL queries too/)).toBeInTheDocument()
+    // INV-60: markdown literals must not leak through the preview.
+    expect(screen.queryByText(/\*\*AI\*\*/)).not.toBeInTheDocument()
   })
 
   it("shows rerun edit context in the initial context step", () => {
