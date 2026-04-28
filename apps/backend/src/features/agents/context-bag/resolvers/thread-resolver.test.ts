@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { ContextIntents, ContextRefKinds, Visibilities } from "@threa/types"
 import { ThreadResolver } from "./thread-resolver"
-import { AttachmentRepository } from "../../../attachments"
+import { AttachmentRepository, type Attachment } from "../../../attachments"
 import { MessageRepository } from "../../../messaging"
 import { StreamRepository, StreamMemberRepository } from "../../../streams"
 import { UserRepository } from "../../../workspaces"
@@ -53,6 +53,25 @@ function makeMessage(overrides: Record<string, any> = {}): any {
     metadata: {},
     editedAt: null,
     deletedAt: null,
+    createdAt: new Date("2026-04-22T09:00:00Z"),
+    ...overrides,
+  }
+}
+
+function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
+  return {
+    id: "att_1",
+    workspaceId: "ws_1",
+    streamId: "stream_source",
+    messageId: "msg_a",
+    uploadedBy: "usr_author",
+    filename: "spec.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 12345,
+    storageProvider: "s3",
+    storagePath: "ws_1/att_1",
+    processingStatus: "completed",
+    safetyStatus: "clean",
     createdAt: new Date("2026-04-22T09:00:00Z"),
     ...overrides,
   }
@@ -523,19 +542,7 @@ describe("ThreadResolver.fetch — DISCUSS_THREAD windowing", () => {
     spyOn(MessageRepository, "findThreadRoot").mockResolvedValue(null)
     spyOn(MessageRepository, "list").mockResolvedValue([seq("msg_a", 1), seq("msg_b", 2)])
     spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(
-      new Map([
-        [
-          "msg_a",
-          [
-            {
-              id: "att_1",
-              filename: "spec.pdf",
-              mimeType: "application/pdf",
-              sizeBytes: 12345,
-            } as any,
-          ],
-        ],
-      ])
+      new Map([["msg_a", [makeAttachment({ id: "att_1", filename: "spec.pdf", sizeBytes: 12345 })]]])
     )
 
     const result = await ThreadResolver.fetch(
@@ -566,9 +573,9 @@ describe("ThreadResolver.fetch — DISCUSS_THREAD windowing", () => {
         [
           "msg_a",
           [
-            { id: "att_3", filename: "c.pdf", mimeType: "application/pdf", sizeBytes: 3 } as any,
-            { id: "att_1", filename: "a.pdf", mimeType: "application/pdf", sizeBytes: 1 } as any,
-            { id: "att_2", filename: "b.pdf", mimeType: "application/pdf", sizeBytes: 2 } as any,
+            makeAttachment({ id: "att_3", filename: "c.pdf", sizeBytes: 3 }),
+            makeAttachment({ id: "att_1", filename: "a.pdf", sizeBytes: 1 }),
+            makeAttachment({ id: "att_2", filename: "b.pdf", sizeBytes: 2 }),
           ],
         ],
       ])
