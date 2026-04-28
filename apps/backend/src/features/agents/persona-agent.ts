@@ -270,6 +270,30 @@ export class PersonaAgent {
           const triggerIdx = history.findIndex((m) => m.id === messageId)
           const contextMessages = triggerIdx >= 0 ? history.slice(Math.max(0, triggerIdx - 4)) : history.slice(-5)
 
+          // Surface the resolved context-bag (the same one folded into the
+          // system prompt above) on the trace step so the dialog can render
+          // the same "X messages in #foo" pill the in-stream message shows,
+          // plus the actual referenced messages. The point of the trace is
+          // to expose more than what's visible in the stream — without this
+          // the user can't see what was fed to the model.
+          const attachedContext = resolvedBag
+            ? {
+                refs: resolvedBag.refs.map((ref) => ({
+                  streamId: ref.streamId,
+                  fromMessageId: ref.fromMessageId,
+                  toMessageId: ref.toMessageId,
+                  originMessageId: ref.originMessageId,
+                  source: ref.source,
+                  messages: ref.items.map((m) => ({
+                    messageId: m.messageId,
+                    authorName: m.authorName,
+                    createdAt: m.createdAt,
+                    content: m.contentMarkdown.slice(0, 300),
+                  })),
+                })),
+              }
+            : undefined
+
           const step = await trace.startStep({
             stepType: AgentStepTypes.CONTEXT_RECEIVED,
             content: JSON.stringify({
@@ -282,6 +306,7 @@ export class PersonaAgent {
                 isTrigger: m.id === messageId,
               })),
               rerunContext: toTraceRerunContext(rerunContext),
+              ...(attachedContext && { attachedContext }),
             }),
           })
           await step.complete({})

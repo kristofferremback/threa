@@ -72,6 +72,81 @@ describe("TraceStep", () => {
     expect(screen.getByText("Edited")).toBeInTheDocument()
   })
 
+  it("surfaces the attached context-bag pill and referenced messages on the initial context step", async () => {
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter>
+        <TraceStep
+          step={createStep({
+            stepType: "context_received",
+            content: JSON.stringify({
+              messages: [
+                {
+                  messageId: "msg_trigger",
+                  authorName: "Kris",
+                  authorType: "user",
+                  createdAt: "2026-02-19T18:00:00.000Z",
+                  content: "Whats up with this",
+                  isTrigger: true,
+                },
+              ],
+              attachedContext: {
+                refs: [
+                  {
+                    streamId: "stream_dm_1",
+                    fromMessageId: null,
+                    toMessageId: null,
+                    originMessageId: "msg_focal",
+                    source: {
+                      displayName: "Pierre",
+                      slug: null,
+                      type: "dm",
+                      itemCount: 50,
+                    },
+                    messages: [
+                      {
+                        messageId: "msg_dm_1",
+                        authorName: "Pierre",
+                        createdAt: "2026-02-19T17:30:00.000Z",
+                        // Markdown syntax that must NOT leak as literal characters
+                        // into the trace preview surface (INV-60).
+                        content: "**AI** for Prometheus rules looks great",
+                      },
+                      {
+                        messageId: "msg_dm_2",
+                        authorName: "Kris",
+                        createdAt: "2026-02-19T17:31:00.000Z",
+                        content: "Yeah PromQL queries too",
+                      },
+                    ],
+                  },
+                ],
+              },
+            }),
+          })}
+          workspaceId="ws_1"
+          streamId="stream_1"
+        />
+      </MemoryRouter>
+    )
+
+    expect(screen.getByText("Attached context:")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /50 messages in Pierre/i })).toHaveAttribute(
+      "href",
+      "/w/ws_1/s/stream_dm_1?m=msg_focal"
+    )
+
+    // Messages are tucked behind a disclosure so the step stays compact;
+    // expanding it reveals the actual content fed to the model.
+    expect(screen.queryByText(/AI for Prometheus rules looks great/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /Show 2 messages fed to the model/i }))
+    expect(screen.getByText(/AI for Prometheus rules looks great/)).toBeInTheDocument()
+    expect(screen.getByText(/PromQL queries too/)).toBeInTheDocument()
+    // INV-60: markdown literals must not leak through the preview.
+    expect(screen.queryByText(/\*\*AI\*\*/)).not.toBeInTheDocument()
+  })
+
   it("shows rerun edit context in the initial context step", () => {
     render(
       <MemoryRouter>

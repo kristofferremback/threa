@@ -10,6 +10,7 @@ function makeBag(overrides: Partial<ResolvedBag> = {}): ResolvedBag {
     stable: "STABLE REGION",
     delta: "",
     items: [],
+    refs: [],
     nextSnapshot: { renderedAt: "2026-04-22T09:00:00Z", items: [], tailMessageId: null },
     ...overrides,
   }
