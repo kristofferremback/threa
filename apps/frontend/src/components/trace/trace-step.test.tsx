@@ -97,6 +97,7 @@ describe("TraceStep", () => {
                     streamId: "stream_dm_1",
                     fromMessageId: null,
                     toMessageId: null,
+                    originMessageId: "msg_focal",
                     source: {
                       displayName: "Pierre",
                       slug: null,
@@ -131,7 +132,7 @@ describe("TraceStep", () => {
     expect(screen.getByText("Attached context:")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /50 messages in Pierre/i })).toHaveAttribute(
       "href",
-      "/w/ws_1/s/stream_dm_1"
+      "/w/ws_1/s/stream_dm_1?m=msg_focal"
     )
 
     // Messages are tucked behind a disclosure so the step stays compact;

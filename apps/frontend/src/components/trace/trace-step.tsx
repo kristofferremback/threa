@@ -240,6 +240,8 @@ interface AttachedContextRefInfo {
   streamId: string
   fromMessageId: string | null
   toMessageId: string | null
+  /** Cosmetic deep-link anchor; the focal message the discussion was started from. */
+  originMessageId: string | null
   source: {
     displayName: string | null
     slug: string | null
@@ -929,7 +931,7 @@ function AttachedContextRef({ contextRef, workspaceId }: { contextRef: AttachedC
   const href = buildContextRefSourceHref({
     workspaceId,
     sourceStreamId: contextRef.streamId,
-    originMessageId: contextRef.fromMessageId,
+    originMessageId: contextRef.originMessageId,
   })
   const messageCount = contextRef.messages.length
 

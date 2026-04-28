@@ -282,6 +282,7 @@ export class PersonaAgent {
                   streamId: ref.streamId,
                   fromMessageId: ref.fromMessageId,
                   toMessageId: ref.toMessageId,
+                  originMessageId: ref.originMessageId,
                   source: ref.source,
                   messages: ref.items.map((m) => ({
                     messageId: m.messageId,

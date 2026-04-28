@@ -29,6 +29,8 @@ export interface ResolvedBagRef {
   streamId: string
   fromMessageId: string | null
   toMessageId: string | null
+  /** Cosmetic deep-link anchor; the focal message the discussion was started from. */
+  originMessageId: string | null
   source: {
     displayName: string | null
     slug: string | null
@@ -200,6 +202,7 @@ export async function resolveBagForStream(
       streamId: resolved.ref.streamId,
       fromMessageId: resolved.ref.fromMessageId ?? null,
       toMessageId: resolved.ref.toMessageId ?? null,
+      originMessageId: resolved.ref.originMessageId ?? null,
       source: {
         displayName: sourceStream?.displayName ?? null,
         slug: sourceStream?.slug ?? null,
