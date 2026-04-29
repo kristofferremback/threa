@@ -13,7 +13,7 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
-import { handleBeforeInputNewline, handleBeforeInputPaste, insertPastedText, sliceToText } from "./multiline-blocks"
+import { handleBeforeInputNewline, handleBeforeInputPaste, handleClipboardPaste } from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -383,55 +383,39 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         ),
       },
       handlePaste: (_view, event, slice) => {
-        // Check for files first (images, documents, etc.)
+        const editor = editorRef.current
+        if (!editor) return false
+
+        // Files first (images / documents dropped on the clipboard) —
+        // route through the upload pipeline with sequential image naming.
         const files = event.clipboardData?.files
-        if (files && files.length > 0 && onFileUploadRef.current && editorRef.current) {
+        if (files && files.length > 0 && onFileUploadRef.current) {
           event.preventDefault()
-          const fileArray = Array.from(files)
           let pasteImageOffset = 0
-          for (const file of fileArray) {
+          for (const file of Array.from(files)) {
             let fileToInsert = file
-            // Rename pasted images to sequential names (pasted-image-1.png, etc.)
             if (file.type.startsWith("image/")) {
               pasteImageOffset++
               const nextIndex = imageCountRef.current + pasteImageOffset
               const ext = file.name.split(".").pop() || "png"
-              const newName = `pasted-image-${nextIndex}.${ext}`
-              fileToInsert = new File([file], newName, { type: file.type })
+              fileToInsert = new File([file], `pasted-image-${nextIndex}.${ext}`, { type: file.type })
             }
-            handleFileInsert(fileToInsert, editorRef.current)
+            handleFileInsert(fileToInsert, editor)
           }
           return true
         }
 
-        // Parse pasted text through markdown parser to convert @mentions,
-        // #channels, :emoji:, plus structural nodes (sharedMessage,
-        // quoteReply, attachmentReference).
-        //
-        // Mobile Safari and some Android browsers fire `paste` with a
-        // restricted/empty `clipboardData`, exposing the actual clipboard
-        // only via ProseMirror's parsed `slice`. Recover the original
-        // text by walking the slice — block boundaries become `\n` (or
-        // `\n\n` between top-level blocks), hardBreaks become `\n` — so
-        // context-menu paste survives the same lossless reconstruction as
-        // Cmd+V on desktop.
-        const text = event.clipboardData?.getData("text/plain") || sliceToText(slice)
-        if (!text || !editorRef.current) {
-          return false
-        }
-
-        const handled = insertPastedText(
-          editorRef.current,
-          text,
+        // Otherwise route the text payload through the markdown parser so
+        // @mentions, #channels, :emoji:, plus the structural blocks
+        // (sharedMessage / quoteReply / attachmentReference) reconstruct.
+        return handleClipboardPaste(
+          editor,
+          event,
+          slice,
           enableMentions ? getMentionTypeRef.current : undefined,
           enableEmoji ? toEmojiRef.current : undefined,
           markdownParseOptions
         )
-        if (handled) {
-          event.preventDefault()
-        }
-
-        return handled
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {

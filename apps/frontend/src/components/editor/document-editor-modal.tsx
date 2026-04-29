@@ -35,8 +35,7 @@ import { LinkEditor } from "./link-editor"
 import {
   handleBeforeInputNewline,
   handleBeforeInputPaste,
-  insertPastedText,
-  sliceToText,
+  handleClipboardPaste,
   toggleMultilineBlock,
 } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
@@ -150,22 +149,9 @@ export function DocumentEditorModal({
         ),
       },
       handlePaste: (_view, event, slice) => {
-        // Mobile browsers (Android Chrome, some iOS Safari versions) hand
-        // us an empty `clipboardData` for context-menu paste; the readable
-        // copy of the clipboard only reaches us via ProseMirror's parsed
-        // slice. `sliceToText` recovers the same text we'd have read from
-        // `getData("text/plain")` on desktop — see the helper for details.
-        const text = event.clipboardData?.getData("text/plain") || sliceToText(slice)
-        if (!text || !editorRef.current) {
-          return false
-        }
-
-        const handled = insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
-        if (handled) {
-          event.preventDefault()
-        }
-
-        return handled
+        const editor = editorRef.current
+        if (!editor) return false
+        return handleClipboardPaste(editor, event, slice, getMentionTypeRef.current, toEmojiRef.current)
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {

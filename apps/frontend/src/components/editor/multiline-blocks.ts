@@ -618,6 +618,36 @@ export function handleBeforeInputNewline(editor: Editor, event: BeforeInputEvent
 }
 
 /**
+ * Drives a `paste` event through the markdown-aware insert pipeline.
+ * Pulls the clipboard text from `clipboardData` first and falls back to
+ * the slice (mobile context-menu paste), then routes through the same
+ * `insertPastedText` both editors use, calling `preventDefault` on
+ * success. The two `handlePaste` call sites used to duplicate this
+ * sequence — keeping the recovery + preventDefault in one place avoids
+ * drift the next time we touch one of them.
+ */
+export function handleClipboardPaste(
+  editor: Editor,
+  event: ClipboardEvent,
+  slice: Slice,
+  getMentionType?: MentionTypeLookup,
+  getEmoji?: EmojiLookup,
+  parseOptions?: {
+    enableMentions?: boolean
+    enableChannels?: boolean
+    enableSlashCommands?: boolean
+    enableEmoji?: boolean
+  }
+): boolean {
+  const text = event.clipboardData?.getData("text/plain") || sliceToText(slice)
+  if (!text) return false
+
+  const handled = insertPastedText(editor, text, getMentionType, getEmoji, parseOptions)
+  if (handled) event.preventDefault()
+  return handled
+}
+
+/**
  * Heuristic for "is this `insertText` payload a keyboard-suggestion paste,
  * or just a fast-typed character?". Android keyboards (Gboard's clipboard
  * suggestion bar, SwiftKey's paste suggestion) don't dispatch `paste` or

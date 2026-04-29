@@ -924,7 +924,7 @@ const x = 1
         expect(content?.[0]).toEqual({ type: "text", text: "Hey " })
         expect(content?.[1]).toEqual({
           type: "mention",
-          attrs: { id: "kristoffer", slug: "kristoffer", name: "kristoffer", mentionType: "user" },
+          attrs: { id: "kristoffer", slug: "kristoffer", mentionType: "user" },
         })
         expect(content?.[2]).toEqual({ type: "text", text: " check this out" })
       })
@@ -937,7 +937,7 @@ const x = 1
         expect(content?.[0]).toEqual({ type: "text", text: "See " })
         expect(content?.[1]).toEqual({
           type: "channelLink",
-          attrs: { id: "general", slug: "general", name: "general" },
+          attrs: { id: "general", slug: "general" },
         })
         expect(content?.[2]).toEqual({ type: "text", text: " for details" })
       })

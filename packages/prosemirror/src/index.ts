@@ -12,6 +12,7 @@ export {
   INLINE_MARKDOWN_PATTERN,
   type MentionTypeLookup,
   type EmojiLookup,
+  type ParseMarkdownOptions,
 } from "./markdown"
 export {
   escapeMarkdownLinkText,

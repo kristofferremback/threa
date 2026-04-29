@@ -5,8 +5,13 @@ import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
 import { checkStreamAccess, resolveEffectiveAccessStream } from "../streams"
 import { MessageRepository, type Message, type MoveMessageSequenceUpdate } from "./repository"
-import { ShareService, SharedMessageRepository, type ResolveEffectiveStream } from "./sharing"
-import { AttachmentRepository, AttachmentReferenceRepository, toAttachmentSummary } from "../attachments"
+import { ShareService, type ResolveEffectiveStream } from "./sharing"
+import {
+  AttachmentRepository,
+  AttachmentReferenceRepository,
+  isAttachmentReadableViaShareOrReference,
+  toAttachmentSummary,
+} from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../agents"
 import { attachmentReferenceId, eventId, messageId, messageVersionId, streamId as generateStreamId } from "../../lib/id"
@@ -31,50 +36,6 @@ import {
   type MessagesMovedEventPayload,
   type MovedMessagePreview,
 } from "@threa/types"
-
-/**
- * "Can this user read this attachment?" — mirrors the access chain used by
- * `getDownloadUrl`, deduplicated so the create-message validator and the
- * download endpoint stay in lockstep.
- *
- * Order of approval (cheapest first):
- *  1. Direct read access to the attachment's owning stream.
- *  2. The owning message has been shared into a stream the user can read.
- *  3. The attachment is referenced inline from a message in a stream the
- *     user can read (the new attachment_references projection).
- *
- * `accessibleStreamIds` is mutated as a per-call cache: if multiple
- * attachments validated together share a source stream we only resolve its
- * accessibility once. Pass an empty `Set` on the first call.
- */
-async function isAttachmentReadableByAuthor(
-  client: import("pg").PoolClient,
-  attachment: import("../attachments").Attachment,
-  workspaceId: string,
-  userId: string,
-  accessibleStreamIds: Set<string>
-): Promise<boolean> {
-  // 1. Direct access to the owning stream.
-  if (attachment.streamId) {
-    if (accessibleStreamIds.has(attachment.streamId)) return true
-    const stream = await checkStreamAccess(client, attachment.streamId, workspaceId, userId)
-    if (stream) {
-      accessibleStreamIds.add(attachment.streamId)
-      return true
-    }
-  }
-
-  // 2. The owning message has been shared into a stream the user can read.
-  if (attachment.messageId) {
-    const granted = await SharedMessageRepository.listSourcesGrantedToViewer(client, workspaceId, userId, [
-      attachment.messageId,
-    ])
-    if (granted.has(attachment.messageId)) return true
-  }
-
-  // 3. Inline reference in any stream the user can read.
-  return AttachmentReferenceRepository.hasViewerAccessByReference(client, workspaceId, userId, attachment.id)
-}
 
 /**
  * Adapter that lets `ShareService.validateAndRecordShares` consume the
@@ -394,7 +355,6 @@ export class EventService {
         if (attachments.length !== params.attachmentIds.length) {
           throw new Error("Invalid attachment IDs: not all attachments were found")
         }
-        const accessibleStreamIds: Set<string> = new Set()
         for (const a of attachments) {
           if (a.workspaceId !== params.workspaceId) {
             throw new Error("Invalid attachment IDs: must belong to this workspace")
@@ -406,18 +366,17 @@ export class EventService {
             attachmentsToAttach.push(a.id)
             continue
           }
-          // Referenced from another message: gate on the author's ability to
-          // read it. We accept reads via direct stream access (`tryAccess`),
-          // a recorded share into a stream the author can read, or an
-          // attachment_references row pointing at such a stream — the same
-          // chain `getDownloadUrl` honours.
-          const accessible = await isAttachmentReadableByAuthor(
-            client,
-            a,
-            params.workspaceId,
-            params.authorId,
-            accessibleStreamIds
-          )
+          // Referenced from another message — gate on the author's ability
+          // to read it via the same chain `getDownloadUrl` honours so the
+          // two paths can never disagree. Direct stream access first; the
+          // shared helper covers the share-grant + inline-reference fallback.
+          let accessible = false
+          if (a.streamId) {
+            accessible = (await checkStreamAccess(client, a.streamId, params.workspaceId, params.authorId)) !== null
+          }
+          if (!accessible) {
+            accessible = await isAttachmentReadableViaShareOrReference(client, a, params.workspaceId, params.authorId)
+          }
           if (!accessible) {
             throw new Error("Invalid attachment IDs: cannot reference an attachment without read access")
           }
