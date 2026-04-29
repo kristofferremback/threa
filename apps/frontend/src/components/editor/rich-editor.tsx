@@ -13,7 +13,7 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
-import { handleBeforeInputNewline, handleBeforeInputPaste, handleClipboardPaste } from "./multiline-blocks"
+import { handleBeforeInputNewline, insertPastedText } from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -382,68 +382,58 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
           "focus:outline-none"
         ),
       },
-      handlePaste: (_view, event, slice) => {
-        const editor = editorRef.current
-        if (!editor) return false
-
-        // Files first (images / documents dropped on the clipboard) —
-        // route through the upload pipeline with sequential image naming.
+      handlePaste: (_view, event) => {
+        // Check for files first (images, documents, etc.)
         const files = event.clipboardData?.files
-        if (files && files.length > 0 && onFileUploadRef.current) {
+        if (files && files.length > 0 && onFileUploadRef.current && editorRef.current) {
           event.preventDefault()
+          const fileArray = Array.from(files)
           let pasteImageOffset = 0
-          for (const file of Array.from(files)) {
+          for (const file of fileArray) {
             let fileToInsert = file
+            // Rename pasted images to sequential names (pasted-image-1.png, etc.)
             if (file.type.startsWith("image/")) {
               pasteImageOffset++
               const nextIndex = imageCountRef.current + pasteImageOffset
               const ext = file.name.split(".").pop() || "png"
-              fileToInsert = new File([file], `pasted-image-${nextIndex}.${ext}`, { type: file.type })
+              const newName = `pasted-image-${nextIndex}.${ext}`
+              fileToInsert = new File([file], newName, { type: file.type })
             }
-            handleFileInsert(fileToInsert, editor)
+            handleFileInsert(fileToInsert, editorRef.current)
           }
           return true
         }
 
-        // Otherwise route the text payload through the markdown parser so
-        // @mentions, #channels, :emoji:, plus the structural blocks
-        // (sharedMessage / quoteReply / attachmentReference) reconstruct.
-        return handleClipboardPaste(
-          editor,
-          event,
-          slice,
+        // Parse pasted text through markdown parser to convert @mentions, #channels, :emoji:
+        const text = event.clipboardData?.getData("text/plain")
+        if (!text || !editorRef.current) {
+          return false
+        }
+
+        const handled = insertPastedText(
+          editorRef.current,
+          text,
           enableMentions ? getMentionTypeRef.current : undefined,
           enableEmoji ? toEmojiRef.current : undefined,
           markdownParseOptions
         )
+        if (handled) {
+          event.preventDefault()
+        }
+
+        return handled
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {
-          const editor = editorRef.current
-          if (!editor) return false
-
-          // Mobile paste fallback: on Android Chrome (and some iOS Safari
-          // builds) context-menu / suggestion-bar paste arrives as a
-          // `beforeinput` with `inputType: "insertFromPaste"` instead of
-          // a real `paste` event with usable `clipboardData`. Route it
-          // through the markdown-aware paste pipeline so `:emoji:`,
-          // `@mention`, share/quote/attachment markdown all convert.
-          if (
-            handleBeforeInputPaste(
-              editor,
-              event as InputEvent,
-              enableMentions ? getMentionTypeRef.current : undefined,
-              enableEmoji ? toEmojiRef.current : undefined,
-              markdownParseOptions
-            )
-          ) {
-            return true
+          if (messageSendModeRef.current !== "cmdEnter" || !editorRef.current) {
+            return false
           }
 
-          if (messageSendModeRef.current !== "cmdEnter") return false
-          if (isSuggestionActive(editor)) return false
+          if (isSuggestionActive(editorRef.current)) {
+            return false
+          }
 
-          return handleBeforeInputNewline(editor, event as InputEvent)
+          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
         },
       },
       handleDrop: (_view, event, _slice, moved) => {

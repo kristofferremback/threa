@@ -32,12 +32,7 @@ import { useMentionSuggestion, useChannelSuggestion, useEmojiSuggestion } from "
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { LinkEditor } from "./link-editor"
-import {
-  handleBeforeInputNewline,
-  handleBeforeInputPaste,
-  handleClipboardPaste,
-  toggleMultilineBlock,
-} from "./multiline-blocks"
+import { handleBeforeInputNewline, insertPastedText, toggleMultilineBlock } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
 import { getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
@@ -148,24 +143,26 @@ export function DocumentEditorModal({
           "focus:outline-none"
         ),
       },
-      handlePaste: (_view, event, slice) => {
-        const editor = editorRef.current
-        if (!editor) return false
-        return handleClipboardPaste(editor, event, slice, getMentionTypeRef.current, toEmojiRef.current)
+      handlePaste: (_view, event) => {
+        const text = event.clipboardData?.getData("text/plain")
+        if (!text || !editorRef.current) {
+          return false
+        }
+
+        const handled = insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
+        if (handled) {
+          event.preventDefault()
+        }
+
+        return handled
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {
-          const editor = editorRef.current
-          if (!editor) return false
-
-          // Mobile paste fallback — see RichEditor for the full rationale.
-          if (handleBeforeInputPaste(editor, event as InputEvent, getMentionTypeRef.current, toEmojiRef.current)) {
-            return true
+          if (!editorRef.current || isSuggestionActive(editorRef.current)) {
+            return false
           }
 
-          if (isSuggestionActive(editor)) return false
-
-          return handleBeforeInputNewline(editor, event as InputEvent)
+          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
         },
       },
       handleKeyDown: (_view, event) => {
