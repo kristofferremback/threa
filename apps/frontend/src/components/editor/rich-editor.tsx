@@ -322,24 +322,30 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
 
     editorInstance.commands.insertAttachmentReference(placeholderAttrs)
 
-    // Start upload and update node when done
-    const result = await uploadFn(file)
+    // Caller is fire-and-forget (paste/drop loops), so swallow the rejection
+    // here and surface it through the placeholder's error state instead of
+    // leaving the node stuck in "uploading" indefinitely.
+    const isStillTargeting = () =>
+      uploadScopeVersion === uploadScopeVersionRef.current &&
+      !editorInstance.isDestroyed &&
+      editorRef.current === editorInstance
 
-    if (
-      uploadScopeVersion !== uploadScopeVersionRef.current ||
-      editorInstance.isDestroyed ||
-      editorRef.current !== editorInstance
-    ) {
-      return
+    try {
+      const result = await uploadFn(file)
+      if (!isStillTargeting()) return
+      editorInstance.commands.updateAttachmentReference(tempId, {
+        id: result.attachment.id,
+        status: result.attachment.status,
+        imageIndex: isImage ? result.imageIndex : null,
+        error: result.attachment.error || null,
+      })
+    } catch (err) {
+      if (!isStillTargeting()) return
+      editorInstance.commands.updateAttachmentReference(tempId, {
+        status: "error",
+        error: err instanceof Error ? err.message : "Upload failed",
+      })
     }
-
-    // Update the placeholder node with real data
-    editorInstance.commands.updateAttachmentReference(tempId, {
-      id: result.attachment.id,
-      status: result.attachment.status,
-      imageIndex: isImage ? result.imageIndex : null,
-      error: result.attachment.error || null,
-    })
   }, [])
 
   const editor = useEditor({
