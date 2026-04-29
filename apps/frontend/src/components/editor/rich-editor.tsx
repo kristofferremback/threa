@@ -13,7 +13,7 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
-import { handleBeforeInputNewline, insertPastedText, sliceToText } from "./multiline-blocks"
+import { handleBeforeInputNewline, handleBeforeInputPaste, insertPastedText, sliceToText } from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -435,15 +435,31 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {
-          if (messageSendModeRef.current !== "cmdEnter" || !editorRef.current) {
-            return false
+          const editor = editorRef.current
+          if (!editor) return false
+
+          // Mobile paste fallback: on Android Chrome (and some iOS Safari
+          // builds) context-menu / suggestion-bar paste arrives as a
+          // `beforeinput` with `inputType: "insertFromPaste"` instead of
+          // a real `paste` event with usable `clipboardData`. Route it
+          // through the markdown-aware paste pipeline so `:emoji:`,
+          // `@mention`, share/quote/attachment markdown all convert.
+          if (
+            handleBeforeInputPaste(
+              editor,
+              event as InputEvent,
+              enableMentions ? getMentionTypeRef.current : undefined,
+              enableEmoji ? toEmojiRef.current : undefined,
+              markdownParseOptions
+            )
+          ) {
+            return true
           }
 
-          if (isSuggestionActive(editorRef.current)) {
-            return false
-          }
+          if (messageSendModeRef.current !== "cmdEnter") return false
+          if (isSuggestionActive(editor)) return false
 
-          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
+          return handleBeforeInputNewline(editor, event as InputEvent)
         },
       },
       handleDrop: (_view, event, _slice, moved) => {

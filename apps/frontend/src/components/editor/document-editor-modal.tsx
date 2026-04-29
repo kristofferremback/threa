@@ -32,7 +32,13 @@ import { useMentionSuggestion, useChannelSuggestion, useEmojiSuggestion } from "
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { LinkEditor } from "./link-editor"
-import { handleBeforeInputNewline, insertPastedText, sliceToText, toggleMultilineBlock } from "./multiline-blocks"
+import {
+  handleBeforeInputNewline,
+  handleBeforeInputPaste,
+  insertPastedText,
+  sliceToText,
+  toggleMultilineBlock,
+} from "./multiline-blocks"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
 import { getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
@@ -163,11 +169,17 @@ export function DocumentEditorModal({
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {
-          if (!editorRef.current || isSuggestionActive(editorRef.current)) {
-            return false
+          const editor = editorRef.current
+          if (!editor) return false
+
+          // Mobile paste fallback — see RichEditor for the full rationale.
+          if (handleBeforeInputPaste(editor, event as InputEvent, getMentionTypeRef.current, toEmojiRef.current)) {
+            return true
           }
 
-          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
+          if (isSuggestionActive(editor)) return false
+
+          return handleBeforeInputNewline(editor, event as InputEvent)
         },
       },
       handleKeyDown: (_view, event) => {

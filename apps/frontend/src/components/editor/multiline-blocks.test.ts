@@ -4,7 +4,13 @@ import { Slice, Fragment } from "@tiptap/pm/model"
 import type { JSONContent } from "@tiptap/react"
 import { createEditorExtensions } from "./editor-extensions"
 import { serializeToMarkdown, parseMarkdown } from "./editor-markdown"
-import { handleBeforeInputNewline, insertPastedText, sliceToText, toggleMultilineBlock } from "./multiline-blocks"
+import {
+  handleBeforeInputNewline,
+  handleBeforeInputPaste,
+  insertPastedText,
+  sliceToText,
+  toggleMultilineBlock,
+} from "./multiline-blocks"
 
 function createTestEditor(content: string | JSONContent) {
   return new Editor({
@@ -505,6 +511,110 @@ describe("sliceToText (mobile clipboardData fallback)", () => {
     const editor = createTestEditor("")
     const text = "love this :heart_eyes:"
     expect(sliceToText(sliceFromText(editor, text))).toBe(text)
+    editor.destroy()
+  })
+})
+
+describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
+  function buildEvent(
+    inputType: string,
+    text: string | null
+  ): {
+    inputType: string
+    dataTransfer: DataTransfer | null
+    prevented: boolean
+    preventDefault(): void
+  } {
+    const dataTransfer =
+      text === null
+        ? null
+        : ({
+            getData: (mime: string) => (mime === "text/plain" ? text : ""),
+          } as unknown as DataTransfer)
+    const event = {
+      inputType,
+      dataTransfer,
+      prevented: false,
+      preventDefault() {
+        this.prevented = true
+      },
+    }
+    return event
+  }
+
+  it("routes a paste payload through the markdown-aware pipeline (mobile suggestion-bar paste)", () => {
+    // The test schema doesn't register the conditional `emoji` /
+    // `mention` extensions (those need their suggestion config), so we
+    // assert the handler actually consumed the event and inserted the
+    // raw text instead of asserting on a specific atom node — the real
+    // conversion is covered by the parser tests in editor-markdown.test.ts.
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = buildEvent("insertFromPaste", "love this :heart_eyes:")
+    expect(
+      handleBeforeInputPaste(
+        editor,
+        event,
+        () => "user",
+        () => null
+      )
+    ).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(editor.getText()).toContain("love this :heart_eyes:")
+    editor.destroy()
+  })
+
+  it("reconstructs a sharedMessage block via insertFromPaste", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = buildEvent(
+      "insertFromPaste",
+      "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)"
+    )
+    expect(
+      handleBeforeInputPaste(
+        editor,
+        event,
+        () => "user",
+        () => null
+      )
+    ).toBe(true)
+
+    const firstBlock = editor.getJSON().content?.[0]
+    expect(firstBlock?.type).toBe("sharedMessage")
+    expect(firstBlock?.attrs?.messageId).toBe("msg_01ABC")
+    editor.destroy()
+  })
+
+  it("ignores non-paste inputTypes", () => {
+    const editor = createTestEditor("")
+    const event = buildEvent("insertText", "hello")
+    expect(
+      handleBeforeInputPaste(
+        editor,
+        event,
+        () => "user",
+        () => null
+      )
+    ).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("returns false when dataTransfer is unavailable", () => {
+    const editor = createTestEditor("")
+    const event = buildEvent("insertFromPaste", null)
+    expect(
+      handleBeforeInputPaste(
+        editor,
+        event,
+        () => "user",
+        () => null
+      )
+    ).toBe(false)
+    expect(event.prevented).toBe(false)
     editor.destroy()
   })
 })

@@ -47,6 +47,8 @@ export function sliceToText(slice: Slice): string {
 
 export interface BeforeInputEventLike {
   inputType: string
+  /** Set on `insertFromPaste`/`insertReplacementText` `InputEvent`s; carries the paste payload. */
+  dataTransfer?: DataTransfer | null
   preventDefault(): void
 }
 
@@ -610,5 +612,46 @@ export function handleBeforeInputNewline(editor: Editor, event: BeforeInputEvent
     event.preventDefault()
   }
 
+  return handled
+}
+
+/**
+ * Catches mobile context-menu / suggestion-bar paste on Android Chrome
+ * (and some iOS Safari builds), where the platform routes paste through
+ * a `beforeinput` event with `inputType === "insertFromPaste"` instead of
+ * (or in addition to) firing a `paste` event with populated `clipboardData`.
+ *
+ * Without this, the regular `handlePaste` either never runs or sees an
+ * empty `clipboardData`, the handler returns false, and the browser's
+ * default text insertion drops the raw markdown into the editor — bypassing
+ * every markdown-aware conversion (sharedMessage / quoteReply /
+ * attachmentReference + @mention / #channel / :emoji:).
+ *
+ * Reads the paste payload from the InputEvent's `dataTransfer` and routes
+ * it through the same `insertPastedText` pipeline as desktop Cmd+V.
+ */
+export function handleBeforeInputPaste(
+  editor: Editor,
+  event: BeforeInputEventLike,
+  getMentionType?: MentionTypeLookup,
+  getEmoji?: EmojiLookup,
+  parseOptions?: {
+    enableMentions?: boolean
+    enableChannels?: boolean
+    enableSlashCommands?: boolean
+    enableEmoji?: boolean
+  }
+): boolean {
+  if (event.inputType !== "insertFromPaste" && event.inputType !== "insertReplacementText") {
+    return false
+  }
+
+  const text = event.dataTransfer?.getData("text/plain")
+  if (!text) return false
+
+  const handled = insertPastedText(editor, text, getMentionType, getEmoji, parseOptions)
+  if (handled) {
+    event.preventDefault()
+  }
   return handled
 }
