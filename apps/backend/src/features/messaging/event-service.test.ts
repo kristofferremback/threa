@@ -125,10 +125,9 @@ describe("EventService attachment safety checks", () => {
 
     expect(AttachmentRepository.attachToMessage).not.toHaveBeenCalled()
     expect(insertManySpy).toHaveBeenCalledTimes(1)
-    const callArgs = insertManySpy.mock.calls[0]?.[1] as Array<{ attachmentId: string; streamId: string }>
-    expect(callArgs).toHaveLength(1)
-    expect(callArgs[0]?.attachmentId).toBe("attach_1")
-    expect(callArgs[0]?.streamId).toBe("stream_target")
+    expect(insertManySpy.mock.calls[0]?.[1]).toEqual([
+      expect.objectContaining({ attachmentId: "attach_1", streamId: "stream_target" }),
+    ])
   })
 
   it("rejects re-referencing an attachment the author cannot read", async () => {

@@ -347,12 +347,10 @@ describe("multiline block paste handling", () => {
       () => null
     )
 
-    const json = editor.getJSON()
-    const firstBlock = json.content?.[0]
-    expect(firstBlock?.type).toBe("sharedMessage")
-    expect(firstBlock?.attrs?.messageId).toBe("msg_01ABC")
-    expect(firstBlock?.attrs?.streamId).toBe("stream_01XYZ")
-    expect(firstBlock?.attrs?.authorName).toBe("Ariadne")
+    expect(editor.getJSON().content?.[0]).toMatchObject({
+      type: "sharedMessage",
+      attrs: { messageId: "msg_01ABC", streamId: "stream_01XYZ", authorName: "Ariadne" },
+    })
     editor.destroy()
   })
 
@@ -366,11 +364,11 @@ describe("multiline block paste handling", () => {
       () => null
     )
 
-    const blocks = editor.getJSON().content ?? []
-    const sharedNode = blocks.find((b) => b.type === "sharedMessage")
-    expect(sharedNode).toBeDefined()
-    expect(sharedNode?.attrs?.messageId).toBe("msg_01ABC")
-    expect(sharedNode?.attrs?.streamId).toBe("stream_01XYZ")
+    const sharedNode = (editor.getJSON().content ?? []).find((b) => b.type === "sharedMessage")
+    expect(sharedNode).toMatchObject({
+      type: "sharedMessage",
+      attrs: { messageId: "msg_01ABC", streamId: "stream_01XYZ" },
+    })
     editor.destroy()
   })
 
@@ -384,11 +382,10 @@ describe("multiline block paste handling", () => {
       () => null
     )
 
-    const json = editor.getJSON()
-    const firstBlock = json.content?.[0]
-    expect(firstBlock?.type).toBe("quoteReply")
-    expect(firstBlock?.attrs?.messageId).toBe("msg_01ABC")
-    expect(firstBlock?.attrs?.snippet).toBe("Hello world")
+    expect(editor.getJSON().content?.[0]).toMatchObject({
+      type: "quoteReply",
+      attrs: { messageId: "msg_01ABC", snippet: "Hello world" },
+    })
     editor.destroy()
   })
 
@@ -402,15 +399,15 @@ describe("multiline block paste handling", () => {
       () => null
     )
 
-    const json = editor.getJSON()
-    const firstBlock = json.content?.[0]
-    expect(firstBlock?.type).toBe("paragraph")
-    const inlineNode = firstBlock?.content?.[0] as JSONContent | undefined
-    expect(inlineNode?.type).toBe("attachmentReference")
-    expect(inlineNode?.attrs?.id).toBe("attach_123")
-    expect(inlineNode?.attrs?.filename).toBe("test.png")
-    expect(inlineNode?.attrs?.mimeType).toBe("image/png")
-    expect(inlineNode?.attrs?.sizeBytes).toBe(1024)
+    expect(editor.getJSON().content?.[0]).toMatchObject({
+      type: "paragraph",
+      content: [
+        {
+          type: "attachmentReference",
+          attrs: { id: "attach_123", filename: "test.png", mimeType: "image/png", sizeBytes: 1024 },
+        },
+      ],
+    })
     editor.destroy()
   })
 
@@ -659,8 +656,10 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     expect(handled).toBe(true)
     expect(event.prevented).toBe(true)
     const inline = (editor.getJSON().content?.[0]?.content ?? []) as JSONContent[]
-    const mention = inline.find((n) => n.type === "mention")
-    expect(mention?.attrs?.slug).toBe("alice")
+    expect(inline.find((n) => n.type === "mention")).toMatchObject({
+      type: "mention",
+      attrs: { slug: "alice" },
+    })
     editor.destroy()
   })
 
@@ -679,8 +678,10 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     expect(handled).toBe(true)
     expect(event.prevented).toBe(true)
     const inline = (editor.getJSON().content?.[0]?.content ?? []) as JSONContent[]
-    const channel = inline.find((n) => n.type === "channelLink")
-    expect(channel?.attrs?.slug).toBe("general")
+    expect(inline.find((n) => n.type === "channelLink")).toMatchObject({
+      type: "channelLink",
+      attrs: { slug: "general" },
+    })
     editor.destroy()
   })
 
@@ -701,8 +702,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
 
     expect(handled).toBe(true)
     expect(event.prevented).toBe(true)
-    const firstBlock = editor.getJSON().content?.[0]
-    expect(firstBlock?.type).toBe("sharedMessage")
+    expect(editor.getJSON().content?.[0]).toMatchObject({ type: "sharedMessage" })
     editor.destroy()
   })
 

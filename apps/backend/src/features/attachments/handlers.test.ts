@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, spyOn } from "bun:test"
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { AttachmentSafetyStatuses } from "@threa/types"
 import { createAttachmentHandlers } from "./handlers"
 import { SharedMessageRepository } from "../messaging"
@@ -37,6 +37,12 @@ function buildAttachment(safetyStatus: (typeof AttachmentSafetyStatuses)[keyof t
 }
 
 describe("attachment handlers safety gating", () => {
+  // Suite-level cleanup so spies don't leak into later tests if an
+  // assertion fails before an inline `mockRestore()` runs.
+  afterEach(() => {
+    mock.restore()
+  })
+
   it("rejects upload when scanner quarantines the file", async () => {
     const attachmentService = {
       createForUpload: mock(() =>
@@ -233,8 +239,6 @@ describe("attachment handlers safety gating", () => {
     expect(res.status).toHaveBeenCalledWith(403)
     expect(res.body).toEqual({ error: "Access denied" })
     expect(attachmentService.getDownloadUrl).not.toHaveBeenCalled()
-    grantSpy.mockRestore()
-    refSpy.mockRestore()
   })
 
   it("returns download URL when access is granted via an inline attachment reference", async () => {
@@ -270,8 +274,6 @@ describe("attachment handlers safety gating", () => {
     expect(refSpy).toHaveBeenCalledWith(expect.anything(), "ws_1", "usr_1", "attach_1")
     expect(attachmentService.getDownloadUrl).toHaveBeenCalled()
     expect(res.body).toEqual({ url: "https://download", expiresIn: 900 })
-    grantSpy.mockRestore()
-    refSpy.mockRestore()
   })
 
   it("returns download URL when access is granted via a shared-message", async () => {
@@ -308,6 +310,5 @@ describe("attachment handlers safety gating", () => {
     expect(grantSpy).toHaveBeenCalled()
     expect(attachmentService.getDownloadUrl).toHaveBeenCalled()
     expect(res.body).toEqual({ url: "https://download", expiresIn: 900 })
-    grantSpy.mockRestore()
   })
 })
