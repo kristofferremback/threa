@@ -590,11 +590,17 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
     editor.destroy()
   })
 
-  it("ignores plain-text insertText autocompletions without markdown triggers", () => {
-    // "hello" has no markdown trigger characters, so we don't claim the
-    // event — it's most likely a regular keyboard suggestion / fast type.
+  it("does NOT intercept insertText (would break Android IME atom deletion)", () => {
+    // Android IMEs send `insertText` events while interacting with atom-
+    // node neighbors (deleting an emoji, autocorrect re-composing around
+    // an atom) — even outside `compositionstart`/`compositionend`.
+    // Intercepting them caused multi-tap-to-delete and focus loss on
+    // mobile. We only catch `insertFromPaste` (context-menu paste) here;
+    // keyboard-suggestion-bar paste users can long-press → Paste instead.
     const editor = createTestEditor("")
-    const event = buildEvent("insertText", "hello")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = buildEvent("insertText", "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)")
     expect(
       handleBeforeInputPaste(
         editor,
@@ -607,65 +613,7 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
     editor.destroy()
   })
 
-  it("ignores single-character insertText (regular typing)", () => {
-    const editor = createTestEditor("")
-    const event = buildEvent("insertText", ":")
-    expect(
-      handleBeforeInputPaste(
-        editor,
-        event,
-        () => "user",
-        () => null
-      )
-    ).toBe(false)
-    editor.destroy()
-  })
-
-  it("ignores non-paste inputTypes entirely", () => {
-    const editor = createTestEditor("")
-    const event = buildEvent("deleteContentBackward", null)
-    expect(
-      handleBeforeInputPaste(
-        editor,
-        event,
-        () => "user",
-        () => null
-      )
-    ).toBe(false)
-    editor.destroy()
-  })
-
-  it("intercepts insertText with markdown-trigger payloads (Gboard suggestion paste)", () => {
-    // Android keyboards (Gboard, SwiftKey) hand the clipboard suggestion
-    // through insertText with the full payload on `event.data` — same path
-    // as autocomplete suggestions. Recognise it via the markdown-trigger
-    // heuristic and route through the markdown-aware paste pipeline.
-    const editor = createTestEditor("")
-    editor.commands.setTextSelection(editor.state.doc.content.size)
-
-    const event = buildEvent("insertText", "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)")
-    expect(
-      handleBeforeInputPaste(
-        editor,
-        event,
-        () => "user",
-        () => null
-      )
-    ).toBe(true)
-    expect(event.prevented).toBe(true)
-
-    const firstBlock = editor.getJSON().content?.[0]
-    expect(firstBlock?.type).toBe("sharedMessage")
-    expect(firstBlock?.attrs?.messageId).toBe("msg_01ABC")
-    editor.destroy()
-  })
-
   it("does NOT intercept insertCompositionText (would break IME edits / atom-node deletion)", () => {
-    // Android IMEs fire `insertCompositionText` continuously while the
-    // user edits existing text — including when a backspace touches an
-    // atom node like an emoji. Intercepting those would re-parse the
-    // in-flight composition state and require multiple strokes to
-    // delete a single emoji. We only handle paste via `insertText`.
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
@@ -682,16 +630,9 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
     editor.destroy()
   })
 
-  it("does NOT intercept insertText while the editor is mid-IME-composition", () => {
-    // `view.composing` is true between compositionstart and compositionend.
-    // Some IMEs reuse `insertText` for intermediate composition states; if
-    // we routed those through the markdown parser they'd clobber the
-    // composing word. The composing guard keeps us out of that window.
+  it("ignores non-paste inputTypes entirely", () => {
     const editor = createTestEditor("")
-    editor.commands.setTextSelection(editor.state.doc.content.size)
-    Object.defineProperty(editor.view, "composing", { value: true, configurable: true })
-
-    const event = buildEvent("insertText", "love this :heart_eyes:")
+    const event = buildEvent("deleteContentBackward", null)
     expect(
       handleBeforeInputPaste(
         editor,
@@ -700,7 +641,6 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
         () => null
       )
     ).toBe(false)
-    expect(event.prevented).toBe(false)
     editor.destroy()
   })
 
