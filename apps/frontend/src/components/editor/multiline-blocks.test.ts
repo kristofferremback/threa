@@ -4,6 +4,7 @@ import type { JSONContent } from "@tiptap/react"
 import { createEditorExtensions } from "./editor-extensions"
 import { serializeToMarkdown, parseMarkdown } from "./editor-markdown"
 import {
+  handleBeforeInputAtomDelete,
   handleBeforeInputKeyboardPaste,
   handleBeforeInputNewline,
   insertPastedText,
@@ -11,9 +12,24 @@ import {
 } from "./multiline-blocks"
 
 function createTestEditor(content: string | JSONContent) {
+  // Enable mention + emoji extensions so tests can build docs with those atoms.
+  // The suggestion stubs are inert; we only need the schemas registered.
+  const extensions = createEditorExtensions({
+    placeholder: "Type a message...",
+    mentionSuggestion: {
+      items: () => [],
+      render: () => ({ onStart: () => {}, onUpdate: () => {}, onExit: () => {}, onKeyDown: () => false }),
+    },
+    emojiSuggestion: {
+      items: () => [],
+      render: () => ({ onStart: () => {}, onUpdate: () => {}, onExit: () => {}, onKeyDown: () => false }),
+    },
+    toEmoji: () => null,
+  })
+
   return new Editor({
     element: document.createElement("div"),
-    extensions: createEditorExtensions({ placeholder: "Type a message..." }),
+    extensions,
     content:
       typeof content === "string"
         ? parseMarkdown(
@@ -662,6 +678,119 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
       () => "user",
       () => null
     )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
+  function createDeleteEvent(inputType: "deleteContentBackward" | "deleteContentForward" = "deleteContentBackward") {
+    return {
+      inputType,
+      prevented: false,
+      preventDefault() {
+        this.prevented = true
+      },
+    }
+  }
+
+  function emojiDoc(prefix: string, suffix: string): JSONContent {
+    const inline: JSONContent[] = []
+    if (prefix) inline.push({ type: "text", text: prefix })
+    inline.push({ type: "emoji", attrs: { shortcode: "rocket", emoji: "🚀" } })
+    if (suffix) inline.push({ type: "text", text: suffix })
+    return {
+      type: "doc",
+      content: [{ type: "paragraph", content: inline }],
+    }
+  }
+
+  it("deletes the inline atom on deleteContentBackward when caret sits right after it", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    // Caret at the start of " end" — i.e. immediately after the emoji atom.
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+
+    const event = createDeleteEvent("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("deletes the inline atom on deleteContentForward when caret sits right before it", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    // Caret at end of "hi " — i.e. immediately before the emoji atom.
+    editor.commands.setTextSelection(findTextPosition(editor, "hi ") + 3)
+
+    const event = createDeleteEvent("deleteContentForward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("deletes a mention atom on deleteContentBackward", () => {
+    const editor = createTestEditor("@alice trailing")
+    editor.commands.setTextSelection(findTextPosition(editor, " trailing"))
+
+    const event = createDeleteEvent("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe(" trailing")
+    editor.destroy()
+  })
+
+  it("falls through when the adjacent node is plain text", () => {
+    const editor = createTestEditor("hello world")
+    editor.commands.setTextSelection(findTextPosition(editor, "hello world") + "hello world".length)
+
+    const event = createDeleteEvent("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("falls through when the selection is non-empty (range delete)", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    selectText(editor, "hi")
+
+    const event = createDeleteEvent("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("ignores non-delete input types", () => {
+    const editor = createTestEditor(emojiDoc("hi ", ""))
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("x", "insertText")
+    const handled = handleBeforeInputAtomDelete(editor, event as { inputType: string; preventDefault(): void })
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("falls through when caret is not adjacent to any atom (mid-text)", () => {
+    const editor = createTestEditor(emojiDoc("hello ", " trailing"))
+    // Caret in middle of "hello " — far from any atom
+    editor.commands.setTextSelection(findTextPosition(editor, "hello") + 2)
+
+    const event = createDeleteEvent("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
 
     expect(handled).toBe(false)
     expect(event.prevented).toBe(false)

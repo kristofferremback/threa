@@ -33,6 +33,7 @@ import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { LinkEditor } from "./link-editor"
 import {
+  handleBeforeInputAtomDelete,
   handleBeforeInputKeyboardPaste,
   handleBeforeInputNewline,
   insertPastedText,
@@ -165,6 +166,12 @@ export function DocumentEditorModal({
         beforeinput: (_view, event) => {
           const editor = editorRef.current
           if (!editor || isSuggestionActive(editor)) return false
+
+          // Android atom deletion: keymap doesn't fire for Backspace, so delete
+          // adjacent inline atoms here before the browser's two-step selection.
+          if (handleBeforeInputAtomDelete(editor, event as InputEvent)) {
+            return true
+          }
 
           // Gboard / SwiftKey clipboard-bar paste arrives as insertText, not paste.
           if (

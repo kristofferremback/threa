@@ -578,6 +578,42 @@ export function handleBeforeInputNewline(editor: Editor, event: BeforeInputEvent
 }
 
 /**
+ * Delete an inline atom adjacent to the caret on Android `beforeinput`. Android
+ * keyboards skip `keydown` for Backspace / Delete, so ProseMirror's keymap-based
+ * atom deletion never runs and the browser falls back to its own two-step
+ * "select-then-delete" atom handling — which on Firefox needs multiple taps and
+ * on Chrome blurs the contenteditable mid-flow, closing the keyboard.
+ *
+ * Intercepting the input event and deleting the atom via a transaction skips
+ * the browser's selection step entirely. No-op on desktop because `keydown`
+ * fires first and the atom is already gone by the time `beforeinput` arrives.
+ */
+export function handleBeforeInputAtomDelete(editor: Editor, event: BeforeInputEventLike): boolean {
+  if (event.inputType !== "deleteContentBackward" && event.inputType !== "deleteContentForward") {
+    return false
+  }
+
+  const { state, view } = editor
+  if (view.composing) return false
+
+  const { selection } = state
+  if (!selection.empty) return false
+
+  const $from = selection.$from
+  const adjacent = event.inputType === "deleteContentBackward" ? $from.nodeBefore : $from.nodeAfter
+  // Text nodes are leaves and report `isAtom === true`, so check `isText` to
+  // skip them — we only want to handle structured inline atoms here.
+  if (!adjacent || adjacent.isText || !adjacent.isAtom || !adjacent.isInline) return false
+
+  const from = event.inputType === "deleteContentBackward" ? $from.pos - adjacent.nodeSize : $from.pos
+  const to = event.inputType === "deleteContentBackward" ? $from.pos : $from.pos + adjacent.nodeSize
+
+  event.preventDefault()
+  view.dispatch(state.tr.delete(from, to).scrollIntoView())
+  return true
+}
+
+/**
  * Detect Gboard / SwiftKey clipboard-bar pastes that the browser surfaces as
  * `beforeinput` `insertText` rather than a paste event. ProseMirror's author
  * has confirmed there's no native way for the editor to know it's a paste:

@@ -13,7 +13,12 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
-import { handleBeforeInputKeyboardPaste, handleBeforeInputNewline, insertPastedText } from "./multiline-blocks"
+import {
+  handleBeforeInputAtomDelete,
+  handleBeforeInputKeyboardPaste,
+  handleBeforeInputNewline,
+  insertPastedText,
+} from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -428,6 +433,12 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
           const editor = editorRef.current
           if (!editor) return false
           if (isSuggestionActive(editor)) return false
+
+          // Android atom deletion: keymap doesn't fire for Backspace, so delete
+          // adjacent inline atoms here before the browser's two-step selection.
+          if (handleBeforeInputAtomDelete(editor, event as InputEvent)) {
+            return true
+          }
 
           // Gboard / SwiftKey clipboard-bar paste arrives as insertText, not paste.
           if (
