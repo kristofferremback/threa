@@ -32,7 +32,7 @@ import { useMentionSuggestion, useChannelSuggestion, useEmojiSuggestion } from "
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { LinkEditor } from "./link-editor"
-import { handleBeforeInputNewline, insertPastedText, toggleMultilineBlock } from "./multiline-blocks"
+import { handleBeforeInputNewline, insertPastedText, sliceToText, toggleMultilineBlock } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
 import { getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
@@ -143,8 +143,13 @@ export function DocumentEditorModal({
           "focus:outline-none"
         ),
       },
-      handlePaste: (_view, event) => {
-        const text = event.clipboardData?.getData("text/plain")
+      handlePaste: (_view, event, slice) => {
+        // Mobile browsers (Android Chrome, some iOS Safari versions) hand
+        // us an empty `clipboardData` for context-menu paste; the readable
+        // copy of the clipboard only reaches us via ProseMirror's parsed
+        // slice. `sliceToText` recovers the same text we'd have read from
+        // `getData("text/plain")` on desktop — see the helper for details.
+        const text = event.clipboardData?.getData("text/plain") || sliceToText(slice)
         if (!text || !editorRef.current) {
           return false
         }

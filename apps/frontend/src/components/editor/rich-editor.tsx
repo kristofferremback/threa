@@ -13,7 +13,7 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
-import { handleBeforeInputNewline, insertPastedText } from "./multiline-blocks"
+import { handleBeforeInputNewline, insertPastedText, sliceToText } from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -382,7 +382,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
           "focus:outline-none"
         ),
       },
-      handlePaste: (_view, event) => {
+      handlePaste: (_view, event, slice) => {
         // Check for files first (images, documents, etc.)
         const files = event.clipboardData?.files
         if (files && files.length > 0 && onFileUploadRef.current && editorRef.current) {
@@ -404,8 +404,18 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
           return true
         }
 
-        // Parse pasted text through markdown parser to convert @mentions, #channels, :emoji:
-        const text = event.clipboardData?.getData("text/plain")
+        // Parse pasted text through markdown parser to convert @mentions,
+        // #channels, :emoji:, plus structural nodes (sharedMessage,
+        // quoteReply, attachmentReference).
+        //
+        // Mobile Safari and some Android browsers fire `paste` with a
+        // restricted/empty `clipboardData`, exposing the actual clipboard
+        // only via ProseMirror's parsed `slice`. Recover the original
+        // text by walking the slice — block boundaries become `\n` (or
+        // `\n\n` between top-level blocks), hardBreaks become `\n` — so
+        // context-menu paste survives the same lossless reconstruction as
+        // Cmd+V on desktop.
+        const text = event.clipboardData?.getData("text/plain") || sliceToText(slice)
         if (!text || !editorRef.current) {
           return false
         }

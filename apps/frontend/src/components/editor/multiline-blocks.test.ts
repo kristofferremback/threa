@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { Editor } from "@tiptap/core"
+import { Slice, Fragment } from "@tiptap/pm/model"
 import type { JSONContent } from "@tiptap/react"
 import { createEditorExtensions } from "./editor-extensions"
 import { serializeToMarkdown, parseMarkdown } from "./editor-markdown"
-import { handleBeforeInputNewline, insertPastedText, toggleMultilineBlock } from "./multiline-blocks"
+import { handleBeforeInputNewline, insertPastedText, sliceToText, toggleMultilineBlock } from "./multiline-blocks"
 
 function createTestEditor(content: string | JSONContent) {
   return new Editor({
@@ -456,6 +457,54 @@ describe("multiline beforeinput enter handling", () => {
     expect(editor.state.doc.firstChild?.childCount).toBe(2)
     expect(editor.state.doc.lastChild?.type.name).toBe("paragraph")
     expect(editor.isActive("blockquote")).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe("sliceToText (mobile clipboardData fallback)", () => {
+  // Build a slice the way ProseMirror's text/plain clipboard parser does:
+  // every \n becomes a hardBreak in a single paragraph, every \n\n becomes
+  // a paragraph break. We recover that string from the parsed slice so the
+  // markdown-aware paste handlers run even when `clipboardData` is empty.
+  function sliceFromText(editor: Editor, text: string): Slice {
+    const { schema } = editor.state
+    const paragraphs = text.split(/\n\n/g).map((paragraphText) => {
+      const lines = paragraphText.split("\n")
+      const inline: Array<ReturnType<typeof schema.text> | ReturnType<typeof schema.nodes.hardBreak.create>> = []
+      lines.forEach((line, idx) => {
+        if (idx > 0) inline.push(schema.nodes.hardBreak.create())
+        if (line.length > 0) inline.push(schema.text(line))
+      })
+      return schema.nodes.paragraph.create(null, inline as unknown as Fragment)
+    })
+    return new Slice(Fragment.fromArray(paragraphs), 1, 1)
+  }
+
+  it("recovers a single-line shared-message marker from the slice", () => {
+    const editor = createTestEditor("")
+    const text = "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)"
+    expect(sliceToText(sliceFromText(editor, text))).toBe(text)
+    editor.destroy()
+  })
+
+  it("recovers a multi-line quote-reply (hardBreaks → \\n) from the slice", () => {
+    const editor = createTestEditor("")
+    const text = "> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC/usr_01KR/user)"
+    expect(sliceToText(sliceFromText(editor, text))).toBe(text)
+    editor.destroy()
+  })
+
+  it("recovers paragraph breaks (\\n\\n) between top-level textblocks", () => {
+    const editor = createTestEditor("")
+    const text = "first paragraph\n\nsecond paragraph"
+    expect(sliceToText(sliceFromText(editor, text))).toBe(text)
+    editor.destroy()
+  })
+
+  it("recovers an :emoji: shortcode from the slice (mobile mention/emoji path)", () => {
+    const editor = createTestEditor("")
+    const text = "love this :heart_eyes:"
+    expect(sliceToText(sliceFromText(editor, text))).toBe(text)
     editor.destroy()
   })
 })

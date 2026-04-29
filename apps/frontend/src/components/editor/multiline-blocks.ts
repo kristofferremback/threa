@@ -3,6 +3,48 @@ import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from "@tip
 import { Selection, type Transaction, type EditorState } from "@tiptap/pm/state"
 import { parseMarkdown, type EmojiLookup, type MentionTypeLookup } from "./editor-markdown"
 
+/**
+ * Reverse-engineer text/plain from a paste slice.
+ *
+ * Android Chrome (and some iOS Safari versions) deliver context-menu
+ * pastes through ProseMirror's `paste` event with an empty/restricted
+ * `clipboardData`; the only readable copy of the clipboard text is the
+ * pre-parsed `slice` ProseMirror passes as the third arg to handlePaste.
+ * Without this fallback, none of the markdown-aware conversions on paste
+ * — sharedMessage / quoteReply / attachmentReference, plus @mentions,
+ * #channels, :emoji: shortcodes — fired on mobile.
+ *
+ * Joins adjacent textblocks with `\n\n` (the paragraph break used by
+ * ProseMirror's text/plain clipboard parser) and renders hardBreaks
+ * within a textblock as `\n`, so the recovered string is the same one
+ * we'd have read from `getData("text/plain")` on desktop.
+ */
+export function sliceToText(slice: Slice): string {
+  const blocks: string[] = []
+  slice.content.forEach((node) => {
+    if (!node.isTextblock) {
+      // Leaf or other block — fall back to its rendered text content.
+      blocks.push(node.textContent)
+      return
+    }
+    let text = ""
+    node.forEach((child) => {
+      if (child.type.name === "hardBreak") {
+        text += "\n"
+      } else if (child.isText) {
+        text += child.text ?? ""
+      } else {
+        // Inline atom (mention, emoji, attachment-reference, …) —
+        // `textContent` falls back to the node's text representation, which
+        // is the schema's `renderText` output where defined.
+        text += child.textContent
+      }
+    })
+    blocks.push(text)
+  })
+  return blocks.join("\n\n")
+}
+
 export interface BeforeInputEventLike {
   inputType: string
   preventDefault(): void
