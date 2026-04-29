@@ -13,7 +13,7 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
-import { handleBeforeInputNewline, insertPastedText } from "./multiline-blocks"
+import { handleBeforeInputKeyboardPaste, handleBeforeInputNewline, insertPastedText } from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -425,15 +425,26 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {
-          if (messageSendModeRef.current !== "cmdEnter" || !editorRef.current) {
-            return false
+          const editor = editorRef.current
+          if (!editor) return false
+          if (isSuggestionActive(editor)) return false
+
+          // Gboard / SwiftKey clipboard-bar paste arrives as insertText, not paste.
+          if (
+            handleBeforeInputKeyboardPaste(
+              editor,
+              event as InputEvent,
+              enableMentions ? getMentionTypeRef.current : undefined,
+              enableEmoji ? toEmojiRef.current : undefined,
+              markdownParseOptions
+            )
+          ) {
+            return true
           }
 
-          if (isSuggestionActive(editorRef.current)) {
-            return false
-          }
-
-          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
+          // Newline handling only matters in cmdEnter mode (Enter sends in default mode).
+          if (messageSendModeRef.current !== "cmdEnter") return false
+          return handleBeforeInputNewline(editor, event as InputEvent)
         },
       },
       handleDrop: (_view, event, _slice, moved) => {

@@ -5,8 +5,14 @@ import { parseMarkdown, type EmojiLookup, type MentionTypeLookup } from "./edito
 
 export interface BeforeInputEventLike {
   inputType: string
+  data?: string | null
   preventDefault(): void
 }
+
+// Chars that signal pasted markdown / structured content. Lone parens / brackets
+// excluded because they appear as ordinary punctuation; `[` is sufficient for the
+// markdown-link case since it always leads the pair.
+const PASTE_STYLING_CHARS = /[*_~`[:<]/
 
 interface AncestorInfo {
   depth: number
@@ -568,5 +574,49 @@ export function handleBeforeInputNewline(editor: Editor, event: BeforeInputEvent
     event.preventDefault()
   }
 
+  return handled
+}
+
+/**
+ * Detect Gboard / SwiftKey clipboard-bar pastes that the browser surfaces as
+ * `beforeinput` `insertText` rather than a paste event. ProseMirror's author
+ * has confirmed there's no native way for the editor to know it's a paste:
+ * https://discuss.prosemirror.net/t/transformpasted-doesnt-catch-pasted/8157
+ *
+ * Heuristic: a real keystroke or word suggestion is either single-char or
+ * plain alphabetic. Multi-char `data` containing a newline or a markdown
+ * styling char is almost certainly clipboard content. Composition events,
+ * code blocks, and inputs without those signals fall through to native flow.
+ */
+export function handleBeforeInputKeyboardPaste(
+  editor: Editor,
+  event: BeforeInputEventLike,
+  getMentionType?: MentionTypeLookup,
+  getEmoji?: EmojiLookup,
+  parseOptions?: {
+    enableMentions?: boolean
+    enableChannels?: boolean
+    enableSlashCommands?: boolean
+    enableEmoji?: boolean
+  }
+): boolean {
+  if (event.inputType !== "insertText") return false
+
+  // IME composition (autocorrect, swipe-typing on some keyboards, CJK input).
+  if (editor.view.composing) return false
+
+  const data = event.data
+  if (!data || data.length < 3) return false
+
+  if (!data.includes("\n") && !PASTE_STYLING_CHARS.test(data)) return false
+
+  // Inside a code block, plain text must flow as-is. Markdown parsing would
+  // wreck the verbatim-text invariant of code blocks.
+  if (editor.isActive("codeBlock")) return false
+
+  const handled = insertPastedText(editor, data, getMentionType, getEmoji, parseOptions)
+  if (handled) {
+    event.preventDefault()
+  }
   return handled
 }

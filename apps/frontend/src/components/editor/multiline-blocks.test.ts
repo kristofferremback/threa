@@ -3,7 +3,12 @@ import { Editor } from "@tiptap/core"
 import type { JSONContent } from "@tiptap/react"
 import { createEditorExtensions } from "./editor-extensions"
 import { serializeToMarkdown, parseMarkdown } from "./editor-markdown"
-import { handleBeforeInputNewline, insertPastedText, toggleMultilineBlock } from "./multiline-blocks"
+import {
+  handleBeforeInputKeyboardPaste,
+  handleBeforeInputNewline,
+  insertPastedText,
+  toggleMultilineBlock,
+} from "./multiline-blocks"
 
 function createTestEditor(content: string | JSONContent) {
   return new Editor({
@@ -109,6 +114,17 @@ function selectLines(editor: Editor, startText: string, endText: string) {
 function createBeforeInputEvent(inputType: "insertParagraph" | "insertLineBreak" = "insertParagraph") {
   return {
     inputType,
+    prevented: false,
+    preventDefault() {
+      this.prevented = true
+    },
+  }
+}
+
+function createBeforeInputDataEvent(data: string | null, inputType = "insertText") {
+  return {
+    inputType,
+    data,
     prevented: false,
     preventDefault() {
       this.prevented = true
@@ -456,6 +472,199 @@ describe("multiline beforeinput enter handling", () => {
     expect(editor.state.doc.firstChild?.childCount).toBe(2)
     expect(editor.state.doc.lastChild?.type.name).toBe("paragraph")
     expect(editor.isActive("blockquote")).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
+  it("intercepts multi-char insertText containing markdown chars", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("**bold text**")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("**bold text**")
+    editor.destroy()
+  })
+
+  it("intercepts multi-line insertText", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("line 1\nline 2")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("line 1\n\nline 2")
+    editor.destroy()
+  })
+
+  it("ignores single-char insertText (normal typing)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("x")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("ignores multi-word insertText with no markdown chars (word suggestions / swipe typing)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("hello world")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("ignores insertText shorter than 3 chars even with styling chars", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("**")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("ignores non-insertText input types (e.g. insertCompositionText)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("**bold**", "insertCompositionText")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("falls through inside code blocks so plain text flows verbatim", () => {
+    const editor = createTestEditor("```\nseed\n```")
+    setCursor(editor, "seed")
+
+    const event = createBeforeInputDataEvent("**bold**")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("intercepts emoji shortcode pastes", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent(":rocket: launching")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      (code) => (code === "rocket" ? "🚀" : null)
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    editor.destroy()
+  })
+
+  it("intercepts URL pastes (the colon in ':// matches the styling-char heuristic)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("https://example.com")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    editor.destroy()
+  })
+
+  it("intercepts pointer URL pastes (sharedMessage)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    const firstBlock = editor.getJSON().content?.[0]
+    expect(firstBlock?.type).toBe("sharedMessage")
+    editor.destroy()
+  })
+
+  it("ignores null data", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent(null)
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
     editor.destroy()
   })
 })
