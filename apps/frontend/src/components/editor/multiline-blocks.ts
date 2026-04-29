@@ -49,6 +49,8 @@ export interface BeforeInputEventLike {
   inputType: string
   /** Set on `insertFromPaste`/`insertReplacementText` `InputEvent`s; carries the paste payload. */
   dataTransfer?: DataTransfer | null
+  /** Set on `insertText`/`insertCompositionText` `InputEvent`s; carries the inserted text. */
+  data?: string | null
   preventDefault(): void
 }
 
@@ -616,19 +618,41 @@ export function handleBeforeInputNewline(editor: Editor, event: BeforeInputEvent
 }
 
 /**
- * Catches mobile context-menu / suggestion-bar paste on Android Chrome
- * (and some iOS Safari builds), where the platform routes paste through
- * a `beforeinput` event with `inputType === "insertFromPaste"` instead of
- * (or in addition to) firing a `paste` event with populated `clipboardData`.
+ * Heuristic for "is this `insertText` payload a keyboard-suggestion paste,
+ * or just a fast-typed character?". Android keyboards (Gboard's clipboard
+ * suggestion bar, SwiftKey's paste suggestion) don't dispatch `paste` or
+ * `insertFromPaste` — they use the same autocomplete path as word
+ * suggestions, which fires `beforeinput` with `inputType: "insertText"`
+ * (or `"insertCompositionText"`) carrying the full payload in `event.data`.
  *
- * Without this, the regular `handlePaste` either never runs or sees an
- * empty `clipboardData`, the handler returns false, and the browser's
- * default text insertion drops the raw markdown into the editor — bypassing
- * every markdown-aware conversion (sharedMessage / quoteReply /
- * attachmentReference + @mention / #channel / :emoji:).
+ * Single-character `insertText` is regular typing; multi-character payloads
+ * are autocomplete or paste. We only intercept when there's also a markdown
+ * trigger character (`@`, `#`, `:`, `[`, newline, …) that the parser would
+ * actually convert — otherwise plain-language autocomplete suggestions
+ * (e.g. tapping a word in the suggestion bar) get routed unchanged through
+ * the markdown pipeline, which is a no-op but avoids any IME interference.
+ */
+function looksLikeSuggestionPaste(data: string | null | undefined): boolean {
+  if (!data || data.length < 2) return false
+  return /[\n\r@#:[\]`*~]/.test(data)
+}
+
+/**
+ * Catches mobile paste regardless of platform-specific dispatch path:
  *
- * Reads the paste payload from the InputEvent's `dataTransfer` and routes
- * it through the same `insertPastedText` pipeline as desktop Cmd+V.
+ *   - `insertFromPaste` / `insertReplacementText`: context-menu paste on
+ *     Android Chrome and some iOS Safari builds (text on `dataTransfer`).
+ *   - `insertText` / `insertCompositionText`: keyboard suggestion-bar
+ *     paste on Android (Gboard, SwiftKey, …) and Safari's QuickType — the
+ *     payload arrives on `event.data` via the same path as autocomplete
+ *     suggestions, so the regular `handlePaste` never runs.
+ *
+ * Without this, paste falls through to the browser's default text
+ * insertion and bypasses every markdown-aware conversion (sharedMessage /
+ * quoteReply / attachmentReference + @mention / #channel / :emoji:).
+ *
+ * Routes the recovered payload through the same `insertPastedText`
+ * pipeline as desktop Cmd+V.
  */
 export function handleBeforeInputPaste(
   editor: Editor,
@@ -642,11 +666,17 @@ export function handleBeforeInputPaste(
     enableEmoji?: boolean
   }
 ): boolean {
-  if (event.inputType !== "insertFromPaste" && event.inputType !== "insertReplacementText") {
+  let text: string | null | undefined
+
+  if (event.inputType === "insertFromPaste" || event.inputType === "insertReplacementText") {
+    text = event.dataTransfer?.getData("text/plain")
+  } else if (event.inputType === "insertText" || event.inputType === "insertCompositionText") {
+    if (!looksLikeSuggestionPaste(event.data)) return false
+    text = event.data
+  } else {
     return false
   }
 
-  const text = event.dataTransfer?.getData("text/plain")
   if (!text) return false
 
   const handled = insertPastedText(editor, text, getMentionType, getEmoji, parseOptions)

@@ -522,6 +522,7 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
   ): {
     inputType: string
     dataTransfer: DataTransfer | null
+    data: string | null
     prevented: boolean
     preventDefault(): void
   } {
@@ -534,6 +535,7 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
     const event = {
       inputType,
       dataTransfer,
+      data: text,
       prevented: false,
       preventDefault() {
         this.prevented = true
@@ -588,7 +590,9 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
     editor.destroy()
   })
 
-  it("ignores non-paste inputTypes", () => {
+  it("ignores plain-text insertText autocompletions without markdown triggers", () => {
+    // "hello" has no markdown trigger characters, so we don't claim the
+    // event — it's most likely a regular keyboard suggestion / fast type.
     const editor = createTestEditor("")
     const event = buildEvent("insertText", "hello")
     expect(
@@ -603,7 +607,80 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
     editor.destroy()
   })
 
-  it("returns false when dataTransfer is unavailable", () => {
+  it("ignores single-character insertText (regular typing)", () => {
+    const editor = createTestEditor("")
+    const event = buildEvent("insertText", ":")
+    expect(
+      handleBeforeInputPaste(
+        editor,
+        event,
+        () => "user",
+        () => null
+      )
+    ).toBe(false)
+    editor.destroy()
+  })
+
+  it("ignores non-paste inputTypes entirely", () => {
+    const editor = createTestEditor("")
+    const event = buildEvent("deleteContentBackward", null)
+    expect(
+      handleBeforeInputPaste(
+        editor,
+        event,
+        () => "user",
+        () => null
+      )
+    ).toBe(false)
+    editor.destroy()
+  })
+
+  it("intercepts insertText with markdown-trigger payloads (Gboard suggestion paste)", () => {
+    // Android keyboards (Gboard, SwiftKey) hand the clipboard suggestion
+    // through insertText with the full payload on `event.data` — same path
+    // as autocomplete suggestions. Recognise it via the markdown-trigger
+    // heuristic and route through the markdown-aware paste pipeline.
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = buildEvent("insertText", "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)")
+    expect(
+      handleBeforeInputPaste(
+        editor,
+        event,
+        () => "user",
+        () => null
+      )
+    ).toBe(true)
+    expect(event.prevented).toBe(true)
+
+    const firstBlock = editor.getJSON().content?.[0]
+    expect(firstBlock?.type).toBe("sharedMessage")
+    expect(firstBlock?.attrs?.messageId).toBe("msg_01ABC")
+    editor.destroy()
+  })
+
+  it("intercepts insertCompositionText with markdown-trigger payloads", () => {
+    // Some IME/keyboard combinations dispatch composition events for the
+    // paste suggestion instead of insertText — same payload, same path.
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = buildEvent("insertCompositionText", "love this :heart_eyes:")
+    expect(
+      handleBeforeInputPaste(
+        editor,
+        event,
+        () => "user",
+        () => null
+      )
+    ).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(editor.getText()).toContain("love this :heart_eyes:")
+    editor.destroy()
+  })
+
+  it("returns false when dataTransfer is unavailable on insertFromPaste", () => {
     const editor = createTestEditor("")
     const event = buildEvent("insertFromPaste", null)
     expect(
