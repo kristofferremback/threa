@@ -79,21 +79,27 @@ export const AttachmentReferenceRepository = {
   },
 
   /**
-   * Returns true when the viewer has read access to at least one stream
-   * that references the attachment. Composes `findByAttachmentId` with
-   * `listAccessibleStreamIds` so callers don't have to assemble the
-   * stream-access check themselves; mirrors the shape of
-   * `SharedMessageRepository.listSourcesGrantedToViewer`.
+   * Distinct stream IDs that contain a message referencing the attachment.
+   * The shared primitive both access-control paths build on:
+   * `AttachmentService.getAccessible` intersects this with the caller's
+   * pre-resolved `accessibleStreamIds`; `hasViewerAccessByReference` runs
+   * `listAccessibleStreamIds` over it to resolve the viewer's reach.
+   * Keeping the projection in one place means the access rule can't drift
+   * between the two callers.
    */
+  async findReferencingStreamIds(db: Querier, workspaceId: string, attachmentId: string): Promise<string[]> {
+    const refs = await this.findByAttachmentId(db, workspaceId, attachmentId)
+    return [...new Set(refs.map((r) => r.streamId))]
+  },
+
   async hasViewerAccessByReference(
     db: Querier,
     workspaceId: string,
     userId: string,
     attachmentId: string
   ): Promise<boolean> {
-    const refs = await this.findByAttachmentId(db, workspaceId, attachmentId)
-    if (refs.length === 0) return false
-    const candidateStreamIds = [...new Set(refs.map((r) => r.streamId))]
+    const candidateStreamIds = await this.findReferencingStreamIds(db, workspaceId, attachmentId)
+    if (candidateStreamIds.length === 0) return false
     const reachable = await listAccessibleStreamIds(db, workspaceId, userId, candidateStreamIds)
     return reachable.size > 0
   },

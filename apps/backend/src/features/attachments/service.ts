@@ -181,8 +181,8 @@ export class AttachmentService {
     const accessibleSet = new Set(accessibleStreamIds)
     let directlyAccessible = !!attachment.streamId && accessibleSet.has(attachment.streamId)
     if (!directlyAccessible) {
-      const refs = await AttachmentReferenceRepository.findByAttachmentId(this.pool, workspaceId, id)
-      directlyAccessible = refs.some((ref) => accessibleSet.has(ref.streamId))
+      const refStreamIds = await AttachmentReferenceRepository.findReferencingStreamIds(this.pool, workspaceId, id)
+      directlyAccessible = refStreamIds.some((streamId) => accessibleSet.has(streamId))
     }
     if (!directlyAccessible) {
       return null

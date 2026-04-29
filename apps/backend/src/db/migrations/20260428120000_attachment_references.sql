@@ -25,12 +25,23 @@ CREATE TABLE attachment_references (
 
 -- Compound unique index serves both the INSERT ... ON CONFLICT idempotency
 -- and `WHERE attachment_id = X` lookups (Postgres uses the leftmost prefix).
+-- The `findByAttachmentId` repo path also filters on `workspace_id`; since
+-- `attachment_id` is a workspace-unique ULID, per-attachment row count is
+-- small (≈ message-fanout for that attachment), so the heap-side workspace
+-- check stays trivially cheap. Adding workspace_id to the index isn't worth
+-- the extra write/space cost.
 CREATE UNIQUE INDEX attachment_references_pair_idx
     ON attachment_references (attachment_id, message_id);
 
 -- Backfill: every existing attachment whose message_id is set already counts
 -- as a reference from that message. New rows get inserted at message-create
--- time so this backfill is one-time only.
+-- time so this backfill is one-time only. ID shape matches the established
+-- migration-backfill convention (`<prefix>_<uuid_hex>` — see `member_*` in
+-- 20260207120000_member_identity.sql and `stream_*` in
+-- 20260210140000_backfill_system_streams.sql); these one-time rows trade
+-- INV-2 time-sortability for not pulling a Postgres ULID extension into
+-- migrations. Application-side inserts use `generateId("aref")` which is
+-- a real ULID.
 INSERT INTO attachment_references (id, workspace_id, attachment_id, message_id, stream_id, created_at)
 SELECT
     'aref_' || replace(gen_random_uuid()::text, '-', ''),
