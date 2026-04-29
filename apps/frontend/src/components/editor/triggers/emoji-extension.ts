@@ -82,13 +82,20 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
   },
 
   renderHTML({ node, HTMLAttributes }) {
+    // `inline` (not `inline-block`): on Android Chrome, an `inline-block`
+    // wrapper around a `selectable: false` atom turns the span into a
+    // replaced-inline element — the IME positions the cursor outside it,
+    // so deleting requires multiple backspaces to walk back across the
+    // surrounding text. Inline keeps the emoji in the surrounding text
+    // run so it deletes in one stroke. Matches the trigger atoms
+    // (@mentions, #channels, /commands) which had the same constraint.
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
         "data-type": "emoji",
-        class: "inline-block",
+        class: "inline",
       }),
-      node.attrs.emoji, // Display the emoji character
+      node.attrs.emoji,
     ]
   },
 
