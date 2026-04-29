@@ -32,7 +32,13 @@ import { useMentionSuggestion, useChannelSuggestion, useEmojiSuggestion } from "
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { LinkEditor } from "./link-editor"
-import { handleBeforeInputNewline, insertPastedText, toggleMultilineBlock } from "./multiline-blocks"
+import {
+  handleBeforeInputAtomDelete,
+  handleBeforeInputKeyboardPaste,
+  handleBeforeInputNewline,
+  insertPastedText,
+  toggleMultilineBlock,
+} from "./multiline-blocks"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
 import { getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
@@ -158,11 +164,23 @@ export function DocumentEditorModal({
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {
-          if (!editorRef.current || isSuggestionActive(editorRef.current)) {
-            return false
+          const editor = editorRef.current
+          if (!editor || isSuggestionActive(editor)) return false
+
+          // Android atom deletion: keymap doesn't fire for Backspace, so delete
+          // adjacent inline atoms here before the browser's two-step selection.
+          if (handleBeforeInputAtomDelete(editor, event as InputEvent)) {
+            return true
           }
 
-          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
+          // Gboard / SwiftKey clipboard-bar paste arrives as insertText, not paste.
+          if (
+            handleBeforeInputKeyboardPaste(editor, event as InputEvent, getMentionTypeRef.current, toEmojiRef.current)
+          ) {
+            return true
+          }
+
+          return handleBeforeInputNewline(editor, event as InputEvent)
         },
       },
       handleKeyDown: (_view, event) => {

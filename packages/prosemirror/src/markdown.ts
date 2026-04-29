@@ -13,6 +13,7 @@ import {
   serializeAttachmentMetadata,
   unescapeMarkdownLinkText,
 } from "./attachment-markdown"
+import { buildQuoteHref, buildSharedMessageHref } from "./pointer-urls"
 
 // ============================================================================
 // Shared Inline Pattern
@@ -94,8 +95,8 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
       const escapedAuthor = authorName.replace(/\\/g, "\\\\").replace(/\]/g, "\\]")
       // Blank `>` line forces a paragraph break so react-markdown creates separate
       // <p> elements for the snippet and attribution (needed for display extraction).
-      // authorId and actorType are appended after messageId for avatar/profile resolution.
-      return `${quotedLines}\n>\n> — [${escapedAuthor}](quote:${streamId}/${messageId}/${authorId}/${actorType})`
+      const href = buildQuoteHref({ streamId, messageId, authorId, actorType })
+      return `${quotedLines}\n>\n> — [${escapedAuthor}](${href})`
     }
 
     case "sharedMessage": {
@@ -111,7 +112,7 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
       // the line to a clean sentence: "Shared a message from Alice".
       const rawName = authorName && authorName.length > 0 ? authorName : "another stream"
       const escapedName = rawName.replace(/\\/g, "\\\\").replace(/\]/g, "\\]")
-      return `Shared a message from [${escapedName}](shared-message:${streamId}/${messageId})`
+      return `Shared a message from [${escapedName}](${buildSharedMessageHref({ streamId, messageId })})`
     }
 
     case "bulletList":
@@ -348,7 +349,7 @@ function serializeInline(nodes: JSONContent[] | undefined): string {
  * Lookup function to determine mention type from slug.
  * "me" is a special type for the current user's own mentions.
  */
-export type MentionTypeLookup = (slug: string) => "user" | "persona" | "broadcast" | "me"
+export type MentionTypeLookup = (slug: string) => "user" | "persona" | "bot" | "broadcast" | "me"
 
 /**
  * Lookup function to get emoji character from shortcode.
@@ -356,7 +357,22 @@ export type MentionTypeLookup = (slug: string) => "user" | "persona" | "broadcas
  */
 export type EmojiLookup = (shortcode: string) => string | null
 
-interface ParseOptions {
+/**
+ * Per-call gates for the structured-token conversions. Defaults for every
+ * flag are `true`, so callers that don't care (the AI/external API path,
+ * for instance) get the full conversion. The frontend composer flips
+ * specific flags off when sending a slash-command (no `@mention` parsing
+ * for `/invite alice` body) or any other place where one of these tokens
+ * should remain literal text.
+ */
+export interface ParseMarkdownOptions {
+  enableMentions?: boolean
+  enableChannels?: boolean
+  enableSlashCommands?: boolean
+  enableEmoji?: boolean
+}
+
+interface ParseOptions extends ParseMarkdownOptions {
   getMentionType?: MentionTypeLookup
   getEmoji?: EmojiLookup
 }
@@ -367,9 +383,10 @@ interface ParseOptions {
 export function parseMarkdown(
   markdown: string,
   getMentionType?: MentionTypeLookup,
-  getEmoji?: EmojiLookup
+  getEmoji?: EmojiLookup,
+  parseOptions: ParseMarkdownOptions = {}
 ): JSONContent {
-  const options: ParseOptions = { getMentionType, getEmoji }
+  const options: ParseOptions = { getMentionType, getEmoji, ...parseOptions }
   if (!markdown.trim()) {
     return { type: "doc", content: [{ type: "paragraph" }] }
   }
@@ -509,6 +526,27 @@ export function parseMarkdown(
       continue
     }
 
+    // Shared message pointer line — inverse of the `sharedMessage`
+    // serializer above. Letting paste roundtrip into a `sharedMessage` node
+    // (instead of a generic paragraph + link) means re-sending a copied
+    // message keeps the cross-stream pointer; the backend share-recording
+    // step then re-validates and records the share grant.
+    const sharedMessageMatch = parseSharedMessageLine(line)
+    if (sharedMessageMatch) {
+      content.push({
+        type: "sharedMessage",
+        attrs: {
+          messageId: sharedMessageMatch.messageId,
+          streamId: sharedMessageMatch.streamId,
+          authorName: sharedMessageMatch.authorName,
+          authorId: "",
+          actorType: "user",
+        },
+      })
+      i++
+      continue
+    }
+
     // Regular paragraph
     content.push({
       type: "paragraph",
@@ -520,22 +558,40 @@ export function parseMarkdown(
   return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] }
 }
 
+/**
+ * Match the canonical shared-message pointer line:
+ *   `Shared a message from [Author](shared-message:streamId/messageId)`
+ *
+ * Returns the parsed metadata or `null` when the line is anything else.
+ * Author names containing `]` are escaped as `\]` per the serializer.
+ */
+function parseSharedMessageLine(line: string): { authorName: string; streamId: string; messageId: string } | null {
+  const match = line.match(/^Shared a message from \[((?:\\.|[^\]])+)\]\(shared-message:([\w-]+)\/([\w-]+)\)\s*$/)
+  if (!match) return null
+  const authorName = match[1].replace(/\\([\]\\])/g, "$1")
+  return { authorName, streamId: match[2], messageId: match[3] }
+}
+
 function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONContent[] {
   if (!text) return []
 
   const result: JSONContent[] = []
   const { getMentionType, getEmoji } = options
+  const allowMentions = options.enableMentions ?? true
+  const allowChannels = options.enableChannels ?? true
+  const allowSlashCommands = options.enableSlashCommands ?? true
+  const allowEmoji = options.enableEmoji ?? true
 
   // Default lookup for mention types (without context, can't determine "me")
   const lookupMentionType: MentionTypeLookup =
     getMentionType ??
-    ((slug): "user" | "persona" | "broadcast" | "me" => {
+    ((slug): "user" | "persona" | "bot" | "broadcast" | "me" => {
       if (slug === "here" || slug === "channel") return "broadcast"
       return "user"
     })
 
   // Check for slash command at start of text
-  const commandMatch = text.match(/^(\s*)(\/)([\w-]+)/)
+  const commandMatch = allowSlashCommands ? text.match(/^(\s*)(\/)([\w-]+)/) : null
   let processText = text
   if (commandMatch) {
     // Preserve leading whitespace
@@ -641,28 +697,40 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
     } else if (match[18]) {
       // Mention: @slug
       const slug = match[19]
-      result.push({
-        type: "mention",
-        attrs: { id: slug, slug, mentionType: lookupMentionType(slug) },
-      })
+      if (allowMentions) {
+        result.push({
+          type: "mention",
+          attrs: { id: slug, slug, mentionType: lookupMentionType(slug) },
+        })
+      } else {
+        result.push({ type: "text", text: match[0] })
+      }
     } else if (match[20]) {
       // Channel: #slug
       const slug = match[21]
-      result.push({
-        type: "channelLink",
-        attrs: { id: slug, slug },
-      })
+      if (allowChannels) {
+        result.push({
+          type: "channelLink",
+          attrs: { id: slug, slug },
+        })
+      } else {
+        result.push({ type: "text", text: match[0] })
+      }
     } else if (match[22]) {
       // Emoji: :shortcode:
       const shortcode = match[23]
-      const emoji = getEmoji?.(shortcode)
-      if (emoji) {
+      const emoji = allowEmoji ? getEmoji?.(shortcode) : null
+      if (allowEmoji && emoji) {
+        // Store both `shortcode` (the wire-format id) and `emoji` (the
+        // resolved character). The TipTap `EmojiExtension` reads
+        // `attrs.emoji` for `renderHTML`, so omitting it would render an
+        // empty chip.
         result.push({
           type: "emoji",
-          attrs: { shortcode },
+          attrs: { shortcode, emoji },
         })
       } else {
-        // Unknown shortcode - keep as text
+        // Unknown shortcode (or emoji parsing disabled) — keep as text
         result.push({ type: "text", text: match[0] })
       }
     }

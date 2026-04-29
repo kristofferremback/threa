@@ -44,6 +44,17 @@ describe("MarkdownContent — sharedMessage paragraph swap", () => {
     expect(screen.getByText("Ariadne")).toBeInTheDocument()
   })
 
+  it("does NOT swap a mixed paragraph that only contains a shared-message link in the middle", () => {
+    // A user could legitimately type "FYI Shared a message from [Alice](shared-message:s/m)"
+    // by hand. The serializer never produces that shape, so the pointer-block
+    // swap must not trigger or the surrounding "FYI " text gets dropped.
+    const markdown = "FYI Shared a message from [Alice](shared-message:stream_src/msg_abc)"
+    renderMarkdown(markdown)
+
+    expect(document.querySelector('[data-type="shared-message"]')).toBeNull()
+    expect(screen.getByText(/FYI Shared a message from/)).toBeInTheDocument()
+  })
+
   it("renders the source message body when the hydration map has an ok entry", () => {
     const markdown = "Shared a message from [Ariadne](shared-message:stream_src/msg_abc)"
     renderMarkdown(markdown, {

@@ -19,6 +19,7 @@ import { ActorAvatar } from "@/components/actor-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
+import { useMessageMarkdownCopy } from "@/hooks/use-message-markdown-copy"
 import { useEditLastMessage } from "./edit-last-message-context"
 import {
   useActors,
@@ -428,14 +429,26 @@ function MessageLayout({
   const renderAsContinuation = isGroupContinuation && !isEditing
 
   const hasSwipe = swipeOffset !== undefined && swipeOffset !== 0
+  // Make a whole-message native copy lossless: scope the listener to the
+  // rendered markdown body only. A `select-all + Ctrl+C` over the markdown
+  // text writes `contentMarkdown` instead of the rendered text (which has
+  // stripped the structural quote:/shared-message:/attachment: URLs the
+  // composer needs to reconstruct nodes on paste). Selections that escape
+  // the markdown (into the attachment list, link previews, or another
+  // message) fall through to the browser default — partial copies still
+  // behave normally and the AttachmentList isn't part of `contentMarkdown`
+  // anyway.
+  const copyRef = useMessageMarkdownCopy(payload.contentMarkdown)
   const messageBody = children ?? (
     <LinkPreviewProvider>
       <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-        <MarkdownContent
-          content={payload.contentMarkdown}
-          messageId={payload.messageId}
-          className="text-sm leading-relaxed"
-        />
+        <div ref={copyRef}>
+          <MarkdownContent
+            content={payload.contentMarkdown}
+            messageId={payload.messageId}
+            className="text-sm leading-relaxed"
+          />
+        </div>
         {payload.attachments && payload.attachments.length > 0 && (
           <AttachmentList
             attachments={payload.attachments}

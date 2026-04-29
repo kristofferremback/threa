@@ -1,12 +1,18 @@
 import type { JSONContent, Editor } from "@tiptap/react"
 import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from "@tiptap/pm/model"
-import { Selection, type Transaction, type EditorState } from "@tiptap/pm/state"
-import { parseMarkdown, type EmojiLookup, type MentionTypeLookup } from "./editor-markdown"
+import { NodeSelection, Selection, type Transaction, type EditorState } from "@tiptap/pm/state"
+import { parseMarkdown, type EmojiLookup, type MentionTypeLookup, type ParseMarkdownOptions } from "./editor-markdown"
 
 export interface BeforeInputEventLike {
   inputType: string
+  data?: string | null
   preventDefault(): void
 }
+
+// `@`/`#` cover mention and channel refs — emails like `a@b` are safe because
+// the parser only converts the strict `@slug` shape. `[` covers markdown-link
+// pair start; `<` covers our pointer URL syntax.
+const PASTE_STYLING_CHARS = /[*_~`[:<@#]/
 
 interface AncestorInfo {
   depth: number
@@ -397,12 +403,7 @@ function getParsedContent(
   text: string,
   getMentionType?: MentionTypeLookup,
   getEmoji?: EmojiLookup,
-  parseOptions?: {
-    enableMentions?: boolean
-    enableChannels?: boolean
-    enableSlashCommands?: boolean
-    enableEmoji?: boolean
-  }
+  parseOptions?: ParseMarkdownOptions
 ): JSONContent[] | undefined {
   return parseMarkdown(text, getMentionType, getEmoji, parseOptions).content
 }
@@ -412,12 +413,7 @@ export function insertPastedText(
   text: string,
   getMentionType?: MentionTypeLookup,
   getEmoji?: EmojiLookup,
-  parseOptions?: {
-    enableMentions?: boolean
-    enableChannels?: boolean
-    enableSlashCommands?: boolean
-    enableEmoji?: boolean
-  }
+  parseOptions?: ParseMarkdownOptions
 ): boolean {
   const normalizedText = text.replace(/\r\n?/g, "\n")
 
@@ -569,4 +565,73 @@ export function handleBeforeInputNewline(editor: Editor, event: BeforeInputEvent
   }
 
   return handled
+}
+
+/**
+ * Delete the inline atom adjacent to the caret (or already wrapped in a
+ * `NodeSelection`). Covers Firefox Android's first-Backspace promote-to-
+ * selection step so the second tap isn't needed.
+ */
+export function deleteAdjacentInlineAtom(editor: Editor, direction: "backward" | "forward"): boolean {
+  const { state, view } = editor
+  if (view.composing) return false
+
+  const { selection } = state
+  if (selection instanceof NodeSelection && selection.node.isInline && selection.node.isAtom) {
+    view.dispatch(state.tr.deleteSelection().scrollIntoView())
+    return true
+  }
+  if (!selection.empty) return false
+
+  const $from = selection.$from
+  const adjacent = direction === "backward" ? $from.nodeBefore : $from.nodeAfter
+  // Text nodes report `isAtom === true` (leaves), so skip them explicitly.
+  if (!adjacent || adjacent.isText || !adjacent.isAtom || !adjacent.isInline) return false
+
+  const from = direction === "backward" ? $from.pos - adjacent.nodeSize : $from.pos
+  const to = direction === "backward" ? $from.pos : $from.pos + adjacent.nodeSize
+  view.dispatch(state.tr.delete(from, to).scrollIntoView())
+  return true
+}
+
+/**
+ * `beforeinput` adapter for {@link deleteAdjacentInlineAtom}. Needed because
+ * Android Chrome skips `keydown` for Backspace, so the keymap-based path
+ * never runs and the browser would otherwise blur the editor mid-flow.
+ */
+export function handleBeforeInputAtomDelete(editor: Editor, event: BeforeInputEventLike): boolean {
+  if (event.inputType !== "deleteContentBackward" && event.inputType !== "deleteContentForward") return false
+  const direction = event.inputType === "deleteContentBackward" ? "backward" : "forward"
+  if (!deleteAdjacentInlineAtom(editor, direction)) return false
+  event.preventDefault()
+  return true
+}
+
+/**
+ * Catch Gboard / SwiftKey clipboard-bar pastes that the browser surfaces as
+ * `insertText`, not `paste` (Marijn confirmed this is unfixable upstream:
+ * https://discuss.prosemirror.net/t/transformpasted-doesnt-catch-pasted/8157).
+ * Heuristic: 3+ chars containing a newline or markdown styling char, outside
+ * composition and code blocks. Once matched we never fall back to TipTap's
+ * default insert, which would silently drop mention / channel / emoji parsing.
+ */
+export function handleBeforeInputKeyboardPaste(
+  editor: Editor,
+  event: BeforeInputEventLike,
+  getMentionType?: MentionTypeLookup,
+  getEmoji?: EmojiLookup,
+  parseOptions?: ParseMarkdownOptions
+): boolean {
+  if (event.inputType !== "insertText") return false
+  if (editor.view.composing) return false
+  const data = event.data
+  if (!data || data.length < 3) return false
+  if (!data.includes("\n") && !PASTE_STYLING_CHARS.test(data)) return false
+  if (editor.isActive("codeBlock")) return false
+
+  event.preventDefault()
+  if (!insertPastedText(editor, data, getMentionType, getEmoji, parseOptions)) {
+    editor.commands.insertContent(data)
+  }
+  return true
 }

@@ -2,8 +2,8 @@ import type { Request, Response } from "express"
 import { z } from "zod"
 import type { Pool } from "pg"
 import { buildContentDisposition, type AttachmentService } from "./service"
+import { isAttachmentReadableViaShareOrReference } from "./access"
 import type { StreamService } from "../streams"
-import { SharedMessageRepository } from "../messaging"
 import { VideoTranscodeJobRepository } from "./video"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 
@@ -78,30 +78,15 @@ export function createAttachmentHandlers({ attachmentService, streamService, sto
         return res.status(403).json({ error: sharingBlockReason })
       }
 
-      // For attached files, verify the user can READ the stream — not just
-      // that they're a `stream_members` row. Public channels and inherited
-      // thread access were previously blocked here because plain `isMember`
-      // missed both. `tryAccess` is the canonical read-access check
-      // (visibility + workspace match + thread root inheritance).
-      //
-      // If direct access is denied but the attachment's message has been
-      // shared into a stream the viewer can read, grant access — otherwise
-      // the recipient of a shared message would see "Failed to load image"
-      // even though hydration already let them see the message body.
-      // `listSourcesGrantedToViewer` composes the same accessible-target
-      // check used by recursive pointer hydration so the rule lives in one
-      // place.
+      // Direct stream access first; if that fails, fall back to the
+      // share-grant + inline-reference chain. Splitting the fast path from
+      // the fallback lets the handler keep streamService injection (existing
+      // mock surface) while the reusable rule lives in `access.ts`.
       if (attachment.streamId) {
         const accessible = await streamService.tryAccess(attachment.streamId, workspaceId, userId)
         if (!accessible) {
-          const grantedViaShare =
-            attachment.messageId !== null &&
-            (
-              await SharedMessageRepository.listSourcesGrantedToViewer(pool, workspaceId, userId, [
-                attachment.messageId,
-              ])
-            ).has(attachment.messageId)
-          if (!grantedViaShare) {
+          const granted = await isAttachmentReadableViaShareOrReference(pool, attachment, workspaceId, userId)
+          if (!granted) {
             return res.status(403).json({ error: "Access denied" })
           }
         }

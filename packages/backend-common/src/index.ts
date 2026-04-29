@@ -81,6 +81,7 @@ export {
   savedMessageId,
   reminderQueueId,
   sharedMessageId,
+  attachmentReferenceId,
   streamContextAttachmentId,
   contextSummaryId,
   leaseId,

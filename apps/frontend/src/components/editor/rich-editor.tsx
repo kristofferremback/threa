@@ -13,7 +13,12 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
-import { handleBeforeInputNewline, insertPastedText } from "./multiline-blocks"
+import {
+  handleBeforeInputAtomDelete,
+  handleBeforeInputKeyboardPaste,
+  handleBeforeInputNewline,
+  insertPastedText,
+} from "./multiline-blocks"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
@@ -317,24 +322,30 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
 
     editorInstance.commands.insertAttachmentReference(placeholderAttrs)
 
-    // Start upload and update node when done
-    const result = await uploadFn(file)
+    // Caller is fire-and-forget (paste/drop loops), so swallow the rejection
+    // here and surface it through the placeholder's error state instead of
+    // leaving the node stuck in "uploading" indefinitely.
+    const isStillTargeting = () =>
+      uploadScopeVersion === uploadScopeVersionRef.current &&
+      !editorInstance.isDestroyed &&
+      editorRef.current === editorInstance
 
-    if (
-      uploadScopeVersion !== uploadScopeVersionRef.current ||
-      editorInstance.isDestroyed ||
-      editorRef.current !== editorInstance
-    ) {
-      return
+    try {
+      const result = await uploadFn(file)
+      if (!isStillTargeting()) return
+      editorInstance.commands.updateAttachmentReference(tempId, {
+        id: result.attachment.id,
+        status: result.attachment.status,
+        imageIndex: isImage ? result.imageIndex : null,
+        error: result.attachment.error || null,
+      })
+    } catch (err) {
+      if (!isStillTargeting()) return
+      editorInstance.commands.updateAttachmentReference(tempId, {
+        status: "error",
+        error: err instanceof Error ? err.message : "Upload failed",
+      })
     }
-
-    // Update the placeholder node with real data
-    editorInstance.commands.updateAttachmentReference(tempId, {
-      id: result.attachment.id,
-      status: result.attachment.status,
-      imageIndex: isImage ? result.imageIndex : null,
-      error: result.attachment.error || null,
-    })
   }, [])
 
   const editor = useEditor({
@@ -425,15 +436,32 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       },
       handleDOMEvents: {
         beforeinput: (_view, event) => {
-          if (messageSendModeRef.current !== "cmdEnter" || !editorRef.current) {
-            return false
+          const editor = editorRef.current
+          if (!editor) return false
+          if (isSuggestionActive(editor)) return false
+
+          // Android atom deletion: keymap doesn't fire for Backspace, so delete
+          // adjacent inline atoms here before the browser's two-step selection.
+          if (handleBeforeInputAtomDelete(editor, event as InputEvent)) {
+            return true
           }
 
-          if (isSuggestionActive(editorRef.current)) {
-            return false
+          // Gboard / SwiftKey clipboard-bar paste arrives as insertText, not paste.
+          if (
+            handleBeforeInputKeyboardPaste(
+              editor,
+              event as InputEvent,
+              enableMentions ? getMentionTypeRef.current : undefined,
+              enableEmoji ? toEmojiRef.current : undefined,
+              markdownParseOptions
+            )
+          ) {
+            return true
           }
 
-          return handleBeforeInputNewline(editorRef.current, event as InputEvent)
+          // Newline handling only matters in cmdEnter mode (Enter sends in default mode).
+          if (messageSendModeRef.current !== "cmdEnter") return false
+          return handleBeforeInputNewline(editor, event as InputEvent)
         },
       },
       handleDrop: (_view, event, _slice, moved) => {

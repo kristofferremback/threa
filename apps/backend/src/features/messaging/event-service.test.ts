@@ -5,7 +5,7 @@ import { MessageRepository } from "./repository"
 import { SharedMessageRepository } from "./sharing/repository"
 import { MessageVersionRepository } from "./version-repository"
 import { StreamEventRepository, StreamMemberRepository, StreamRepository } from "../streams"
-import { AttachmentRepository } from "../attachments"
+import { AttachmentRepository, AttachmentReferenceRepository } from "../attachments"
 import { OutboxRepository } from "../../lib/outbox"
 import * as db from "../../db"
 import { messagesTotal } from "../../lib/observability"
@@ -30,6 +30,7 @@ describe("EventService attachment safety checks", () => {
       {
         id: "attach_1",
         workspaceId: "ws_1",
+        streamId: null,
         messageId: null,
         safetyStatus: AttachmentSafetyStatuses.QUARANTINED,
         filename: "unsafe.exe",
@@ -50,9 +51,115 @@ describe("EventService attachment safety checks", () => {
         contentMarkdown: "hello",
         attachmentIds: ["attach_1"],
       })
-    ).rejects.toThrow("Invalid attachment IDs: must be clean, unattached, and belong to this workspace")
+    ).rejects.toThrow("Invalid attachment IDs: must be malware-scan clean")
 
     expect(AttachmentRepository.attachToMessage).not.toHaveBeenCalled()
+  })
+
+  it("allows re-referencing an attachment the author can already read and skips re-attach", async () => {
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
+      {
+        id: "attach_1",
+        workspaceId: "ws_1",
+        streamId: "stream_source",
+        messageId: "msg_source",
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+        filename: "shared.png",
+        mimeType: "image/png",
+        sizeBytes: 100,
+      },
+    ] as any)
+    // checkStreamAccess() resolves to the source stream as long as the
+    // stream row exists and is public (or the user is a member).
+    spyOn(StreamRepository, "findById").mockResolvedValue({
+      id: "stream_source",
+      workspaceId: "ws_1",
+      rootStreamId: null,
+      visibility: "public",
+      type: "channel",
+    } as any)
+    spyOn(StreamMemberRepository, "isMember").mockResolvedValue(true)
+    spyOn(StreamMemberRepository, "update").mockResolvedValue(undefined as any)
+    spyOn(StreamEventRepository, "insert").mockImplementation((async (_client: any, params: any) => ({
+      id: "evt_1",
+      streamId: params.streamId,
+      sequence: 1n,
+      eventType: params.eventType,
+      payload: params.payload,
+      actorId: params.actorId,
+      actorType: params.actorType,
+      createdAt: new Date(),
+    })) as any)
+    spyOn(MessageRepository, "insert").mockImplementation((async (_client: any, params: any) => ({
+      id: params.id,
+      streamId: params.streamId,
+      sequence: params.sequence,
+      authorId: params.authorId,
+      authorType: params.authorType,
+      contentJson: params.contentJson,
+      contentMarkdown: params.contentMarkdown,
+      replyCount: 0,
+      clientMessageId: null,
+      sentVia: null,
+      reactions: {},
+      metadata: {},
+      editedAt: null,
+      deletedAt: null,
+      createdAt: new Date(),
+    })) as any)
+    spyOn(MessageRepository, "findByClientMessageId").mockResolvedValue(null)
+    spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
+    spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
+    const insertManySpy = spyOn(AttachmentReferenceRepository, "insertMany").mockResolvedValue(0)
+
+    const service = new EventService({} as any)
+    await service.createMessage({
+      workspaceId: "ws_1",
+      streamId: "stream_target",
+      authorId: "usr_1",
+      authorType: "user",
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "resending image",
+      attachmentIds: ["attach_1"],
+    })
+
+    expect(AttachmentRepository.attachToMessage).not.toHaveBeenCalled()
+    expect(insertManySpy).toHaveBeenCalledTimes(1)
+    expect(insertManySpy.mock.calls[0]?.[1]).toEqual([
+      expect.objectContaining({ attachmentId: "attach_1", streamId: "stream_target" }),
+    ])
+  })
+
+  it("rejects re-referencing an attachment the author cannot read", async () => {
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
+      {
+        id: "attach_1",
+        workspaceId: "ws_1",
+        streamId: "stream_secret",
+        messageId: "msg_secret",
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+        filename: "secret.png",
+        mimeType: "image/png",
+        sizeBytes: 100,
+      },
+    ] as any)
+    // No matching stream → checkStreamAccess returns null.
+    spyOn(StreamRepository, "findById").mockResolvedValue(null)
+    spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(new Set())
+    spyOn(AttachmentReferenceRepository, "hasViewerAccessByReference").mockResolvedValue(false)
+
+    const service = new EventService({} as any)
+    await expect(
+      service.createMessage({
+        workspaceId: "ws_1",
+        streamId: "stream_target",
+        authorId: "usr_1",
+        authorType: "user",
+        contentJson: { type: "doc", content: [] },
+        contentMarkdown: "stealing",
+        attachmentIds: ["attach_1"],
+      })
+    ).rejects.toThrow("cannot reference an attachment without read access")
   })
 })
 

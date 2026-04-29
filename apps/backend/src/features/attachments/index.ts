@@ -2,6 +2,14 @@
 export { AttachmentRepository } from "./repository"
 export type { Attachment, InsertAttachmentParams, AttachmentWithExtraction } from "./repository"
 
+export { AttachmentReferenceRepository } from "./reference-repository"
+export type { AttachmentReference, InsertAttachmentReferenceParams } from "./reference-repository"
+
+// Fallback access helper — `getDownloadUrl` and create-message validation
+// both walk share-grant + inline-reference after their stream-access fast
+// path fails. See `access.ts`.
+export { isAttachmentReadableViaShareOrReference } from "./access"
+
 // Wire-shape mappers
 export { toAttachmentSummary } from "./summary"
 
