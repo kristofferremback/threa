@@ -3,7 +3,9 @@ import { Editor } from "@tiptap/core"
 import type { JSONContent } from "@tiptap/react"
 import { createEditorExtensions } from "./editor-extensions"
 import { serializeToMarkdown, parseMarkdown } from "./editor-markdown"
+import { NodeSelection } from "@tiptap/pm/state"
 import {
+  deleteAdjacentInlineAtom,
   handleBeforeInputAtomDelete,
   handleBeforeInputKeyboardPaste,
   handleBeforeInputNewline,
@@ -794,6 +796,32 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
 
     expect(handled).toBe(false)
     expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("deletes a NodeSelection on an inline atom in one keystroke (Firefox Android)", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    // Simulate Firefox Android promoting the selection to a NodeSelection on
+    // first Backspace. Position is the open-pos of the emoji atom.
+    const atomPos = findTextPosition(editor, " end") - 1
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, atomPos)))
+
+    const handled = deleteAdjacentInlineAtom(editor, "backward")
+
+    expect(handled).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("ignores a NodeSelection on a non-atom (defensive)", () => {
+    const editor = createTestEditor("plain")
+    // No atoms in this doc, so NodeSelection branch shouldn't fire — fall through
+    // to the empty-cursor path, which also returns false.
+    editor.commands.setTextSelection(0)
+
+    const handled = deleteAdjacentInlineAtom(editor, "backward")
+
+    expect(handled).toBe(false)
     editor.destroy()
   })
 })

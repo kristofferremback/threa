@@ -4,7 +4,7 @@ import { TextSelection, type Transaction, Plugin } from "@tiptap/pm/state"
 import type { EditorState } from "@tiptap/pm/state"
 import type { EditorView } from "@tiptap/pm/view"
 import type { MessageSendMode } from "@threa/types"
-import { handleEnterTextBehavior, toggleMultilineBlock } from "./multiline-blocks"
+import { deleteAdjacentInlineAtom, handleEnterTextBehavior, toggleMultilineBlock } from "./multiline-blocks"
 import { matchesKeyBinding } from "@/lib/keyboard-shortcuts"
 
 export interface EditorBehaviorsOptions {
@@ -919,6 +919,13 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
         // cmdEnter mode: Enter creates newlines
         return handleEnterTextBehavior(this.editor)
       },
+
+      // Backspace / Delete: collapse the browser's two-step atom selection on
+      // Firefox Android (and any keydown-based mobile path) into one keystroke.
+      // Returning false lets ProseMirror's default deletion run when the caret
+      // isn't adjacent to an atom.
+      Backspace: () => deleteAdjacentInlineAtom(this.editor, "backward"),
+      Delete: () => deleteAdjacentInlineAtom(this.editor, "forward"),
     }
   },
 })

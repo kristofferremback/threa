@@ -1,6 +1,6 @@
 import type { JSONContent, Editor } from "@tiptap/react"
 import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from "@tiptap/pm/model"
-import { Selection, type Transaction, type EditorState } from "@tiptap/pm/state"
+import { NodeSelection, Selection, type Transaction, type EditorState } from "@tiptap/pm/state"
 import { parseMarkdown, type EmojiLookup, type MentionTypeLookup } from "./editor-markdown"
 
 export interface BeforeInputEventLike {
@@ -578,11 +578,50 @@ export function handleBeforeInputNewline(editor: Editor, event: BeforeInputEvent
 }
 
 /**
- * Delete an inline atom adjacent to the caret on Android `beforeinput`. Android
- * keyboards skip `keydown` for Backspace / Delete, so ProseMirror's keymap-based
- * atom deletion never runs and the browser falls back to its own two-step
- * "select-then-delete" atom handling — which on Firefox needs multiple taps and
- * on Chrome blurs the contenteditable mid-flow, closing the keyboard.
+ * Delete the inline atom adjacent to the caret (or selected as a NodeSelection)
+ * for the given direction. Returns true if an atom was deleted, false if the
+ * caller should fall through to default behavior.
+ *
+ * Two cases are handled:
+ * 1. Caret sits next to an inline atom (mention, channel, command, emoji,
+ *    attachment-reference). Pure empty-selection case.
+ * 2. The current selection is a `NodeSelection` on an inline atom — Firefox
+ *    Android promotes the selection to this on first Backspace, otherwise
+ *    requiring a second tap to actually delete. Collapsing both into one
+ *    keystroke matches desktop behavior.
+ */
+export function deleteAdjacentInlineAtom(editor: Editor, direction: "backward" | "forward"): boolean {
+  const { state, view } = editor
+  if (view.composing) return false
+
+  const { selection } = state
+
+  if (selection instanceof NodeSelection && selection.node.isInline && selection.node.isAtom) {
+    view.dispatch(state.tr.deleteSelection().scrollIntoView())
+    return true
+  }
+
+  if (!selection.empty) return false
+
+  const $from = selection.$from
+  const adjacent = direction === "backward" ? $from.nodeBefore : $from.nodeAfter
+  // Text nodes are leaves and report `isAtom === true`, so check `isText` to
+  // skip them — we only want to handle structured inline atoms here.
+  if (!adjacent || adjacent.isText || !adjacent.isAtom || !adjacent.isInline) return false
+
+  const from = direction === "backward" ? $from.pos - adjacent.nodeSize : $from.pos
+  const to = direction === "backward" ? $from.pos : $from.pos + adjacent.nodeSize
+
+  view.dispatch(state.tr.delete(from, to).scrollIntoView())
+  return true
+}
+
+/**
+ * `beforeinput` shim around `deleteAdjacentInlineAtom`. Android keyboards skip
+ * `keydown` for Backspace / Delete, so ProseMirror's keymap-based atom deletion
+ * never runs and the browser falls back to its own two-step "select-then-delete"
+ * atom handling — which on Firefox needs multiple taps and on Chrome blurs the
+ * contenteditable mid-flow, closing the keyboard.
  *
  * Intercepting the input event and deleting the atom via a transaction skips
  * the browser's selection step entirely. No-op on desktop because `keydown`
@@ -593,23 +632,10 @@ export function handleBeforeInputAtomDelete(editor: Editor, event: BeforeInputEv
     return false
   }
 
-  const { state, view } = editor
-  if (view.composing) return false
-
-  const { selection } = state
-  if (!selection.empty) return false
-
-  const $from = selection.$from
-  const adjacent = event.inputType === "deleteContentBackward" ? $from.nodeBefore : $from.nodeAfter
-  // Text nodes are leaves and report `isAtom === true`, so check `isText` to
-  // skip them — we only want to handle structured inline atoms here.
-  if (!adjacent || adjacent.isText || !adjacent.isAtom || !adjacent.isInline) return false
-
-  const from = event.inputType === "deleteContentBackward" ? $from.pos - adjacent.nodeSize : $from.pos
-  const to = event.inputType === "deleteContentBackward" ? $from.pos : $from.pos + adjacent.nodeSize
+  const direction = event.inputType === "deleteContentBackward" ? "backward" : "forward"
+  if (!deleteAdjacentInlineAtom(editor, direction)) return false
 
   event.preventDefault()
-  view.dispatch(state.tr.delete(from, to).scrollIntoView())
   return true
 }
 
