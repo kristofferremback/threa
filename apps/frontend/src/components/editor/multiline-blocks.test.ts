@@ -133,17 +133,7 @@ function selectLines(editor: Editor, startText: string, endText: string) {
   editor.commands.setTextSelection({ from, to })
 }
 
-function createBeforeInputEvent(inputType: "insertParagraph" | "insertLineBreak" = "insertParagraph") {
-  return {
-    inputType,
-    prevented: false,
-    preventDefault() {
-      this.prevented = true
-    },
-  }
-}
-
-function createBeforeInputDataEvent(data: string | null, inputType = "insertText") {
+function makeBeforeInput(inputType: string = "insertParagraph", data: string | null = null) {
   return {
     inputType,
     data,
@@ -446,20 +436,20 @@ describe("multiline beforeinput enter handling", () => {
 
     editor.commands.setTextSelection(editor.state.doc.content.size - 1)
 
-    const firstEvent = createBeforeInputEvent()
+    const firstEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, firstEvent)).toBe(true)
     expect(firstEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
     expect(editor.state.doc.firstChild?.textContent).toBe("const x = 1\n")
 
-    const secondEvent = createBeforeInputEvent()
+    const secondEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, secondEvent)).toBe(true)
     expect(secondEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
     expect(editor.state.doc.firstChild?.textContent).toBe("const x = 1\n\n")
     expect(editor.isActive("codeBlock")).toBe(true)
 
-    const thirdEvent = createBeforeInputEvent()
+    const thirdEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, thirdEvent)).toBe(true)
     expect(thirdEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
@@ -474,20 +464,20 @@ describe("multiline beforeinput enter handling", () => {
 
     editor.commands.setTextSelection(editor.state.doc.content.size - 1)
 
-    const firstEvent = createBeforeInputEvent()
+    const firstEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, firstEvent)).toBe(true)
     expect(firstEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("blockquote")
     expect(editor.state.doc.firstChild?.childCount).toBe(2)
 
-    const secondEvent = createBeforeInputEvent()
+    const secondEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, secondEvent)).toBe(true)
     expect(secondEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("blockquote")
     expect(editor.state.doc.firstChild?.childCount).toBe(3)
     expect(editor.isActive("blockquote")).toBe(true)
 
-    const thirdEvent = createBeforeInputEvent()
+    const thirdEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, thirdEvent)).toBe(true)
     expect(thirdEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("blockquote")
@@ -503,7 +493,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("**bold text**")
+    const event = makeBeforeInput("insertText", "**bold text**")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -521,7 +511,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("line 1\nline 2")
+    const event = makeBeforeInput("insertText", "line 1\nline 2")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -539,7 +529,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("x")
+    const event = makeBeforeInput("insertText", "x")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -556,7 +546,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("hello world")
+    const event = makeBeforeInput("insertText", "hello world")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -573,7 +563,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("**")
+    const event = makeBeforeInput("insertText", "**")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -590,7 +580,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("**bold**", "insertCompositionText")
+    const event = makeBeforeInput("insertCompositionText", "**bold**")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -607,7 +597,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("```\nseed\n```")
     setCursor(editor, "seed")
 
-    const event = createBeforeInputDataEvent("**bold**")
+    const event = makeBeforeInput("insertText", "**bold**")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -624,7 +614,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent(":rocket: launching")
+    const event = makeBeforeInput("insertText", ":rocket: launching")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -641,7 +631,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("https://example.com")
+    const event = makeBeforeInput("insertText", "https://example.com")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -658,7 +648,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("Hey @alice ping")
+    const event = makeBeforeInput("insertText", "Hey @alice ping")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -678,7 +668,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("see #general for context")
+    const event = makeBeforeInput("insertText", "see #general for context")
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -698,7 +688,10 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)")
+    const event = makeBeforeInput(
+      "insertText",
+      "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)"
+    )
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -717,7 +710,7 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent(null)
+    const event = makeBeforeInput("insertText", null)
     const handled = handleBeforeInputKeyboardPaste(
       editor,
       event,
@@ -732,16 +725,6 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
 })
 
 describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
-  function createDeleteEvent(inputType: "deleteContentBackward" | "deleteContentForward" = "deleteContentBackward") {
-    return {
-      inputType,
-      prevented: false,
-      preventDefault() {
-        this.prevented = true
-      },
-    }
-  }
-
   function emojiDoc(prefix: string, suffix: string): JSONContent {
     const inline: JSONContent[] = []
     if (prefix) inline.push({ type: "text", text: prefix })
@@ -758,7 +741,7 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     // Caret at the start of " end" — i.e. immediately after the emoji atom.
     editor.commands.setTextSelection(findTextPosition(editor, " end"))
 
-    const event = createDeleteEvent("deleteContentBackward")
+    const event = makeBeforeInput("deleteContentBackward")
     const handled = handleBeforeInputAtomDelete(editor, event)
 
     expect(handled).toBe(true)
@@ -772,7 +755,7 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     // Caret at end of "hi " — i.e. immediately before the emoji atom.
     editor.commands.setTextSelection(findTextPosition(editor, "hi ") + 3)
 
-    const event = createDeleteEvent("deleteContentForward")
+    const event = makeBeforeInput("deleteContentForward")
     const handled = handleBeforeInputAtomDelete(editor, event)
 
     expect(handled).toBe(true)
@@ -785,7 +768,7 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     const editor = createTestEditor("@alice trailing")
     editor.commands.setTextSelection(findTextPosition(editor, " trailing"))
 
-    const event = createDeleteEvent("deleteContentBackward")
+    const event = makeBeforeInput("deleteContentBackward")
     const handled = handleBeforeInputAtomDelete(editor, event)
 
     expect(handled).toBe(true)
@@ -798,7 +781,7 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     const editor = createTestEditor("hello world")
     editor.commands.setTextSelection(findTextPosition(editor, "hello world") + "hello world".length)
 
-    const event = createDeleteEvent("deleteContentBackward")
+    const event = makeBeforeInput("deleteContentBackward")
     const handled = handleBeforeInputAtomDelete(editor, event)
 
     expect(handled).toBe(false)
@@ -810,7 +793,7 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     const editor = createTestEditor(emojiDoc("hi ", " end"))
     selectText(editor, "hi")
 
-    const event = createDeleteEvent("deleteContentBackward")
+    const event = makeBeforeInput("deleteContentBackward")
     const handled = handleBeforeInputAtomDelete(editor, event)
 
     expect(handled).toBe(false)
@@ -822,8 +805,8 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     const editor = createTestEditor(emojiDoc("hi ", ""))
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
-    const event = createBeforeInputDataEvent("x", "insertText")
-    const handled = handleBeforeInputAtomDelete(editor, event as { inputType: string; preventDefault(): void })
+    const event = makeBeforeInput("insertText", "x")
+    const handled = handleBeforeInputAtomDelete(editor, event)
 
     expect(handled).toBe(false)
     expect(event.prevented).toBe(false)
@@ -835,7 +818,7 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     // Caret in middle of "hello " — far from any atom
     editor.commands.setTextSelection(findTextPosition(editor, "hello") + 2)
 
-    const event = createDeleteEvent("deleteContentBackward")
+    const event = makeBeforeInput("deleteContentBackward")
     const handled = handleBeforeInputAtomDelete(editor, event)
 
     expect(handled).toBe(false)

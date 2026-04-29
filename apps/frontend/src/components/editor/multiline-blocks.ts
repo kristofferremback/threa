@@ -1,7 +1,7 @@
 import type { JSONContent, Editor } from "@tiptap/react"
 import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from "@tiptap/pm/model"
 import { NodeSelection, Selection, type Transaction, type EditorState } from "@tiptap/pm/state"
-import { parseMarkdown, type EmojiLookup, type MentionTypeLookup } from "./editor-markdown"
+import { parseMarkdown, type EmojiLookup, type MentionTypeLookup, type ParseMarkdownOptions } from "./editor-markdown"
 
 export interface BeforeInputEventLike {
   inputType: string
@@ -9,12 +9,9 @@ export interface BeforeInputEventLike {
   preventDefault(): void
 }
 
-// Chars that signal pasted markdown / structured content. Lone parens / brackets
-// excluded because they appear as ordinary punctuation; `[` is sufficient for the
-// markdown-link case since it always leads the pair. `@` and `#` cover mentions
-// and channel refs — false-positives like emails (`a@b`) are safe because the
-// markdown parser only converts the strict `@slug` shape, leaving everything
-// else as plain text.
+// `@`/`#` cover mention and channel refs — emails like `a@b` are safe because
+// the parser only converts the strict `@slug` shape. `[` covers markdown-link
+// pair start; `<` covers our pointer URL syntax.
 const PASTE_STYLING_CHARS = /[*_~`[:<@#]/
 
 interface AncestorInfo {
@@ -406,12 +403,7 @@ function getParsedContent(
   text: string,
   getMentionType?: MentionTypeLookup,
   getEmoji?: EmojiLookup,
-  parseOptions?: {
-    enableMentions?: boolean
-    enableChannels?: boolean
-    enableSlashCommands?: boolean
-    enableEmoji?: boolean
-  }
+  parseOptions?: ParseMarkdownOptions
 ): JSONContent[] | undefined {
   return parseMarkdown(text, getMentionType, getEmoji, parseOptions).content
 }
@@ -421,12 +413,7 @@ export function insertPastedText(
   text: string,
   getMentionType?: MentionTypeLookup,
   getEmoji?: EmojiLookup,
-  parseOptions?: {
-    enableMentions?: boolean
-    enableChannels?: boolean
-    enableSlashCommands?: boolean
-    enableEmoji?: boolean
-  }
+  parseOptions?: ParseMarkdownOptions
 ): boolean {
   const normalizedText = text.replace(/\r\n?/g, "\n")
 
@@ -581,108 +568,67 @@ export function handleBeforeInputNewline(editor: Editor, event: BeforeInputEvent
 }
 
 /**
- * Delete the inline atom adjacent to the caret (or selected as a NodeSelection)
- * for the given direction. Returns true if an atom was deleted, false if the
- * caller should fall through to default behavior.
- *
- * Two cases are handled:
- * 1. Caret sits next to an inline atom (mention, channel, command, emoji,
- *    attachment-reference). Pure empty-selection case.
- * 2. The current selection is a `NodeSelection` on an inline atom — Firefox
- *    Android promotes the selection to this on first Backspace, otherwise
- *    requiring a second tap to actually delete. Collapsing both into one
- *    keystroke matches desktop behavior.
+ * Delete the inline atom adjacent to the caret (or already wrapped in a
+ * `NodeSelection`). Covers Firefox Android's first-Backspace promote-to-
+ * selection step so the second tap isn't needed.
  */
 export function deleteAdjacentInlineAtom(editor: Editor, direction: "backward" | "forward"): boolean {
   const { state, view } = editor
   if (view.composing) return false
 
   const { selection } = state
-
   if (selection instanceof NodeSelection && selection.node.isInline && selection.node.isAtom) {
     view.dispatch(state.tr.deleteSelection().scrollIntoView())
     return true
   }
-
   if (!selection.empty) return false
 
   const $from = selection.$from
   const adjacent = direction === "backward" ? $from.nodeBefore : $from.nodeAfter
-  // Text nodes are leaves and report `isAtom === true`, so check `isText` to
-  // skip them — we only want to handle structured inline atoms here.
+  // Text nodes report `isAtom === true` (leaves), so skip them explicitly.
   if (!adjacent || adjacent.isText || !adjacent.isAtom || !adjacent.isInline) return false
 
   const from = direction === "backward" ? $from.pos - adjacent.nodeSize : $from.pos
   const to = direction === "backward" ? $from.pos : $from.pos + adjacent.nodeSize
-
   view.dispatch(state.tr.delete(from, to).scrollIntoView())
   return true
 }
 
 /**
- * `beforeinput` shim around `deleteAdjacentInlineAtom`. Android keyboards skip
- * `keydown` for Backspace / Delete, so ProseMirror's keymap-based atom deletion
- * never runs and the browser falls back to its own two-step "select-then-delete"
- * atom handling — which on Firefox needs multiple taps and on Chrome blurs the
- * contenteditable mid-flow, closing the keyboard.
- *
- * Intercepting the input event and deleting the atom via a transaction skips
- * the browser's selection step entirely. No-op on desktop because `keydown`
- * fires first and the atom is already gone by the time `beforeinput` arrives.
+ * `beforeinput` adapter for {@link deleteAdjacentInlineAtom}. Needed because
+ * Android Chrome skips `keydown` for Backspace, so the keymap-based path
+ * never runs and the browser would otherwise blur the editor mid-flow.
  */
 export function handleBeforeInputAtomDelete(editor: Editor, event: BeforeInputEventLike): boolean {
-  if (event.inputType !== "deleteContentBackward" && event.inputType !== "deleteContentForward") {
-    return false
-  }
-
+  if (event.inputType !== "deleteContentBackward" && event.inputType !== "deleteContentForward") return false
   const direction = event.inputType === "deleteContentBackward" ? "backward" : "forward"
   if (!deleteAdjacentInlineAtom(editor, direction)) return false
-
   event.preventDefault()
   return true
 }
 
 /**
- * Detect Gboard / SwiftKey clipboard-bar pastes that the browser surfaces as
- * `beforeinput` `insertText` rather than a paste event. ProseMirror's author
- * has confirmed there's no native way for the editor to know it's a paste:
- * https://discuss.prosemirror.net/t/transformpasted-doesnt-catch-pasted/8157
- *
- * Heuristic: a real keystroke or word suggestion is either single-char or
- * plain alphabetic. Multi-char `data` containing a newline or a markdown
- * styling char is almost certainly clipboard content. Composition events,
- * code blocks, and inputs without those signals fall through to native flow.
+ * Catch Gboard / SwiftKey clipboard-bar pastes that the browser surfaces as
+ * `insertText`, not `paste` (Marijn confirmed this is unfixable upstream:
+ * https://discuss.prosemirror.net/t/transformpasted-doesnt-catch-pasted/8157).
+ * Heuristic: 3+ chars containing a newline or markdown styling char, outside
+ * composition and code blocks. Once matched we never fall back to TipTap's
+ * default insert, which would silently drop mention / channel / emoji parsing.
  */
 export function handleBeforeInputKeyboardPaste(
   editor: Editor,
   event: BeforeInputEventLike,
   getMentionType?: MentionTypeLookup,
   getEmoji?: EmojiLookup,
-  parseOptions?: {
-    enableMentions?: boolean
-    enableChannels?: boolean
-    enableSlashCommands?: boolean
-    enableEmoji?: boolean
-  }
+  parseOptions?: ParseMarkdownOptions
 ): boolean {
   if (event.inputType !== "insertText") return false
-
-  // IME composition (autocorrect, swipe-typing on some keyboards, CJK input).
   if (editor.view.composing) return false
-
   const data = event.data
   if (!data || data.length < 3) return false
-
   if (!data.includes("\n") && !PASTE_STYLING_CHARS.test(data)) return false
-
-  // Inside a code block, plain text must flow as-is. Markdown parsing would
-  // wreck the verbatim-text invariant of code blocks.
   if (editor.isActive("codeBlock")) return false
 
-  // Lock the event in once the heuristic matches: TipTap's default `insertText`
-  // would skip mention / channel / emoji conversion, so even an edge case
-  // where `insertPastedText` returns false should fall back to a manual
-  // insert rather than diverting to the plain-text path.
   event.preventDefault()
   if (!insertPastedText(editor, data, getMentionType, getEmoji, parseOptions)) {
     editor.commands.insertContent(data)
