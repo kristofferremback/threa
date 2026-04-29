@@ -660,9 +660,12 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
     editor.destroy()
   })
 
-  it("intercepts insertCompositionText with markdown-trigger payloads", () => {
-    // Some IME/keyboard combinations dispatch composition events for the
-    // paste suggestion instead of insertText — same payload, same path.
+  it("does NOT intercept insertCompositionText (would break IME edits / atom-node deletion)", () => {
+    // Android IMEs fire `insertCompositionText` continuously while the
+    // user edits existing text — including when a backspace touches an
+    // atom node like an emoji. Intercepting those would re-parse the
+    // in-flight composition state and require multiple strokes to
+    // delete a single emoji. We only handle paste via `insertText`.
     const editor = createTestEditor("")
     editor.commands.setTextSelection(editor.state.doc.content.size)
 
@@ -674,9 +677,30 @@ describe("handleBeforeInputPaste (mobile insertFromPaste fallback)", () => {
         () => "user",
         () => null
       )
-    ).toBe(true)
-    expect(event.prevented).toBe(true)
-    expect(editor.getText()).toContain("love this :heart_eyes:")
+    ).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("does NOT intercept insertText while the editor is mid-IME-composition", () => {
+    // `view.composing` is true between compositionstart and compositionend.
+    // Some IMEs reuse `insertText` for intermediate composition states; if
+    // we routed those through the markdown parser they'd clobber the
+    // composing word. The composing guard keeps us out of that window.
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    Object.defineProperty(editor.view, "composing", { value: true, configurable: true })
+
+    const event = buildEvent("insertText", "love this :heart_eyes:")
+    expect(
+      handleBeforeInputPaste(
+        editor,
+        event,
+        () => "user",
+        () => null
+      )
+    ).toBe(false)
+    expect(event.prevented).toBe(false)
     editor.destroy()
   })
 

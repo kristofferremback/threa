@@ -653,7 +653,7 @@ export function handleClipboardPaste(
  * suggestion bar, SwiftKey's paste suggestion) don't dispatch `paste` or
  * `insertFromPaste` — they use the same autocomplete path as word
  * suggestions, which fires `beforeinput` with `inputType: "insertText"`
- * (or `"insertCompositionText"`) carrying the full payload in `event.data`.
+ * carrying the full payload in `event.data`.
  *
  * Single-character `insertText` is regular typing; multi-character payloads
  * are autocomplete or paste. We only intercept when there's also a markdown
@@ -672,14 +672,15 @@ function looksLikeSuggestionPaste(data: string | null | undefined): boolean {
  *
  *   - `insertFromPaste` / `insertReplacementText`: context-menu paste on
  *     Android Chrome and some iOS Safari builds (text on `dataTransfer`).
- *   - `insertText` / `insertCompositionText`: keyboard suggestion-bar
- *     paste on Android (Gboard, SwiftKey, …) and Safari's QuickType — the
- *     payload arrives on `event.data` via the same path as autocomplete
- *     suggestions, so the regular `handlePaste` never runs.
- *
- * Without this, paste falls through to the browser's default text
- * insertion and bypasses every markdown-aware conversion (sharedMessage /
- * quoteReply / attachmentReference + @mention / #channel / :emoji:).
+ *   - `insertText` (only when NOT mid-IME-composition): keyboard
+ *     suggestion-bar paste on Android (Gboard, SwiftKey) and Safari
+ *     QuickType — the payload arrives on `event.data` via the same path
+ *     as autocomplete suggestions, so the regular `handlePaste` never
+ *     runs. We deliberately skip `insertCompositionText` and any event
+ *     where `view.composing` is true: those fire continuously while the
+ *     IME is editing existing text (including during a backspace that
+ *     touches an emoji or other atom), and intercepting them re-parses
+ *     the in-flight composition state and clobbers the user's edit.
  *
  * Routes the recovered payload through the same `insertPastedText`
  * pipeline as desktop Cmd+V.
@@ -700,7 +701,13 @@ export function handleBeforeInputPaste(
 
   if (event.inputType === "insertFromPaste" || event.inputType === "insertReplacementText") {
     text = event.dataTransfer?.getData("text/plain")
-  } else if (event.inputType === "insertText" || event.inputType === "insertCompositionText") {
+  } else if (event.inputType === "insertText") {
+    // IME composition reuses `insertText` after commit, but
+    // `view.composing` is only true between compositionstart/end —
+    // skipping that window keeps the heuristic out of every keystroke
+    // that's part of a multi-step IME edit (autocorrect, glide typing,
+    // backspace propagating into the IME's composing region).
+    if (editor.view.composing) return false
     if (!looksLikeSuggestionPaste(event.data)) return false
     text = event.data
   } else {
