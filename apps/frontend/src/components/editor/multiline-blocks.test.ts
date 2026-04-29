@@ -309,6 +309,83 @@ describe("multiline block paste handling", () => {
     editor.destroy()
   })
 
+  it("reconstructs a sharedMessage block when pasted into an empty editor", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)",
+      () => "user",
+      () => null
+    )
+
+    const json = editor.getJSON()
+    const firstBlock = json.content?.[0]
+    expect(firstBlock?.type).toBe("sharedMessage")
+    expect(firstBlock?.attrs?.messageId).toBe("msg_01ABC")
+    expect(firstBlock?.attrs?.streamId).toBe("stream_01XYZ")
+    expect(firstBlock?.attrs?.authorName).toBe("Ariadne")
+    editor.destroy()
+  })
+
+  it("reconstructs a sharedMessage when pasted into a non-empty paragraph", () => {
+    const editor = createTestEditor("Hello ")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)",
+      () => "user",
+      () => null
+    )
+
+    const blocks = editor.getJSON().content ?? []
+    const sharedNode = blocks.find((b) => b.type === "sharedMessage")
+    expect(sharedNode).toBeDefined()
+    expect(sharedNode?.attrs?.messageId).toBe("msg_01ABC")
+    expect(sharedNode?.attrs?.streamId).toBe("stream_01XYZ")
+    editor.destroy()
+  })
+
+  it("reconstructs a quoteReply block when pasted into an empty editor", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC/usr_01KR/user)",
+      () => "user",
+      () => null
+    )
+
+    const json = editor.getJSON()
+    const firstBlock = json.content?.[0]
+    expect(firstBlock?.type).toBe("quoteReply")
+    expect(firstBlock?.attrs?.messageId).toBe("msg_01ABC")
+    expect(firstBlock?.attrs?.snippet).toBe("Hello world")
+    editor.destroy()
+  })
+
+  it("reconstructs an attachmentReference when pasted into an empty editor", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      '[Image #1](attachment:attach_123 "threa-attachment:filename=test.png&mimeType=image%2Fpng&sizeBytes=1024")',
+      () => "user",
+      () => null
+    )
+
+    const json = editor.getJSON()
+    const firstBlock = json.content?.[0]
+    expect(firstBlock?.type).toBe("paragraph")
+    const inlineNode = firstBlock?.content?.[0] as JSONContent | undefined
+    expect(inlineNode?.type).toBe("attachmentReference")
+    expect(inlineNode?.attrs?.id).toBe("attach_123")
+    expect(inlineNode?.attrs?.filename).toBe("test.png")
+    expect(inlineNode?.attrs?.mimeType).toBe("image/png")
+    expect(inlineNode?.attrs?.sizeBytes).toBe(1024)
+    editor.destroy()
+  })
+
   it("keeps multi-line plain-text pastes as separate paragraphs", () => {
     const editor = createTestEditor("prefix ")
 
