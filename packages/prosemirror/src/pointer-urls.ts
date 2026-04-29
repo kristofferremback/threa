@@ -29,6 +29,12 @@ export interface QuoteHref {
 }
 
 export function buildQuoteHref(params: QuoteHref): string {
+  // Emit the legacy two-segment form when authorId is empty, otherwise the
+  // four-segment string with `//user` in the middle wouldn't match the
+  // parser's `[\w-]+` segment regex on roundtrip.
+  if (!params.authorId) {
+    return `quote:${params.streamId}/${params.messageId}`
+  }
   return `quote:${params.streamId}/${params.messageId}/${params.authorId}/${params.actorType}`
 }
 

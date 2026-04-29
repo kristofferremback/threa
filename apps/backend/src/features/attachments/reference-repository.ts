@@ -68,11 +68,12 @@ export const AttachmentReferenceRepository = {
     return result.rowCount ?? 0
   },
 
-  async findByAttachmentId(db: Querier, attachmentId: string): Promise<AttachmentReference[]> {
+  async findByAttachmentId(db: Querier, workspaceId: string, attachmentId: string): Promise<AttachmentReference[]> {
     const result = await db.query<AttachmentReferenceRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}
       FROM attachment_references
-      WHERE attachment_id = ${attachmentId}
+      WHERE workspace_id = ${workspaceId}
+        AND attachment_id = ${attachmentId}
     `)
     return result.rows.map(mapRow)
   },
@@ -90,7 +91,7 @@ export const AttachmentReferenceRepository = {
     userId: string,
     attachmentId: string
   ): Promise<boolean> {
-    const refs = await this.findByAttachmentId(db, attachmentId)
+    const refs = await this.findByAttachmentId(db, workspaceId, attachmentId)
     if (refs.length === 0) return false
     const candidateStreamIds = [...new Set(refs.map((r) => r.streamId))]
     const reachable = await listAccessibleStreamIds(db, workspaceId, userId, candidateStreamIds)

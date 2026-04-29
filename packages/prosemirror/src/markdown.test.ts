@@ -192,6 +192,31 @@ describe("@threa/prosemirror quote reply round-trip", () => {
     })
   })
 
+  it("serializes empty authorId as the legacy two-segment form so it roundtrips", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "quoteReply",
+          attrs: {
+            messageId: "msg_01ABC",
+            streamId: "stream_01XYZ",
+            authorName: "Kristoffer",
+            authorId: "",
+            actorType: "user",
+            snippet: "Hello world",
+          },
+        },
+      ],
+    }
+
+    const markdown = serializeToMarkdown(doc)
+    expect(markdown).toBe("> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)")
+    const reparsed = parseMarkdown(markdown)
+    expect(reparsed.content?.[0]?.type).toBe("quoteReply")
+    expect((reparsed.content?.[0]?.attrs as { authorId: string }).authorId).toBe("")
+  })
+
   it("round-trips quoteReply through markdown", () => {
     const doc: JSONContent = {
       type: "doc",
