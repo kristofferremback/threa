@@ -23,6 +23,14 @@ export {
   parseAttachmentMetadata,
   type ParsedAttachmentMetadata,
 } from "./attachment-markdown"
+export {
+  buildQuoteHref,
+  parseQuoteHref,
+  buildSharedMessageHref,
+  parseSharedMessageHref,
+  type QuoteHref,
+  type SharedMessageHref,
+} from "./pointer-urls"
 
 // Re-export types for convenience
 export type { JSONContent, JSONContentMark, ThreaDocument } from "@threa/types"

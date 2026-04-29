@@ -13,6 +13,7 @@ import {
   serializeAttachmentMetadata,
   unescapeMarkdownLinkText,
 } from "./attachment-markdown"
+import { buildQuoteHref, buildSharedMessageHref } from "./pointer-urls"
 
 // ============================================================================
 // Shared Inline Pattern
@@ -94,8 +95,8 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
       const escapedAuthor = authorName.replace(/\\/g, "\\\\").replace(/\]/g, "\\]")
       // Blank `>` line forces a paragraph break so react-markdown creates separate
       // <p> elements for the snippet and attribution (needed for display extraction).
-      // authorId and actorType are appended after messageId for avatar/profile resolution.
-      return `${quotedLines}\n>\n> — [${escapedAuthor}](quote:${streamId}/${messageId}/${authorId}/${actorType})`
+      const href = buildQuoteHref({ streamId, messageId, authorId, actorType })
+      return `${quotedLines}\n>\n> — [${escapedAuthor}](${href})`
     }
 
     case "sharedMessage": {
@@ -111,7 +112,7 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
       // the line to a clean sentence: "Shared a message from Alice".
       const rawName = authorName && authorName.length > 0 ? authorName : "another stream"
       const escapedName = rawName.replace(/\\/g, "\\\\").replace(/\]/g, "\\]")
-      return `Shared a message from [${escapedName}](shared-message:${streamId}/${messageId})`
+      return `Shared a message from [${escapedName}](${buildSharedMessageHref({ streamId, messageId })})`
     }
 
     case "bulletList":
@@ -720,9 +721,13 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
       const shortcode = match[23]
       const emoji = allowEmoji ? getEmoji?.(shortcode) : null
       if (allowEmoji && emoji) {
+        // Store both `shortcode` (the wire-format id) and `emoji` (the
+        // resolved character). The TipTap `EmojiExtension` reads
+        // `attrs.emoji` for `renderHTML`, so omitting it would render an
+        // empty chip.
         result.push({
           type: "emoji",
-          attrs: { shortcode },
+          attrs: { shortcode, emoji },
         })
       } else {
         // Unknown shortcode (or emoji parsing disabled) — keep as text

@@ -1,5 +1,6 @@
 import type { Components } from "react-markdown"
 import { Suspense, lazy, Component, Children, isValidElement, type ReactNode, type MouseEvent } from "react"
+import { parseQuoteHref, parseSharedMessageHref } from "@threa/prosemirror"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -13,61 +14,29 @@ import { SharedMessagePointerBlock } from "./shared-message-block"
 const CodeBlock = lazy(() => import("./code-block"))
 
 /**
- * Parse quote: protocol href into streamId and messageId.
- * Format: quote:streamId/messageId
+ * Walk a react-markdown element tree for the first `<a>` whose href
+ * passes the predicate, and return the predicate's parsed payload paired
+ * with the link's plain-text content (which the serializer uses to
+ * carry the human-readable author name).
+ *
+ * Used by both the quote-reply blockquote detection and the shared-message
+ * paragraph swap — same traversal, different protocol — so the structural
+ * rule lives in one place.
  */
-function parseQuoteHref(
-  href: string
-): { streamId: string; messageId: string; authorId: string; actorType: string } | null {
-  if (!href.startsWith("quote:")) return null
-  const parts = href.slice("quote:".length).split("/")
-  if (parts.length < 2) return null
-  return {
-    streamId: parts[0],
-    messageId: parts[1],
-    authorId: parts[2] ?? "",
-    actorType: parts[3] ?? "user",
-  }
-}
+function findFirstLink<T>(node: ReactNode, parseHref: (href: string) => T | null): (T & { linkText: string }) | null {
+  if (!isValidElement(node)) return null
 
-/**
- * Parse shared-message: protocol href into streamId and messageId.
- * Format: shared-message:streamId/messageId
- */
-function parseSharedMessageHref(href: string): { streamId: string; messageId: string } | null {
-  if (!href.startsWith("shared-message:")) return null
-  const parts = href.slice("shared-message:".length).split("/")
-  if (parts.length < 2) return null
-  return { streamId: parts[0], messageId: parts[1] }
-}
-
-interface SharedMessageLinkInfo {
-  streamId: string
-  messageId: string
-  authorName: string
-}
-
-/**
- * Walk a React element tree for a link with the shared-message: protocol.
- * Returns the parsed metadata (including the link text, which is the author
- * name from the markdown serializer) or null if none is present.
- */
-function findSharedMessageLinkInElement(element: ReactNode): SharedMessageLinkInfo | null {
-  if (!isValidElement(element)) return null
-
-  const props = element.props as Record<string, unknown>
-  if (props.href && typeof props.href === "string") {
-    const parsed = parseSharedMessageHref(props.href)
+  const props = node.props as Record<string, unknown>
+  if (typeof props.href === "string") {
+    const parsed = parseHref(props.href)
     if (parsed) {
-      const authorName = extractTextFromChildren(props.children as ReactNode)
-      return { ...parsed, authorName }
+      return { ...parsed, linkText: extractTextFromChildren(props.children as ReactNode) }
     }
   }
 
   if (props.children) {
-    const childArray = Children.toArray(props.children as ReactNode)
-    for (const child of childArray) {
-      const result = findSharedMessageLinkInElement(child)
+    for (const child of Children.toArray(props.children as ReactNode)) {
+      const result = findFirstLink(child, parseHref)
       if (result) return result
     }
   }
@@ -81,19 +50,23 @@ function findSharedMessageLinkInElement(element: ReactNode): SharedMessageLinkIn
  * one `shared-message:` anchor, so any paragraph carrying that link is
  * treated as a pointer.
  */
-function findSharedMessageInChildren(children: ReactNode): SharedMessageLinkInfo | null {
-  const childArray = Children.toArray(children)
-  for (const child of childArray) {
-    const match = findSharedMessageLinkInElement(child)
-    if (match) return match
+function findSharedMessageInChildren(
+  children: ReactNode
+): { streamId: string; messageId: string; authorName: string } | null {
+  for (const child of Children.toArray(children)) {
+    const match = findFirstLink(child, parseSharedMessageHref)
+    if (match) return { streamId: match.streamId, messageId: match.messageId, authorName: match.linkText }
   }
   return null
 }
 
 /**
- * Walk React children tree to find a link with quote: protocol,
- * indicating this blockquote is a quote-reply.
- * Returns extracted metadata or null if not a quote-reply.
+ * Walk a blockquote's children for a `quote:` attribution link. Returns
+ * the parsed metadata plus the children that come before it (the actual
+ * quoted content), or `null` if this is a regular blockquote.
+ *
+ * Iterates in reverse because the serializer always emits the attribution
+ * as the last child paragraph: `<p>quoted text</p>…<p>— <a href="quote:…">Author</a></p>`.
  */
 function extractQuoteReplyFromChildren(children: ReactNode): {
   authorName: string
@@ -105,57 +78,20 @@ function extractQuoteReplyFromChildren(children: ReactNode): {
 } | null {
   const childArray: ReactNode[] = Children.toArray(children)
 
-  // The markdown renders as: <p>quoted text</p>\n<p>— <a href="quote:...">Author</a></p>
   for (let i = childArray.length - 1; i >= 0; i--) {
     const child = childArray[i]
     if (!isValidElement(child)) continue
 
-    const quoteLink = findQuoteLinkInElement(child)
-    if (quoteLink) {
+    const match = findFirstLink(child, parseQuoteHref)
+    if (match) {
       return {
-        authorName: quoteLink.authorName,
-        streamId: quoteLink.streamId,
-        messageId: quoteLink.messageId,
-        authorId: quoteLink.authorId,
-        actorType: quoteLink.actorType,
+        authorName: match.linkText,
+        streamId: match.streamId,
+        messageId: match.messageId,
+        authorId: match.authorId,
+        actorType: match.actorType,
         quotedContent: childArray.slice(0, i),
       }
-    }
-  }
-
-  return null
-}
-
-interface QuoteLinkInfo {
-  authorName: string
-  streamId: string
-  messageId: string
-  authorId: string
-  actorType: string
-}
-
-/**
- * Recursively search a React element for a link with quote: protocol.
- */
-function findQuoteLinkInElement(element: ReactNode): QuoteLinkInfo | null {
-  if (!isValidElement(element)) return null
-
-  // Check if this is directly a link with quote: href
-  const props = element.props as Record<string, unknown>
-  if (props.href && typeof props.href === "string") {
-    const parsed = parseQuoteHref(props.href)
-    if (parsed) {
-      const authorName = extractTextFromChildren(props.children as ReactNode)
-      return { ...parsed, authorName }
-    }
-  }
-
-  // Search through children
-  if (props.children) {
-    const childArray = Children.toArray(props.children as ReactNode)
-    for (let i = childArray.length - 1; i >= 0; i--) {
-      const result = findQuoteLinkInElement(childArray[i])
-      if (result) return result
     }
   }
 
