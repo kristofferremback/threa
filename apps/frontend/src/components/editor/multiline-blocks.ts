@@ -11,8 +11,11 @@ export interface BeforeInputEventLike {
 
 // Chars that signal pasted markdown / structured content. Lone parens / brackets
 // excluded because they appear as ordinary punctuation; `[` is sufficient for the
-// markdown-link case since it always leads the pair.
-const PASTE_STYLING_CHARS = /[*_~`[:<]/
+// markdown-link case since it always leads the pair. `@` and `#` cover mentions
+// and channel refs — false-positives like emails (`a@b`) are safe because the
+// markdown parser only converts the strict `@slug` shape, leaving everything
+// else as plain text.
+const PASTE_STYLING_CHARS = /[*_~`[:<@#]/
 
 interface AncestorInfo {
   depth: number
@@ -676,9 +679,13 @@ export function handleBeforeInputKeyboardPaste(
   // wreck the verbatim-text invariant of code blocks.
   if (editor.isActive("codeBlock")) return false
 
-  const handled = insertPastedText(editor, data, getMentionType, getEmoji, parseOptions)
-  if (handled) {
-    event.preventDefault()
+  // Lock the event in once the heuristic matches: TipTap's default `insertText`
+  // would skip mention / channel / emoji conversion, so even an edge case
+  // where `insertPastedText` returns false should fall back to a manual
+  // insert rather than diverting to the plain-text path.
+  event.preventDefault()
+  if (!insertPastedText(editor, data, getMentionType, getEmoji, parseOptions)) {
+    editor.commands.insertContent(data)
   }
-  return handled
+  return true
 }

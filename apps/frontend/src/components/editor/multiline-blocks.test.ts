@@ -22,6 +22,10 @@ function createTestEditor(content: string | JSONContent) {
       items: () => [],
       render: () => ({ onStart: () => {}, onUpdate: () => {}, onExit: () => {}, onKeyDown: () => false }),
     },
+    channelSuggestion: {
+      items: () => [],
+      render: () => ({ onStart: () => {}, onUpdate: () => {}, onExit: () => {}, onKeyDown: () => false }),
+    },
     emojiSuggestion: {
       items: () => [],
       render: () => ({ onStart: () => {}, onUpdate: () => {}, onExit: () => {}, onKeyDown: () => false }),
@@ -647,6 +651,46 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
 
     expect(handled).toBe(true)
     expect(event.prevented).toBe(true)
+    editor.destroy()
+  })
+
+  it("intercepts mention pastes (`@alice`)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("Hey @alice ping")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    const inline = (editor.getJSON().content?.[0]?.content ?? []) as JSONContent[]
+    const mention = inline.find((n) => n.type === "mention")
+    expect(mention?.attrs?.slug).toBe("alice")
+    editor.destroy()
+  })
+
+  it("intercepts channel-ref pastes (`#general`)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = createBeforeInputDataEvent("see #general for context")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    const inline = (editor.getJSON().content?.[0]?.content ?? []) as JSONContent[]
+    const channel = inline.find((n) => n.type === "channelLink")
+    expect(channel?.attrs?.slug).toBe("general")
     editor.destroy()
   })
 
