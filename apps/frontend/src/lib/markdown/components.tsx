@@ -13,60 +13,55 @@ import { SharedMessagePointerBlock } from "./shared-message-block"
 
 const CodeBlock = lazy(() => import("./code-block"))
 
+// The serializer emits these prefixes verbatim, no marks or extra text. Match
+// the shape exactly so a mixed paragraph like "FYI Shared a message from
+// [Alice](...)" doesn't get hijacked into a pointer block.
+const SHARED_MESSAGE_PREFIX = "Shared a message from "
+const QUOTE_ATTRIBUTION_PREFIX = "— "
+
 /**
- * Walk a react-markdown element tree for the first `<a>` whose href
- * passes the predicate, and return the predicate's parsed payload paired
- * with the link's plain-text content (which the serializer uses to
- * carry the human-readable author name).
- *
- * Used by both the quote-reply blockquote detection and the shared-message
- * paragraph swap — same traversal, different protocol — so the structural
- * rule lives in one place.
+ * Resolve a `<p>` (or `<p>`-shaped node's children) that matches the exact
+ * serializer-produced "prefix text + single anchor" pattern. Returns the
+ * parsed href payload plus the anchor's plain-text content (the human-readable
+ * author name) when matched, `null` otherwise.
  */
-function findFirstLink<T>(node: ReactNode, parseHref: (href: string) => T | null): (T & { linkText: string }) | null {
-  if (!isValidElement(node)) return null
-
-  const props = node.props as Record<string, unknown>
-  if (typeof props.href === "string") {
-    const parsed = parseHref(props.href)
-    if (parsed) {
-      return { ...parsed, linkText: extractTextFromChildren(props.children as ReactNode) }
-    }
-  }
-
-  if (props.children) {
-    for (const child of Children.toArray(props.children as ReactNode)) {
-      const result = findFirstLink(child, parseHref)
-      if (result) return result
-    }
-  }
-
-  return null
+function matchAnchorParagraph<T>(
+  children: ReactNode,
+  expectedPrefix: string,
+  parseHref: (href: string) => T | null
+): (T & { linkText: string }) | null {
+  const arr = Children.toArray(children)
+  if (arr.length !== 2) return null
+  const [prefix, anchor] = arr
+  if (prefix !== expectedPrefix) return null
+  if (!isValidElement(anchor)) return null
+  const props = anchor.props as Record<string, unknown>
+  if (typeof props.href !== "string") return null
+  const parsed = parseHref(props.href)
+  if (!parsed) return null
+  return { ...parsed, linkText: extractTextFromChildren(props.children as ReactNode) }
 }
 
 /**
- * Detects whether a paragraph's children contain a shared-message pointer
- * link. The serializer produces a single-line paragraph containing exactly
- * one `shared-message:` anchor, so any paragraph carrying that link is
- * treated as a pointer.
+ * Detects whether a paragraph's children are *exactly* the serializer-produced
+ * shared-message pointer line (prefix text + a `shared-message:` anchor and
+ * nothing else). Mixed paragraphs that happen to contain such a link are
+ * intentionally not matched — they'd lose their surrounding text.
  */
 function findSharedMessageInChildren(
   children: ReactNode
 ): { streamId: string; messageId: string; authorName: string } | null {
-  for (const child of Children.toArray(children)) {
-    const match = findFirstLink(child, parseSharedMessageHref)
-    if (match) return { streamId: match.streamId, messageId: match.messageId, authorName: match.linkText }
-  }
-  return null
+  const match = matchAnchorParagraph(children, SHARED_MESSAGE_PREFIX, parseSharedMessageHref)
+  if (!match) return null
+  return { streamId: match.streamId, messageId: match.messageId, authorName: match.linkText }
 }
 
 /**
- * Walk a blockquote's children for a `quote:` attribution link. Returns
- * the parsed metadata plus the children that come before it (the actual
- * quoted content), or `null` if this is a regular blockquote.
- *
- * Iterates in reverse because the serializer always emits the attribution
- * as the last child paragraph: `<p>quoted text</p>…<p>— <a href="quote:…">Author</a></p>`.
+ * Walk a blockquote's children for the serializer's quote-reply attribution
+ * paragraph: a `<p>` whose children are exactly "— " followed by a single
+ * `quote:` anchor. Returns the parsed metadata plus the children that come
+ * before that paragraph (the actual quoted content), or `null` if this is
+ * a regular blockquote or the last paragraph isn't an exact attribution shape.
  */
 function extractQuoteReplyFromChildren(children: ReactNode): {
   authorName: string
@@ -82,7 +77,8 @@ function extractQuoteReplyFromChildren(children: ReactNode): {
     const child = childArray[i]
     if (!isValidElement(child)) continue
 
-    const match = findFirstLink(child, parseQuoteHref)
+    const props = child.props as Record<string, unknown>
+    const match = matchAnchorParagraph(props.children as ReactNode, QUOTE_ATTRIBUTION_PREFIX, parseQuoteHref)
     if (match) {
       return {
         authorName: match.linkText,
