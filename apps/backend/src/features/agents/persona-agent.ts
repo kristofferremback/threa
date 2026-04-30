@@ -379,9 +379,7 @@ export class PersonaAgent {
                 messageId: reusableMessageId,
                 actorId: persona.id,
                 content: msgInput.content,
-                accessibleStreamIds: agentContext.accessibleStreamIds
-                  ? [...agentContext.accessibleStreamIds]
-                  : undefined,
+                accessibleStreamIds: agentContext.accessibleStreamIds ? [...agentContext.accessibleStreamIds] : [],
               })
               if (editedMessage) {
                 return { messageId: editedMessage.id, operation: "edited" as const }
@@ -408,7 +406,11 @@ export class PersonaAgent {
             // already use (private channel = that channel + public, public
             // channel = public only, scratchpad = user-full). NOT the
             // invoking user's full access — that would be a scope escalation.
-            accessibleStreamIds: agentContext.accessibleStreamIds ? [...agentContext.accessibleStreamIds] : undefined,
+            // Always pass an array (even empty) so the persona path uses the
+            // set-membership gate. Falling back to `undefined` would route
+            // through the user-path membership check keyed by authorId, which
+            // unconditionally denies for personas (no `stream_members` rows).
+            accessibleStreamIds: agentContext.accessibleStreamIds ? [...agentContext.accessibleStreamIds] : [],
           })
           return { messageId: message.id, operation: "created" as const }
         }
