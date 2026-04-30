@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react"
 import type { Stream } from "@threa/types"
 import type { UrgencyLevel } from "@/components/layout/sidebar/types"
 import { getActivityTime } from "@/components/layout/sidebar/utils"
@@ -93,4 +94,19 @@ export function writeStoredStreamSortMode(mode: StreamSortMode): void {
   } catch {
     // Storage unavailable
   }
+}
+
+/**
+ * Hook for stream pickers (share modal, share-target page) that owns the
+ * sort-mode state and its localStorage persistence in one place. Keeps the
+ * caller free of direct storage access (INV-15) and avoids duplicating the
+ * useState + useEffect pair across surfaces.
+ */
+export function useStoredStreamSortMode(): [StreamSortMode, (next: StreamSortMode) => void] {
+  const [sortMode, setSortModeState] = useState<StreamSortMode>(() => readStoredStreamSortMode())
+  const setSortMode = useCallback((next: StreamSortMode) => {
+    setSortModeState(next)
+    writeStoredStreamSortMode(next)
+  }, [])
+  return [sortMode, setSortMode]
 }

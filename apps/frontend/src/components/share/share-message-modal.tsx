@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { Clock, ArrowDownAZ } from "lucide-react"
 import { StreamTypes, Visibilities, type StreamType } from "@threa/types"
@@ -13,13 +13,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships, useWorkspaceUnreadState } from "@/stores/workspace-store"
 import { getStreamName, streamFallbackLabel, STREAM_ICONS } from "@/lib/streams"
-import {
-  compareStreamEntries,
-  readStoredStreamSortMode,
-  scoreStreamMatch,
-  writeStoredStreamSortMode,
-  type StreamSortMode,
-} from "@/lib/stream-sort"
+import { compareStreamEntries, scoreStreamMatch, useStoredStreamSortMode } from "@/lib/stream-sort"
 import { calculateUrgency } from "@/components/layout/sidebar/utils"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
 import { navigateAfterShareHandoff } from "@/lib/share-navigation"
@@ -65,7 +59,7 @@ interface ShareMessageModalProps {
  */
 export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: ShareMessageModalProps) {
   const [search, setSearch] = useState("")
-  const [sortMode, setSortMode] = useState<StreamSortMode>(() => readStoredStreamSortMode())
+  const [sortMode, setSortMode] = useStoredStreamSortMode()
   const navigate = useNavigate()
   const location = useLocation()
   const streams = useWorkspaceStreams(workspaceId)
@@ -77,10 +71,6 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
   // The Drawer/Dialog split is owned by ResponsiveDialog; isMobile here only
   // governs the post-select navigation contract (mobile strips `?panel=…`).
   const isMobile = useIsMobile()
-
-  useEffect(() => {
-    writeStoredStreamSortMode(sortMode)
-  }, [sortMode])
 
   const memberStreamIds = useMemo(() => {
     const ids = new Set<string>()

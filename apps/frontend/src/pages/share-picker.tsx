@@ -33,13 +33,7 @@ import { Input } from "@/components/ui/input"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { ItemList } from "@/components/quick-switcher/item-list"
 import type { QuickSwitcherItem } from "@/components/quick-switcher/types"
-import {
-  compareStreamEntries,
-  readStoredStreamSortMode,
-  scoreStreamMatch,
-  writeStoredStreamSortMode,
-  type StreamSortMode,
-} from "@/lib/stream-sort"
+import { compareStreamEntries, scoreStreamMatch, useStoredStreamSortMode } from "@/lib/stream-sort"
 import { calculateUrgency } from "@/components/layout/sidebar/utils"
 
 const STREAM_ICONS: Record<StreamType, React.ComponentType<{ className?: string }>> = {
@@ -80,15 +74,11 @@ export function SharePickerPage() {
   const { createShareDraft, saveShareContent } = useShareTarget()
 
   const [query, setQuery] = useState("")
-  const [sortMode, setSortMode] = useState<StreamSortMode>(() => readStoredStreamSortMode())
+  const [sortMode, setSortMode] = useStoredStreamSortMode()
   const [selectedIndex, setSelectedIndex] = useState(0)
   // null = not yet loaded, [] = loaded but empty/unavailable
   const [files, setFiles] = useState<File[] | null>(null)
   const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    writeStoredStreamSortMode(sortMode)
-  }, [sortMode])
 
   // Only lightweight text metadata comes from navigation state — files stay in Cache API
   // to avoid hitting browser history.state serialization limits (~640 KB in Firefox).
