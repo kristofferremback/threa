@@ -11,7 +11,7 @@ import type { CommandRegistry, CommandDispatchedPayload } from "../commands"
 import { serializeBigInt } from "@threa/backend-common"
 import { eventId, commandId as generateCommandId } from "../../lib/id"
 import { toShortcode, normalizeMessage, toEmoji } from "../emoji"
-import { parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 import { messageMetadataSchema } from "./metadata-schema"
 
@@ -286,6 +286,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       // Normalize to both JSON and markdown formats
       const { contentJson, contentMarkdown } = normalizeContent(result.data)
 
+      // Derive inline attachment ids from the new contentJson so event-service
+      // can refresh the `attachment_references` projection in sync (INV-7).
+      // Edits don't accept fresh-upload ids today (the schema only takes
+      // content), so this is reference-only by construction.
+      const attachmentIds = collectAttachmentReferenceIds(contentJson)
+
       const message = await eventService.editMessage({
         workspaceId,
         messageId,
@@ -293,6 +299,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         contentJson,
         contentMarkdown,
         actorId: userId,
+        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
         confirmedPrivacyWarning: result.data.confirmedPrivacyWarning,
       })
 

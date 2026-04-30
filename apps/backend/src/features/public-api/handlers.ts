@@ -29,7 +29,7 @@ import { AttachmentSafetyStatuses, AuthorTypes, sentViaApiKey, type AuthorType }
 import type { Bot as WireBot } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
-import { parseMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, parseMarkdown } from "@threa/prosemirror"
 import { botId } from "../../lib/id"
 import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
@@ -906,6 +906,9 @@ export function createPublicApiHandlers({
       // Normalize and parse content
       const contentMarkdown = normalizeMessage(content)
       const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+      // Refresh attachment_references projection to match the new contentJson
+      // (INV-7) — same derivation as the user UI handler and the agent adapter.
+      const attachmentIds = collectAttachmentReferenceIds(contentJson)
 
       const updated = await eventService.editMessage({
         workspaceId,
@@ -915,6 +918,7 @@ export function createPublicApiHandlers({
         contentMarkdown,
         actorId,
         actorType,
+        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       })
 
       if (!updated) {

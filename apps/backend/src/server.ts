@@ -383,6 +383,11 @@ export async function startServer(): Promise<ServerInstance> {
       contentJson = stripped.contentJson
       contentMarkdown = stripped.contentMarkdown
     }
+    // Same as createMessage: derive attachmentIds from the cleaned JSON so
+    // event-service can refresh the `attachment_references` projection in
+    // sync with the new content (INV-7). Without this, an agent edit that
+    // adds or removes an `attachment:` link leaves stale rows behind.
+    const attachmentIds = collectAttachmentReferenceIds(contentJson)
     return eventService.editMessage({
       workspaceId: params.workspaceId,
       streamId: params.streamId,
@@ -391,6 +396,7 @@ export async function startServer(): Promise<ServerInstance> {
       contentMarkdown,
       actorId: params.actorId,
       actorType: "persona",
+      attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       accessibleStreamIds: params.accessibleStreamIds,
     })
   }
