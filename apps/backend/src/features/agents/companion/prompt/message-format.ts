@@ -2,6 +2,7 @@ import type { ModelMessage } from "ai"
 import { AuthorTypes, StreamTypes, type ChartData, type DiagramData, type TableData } from "@threa/types"
 import { formatDate, formatTime, getDateKey } from "../../../../lib/temporal"
 import type { AttachmentContext, MessageWithAttachments, StreamContext } from "../../context-builder"
+import { formatAttachImageTag, formatAttachTag, formatMsgAuthorTag } from "../../pointer-tags"
 
 /**
  * Format messages for the LLM with timestamps and author names.
@@ -44,7 +45,7 @@ export function formatMessagesWithTemporal(messages: MessageWithAttachments[], c
     // No temporal context - return messages with original content + attachment context
     return messages.map((m) => ({
       role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
-      content: formatMessageContent(m, idTag(m), imageIndexById),
+      content: formatMessageContent(m, `${idTag(m)} `, imageIndexById),
     }))
   }
 
@@ -96,15 +97,13 @@ export function formatMessagesWithTemporal(messages: MessageWithAttachments[], c
 }
 
 /**
- * Compact ID tag for inline use in formatted messages. User messages include
- * `author:` so cross-stream forwards / quotes resolve the original speaker;
- * persona messages omit it (the persona id isn't useful for pointer URLs).
+ * Compact ID tag for inline use in formatted messages. Always includes
+ * `author:<id>` so the `quote:stream/msg/author/actorType` pointer-URL
+ * contract roundtrips for both user and persona messages — agents need
+ * the persona id to losslessly quote their own previous turns.
  */
 function idTag(msg: MessageWithAttachments): string {
-  if (msg.authorType === AuthorTypes.USER) {
-    return `[msg:${msg.id} author:${msg.authorId}]`
-  }
-  return `[msg:${msg.id}]`
+  return formatMsgAuthorTag(msg.id, msg.authorId)
 }
 
 /**
@@ -135,7 +134,7 @@ function formatStructuredData(data: ChartData | TableData | DiagramData | null):
 function formatAttachmentDescription(att: AttachmentContext, imageIndexById: Map<string, number>): string {
   const isImage = att.mimeType.startsWith("image/")
   const imageIndex = isImage ? imageIndexById.get(att.id) : undefined
-  const idTag = isImage && imageIndex ? `attach:${att.id} #${imageIndex}` : `attach:${att.id}`
+  const idTag = isImage && imageIndex ? formatAttachImageTag(att.id, imageIndex) : formatAttachTag(att.id)
   let desc = isImage
     ? `[Image: ${att.filename} (${idTag})]`
     : `[Attachment: ${att.filename} (${att.mimeType}, ${idTag})]`

@@ -12,7 +12,7 @@ When a user creates a message containing these, the backend (`event-service._cre
 
 Today Ariadne sees attachment/message IDs in her retrieval-tool outputs and (for `discuss-thread`) in her context bag, but she has no instruction to emit pointer URLs and the backend wrapper that turns her markdown into a real `messages` row drops the only piece needed for attachment access to propagate. The result: she has to gesture at sources via plain links instead of inserting a real forward, quote, or attachment card — and when the user copies her response, the asset doesn't come along.
 
-This plan lights up first-class forward / quote / attachment-resurfacing for Ariadne, plus a `describe_memo` tool so she can pull source messages out of a stored memo. Her access scope is already the invoking user's, so there is no leak surface beyond what direct stream access already grants.
+This plan lights up first-class forward / quote / attachment-resurfacing for Ariadne, plus a `describe_memo` tool so she can pull source messages out of a stored memo. Her access scope is the invocation-bounded `AgentAccessSpec` reach (private channel = that channel + public, public channel = public only, DM = participants' intersection, private scratchpad = user-full) — narrower than the invoking user's full access, so there is no leak surface beyond what the user could already surface from this invocation point.
 
 ## TL;DR
 
@@ -99,7 +99,7 @@ Ariadne can't emit a pointer URL she doesn't have the IDs for, and she has no in
 
 2. **New section in `system-prompt.ts`** appended after `## Responding to Messages` — terse, example-driven, three literal-markdown examples:
 
-   ```
+   ```text
    ## Referring to messages and attachments
 
    When citing a specific message or file, prefer a structural reference over a

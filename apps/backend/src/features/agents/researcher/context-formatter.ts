@@ -1,5 +1,6 @@
 import type { AuthorType } from "@threa/types"
 import type { Querier } from "../../../db"
+import { formatAttachWithStreamTag, formatMemoTag, formatMsgRefToken, formatRetrievedMessageTag } from "../pointer-tags"
 import { UserRepository } from "../../workspaces"
 import { StreamRepository } from "../../streams"
 import type { Memo } from "../../memos"
@@ -88,13 +89,13 @@ function formatMemosSection(memos: EnrichedMemoResult[]): string {
         memo.keyPoints.length > 0 ? `\nKey points:\n${memo.keyPoints.map((kp) => `- ${kp}`).join("\n")}\n` : ""
       // Surface memo id + source-message ids so the agent can pull source
       // messages via `describe_memo` and forward/quote them with pointer URLs.
-      const sourceTag = sourceStream ? ` stream:${sourceStream.id}` : ""
+      const memoTag = formatMemoTag(memo.id, location, sourceStream?.id)
       const sourcesLine =
         memo.sourceMessageIds.length > 0
-          ? `\n_Sources: ${memo.sourceMessageIds.map((id) => `msg:${id}`).join(", ")}_\n`
+          ? `\n_Sources: ${memo.sourceMessageIds.map(formatMsgRefToken).join(", ")}_\n`
           : ""
 
-      return `**${memo.title}** _(memo:${memo.id} from ${location}${sourceTag})_
+      return `**${memo.title}** _(${memoTag})_
 
 ${memo.abstract}
 ${keyPointsList}${sourcesLine}`
@@ -119,7 +120,7 @@ function formatMessagesSection(messages: EnrichedMessageResult[]): string {
       // attachments" prompt section; this header gives the agent the
       // matching `[msg:… stream:… author:… type:…]` ids without a follow-
       // up tool call.
-      const idTag = `[msg:${msg.id} stream:${msg.streamId} author:${msg.authorId} type:${msg.authorType}]`
+      const idTag = formatRetrievedMessageTag(msg.id, msg.streamId, msg.authorId, msg.authorType)
 
       return `> ${idTag} **${author}** in _${msg.streamName}_ (${relativeDate}):
 > ${content}${quoteBlock}`
@@ -140,9 +141,9 @@ function formatAttachmentsSection(attachments: EnrichedAttachmentResult[]): stri
       const contentInfo = att.contentType ? ` (${att.contentType})` : ""
       const summary = att.summary ? `\n${att.summary}` : ""
       // Surface attachment id for `attachment:` resurfacing pointer URLs.
-      const streamTag = att.streamId ? ` stream:${att.streamId}` : ""
+      const attachTag = formatAttachWithStreamTag(att.id, att.streamId)
 
-      return `**${att.filename}**${contentInfo} _(attach:${att.id}${streamTag}, ${relativeDate})_${summary}`
+      return `**${att.filename}**${contentInfo} _(${attachTag}, ${relativeDate})_${summary}`
     })
     .join("\n\n")
 

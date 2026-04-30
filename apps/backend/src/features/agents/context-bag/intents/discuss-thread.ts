@@ -41,7 +41,7 @@ export const DiscussThreadIntent: IntentConfig = {
     "`thread:<stream_id>`). Do this BEFORE asking the user to paste content; they",
     "expect you to fetch what you need.",
     "",
-    "Internal ids for messages appear in the context as `[msg_…]` tags. Do not paste raw",
+    "Internal ids for messages appear in the context as `[msg:…]` tags. Do not paste raw",
     "ids or timestamps as prose — refer to messages by author and a short paraphrase (for",
     'example: "Kristoffer\'s check-in about the rollout").',
     "",

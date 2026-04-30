@@ -77,10 +77,13 @@ Returns the source messages with their \`messageId\`, \`streamId\`, and \`author
           }),
         }
       } catch (error) {
+        // Log the full exception for operator triage; return a stable, generic
+        // message to the model so DB / service internals can't leak through
+        // the tool output (which is also persisted on the trace).
         logger.error({ error, memoId: input.memoId }, "describe_memo failed")
         return {
           output: JSON.stringify({
-            error: `Failed to describe memo: ${error instanceof Error ? error.message : "Unknown error"}`,
+            error: "Failed to describe memo",
             memoId: input.memoId,
           }),
         }

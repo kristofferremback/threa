@@ -73,11 +73,10 @@ describe("formatMessagesWithTemporal — ID tagging for pointer URLs", () => {
     expect(content).toContain("Hello there")
   })
 
-  test("persona messages get only a [msg:…] tag (no author id, no timestamp)", () => {
+  test("persona messages also get [msg:… author:…] so self-quotes have a complete pointer URL", () => {
     const formatted = formatMessagesWithTemporal([personaMsg()], baseContext)
     const content = formatted[0].content as string
-    expect(content).toContain("[msg:msg_persona_1]")
-    expect(content).not.toContain("author:")
+    expect(content).toContain("[msg:msg_persona_1 author:persona_ariadne]")
     expect(content).not.toContain("(10:01)")
     expect(content).toContain("Got it.")
   })
@@ -120,8 +119,9 @@ describe("formatMessagesWithTemporal — ID tagging for pointer URLs", () => {
     const formatted = formatMessagesWithTemporal([userMsg(), personaMsg()], { ...baseContext, temporal: undefined })
     const userContent = formatted[0].content as string
     const personaContent = formatted[1].content as string
-    expect(userContent).toContain("[msg:msg_user_1 author:user_alice]")
+    // Trailing space after the id tag so output reads "[msg:…] Hello", not glued.
+    expect(userContent).toContain("[msg:msg_user_1 author:user_alice] Hello")
     expect(userContent).not.toContain("(10:00)")
-    expect(personaContent).toContain("[msg:msg_persona_1]")
+    expect(personaContent).toContain("[msg:msg_persona_1 author:persona_ariadne] Got it.")
   })
 })

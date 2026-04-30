@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import { serializeToMarkdown } from "@threa/prosemirror"
-import type { JSONContent } from "@threa/types"
+import { AttachmentSafetyStatuses, type JSONContent } from "@threa/types"
 import { MessageRepository } from "../../messaging"
 import { AttachmentRepository, AttachmentReferenceRepository } from "../../attachments"
 import { logger } from "../../../lib/logger"
@@ -19,6 +19,7 @@ export type DroppedRefReason =
   | "attachment-not-found"
   | "attachment-out-of-scope"
   | "attachment-cross-workspace"
+  | "attachment-not-clean"
 
 export interface DroppedRef {
   type: "sharedMessage" | "quoteReply" | "attachmentReference"
@@ -97,29 +98,47 @@ export async function stripInaccessibleAgentRefs(params: StripParams): Promise<S
     attachmentIdsToCheck.size > 0 ? await AttachmentRepository.findByIds(pool, [...attachmentIdsToCheck]) : []
   const attachmentMap = new Map(attachments.map((a) => [a.id, a]))
 
-  // For attachments not directly accessible, intersect referencing-stream
-  // projection with the agent's scope (mirrors AttachmentService.getAccessible).
-  const attachmentReferenceCheck = new Map<string, boolean>()
-  for (const attachId of attachmentIdsToCheck) {
-    const a = attachmentMap.get(attachId)
-    if (!a) {
-      attachmentReferenceCheck.set(attachId, false)
-      continue
-    }
-    if (a.workspaceId !== workspaceId) {
-      attachmentReferenceCheck.set(attachId, false)
-      continue
-    }
-    if (a.streamId && accessibleSet.has(a.streamId)) {
-      attachmentReferenceCheck.set(attachId, true)
-      continue
-    }
-    const refStreamIds = await AttachmentReferenceRepository.findReferencingStreamIds(pool, workspaceId, attachId)
-    attachmentReferenceCheck.set(
-      attachId,
-      refStreamIds.some((s) => accessibleSet.has(s))
-    )
-  }
+  // Per-attachment access decision, mirroring `AttachmentService.getAccessible`
+  // plus event-service step 1's safety gate. The two checks compose to:
+  //   1. Workspace boundary
+  //   2. Safety: malware-scan must be CLEAN (event-service rejects otherwise)
+  //   3. Reachability: direct stream membership in scope, OR any referencing
+  //      stream in scope (so attachments visible via inline references in
+  //      scope still pass even when the upload stream isn't directly reachable)
+  //
+  // Step 3's reference-projection lookups are batched via Promise.all so
+  // multi-attachment messages don't pay sequential round-trip latency.
+  const attachmentDecisions: Array<{
+    attachId: string
+    decision: "ok" | "not-found" | "cross-workspace" | "not-clean" | "out-of-scope"
+  }> = []
+  await Promise.all(
+    [...attachmentIdsToCheck].map(async (attachId) => {
+      const a = attachmentMap.get(attachId)
+      if (!a) {
+        attachmentDecisions.push({ attachId, decision: "not-found" })
+        return
+      }
+      if (a.workspaceId !== workspaceId) {
+        attachmentDecisions.push({ attachId, decision: "cross-workspace" })
+        return
+      }
+      if (a.safetyStatus !== AttachmentSafetyStatuses.CLEAN) {
+        attachmentDecisions.push({ attachId, decision: "not-clean" })
+        return
+      }
+      if (a.streamId && accessibleSet.has(a.streamId)) {
+        attachmentDecisions.push({ attachId, decision: "ok" })
+        return
+      }
+      const refStreamIds = await AttachmentReferenceRepository.findReferencingStreamIds(pool, workspaceId, attachId)
+      attachmentDecisions.push({
+        attachId,
+        decision: refStreamIds.some((s) => accessibleSet.has(s)) ? "ok" : "out-of-scope",
+      })
+    })
+  )
+  const attachmentDecisionMap = new Map(attachmentDecisions.map((d) => [d.attachId, d.decision]))
 
   // Pass 2: walk and rewrite, recording drops.
   const dropped: DroppedRef[] = []
@@ -178,20 +197,25 @@ export async function stripInaccessibleAgentRefs(params: StripParams): Promise<S
         dropped.push({ type: "attachmentReference", reason: "attachment-not-found", ids: { id: "" } })
         return null
       }
-      const a = attachmentMap.get(id)
-      if (!a) {
-        dropped.push({ type: "attachmentReference", reason: "attachment-not-found", ids: { id } })
-        return null
+      const decision = attachmentDecisionMap.get(id) ?? "not-found"
+      switch (decision) {
+        case "ok":
+          return node
+        case "not-found":
+          dropped.push({ type: "attachmentReference", reason: "attachment-not-found", ids: { id } })
+          return null
+        case "cross-workspace":
+          dropped.push({ type: "attachmentReference", reason: "attachment-cross-workspace", ids: { id } })
+          return null
+        case "not-clean":
+          // Mirrors event-service step 1's malware-scan gate. Refs surviving
+          // strip without this would still throw at write time.
+          dropped.push({ type: "attachmentReference", reason: "attachment-not-clean", ids: { id } })
+          return null
+        case "out-of-scope":
+          dropped.push({ type: "attachmentReference", reason: "attachment-out-of-scope", ids: { id } })
+          return null
       }
-      if (a.workspaceId !== workspaceId) {
-        dropped.push({ type: "attachmentReference", reason: "attachment-cross-workspace", ids: { id } })
-        return null
-      }
-      if (!attachmentReferenceCheck.get(id)) {
-        dropped.push({ type: "attachmentReference", reason: "attachment-out-of-scope", ids: { id } })
-        return null
-      }
-      return node
     },
   })
 

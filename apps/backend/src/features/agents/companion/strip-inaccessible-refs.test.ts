@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
-import type { JSONContent } from "@threa/types"
+import { AttachmentSafetyStatuses, type JSONContent } from "@threa/types"
 import { MessageRepository } from "../../messaging"
 import { AttachmentRepository, AttachmentReferenceRepository } from "../../attachments"
 import { stripInaccessibleAgentRefs } from "./strip-inaccessible-refs"
@@ -52,7 +52,7 @@ describe("stripInaccessibleAgentRefs", () => {
       new Map([["msg_a", { id: "msg_a", streamId: "stream_a" } as any]])
     )
     spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
-      { id: "att_a", workspaceId: "ws_1", streamId: "stream_a" } as any,
+      { id: "att_a", workspaceId: "ws_1", streamId: "stream_a", safetyStatus: AttachmentSafetyStatuses.CLEAN } as any,
     ])
 
     const result = await stripInaccessibleAgentRefs({
@@ -196,7 +196,12 @@ describe("stripInaccessibleAgentRefs", () => {
     // the ref projection lets the agent re-surface what she could already see.
     spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(new Map())
     spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
-      { id: "att_a", workspaceId: "ws_1", streamId: "stream_source" } as any,
+      {
+        id: "att_a",
+        workspaceId: "ws_1",
+        streamId: "stream_source",
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+      } as any,
     ])
     const refSpy = spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue([
       "stream_visible",
@@ -218,7 +223,12 @@ describe("stripInaccessibleAgentRefs", () => {
   it("drops attachment when neither direct stream nor any referencing stream is in scope", async () => {
     spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(new Map())
     spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
-      { id: "att_secret", workspaceId: "ws_1", streamId: "stream_private" } as any,
+      {
+        id: "att_secret",
+        workspaceId: "ws_1",
+        streamId: "stream_private",
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+      } as any,
     ])
     spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue(["stream_other_private"])
 
@@ -235,6 +245,37 @@ describe("stripInaccessibleAgentRefs", () => {
       type: "attachmentReference",
       reason: "attachment-out-of-scope",
       ids: { id: "att_secret" },
+    })
+  })
+
+  it("drops attachments whose safetyStatus isn't clean — mirrors event-service's malware-scan gate", async () => {
+    // Defense in depth: the strip helper must reject malware-scan-quarantined
+    // attachments BEFORE event-service throws on them, otherwise they'd
+    // survive strip and crash the whole message at write time.
+    spyOn(MessageRepository, "findByIdsInWorkspace").mockResolvedValue(new Map())
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
+      {
+        id: "att_quarantined",
+        workspaceId: "ws_1",
+        streamId: "stream_target",
+        safetyStatus: "quarantined",
+      } as any,
+    ])
+
+    const result = await stripInaccessibleAgentRefs({
+      pool,
+      workspaceId: "ws_1",
+      targetStreamId: "stream_target",
+      // Stream IS in scope — only the safety check should fail it.
+      accessibleStreamIds: ["stream_target"],
+      contentJson: doc(paragraph(attachmentRefNode("att_quarantined"))),
+    })
+
+    expect(result.dropped).toHaveLength(1)
+    expect(result.dropped[0]).toMatchObject({
+      type: "attachmentReference",
+      reason: "attachment-not-clean",
+      ids: { id: "att_quarantined" },
     })
   })
 
