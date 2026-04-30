@@ -837,6 +837,14 @@ export function createPublicApiHandlers({
       // Normalize and parse content
       const contentMarkdown = normalizeMessage(content)
       const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+      // Derive inline `attachment:` ids from the parsed contentJson so the
+      // create-time access gate runs and the attachment_references projection
+      // gets written. Public-API senders can post markdown like `[Image
+      // #1](attachment:att_x)`; without this they'd persist a message that
+      // references an attachment without ever validating read access. The
+      // schema doesn't accept fresh-upload ids today, so this list IS the
+      // full set.
+      const attachmentIds = collectAttachmentReferenceIds(contentJson)
 
       // User-scoped key: send as the user with "api" indicator
       if (req.userApiKey) {
@@ -849,6 +857,7 @@ export function createPublicApiHandlers({
           authorType: AuthorTypes.USER,
           contentJson,
           contentMarkdown,
+          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           clientMessageId,
           sentVia: sentViaApiKey(req.userApiKey.id),
           metadata,
@@ -872,6 +881,7 @@ export function createPublicApiHandlers({
           authorType: AuthorTypes.BOT,
           contentJson,
           contentMarkdown,
+          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           clientMessageId,
           metadata,
         })

@@ -178,7 +178,13 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       }
 
       const data = result.data
-      const attachmentIds = data.attachmentIds
+      // Explicit `data.attachmentIds` is the fresh-upload list (each row's
+      // `messageId === null`, claimed by `attachToMessage` on send).
+      // The contentJson-derived list catches inline `attachment:` references
+      // — fresh uploads aren't represented there, references are.
+      // Merging both into the deduped union covers all flavors with one
+      // gate run + one projection write (mirrors the edit path).
+      const explicitAttachmentIds = data.attachmentIds ?? []
 
       const stream = await streamService.resolveWritableMessageStream({
         workspaceId,
@@ -234,6 +240,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       // Normalize to both JSON and markdown formats for normal message creation
       const { contentJson, contentMarkdown } = normalizeContent(data)
+      // Union of explicit fresh-upload ids and inline references parsed from
+      // the canonical contentJson. Without this, a markdown POST containing
+      // `[Image #1](attachment:att_x)` would skip the access gate AND the
+      // attachment_references projection write.
+      const inlineRefIds = collectAttachmentReferenceIds(contentJson)
+      const attachmentIds = [...new Set([...explicitAttachmentIds, ...inlineRefIds])]
 
       // Normal message creation
       const message = await eventService.createMessage({
@@ -243,7 +255,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         authorType: "user",
         contentJson,
         contentMarkdown,
-        attachmentIds,
+        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
         clientMessageId: data.clientMessageId,
         metadata: data.metadata,
         confirmedPrivacyWarning: data.confirmedPrivacyWarning,
