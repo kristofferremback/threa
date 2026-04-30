@@ -25,6 +25,7 @@ const persona: Persona = {
 const scratchpadContext: StreamContext = {
   streamType: StreamTypes.SCRATCHPAD,
   streamInfo: {
+    id: "stream_test",
     name: "Ideas",
     description: null,
     slug: null,

@@ -86,11 +86,18 @@ function formatMemosSection(memos: EnrichedMemoResult[]): string {
       const location = sourceStream?.name ?? sourceStream?.type ?? "workspace"
       const keyPointsList =
         memo.keyPoints.length > 0 ? `\nKey points:\n${memo.keyPoints.map((kp) => `- ${kp}`).join("\n")}\n` : ""
+      // Surface memo id + source-message ids so the agent can pull source
+      // messages via `describe_memo` and forward/quote them with pointer URLs.
+      const sourceTag = sourceStream ? ` stream:${sourceStream.id}` : ""
+      const sourcesLine =
+        memo.sourceMessageIds.length > 0
+          ? `\n_Sources: ${memo.sourceMessageIds.map((id) => `msg:${id}`).join(", ")}_\n`
+          : ""
 
-      return `**${memo.title}** _(from ${location})_
+      return `**${memo.title}** _(memo:${memo.id} from ${location}${sourceTag})_
 
 ${memo.abstract}
-${keyPointsList}`
+${keyPointsList}${sourcesLine}`
     })
     .join("\n")
 
