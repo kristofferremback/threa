@@ -135,7 +135,7 @@ import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { createCorsOriginChecker } from "./lib/cors"
 import type { AuthorType } from "@threa/types"
-import { parseMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, parseMarkdown } from "@threa/prosemirror"
 import { normalizeMessage, toEmoji } from "./features/emoji"
 import { logger } from "./lib/logger"
 import { createAI } from "./lib/ai/ai"
@@ -310,6 +310,11 @@ export async function startServer(): Promise<ServerInstance> {
   }) => {
     const contentMarkdown = normalizeMessage(params.content)
     const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+    // Surface inline `[name](attachment:id)` pointers so step 1 access checks
+    // and step 6b `attachment_references` projection run. Without this, copy-
+    // paste resends and recipients without source-stream access can't resolve
+    // the download URL for an Ariadne resurfacing.
+    const attachmentIds = collectAttachmentReferenceIds(contentJson)
     return eventService.createMessage({
       workspaceId: params.workspaceId,
       streamId: params.streamId,
@@ -317,6 +322,7 @@ export async function startServer(): Promise<ServerInstance> {
       authorType: params.authorType,
       contentJson,
       contentMarkdown,
+      attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       sources: params.sources,
       sessionId: params.sessionId,
       clientMessageId: params.clientMessageId,
