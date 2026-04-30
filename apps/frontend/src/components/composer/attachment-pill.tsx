@@ -41,9 +41,9 @@ export interface AttachmentPillProps {
 }
 
 const STATUS_STYLES: Record<AttachmentPillStatus, string> = {
-  default: "border border-primary/30 bg-primary/10 text-primary",
-  pending: "border border-dashed border-muted-foreground/40 bg-transparent text-muted-foreground",
-  error: "border border-destructive bg-destructive/10 text-destructive",
+  default: "border border-primary/30 bg-card text-primary",
+  pending: "border border-dashed border-muted-foreground/40 bg-card text-muted-foreground",
+  error: "border border-destructive bg-card text-destructive",
 }
 
 const STATUS_REMOVE_HOVER: Record<AttachmentPillStatus, string> = {
