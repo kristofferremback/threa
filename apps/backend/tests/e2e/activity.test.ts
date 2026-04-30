@@ -69,25 +69,34 @@ async function markAllActivityAsRead(client: TestClient, workspaceId: string): P
 }
 
 /**
- * Polls until activity items appear for the given member, or times out.
- * The outbox handler processes events asynchronously, so we need to wait.
+ * Polls the activity feed until rows referencing every `messageId` are
+ * visible for `client`'s user, then returns the full feed.
+ *
+ * Activity rows are written asynchronously by the outbox handler, so a
+ * read immediately after `sendMessage` can miss them. Synchronizing on
+ * the freshly-minted message id (a unique ULID) — rather than "any row
+ * in the feed" — sidesteps pre-existing rows like the MEMBER_ADDED that
+ * `joinStream` writes for the joiner: those carry a stream-event id, a
+ * different namespace, so they can't spuriously satisfy the wait.
  */
-async function waitForActivity(
+async function waitForMessageActivity(
   client: TestClient,
   workspaceId: string,
-  opts?: { minCount?: number; timeoutMs?: number; unreadOnly?: boolean }
+  messageId: string | string[],
+  opts?: { timeoutMs?: number; unreadOnly?: boolean }
 ): Promise<ActivityItem[]> {
+  const ids = Array.isArray(messageId) ? messageId : [messageId]
   const timeout = opts?.timeoutMs ?? 5000
-  const minCount = opts?.minCount ?? 1
   const start = Date.now()
 
   while (Date.now() - start < timeout) {
     const activities = await getActivity(client, workspaceId, { unreadOnly: opts?.unreadOnly })
-    if (activities.length >= minCount) return activities
-    await new Promise((r) => setTimeout(r, 200))
+    const seen = new Set(activities.map((a) => a.messageId))
+    if (ids.every((id) => seen.has(id))) return activities
+    await new Promise((r) => setTimeout(r, 100))
   }
 
-  // One final attempt before throwing
+  // One final attempt before returning whatever we have
   return getActivity(client, workspaceId, { unreadOnly: opts?.unreadOnly })
 }
 
@@ -128,11 +137,10 @@ describe("Activity Feed E2E", () => {
     })
 
     test("should create activity when user is mentioned", async () => {
-      await sendMessage(ownerClient, workspaceId, channelId, `Hey @${aliceSlug} check this out`)
+      const sent = await sendMessage(ownerClient, workspaceId, channelId, `Hey @${aliceSlug} check this out`)
 
-      const activities = await waitForActivity(aliceClient, workspaceId)
+      const activities = await waitForMessageActivity(aliceClient, workspaceId, sent.id)
 
-      expect(activities.length).toBeGreaterThanOrEqual(1)
       const mention = activities.find((a) => a.activityType === "mention")
       expect(mention).toBeDefined()
       expect(mention!.streamId).toBe(channelId)
@@ -149,10 +157,13 @@ describe("Activity Feed E2E", () => {
       const ownerSlug = (ownerUser as unknown as { slug: string }).slug
 
       // Owner mentions themselves
-      await sendMessage(ownerClient, workspaceId, channelId, `Note to @${ownerSlug}: remember this`)
+      const sent = await sendMessage(ownerClient, workspaceId, channelId, `Note to @${ownerSlug}: remember this`)
 
-      // Wait a bit to ensure processing has time to complete
-      await new Promise((r) => setTimeout(r, 1500))
+      // Wait until the outbox has processed *this* message (the self-message
+      // row will appear); then we can deterministically assert no self-mention
+      // row was created. Hard-sleeping for "long enough" was the previous
+      // approach and is intrinsically race-prone.
+      await waitForMessageActivity(ownerClient, workspaceId, sent.id)
 
       // Owner should have no MENTION activity from self-mention. A self "message"
       // row exists so the owner can find their own message in the Me feed —
@@ -165,12 +176,9 @@ describe("Activity Feed E2E", () => {
     })
 
     test("creates a self-message activity that does not count as unread", async () => {
-      await sendMessage(ownerClient, workspaceId, channelId, `Just a routine update from me`)
+      const sent = await sendMessage(ownerClient, workspaceId, channelId, `Just a routine update from me`)
 
-      // Wait for processing
-      await waitForActivity(ownerClient, workspaceId, {
-        minCount: 1,
-      })
+      await waitForMessageActivity(ownerClient, workspaceId, sent.id)
 
       const all = await getActivity(ownerClient, workspaceId)
       const selfMessage = all.find(
@@ -187,9 +195,13 @@ describe("Activity Feed E2E", () => {
 
     test("should not create activity for mentions of non-members", async () => {
       // Mention a slug that doesn't exist as a member
-      await sendMessage(ownerClient, workspaceId, channelId, "Hey @nonexistent-user check this")
+      const sent = await sendMessage(ownerClient, workspaceId, channelId, "Hey @nonexistent-user check this")
 
-      await new Promise((r) => setTimeout(r, 1500))
+      // Synchronize on the owner's self-message row for `sent.id` rather than
+      // sleeping — once the outbox has emitted any activity for this message,
+      // we know it's done processing it, so any absence in alice's feed is
+      // real (not a false negative from racing the handler).
+      await waitForMessageActivity(ownerClient, workspaceId, sent.id)
 
       // No activity should be created for nonexistent-user
       const activities = await getActivity(aliceClient, workspaceId)
@@ -235,27 +247,30 @@ describe("Activity Feed E2E", () => {
     })
 
     test("should mark single activity as read", async () => {
-      await sendMessage(ownerClient, workspaceId, channelId, `@${bobSlug} first ping`)
+      const sent = await sendMessage(ownerClient, workspaceId, channelId, `@${bobSlug} first ping`)
 
-      const activities = await waitForActivity(bobClient, workspaceId, { unreadOnly: true })
-      expect(activities.length).toBeGreaterThanOrEqual(1)
+      const activities = await waitForMessageActivity(bobClient, workspaceId, sent.id, { unreadOnly: true })
+      const activity = activities.find((a) => a.messageId === sent.id && a.activityType === "mention")
+      expect(activity).toBeDefined()
+      expect(activity!.readAt).toBeNull()
 
-      const activity = activities[0]
-      expect(activity.readAt).toBeNull()
-
-      await markActivityAsRead(bobClient, workspaceId, activity.id)
+      await markActivityAsRead(bobClient, workspaceId, activity!.id)
 
       const updated = await getActivity(bobClient, workspaceId, { unreadOnly: true })
-      const stillUnread = updated.find((a) => a.id === activity.id)
+      const stillUnread = updated.find((a) => a.id === activity!.id)
       expect(stillUnread).toBeUndefined()
     })
 
     test("should mark all activity as read", async () => {
       // Create multiple mentions
-      await sendMessage(ownerClient, workspaceId, channelId, `@${bobSlug} second ping`)
-      await sendMessage(ownerClient, workspaceId, channelId, `@${bobSlug} third ping`)
+      const second = await sendMessage(ownerClient, workspaceId, channelId, `@${bobSlug} second ping`)
+      const third = await sendMessage(ownerClient, workspaceId, channelId, `@${bobSlug} third ping`)
 
-      await waitForActivity(bobClient, workspaceId, { minCount: 2, unreadOnly: true })
+      // Wait until both mentions have been processed by the outbox so the
+      // markAll → unread-empty contract is observable. Synchronizing on both
+      // message ids guarantees no late-arriving row pollutes the unread
+      // assertion below.
+      await waitForMessageActivity(bobClient, workspaceId, [second.id, third.id], { unreadOnly: true })
 
       await markAllActivityAsRead(bobClient, workspaceId)
 
@@ -264,9 +279,9 @@ describe("Activity Feed E2E", () => {
     })
 
     test("should clear mention badges when stream is read", async () => {
-      await sendMessage(ownerClient, workspaceId, channelId, `@${bobSlug} badge test ping`)
+      const sent = await sendMessage(ownerClient, workspaceId, channelId, `@${bobSlug} badge test ping`)
 
-      await waitForActivity(bobClient, workspaceId, { minCount: 1, unreadOnly: true })
+      await waitForMessageActivity(bobClient, workspaceId, sent.id, { unreadOnly: true })
 
       // Read the stream (mark as read)
       const streamBootstrap = await bobClient.get<{
@@ -308,10 +323,11 @@ describe("Activity Feed E2E", () => {
       await joinStream(charlieClient, workspace.id, channel.id)
 
       // Send a mention
-      await sendMessage(ownerClient, workspace.id, channel.id, `@${charlieSlug} bootstrap test`)
+      const sent = await sendMessage(ownerClient, workspace.id, channel.id, `@${charlieSlug} bootstrap test`)
 
-      // Wait for the activity to be processed
-      await waitForActivity(charlieClient, workspace.id)
+      // Wait for this specific message's activity to land — using the
+      // message id avoids racing the joinStream MEMBER_ADDED row.
+      await waitForMessageActivity(charlieClient, workspace.id, sent.id)
 
       // Check bootstrap includes mention data
       const bootstrap = await charlieClient.get<{
@@ -348,9 +364,14 @@ describe("Activity Feed E2E", () => {
       await joinStream(dupeClient, workspace.id, channel.id)
 
       // Send message with the same @mention twice
-      await sendMessage(ownerClient, workspace.id, channel.id, `Hey @${dupeSlug} and again @${dupeSlug} look here`)
+      const sent = await sendMessage(
+        ownerClient,
+        workspace.id,
+        channel.id,
+        `Hey @${dupeSlug} and again @${dupeSlug} look here`
+      )
 
-      await waitForActivity(dupeClient, workspace.id)
+      await waitForMessageActivity(dupeClient, workspace.id, sent.id)
 
       const activities = await getActivity(dupeClient, workspace.id)
 
