@@ -1,9 +1,26 @@
 import { useState, useMemo, useCallback, useEffect } from "react"
 import { useNavigate, useParams, useLocation } from "react-router-dom"
-import { FileText, Hash, MessageSquare, Bell, Search, Plus, Link as LinkIcon, Image, Paperclip } from "lucide-react"
+import {
+  FileText,
+  Hash,
+  MessageSquare,
+  Bell,
+  Search,
+  Plus,
+  Link as LinkIcon,
+  Image,
+  Paperclip,
+  Clock,
+  ArrowDownAZ,
+} from "lucide-react"
 import { StreamTypes, getAvatarUrl } from "@threa/types"
-import type { Stream, StreamType } from "@threa/types"
-import { useWorkspaceStreams, useWorkspaceDmPeers, useWorkspaceUsers } from "@/stores/workspace-store"
+import type { StreamType } from "@threa/types"
+import {
+  useWorkspaceStreams,
+  useWorkspaceDmPeers,
+  useWorkspaceUsers,
+  useWorkspaceUnreadState,
+} from "@/stores/workspace-store"
 import {
   useShareTarget,
   clearShareTargetCache,
@@ -13,8 +30,17 @@ import {
 } from "@/hooks/use-share-target"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { Input } from "@/components/ui/input"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { ItemList } from "@/components/quick-switcher/item-list"
 import type { QuickSwitcherItem } from "@/components/quick-switcher/types"
+import {
+  compareStreamEntries,
+  readStoredStreamSortMode,
+  scoreStreamMatch,
+  writeStoredStreamSortMode,
+  type StreamSortMode,
+} from "@/lib/stream-sort"
+import { calculateUrgency } from "@/components/layout/sidebar/utils"
 
 const STREAM_ICONS: Record<StreamType, React.ComponentType<{ className?: string }>> = {
   [StreamTypes.SCRATCHPAD]: FileText,
@@ -43,10 +69,19 @@ export function SharePickerPage() {
   const idbStreams = useWorkspaceStreams(workspaceId!)
   const idbDmPeers = useWorkspaceDmPeers(workspaceId!)
   const idbUsers = useWorkspaceUsers(workspaceId!)
+  const unreadState = useWorkspaceUnreadState(workspaceId!)
+  const unreadCounts = unreadState?.unreadCounts ?? {}
+  const mentionCounts = unreadState?.mentionCounts ?? {}
+  const mutedStreamIds = useMemo(() => new Set(unreadState?.mutedStreamIds ?? []), [unreadState?.mutedStreamIds])
   const { createShareDraft, saveShareContent } = useShareTarget()
 
   const [query, setQuery] = useState("")
+  const [sortMode, setSortMode] = useState<StreamSortMode>(() => readStoredStreamSortMode())
   const [selectedIndex, setSelectedIndex] = useState(0)
+
+  useEffect(() => {
+    writeStoredStreamSortMode(sortMode)
+  }, [sortMode])
   // null = not yet loaded, [] = loaded but empty/unavailable
   const [files, setFiles] = useState<File[] | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -162,26 +197,19 @@ export function SharePickerPage() {
         (s.type === StreamTypes.SCRATCHPAD || s.type === StreamTypes.CHANNEL || s.type === StreamTypes.DM)
     )
 
-    // Score and sort
-    const scoreStream = (stream: Stream): number => {
-      if (!query) return 0
-      const name = (getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")).toLowerCase()
-      if (name === lowerQuery) return 0
-      if (name.startsWith(lowerQuery)) return 1
-      if (name.includes(lowerQuery)) return 2
-      return Infinity
-    }
-
+    const isSearching = lowerQuery.length > 0
     const streamItems = filteredStreams
-      .map((stream) => ({ stream, score: scoreStream(stream) }))
-      .filter(({ score }) => score !== Infinity)
-      .sort((a, b) => {
-        if (a.score !== b.score) return a.score - b.score
-        const aName = getStreamName(a.stream) ?? streamFallbackLabel(a.stream.type, "generic")
-        const bName = getStreamName(b.stream) ?? streamFallbackLabel(b.stream.type, "generic")
-        return aName.localeCompare(bName)
+      .map((stream) => {
+        const score = scoreStreamMatch(stream, lowerQuery)
+        const unreadCount = unreadCounts[stream.id] ?? 0
+        const mentionCount = mentionCounts[stream.id] ?? 0
+        const isMuted = mutedStreamIds.has(stream.id)
+        const urgency = calculateUrgency(stream, unreadCount, mentionCount, isMuted)
+        return { stream, score, urgency, unreadCount, mentionCount }
       })
-      .map(({ stream }): QuickSwitcherItem => {
+      .filter(({ score }) => score !== Infinity)
+      .sort((a, b) => compareStreamEntries(a, b, { isSearching, mode: sortMode }))
+      .map(({ stream, urgency, unreadCount, mentionCount }): QuickSwitcherItem => {
         let avatarUrl: string | undefined
         if (stream.type === StreamTypes.DM) {
           const peerUserId = dmPeerByStreamId.get(stream.id)
@@ -197,12 +225,27 @@ export function SharePickerPage() {
           description: typeLabel,
           icon: STREAM_ICONS[stream.type],
           avatarUrl,
+          urgency,
+          unreadCount,
+          mentionCount,
           onSelect: () => handleSelectStream(stream.id),
         }
       })
 
     return [newScratchpadItem, ...streamItems]
-  }, [streams, dmPeers, users, query, workspaceId, handleNewScratchpad, handleSelectStream])
+  }, [
+    streams,
+    dmPeers,
+    users,
+    query,
+    sortMode,
+    workspaceId,
+    handleNewScratchpad,
+    handleSelectStream,
+    unreadCounts,
+    mentionCounts,
+    mutedStreamIds,
+  ])
 
   const isLoading = filesLoading || submitting
 
@@ -235,8 +278,8 @@ export function SharePickerPage() {
         </div>
 
         {/* Search */}
-        <div className="px-4 pb-3">
-          <div className="relative">
+        <div className="px-4 pb-3 flex items-center gap-2">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
@@ -259,6 +302,23 @@ export function SharePickerPage() {
               }}
             />
           </div>
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={sortMode}
+            onValueChange={(value) => {
+              if (value === "recency" || value === "alphabetical") setSortMode(value)
+            }}
+            aria-label="Sort streams"
+            className="shrink-0"
+          >
+            <ToggleGroupItem value="recency" aria-label="Sort by recency" title="Recent activity">
+              <Clock className="h-4 w-4" aria-hidden="true" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="alphabetical" aria-label="Sort alphabetically" title="A–Z">
+              <ArrowDownAZ className="h-4 w-4" aria-hidden="true" />
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
 
         {/* Stream list */}

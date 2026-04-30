@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
+import { Clock, ArrowDownAZ } from "lucide-react"
 import { StreamTypes, Visibilities, type StreamType } from "@threa/types"
 import {
   ResponsiveDialog,
@@ -9,8 +10,17 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useWorkspaceStreams, useWorkspaceStreamMemberships, useWorkspaceUnreadState } from "@/stores/workspace-store"
 import { getStreamName, streamFallbackLabel, STREAM_ICONS } from "@/lib/streams"
+import {
+  compareStreamEntries,
+  readStoredStreamSortMode,
+  scoreStreamMatch,
+  writeStoredStreamSortMode,
+  type StreamSortMode,
+} from "@/lib/stream-sort"
+import { calculateUrgency } from "@/components/layout/sidebar/utils"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
 import { navigateAfterShareHandoff } from "@/lib/share-navigation"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -40,7 +50,10 @@ interface ShareMessageModalProps {
  * Renders through `ResponsiveDialog`, which routes to a centered Dialog
  * on desktop and a snap-pointed Drawer on mobile — same primitive the
  * quick-switcher (a sibling stream picker) uses, so the affordance stays
- * consistent.
+ * consistent. Sort order is shared with the quick-switcher via
+ * `compareStreamEntries`: defaults to recency (urgency → activity time →
+ * alphabetical) so the streams the user is most likely to share to bubble
+ * up first, with an alphabetical toggle persisted to localStorage.
  *
  * Privacy boundaries are enforced at send time: the backend rejects with
  * `SHARE_PRIVACY_CONFIRMATION_REQUIRED` and the queue surfaces a
@@ -48,13 +61,22 @@ interface ShareMessageModalProps {
  */
 export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: ShareMessageModalProps) {
   const [search, setSearch] = useState("")
+  const [sortMode, setSortMode] = useState<StreamSortMode>(() => readStoredStreamSortMode())
   const navigate = useNavigate()
   const location = useLocation()
   const streams = useWorkspaceStreams(workspaceId)
   const memberships = useWorkspaceStreamMemberships(workspaceId)
+  const unreadState = useWorkspaceUnreadState(workspaceId)
+  const unreadCounts = unreadState?.unreadCounts ?? {}
+  const mentionCounts = unreadState?.mentionCounts ?? {}
+  const mutedStreamIds = useMemo(() => new Set(unreadState?.mutedStreamIds ?? []), [unreadState?.mutedStreamIds])
   // The Drawer/Dialog split is owned by ResponsiveDialog; isMobile here only
   // governs the post-select navigation contract (mobile strips `?panel=…`).
   const isMobile = useIsMobile()
+
+  useEffect(() => {
+    writeStoredStreamSortMode(sortMode)
+  }, [sortMode])
 
   const memberStreamIds = useMemo(() => {
     const ids = new Set<string>()
@@ -64,35 +86,42 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
 
   const streamsByGroup = useMemo(() => {
     const lower = search.toLowerCase()
+    const isSearching = lower.length > 0
     const matchable = streams.filter((s) => {
       if (s.archivedAt) return false
       if (s.rootStreamId) return false
       if (s.type === StreamTypes.THREAD || s.type === StreamTypes.SYSTEM) return false
       const accessible = s.visibility === Visibilities.PUBLIC || memberStreamIds.has(s.id)
-      if (!accessible) return false
-      if (!lower) return true
-      const name = (getStreamName(s) ?? streamFallbackLabel(s.type, "generic")).toLowerCase()
-      return name.includes(lower)
+      return accessible
     })
-    const byType = new Map<StreamType, typeof matchable>()
-    for (const s of matchable) {
-      const list = byType.get(s.type) ?? []
-      list.push(s)
-      byType.set(s.type, list)
+
+    const enriched = matchable
+      .map((stream) => {
+        const score = scoreStreamMatch(stream, lower)
+        const unreadCount = unreadCounts[stream.id] ?? 0
+        const mentionCount = mentionCounts[stream.id] ?? 0
+        const isMuted = mutedStreamIds.has(stream.id)
+        const urgency = calculateUrgency(stream, unreadCount, mentionCount, isMuted)
+        return { stream, score, urgency }
+      })
+      .filter(({ score }) => score !== Infinity)
+
+    const byType = new Map<StreamType, typeof enriched>()
+    for (const entry of enriched) {
+      const list = byType.get(entry.stream.type) ?? []
+      list.push(entry)
+      byType.set(entry.stream.type, list)
     }
     for (const [, list] of byType) {
-      list.sort((a, b) => {
-        const an = getStreamName(a) ?? streamFallbackLabel(a.type, "generic")
-        const bn = getStreamName(b) ?? streamFallbackLabel(b.type, "generic")
-        return an.localeCompare(bn)
-      })
+      list.sort((a, b) => compareStreamEntries(a, b, { isSearching, mode: sortMode }))
     }
     return byType
-  }, [streams, memberStreamIds, search])
+  }, [streams, memberStreamIds, search, sortMode, unreadCounts, mentionCounts, mutedStreamIds])
 
   // Wrap the parent's open-change so search resets on every close path
   // (Esc, backdrop, X, programmatic). Without this, dismissing without
   // selecting leaves the previous query in place when the modal reopens.
+  // Sort mode intentionally persists across opens — it's a user preference.
   const handleOpenChange = (next: boolean) => {
     if (!next) setSearch("")
     onOpenChange(next)
@@ -118,10 +147,31 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
         drawerClassName="flex flex-col"
       >
         <ResponsiveDialogHeader className="border-b px-4 py-3">
-          <ResponsiveDialogTitle className="text-base">Share message</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Pick a stream to insert this share into the composer.
-          </ResponsiveDialogDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <ResponsiveDialogTitle className="text-base">Share message</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription>
+                Pick a stream to insert this share into the composer.
+              </ResponsiveDialogDescription>
+            </div>
+            <ToggleGroup
+              type="single"
+              size="sm"
+              value={sortMode}
+              onValueChange={(value) => {
+                if (value === "recency" || value === "alphabetical") setSortMode(value)
+              }}
+              aria-label="Sort streams"
+              className="shrink-0"
+            >
+              <ToggleGroupItem value="recency" aria-label="Sort by recency" title="Recent activity">
+                <Clock className="h-4 w-4" aria-hidden="true" />
+              </ToggleGroupItem>
+              <ToggleGroupItem value="alphabetical" aria-label="Sort alphabetically" title="A–Z">
+                <ArrowDownAZ className="h-4 w-4" aria-hidden="true" />
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
         </ResponsiveDialogHeader>
         <Command shouldFilter={false} className="rounded-none">
           <CommandInput placeholder="Search streams…" value={search} onValueChange={setSearch} className="border-b" />
@@ -132,7 +182,7 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
               if (!list || list.length === 0) return null
               return (
                 <CommandGroup key={group.id} heading={group.heading}>
-                  {list.map((stream) => {
+                  {list.map(({ stream }) => {
                     const Icon = STREAM_ICONS[stream.type]
                     const label = getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")
                     return (
