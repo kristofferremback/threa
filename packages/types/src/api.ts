@@ -737,3 +737,74 @@ export interface SavedReminderFiredPayload {
   streamId: string
   saved: SavedMessageView
 }
+
+// ============================================================================
+// Scheduled Messages API
+// ============================================================================
+
+export interface ScheduledMessageView {
+  id: string
+  workspaceId: string
+  authorId: string
+  streamId: string | null
+  parentMessageId: string | null
+  parentStreamId: string | null
+  contentJson: JSONContent
+  contentMarkdown: string
+  attachmentIds: string[]
+  scheduledAt: string
+  sentAt: string | null
+  cancelledAt: string | null
+  createdAt: string
+  updatedAt: string
+  streamDisplayName: string | null
+}
+
+export interface ScheduleMessageInput {
+  streamId: string | null
+  parentMessageId: string | null
+  parentStreamId: string | null
+  contentJson: JSONContent
+  contentMarkdown: string
+  attachmentIds?: string[]
+  scheduledAt: string
+}
+
+export interface UpdateScheduledMessageInput {
+  contentJson?: JSONContent
+  contentMarkdown?: string
+  attachmentIds?: string[]
+  scheduledAt?: string
+}
+
+export interface ScheduledMessageListResponse {
+  scheduled: ScheduledMessageView[]
+}
+
+/** Wire payload broadcast on `scheduled_message:created` socket events. */
+export interface ScheduledMessageCreatedPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+/** Wire payload broadcast on `scheduled_message:updated` socket events. */
+export interface ScheduledMessageUpdatedPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+/** Wire payload broadcast on `scheduled_message:cancelled` socket events. */
+export interface ScheduledMessageCancelledPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduledId: string
+}
+
+/** Wire payload broadcast on `scheduled_message:fired` socket events. */
+export interface ScheduledMessageFiredPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduledId: string
+}

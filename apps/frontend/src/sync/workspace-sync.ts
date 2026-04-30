@@ -19,6 +19,10 @@ import type {
   SavedUpsertedPayload,
   SavedDeletedPayload,
   SavedReminderFiredPayload,
+  ScheduledMessageCreatedPayload,
+  ScheduledMessageUpdatedPayload,
+  ScheduledMessageCancelledPayload,
+  ScheduledMessageFiredPayload,
 } from "@threa/types"
 import { persistSavedRows, removeSavedRow, savedKeys } from "@/hooks/use-saved"
 import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
@@ -1301,6 +1305,43 @@ export function registerWorkspaceSocketHandlers(
     queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "saved") })
   }
 
+  // Scheduled messages — write-through to IDB and invalidate TanStack caches.
+  const persistScheduledRow = async (_workspaceId: string, scheduled: any) => {
+    const scheduledAtMs = Date.parse(scheduled.scheduledAt)
+    await db.scheduledMessages.put({
+      ...scheduled,
+      _status: "synced",
+      _scheduledAtMs: scheduledAtMs,
+      _cachedAt: Date.now(),
+      contentJson:
+        typeof scheduled.contentJson === "string" ? JSON.parse(scheduled.contentJson) : scheduled.contentJson,
+    })
+  }
+
+  const removeScheduledRow = async (scheduledId: string) => {
+    await db.scheduledMessages.delete(scheduledId)
+  }
+
+  const handleScheduledMessageCreated = (payload: ScheduledMessageCreatedPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void persistScheduledRow(workspaceId, payload.scheduled)
+  }
+
+  const handleScheduledMessageUpdated = (payload: ScheduledMessageUpdatedPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void persistScheduledRow(workspaceId, payload.scheduled)
+  }
+
+  const handleScheduledMessageCancelled = (payload: ScheduledMessageCancelledPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void removeScheduledRow(payload.scheduledId)
+  }
+
+  const handleScheduledMessageFired = (payload: ScheduledMessageFiredPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void removeScheduledRow(payload.scheduledId)
+  }
+
   // Register all handlers
   socket.on("stream:created", handleStreamCreated)
   socket.on("stream:updated", handleStreamUpdated)
@@ -1322,6 +1363,10 @@ export function registerWorkspaceSocketHandlers(
   socket.on("saved:upserted", handleSavedUpserted)
   socket.on("saved:deleted", handleSavedDeleted)
   socket.on("saved_reminder:fired", handleSavedReminderFired)
+  socket.on("scheduled_message:created", handleScheduledMessageCreated)
+  socket.on("scheduled_message:updated", handleScheduledMessageUpdated)
+  socket.on("scheduled_message:cancelled", handleScheduledMessageCancelled)
+  socket.on("scheduled_message:fired", handleScheduledMessageFired)
   socket.on("attachment:transcoded", handleAttachmentTranscoded)
 
   return () => {
@@ -1348,6 +1393,10 @@ export function registerWorkspaceSocketHandlers(
     socket.off("saved:upserted", handleSavedUpserted)
     socket.off("saved:deleted", handleSavedDeleted)
     socket.off("saved_reminder:fired", handleSavedReminderFired)
+    socket.off("scheduled_message:created", handleScheduledMessageCreated)
+    socket.off("scheduled_message:updated", handleScheduledMessageUpdated)
+    socket.off("scheduled_message:cancelled", handleScheduledMessageCancelled)
+    socket.off("scheduled_message:fired", handleScheduledMessageFired)
     socket.off("attachment:transcoded", handleAttachmentTranscoded)
   }
 }

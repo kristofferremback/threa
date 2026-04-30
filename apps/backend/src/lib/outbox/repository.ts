@@ -10,6 +10,7 @@ import type {
   LastMessagePreview,
   Bot as WireBot,
   SavedMessageView,
+  ScheduledMessageView,
 } from "@threa/types"
 
 /**
@@ -59,6 +60,10 @@ export type OutboxEventType =
   | "saved:upserted"
   | "saved:deleted"
   | "saved_reminder:fired"
+  | "scheduled_message:created"
+  | "scheduled_message:updated"
+  | "scheduled_message:cancelled"
+  | "scheduled_message:fired"
   | "bot:created"
   | "bot:updated"
   | "link_preview:ready"
@@ -403,6 +408,27 @@ export interface SavedReminderFiredOutboxPayload extends WorkspaceScopedPayload 
   saved: SavedMessageView
 }
 
+// Scheduled message event payloads
+export interface ScheduledMessageCreatedOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+export interface ScheduledMessageUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+export interface ScheduledMessageCancelledOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  scheduledId: string
+}
+
+export interface ScheduledMessageFiredOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  scheduledId: string
+}
+
 // Bot event payloads
 export interface BotCreatedOutboxPayload extends WorkspaceScopedPayload {
   bot: WireBot
@@ -479,6 +505,10 @@ export interface OutboxEventPayloadMap {
   "saved:upserted": SavedUpsertedOutboxPayload
   "saved:deleted": SavedDeletedOutboxPayload
   "saved_reminder:fired": SavedReminderFiredOutboxPayload
+  "scheduled_message:created": ScheduledMessageCreatedOutboxPayload
+  "scheduled_message:updated": ScheduledMessageUpdatedOutboxPayload
+  "scheduled_message:cancelled": ScheduledMessageCancelledOutboxPayload
+  "scheduled_message:fired": ScheduledMessageFiredOutboxPayload
   "bot:created": BotCreatedOutboxPayload
   "bot:updated": BotUpdatedOutboxPayload
   "link_preview:ready": LinkPreviewReadyOutboxPayload
@@ -570,13 +600,25 @@ export function isAuthorScopedEvent(event: OutboxEvent): event is OutboxEvent<Au
 }
 
 /** Events that are scoped to a specific target user (delivered to that user's sockets) */
-export type UserScopedEventType = "activity:created" | "saved:upserted" | "saved:deleted" | "saved_reminder:fired"
+export type UserScopedEventType =
+  | "activity:created"
+  | "saved:upserted"
+  | "saved:deleted"
+  | "saved_reminder:fired"
+  | "scheduled_message:created"
+  | "scheduled_message:updated"
+  | "scheduled_message:cancelled"
+  | "scheduled_message:fired"
 
 const USER_SCOPED_EVENTS: UserScopedEventType[] = [
   "activity:created",
   "saved:upserted",
   "saved:deleted",
   "saved_reminder:fired",
+  "scheduled_message:created",
+  "scheduled_message:updated",
+  "scheduled_message:cancelled",
+  "scheduled_message:fired",
 ]
 
 /**
