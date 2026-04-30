@@ -31,6 +31,7 @@ export {
   type QuoteHref,
   type SharedMessageHref,
 } from "./pointer-urls"
+export { collectAttachmentReferenceIds } from "./extractors"
 
 // Re-export types for convenience
 export type { JSONContent, JSONContentMark, ThreaDocument } from "@threa/types"

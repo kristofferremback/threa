@@ -124,6 +124,21 @@ export interface CreateMessageParams {
    * crosses a privacy boundary before consulting this flag.
    */
   confirmedPrivacyWarning?: boolean
+  /**
+   * Pre-computed access scope used to authorize inline-attachment
+   * references and cross-stream share/quote pointers. When omitted, the
+   * gate falls back to membership lookups keyed by `authorId`, which is
+   * correct for user-authored messages.
+   *
+   * Persona-authored messages MUST set this to the agent's
+   * `accessibleStreamIds` from `AgentAccessSpec` — *not* the invoking
+   * user's full reach. The spec is scope-restricted: from a public channel
+   * the agent only sees public streams, from a private channel only that
+   * channel + public, from a DM only the participants' intersection, etc.
+   * Using the user's full access would let agents resurface attachments
+   * the user never could have surfaced from this scope.
+   */
+  accessibleStreamIds?: string[]
 }
 
 export interface EditMessageParams {
@@ -134,8 +149,21 @@ export interface EditMessageParams {
   contentMarkdown: string
   actorId: string
   actorType?: AuthorType
+  /**
+   * Inline-attachment ids referenced from the new content. Required to keep
+   * `attachment_references` in sync with `contentJson` (INV-7) — without this,
+   * an edit that adds or removes an `attachment:` link leaves the projection
+   * stale and download authorization stops matching the persisted body.
+   * Callers derive this from `contentJson` via
+   * `collectAttachmentReferenceIds`. Fresh uploads on edit are NOT supported
+   * — pass references only (`messageId !== null`); a fresh-upload id will
+   * fail the validation here loudly.
+   */
+  attachmentIds?: string[]
   /** Same semantics as `CreateMessageParams.confirmedPrivacyWarning`. */
   confirmedPrivacyWarning?: boolean
+  /** Same semantics as `CreateMessageParams.accessibleStreamIds`. */
+  accessibleStreamIds?: string[]
 }
 
 export interface DeleteMessageParams {
@@ -370,12 +398,39 @@ export class EventService {
           // to read it via the same chain `getDownloadUrl` honours so the
           // two paths can never disagree. Direct stream access first; the
           // shared helper covers the share-grant + inline-reference fallback.
+          //
+          // Two flavors:
+          // 1. User authors (no `accessibleStreamIds` provided): membership
+          //    lookups keyed by `authorId`, including the share-grant fallback.
+          // 2. Persona authors (`accessibleStreamIds` provided): mirrors
+          //    `AttachmentService.getAccessible` exactly — direct set
+          //    membership, then reference-projection intersection.
+          //    `accessibleStreamIds` comes from `AgentAccessSpec` and is
+          //    scope-restricted (from a public channel only public streams,
+          //    from a private channel only that channel + public, etc.) —
+          //    NOT the invoking user's full reach. Bypassing it with a
+          //    user-id check would let agents resurface attachments the
+          //    user couldn't surface from this invocation point.
           let accessible = false
-          if (a.streamId) {
-            accessible = (await checkStreamAccess(client, a.streamId, params.workspaceId, params.authorId)) !== null
-          }
-          if (!accessible) {
-            accessible = await isAttachmentReadableViaShareOrReference(client, a, params.workspaceId, params.authorId)
+          if (params.accessibleStreamIds) {
+            const accessibleSet = new Set(params.accessibleStreamIds)
+            if (a.streamId && accessibleSet.has(a.streamId)) {
+              accessible = true
+            } else {
+              const refStreamIds = await AttachmentReferenceRepository.findReferencingStreamIds(
+                client,
+                params.workspaceId,
+                a.id
+              )
+              accessible = refStreamIds.some((streamId) => accessibleSet.has(streamId))
+            }
+          } else {
+            if (a.streamId) {
+              accessible = (await checkStreamAccess(client, a.streamId, params.workspaceId, params.authorId)) !== null
+            }
+            if (!accessible) {
+              accessible = await isAttachmentReadableViaShareOrReference(client, a, params.workspaceId, params.authorId)
+            }
           }
           if (!accessible) {
             throw new Error("Invalid attachment IDs: cannot reference an attachment without read access")
@@ -492,6 +547,7 @@ export class EventService {
         targetStreamId: params.streamId,
         shareMessageId: msgId,
         sharerId: params.authorId,
+        accessibleStreamIds: params.accessibleStreamIds,
         contentJson: params.contentJson,
         findStream: (db, id) => StreamRepository.findById(db, id),
         resolveEffectiveStream: resolveEffectiveStreamAdapter,
@@ -593,6 +649,7 @@ export class EventService {
           targetStreamId: params.streamId,
           shareMessageId: params.messageId,
           sharerId: params.actorId,
+          accessibleStreamIds: params.accessibleStreamIds,
           contentJson: params.contentJson,
           findStream: (db, id) => StreamRepository.findById(db, id),
           resolveEffectiveStream: resolveEffectiveStreamAdapter,
@@ -603,6 +660,30 @@ export class EventService {
             (await checkStreamAccess(db, streamId, workspaceId, userId)) !== null,
           confirmedPrivacyWarning: params.confirmedPrivacyWarning,
         })
+
+        // 4b. Refresh `attachment_references` projection to match the new
+        //     contentJson (INV-7). Without this, an edit that adds or removes
+        //     an `attachment:` link leaves stale rows behind and download
+        //     authorization stops matching the persisted body. Reference-only
+        //     — fresh uploads aren't supported on edit (a zero-`messageId`
+        //     attachment id will fail the access validation here loudly).
+        //     Full delete-then-insert per edit; the projection is small and
+        //     this lets the helper share its access-check semantics with the
+        //     create path verbatim.
+        const validatedReferenceIds = await this._validateEditAttachmentReferences(client, params)
+        await AttachmentReferenceRepository.deleteByMessageId(client, params.workspaceId, params.messageId)
+        if (validatedReferenceIds.length > 0) {
+          await AttachmentReferenceRepository.insertMany(
+            client,
+            validatedReferenceIds.map((aid) => ({
+              id: attachmentReferenceId(),
+              workspaceId: params.workspaceId,
+              attachmentId: aid,
+              messageId: params.messageId,
+              streamId: params.streamId,
+            }))
+          )
+        }
 
         // 5. Publish to outbox
         await OutboxRepository.insert(client, "message:edited", {
@@ -623,6 +704,73 @@ export class EventService {
 
       return message
     })
+  }
+
+  /**
+   * Validate edit-time inline attachment references against the same gate
+   * `_createMessageTxn` step 1 runs (workspace + safety + access). Only the
+   * "reference" branch is supported on edit — fresh uploads (`messageId ===
+   * null`) throw, since an existing message can't claim ownership of a fresh
+   * upload (that's a create-time operation). Returns the validated id list,
+   * which the caller passes straight into the `attachment_references` insert.
+   *
+   * Mirrors the create-step-1 access split:
+   * - `accessibleStreamIds` set (persona path) → set-membership against the
+   *   agent's `AgentAccessSpec` reach, plus reference-projection fallback.
+   * - Otherwise (user path) → `checkStreamAccess(... actorId)` plus
+   *   `isAttachmentReadableViaShareOrReference` for share-grant fallback.
+   */
+  private async _validateEditAttachmentReferences(client: PoolClient, params: EditMessageParams): Promise<string[]> {
+    if (!params.attachmentIds || params.attachmentIds.length === 0) return []
+
+    const attachments = await AttachmentRepository.findByIds(client, params.attachmentIds)
+    if (attachments.length !== params.attachmentIds.length) {
+      throw new Error("Invalid attachment IDs: not all attachments were found")
+    }
+
+    const validated: string[] = []
+    for (const a of attachments) {
+      if (a.workspaceId !== params.workspaceId) {
+        throw new Error("Invalid attachment IDs: must belong to this workspace")
+      }
+      if (a.safetyStatus !== AttachmentSafetyStatuses.CLEAN) {
+        throw new Error("Invalid attachment IDs: must be malware-scan clean")
+      }
+      if (a.messageId === null) {
+        // Fresh uploads aren't supported on edit — they'd need `attachToMessage`
+        // claiming the row, which would orphan any other message that already
+        // points at it (none today, but the invariant is worth preserving).
+        throw new Error("Invalid attachment IDs: edits cannot attach fresh uploads — reference an existing attachment")
+      }
+
+      let accessible = false
+      if (params.accessibleStreamIds) {
+        const accessibleSet = new Set(params.accessibleStreamIds)
+        if (a.streamId && accessibleSet.has(a.streamId)) {
+          accessible = true
+        } else {
+          const refStreamIds = await AttachmentReferenceRepository.findReferencingStreamIds(
+            client,
+            params.workspaceId,
+            a.id
+          )
+          accessible = refStreamIds.some((streamId) => accessibleSet.has(streamId))
+        }
+      } else {
+        if (a.streamId) {
+          accessible = (await checkStreamAccess(client, a.streamId, params.workspaceId, params.actorId)) !== null
+        }
+        if (!accessible) {
+          accessible = await isAttachmentReadableViaShareOrReference(client, a, params.workspaceId, params.actorId)
+        }
+      }
+      if (!accessible) {
+        throw new Error("Invalid attachment IDs: cannot reference an attachment without read access")
+      }
+      validated.push(a.id)
+    }
+
+    return validated
   }
 
   async deleteMessage(params: DeleteMessageParams): Promise<Message | null> {

@@ -68,7 +68,25 @@ export interface ValidateAndRecordSharesParams {
   workspaceId: string
   targetStreamId: string
   shareMessageId: string
+  /**
+   * Author of the new share-carrying message. Stored as `created_by` on each
+   * `shared_messages` row — used purely for attribution / audit.
+   */
   sharerId: string
+  /**
+   * Pre-computed access scope. When set, source-stream read-access is decided
+   * by set membership against this list and `canReadStream` is **not** called.
+   * Required for persona-authored messages — personas have no `stream_members`
+   * rows, so a membership lookup keyed by the persona id always denies. Must
+   * be the agent's `accessibleStreamIds` from `AgentAccessSpec`, not the
+   * invoking user's full reach (the spec is scope-restricted by invocation
+   * point, e.g. a public channel only sees public streams).
+   *
+   * When unset, falls back to `canReadStream(..., sharerId)` — the user-author
+   * path. The two paths cannot mix: an explicit set-based override is the
+   * only way to reach the agent semantics.
+   */
+  accessibleStreamIds?: string[]
   contentJson: JSONContent
   /**
    * Stream loader injected by the caller. Avoids importing StreamRepository
@@ -203,9 +221,18 @@ export const ShareService = {
       // Prevents enumeration of message ids in streams the sharer can't
       // read. The target-exposure check below is orthogonal — it defends
       // target viewers; this one defends the source stream.
+      //
+      // For persona-authored messages, `accessibleStreamIds` is provided by
+      // the agent layer (= scope-restricted `AgentAccessSpec` resolution)
+      // and the check becomes pure set membership. User-authored messages
+      // fall back to the membership-keyed `canReadStream` callback.
       let canRead = canReadCache.get(ref.sourceStreamId)
       if (canRead === undefined) {
-        canRead = await params.canReadStream(params.client, params.workspaceId, ref.sourceStreamId, params.sharerId)
+        if (params.accessibleStreamIds) {
+          canRead = params.accessibleStreamIds.includes(ref.sourceStreamId)
+        } else {
+          canRead = await params.canReadStream(params.client, params.workspaceId, ref.sourceStreamId, params.sharerId)
+        }
         canReadCache.set(ref.sourceStreamId, canRead)
       }
       if (!canRead) {

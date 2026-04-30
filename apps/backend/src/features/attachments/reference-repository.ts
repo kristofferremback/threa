@@ -68,6 +68,22 @@ export const AttachmentReferenceRepository = {
     return result.rowCount ?? 0
   },
 
+  /**
+   * Wipe every reference row owned by a single message. Used by the edit
+   * path so it can rewrite the projection from the new contentJson without
+   * leaving stale rows behind when the author removed (or swapped) an
+   * `attachment:` link. Workspace-scoped (INV-8) so a stranger's message id
+   * can never collateral-delete another workspace's rows.
+   */
+  async deleteByMessageId(client: Querier, workspaceId: string, messageId: string): Promise<number> {
+    const result = await client.query(sql`
+      DELETE FROM attachment_references
+      WHERE workspace_id = ${workspaceId}
+        AND message_id = ${messageId}
+    `)
+    return result.rowCount ?? 0
+  },
+
   async findByAttachmentId(db: Querier, workspaceId: string, attachmentId: string): Promise<AttachmentReference[]> {
     const result = await db.query<AttachmentReferenceRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)}

@@ -24,6 +24,7 @@ function makeDeps(overrides?: Partial<WorkspaceToolDeps>): WorkspaceToolDeps {
     searchService: {} as WorkspaceToolDeps["searchService"],
     storage: { getObject: async () => Buffer.from("test") } as unknown as WorkspaceToolDeps["storage"],
     attachmentService: makeAttachmentService(),
+    memoExplorer: {} as WorkspaceToolDeps["memoExplorer"],
     ...overrides,
   }
 }

@@ -81,6 +81,7 @@ import {
   ConversationSummaryService,
   COMPANION_SUMMARY_MODEL_ID,
   COMPANION_SUMMARY_TEMPERATURE,
+  stripInaccessibleAgentRefs,
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
@@ -135,7 +136,7 @@ import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { createCorsOriginChecker } from "./lib/cors"
 import type { AuthorType } from "@threa/types"
-import { parseMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, parseMarkdown } from "@threa/prosemirror"
 import { normalizeMessage, toEmoji } from "./features/emoji"
 import { logger } from "./lib/logger"
 import { createAI } from "./lib/ai/ai"
@@ -307,9 +308,43 @@ export async function startServer(): Promise<ServerInstance> {
     sessionId?: string
     /** Idempotency key forwarded to `event-service.createMessage` so retried writes dedup via ON CONFLICT. */
     clientMessageId?: string
+    /**
+     * Pre-computed `AgentAccessSpec` reach for persona-authored messages.
+     * Authorizes inline-attachment / share-pointer gates via set membership
+     * — personas have no `stream_members` rows, so the user-path membership
+     * check always denies. The scope is invocation-bounded by design (a
+     * public channel only sees public streams, etc.); passing the invoking
+     * user's full access here would be a privilege escalation.
+     */
+    accessibleStreamIds?: string[]
   }) => {
-    const contentMarkdown = normalizeMessage(params.content)
-    const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+    const initialMarkdown = normalizeMessage(params.content)
+    const initialJson = parseMarkdown(initialMarkdown, undefined, toEmoji)
+    // For agent-authored messages, pre-validate the structural pointers
+    // (`shared-message:`, `quote:`, `attachment:`) and drop nodes that
+    // wouldn't pass event-service's strict gate. Without this, a single
+    // bad ref (out-of-scope stream, deleted message, cross-workspace id)
+    // causes the entire message to fail rather than just losing the
+    // pointer. The helper re-serializes the cleaned tree to keep the
+    // wire markdown in sync with `contentJson`.
+    let contentJson = initialJson
+    let contentMarkdown = initialMarkdown
+    if (params.accessibleStreamIds) {
+      const stripped = await stripInaccessibleAgentRefs({
+        pool,
+        workspaceId: params.workspaceId,
+        targetStreamId: params.streamId,
+        accessibleStreamIds: params.accessibleStreamIds,
+        contentJson: initialJson,
+      })
+      contentJson = stripped.contentJson
+      contentMarkdown = stripped.contentMarkdown
+    }
+    // Surface inline `[name](attachment:id)` pointers so step 1 access checks
+    // and step 6b `attachment_references` projection run. Without this, copy-
+    // paste resends and recipients without source-stream access can't resolve
+    // the download URL for an Ariadne resurfacing.
+    const attachmentIds = collectAttachmentReferenceIds(contentJson)
     return eventService.createMessage({
       workspaceId: params.workspaceId,
       streamId: params.streamId,
@@ -317,9 +352,11 @@ export async function startServer(): Promise<ServerInstance> {
       authorType: params.authorType,
       contentJson,
       contentMarkdown,
+      attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       sources: params.sources,
       sessionId: params.sessionId,
       clientMessageId: params.clientMessageId,
+      accessibleStreamIds: params.accessibleStreamIds,
     })
   }
   const editMessage = async (params: {
@@ -328,9 +365,29 @@ export async function startServer(): Promise<ServerInstance> {
     messageId: string
     actorId: string
     content: string
+    /** Same semantics as `createMessage.accessibleStreamIds`. */
+    accessibleStreamIds?: string[]
   }) => {
-    const contentMarkdown = normalizeMessage(params.content)
-    const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+    const initialMarkdown = normalizeMessage(params.content)
+    const initialJson = parseMarkdown(initialMarkdown, undefined, toEmoji)
+    let contentJson = initialJson
+    let contentMarkdown = initialMarkdown
+    if (params.accessibleStreamIds) {
+      const stripped = await stripInaccessibleAgentRefs({
+        pool,
+        workspaceId: params.workspaceId,
+        targetStreamId: params.streamId,
+        accessibleStreamIds: params.accessibleStreamIds,
+        contentJson: initialJson,
+      })
+      contentJson = stripped.contentJson
+      contentMarkdown = stripped.contentMarkdown
+    }
+    // Same as createMessage: derive attachmentIds from the cleaned JSON so
+    // event-service can refresh the `attachment_references` projection in
+    // sync with the new content (INV-7). Without this, an agent edit that
+    // adds or removes an `attachment:` link leaves stale rows behind.
+    const attachmentIds = collectAttachmentReferenceIds(contentJson)
     return eventService.editMessage({
       workspaceId: params.workspaceId,
       streamId: params.streamId,
@@ -339,6 +396,8 @@ export async function startServer(): Promise<ServerInstance> {
       contentMarkdown,
       actorId: params.actorId,
       actorType: "persona",
+      attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+      accessibleStreamIds: params.accessibleStreamIds,
     })
   }
   const deleteMessage = (params: { workspaceId: string; streamId: string; messageId: string; actorId: string }) =>
@@ -482,6 +541,7 @@ export async function startServer(): Promise<ServerInstance> {
     searchService,
     conversationSummaryService,
     attachmentService,
+    memoExplorerService,
     storage,
     modelRegistry,
     workspaceIntegrationService,

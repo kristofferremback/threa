@@ -112,6 +112,7 @@ export interface MessageWithAttachments extends Message {
 export interface StreamContext {
   streamType: StreamType
   streamInfo: {
+    id: string
     name: string | null
     description: string | null
     slug: string | null
@@ -250,6 +251,7 @@ async function buildScratchpadContext(db: Querier, stream: Stream, temporal?: Te
   return {
     streamType: stream.type,
     streamInfo: {
+      id: stream.id,
       name: stream.displayName,
       description: stream.description,
       slug: stream.slug,
@@ -285,6 +287,7 @@ async function buildChannelContext(
   return {
     streamType: stream.type,
     streamInfo: {
+      id: stream.id,
       name: stream.displayName,
       description: stream.description,
       slug: stream.slug,
@@ -322,6 +325,7 @@ async function buildDmContext(
   return {
     streamType: stream.type,
     streamInfo: {
+      id: stream.id,
       name: stream.displayName,
       description: stream.description,
       slug: stream.slug,
@@ -358,6 +362,7 @@ async function buildThreadContext(db: Querier, stream: Stream, temporal?: Tempor
   return {
     streamType: stream.type,
     streamInfo: {
+      id: stream.id,
       name: stream.displayName,
       description: stream.description,
       slug: stream.slug,

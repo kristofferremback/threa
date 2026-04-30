@@ -2,25 +2,50 @@ import type { ModelMessage } from "ai"
 import { AuthorTypes, StreamTypes, type ChartData, type DiagramData, type TableData } from "@threa/types"
 import { formatDate, formatTime, getDateKey } from "../../../../lib/temporal"
 import type { AttachmentContext, MessageWithAttachments, StreamContext } from "../../context-builder"
+import { formatAttachImageTag, formatAttachTag, formatMsgAuthorTag } from "../../pointer-tags"
 
 /**
  * Format messages for the LLM with timestamps and author names.
  * Includes date boundaries when messages cross dates.
  *
  * Returns ModelMessage[] with enriched content:
- * - User messages: `(14:30) [@name] content`
- * - Assistant messages: content only (no timestamp to avoid model mimicking)
+ * - User messages: `[msg:m_x author:u_y] (14:30) [@name] content`
+ * - Assistant messages: `[msg:m_x] content` (no timestamp to avoid model mimicking)
  *
- * Attachments are included as text descriptions (captions/summaries).
+ * The `[msg:… author:…]` tag is structural — it gives the agent the IDs it
+ * needs to emit `shared-message:` / `quote:` pointer URLs that point back at a
+ * specific message in this conversation. Stream id is surfaced once in the
+ * stream-context section rather than per-message; all messages in
+ * `conversationHistory` belong to the same stream by construction.
+ *
+ * Attachments are included as text descriptions (captions/summaries) annotated
+ * with the attachment id (and a per-prompt image index for images) so the
+ * agent can resurface them via `[Image #N](attachment:att_x)` /
+ * `[filename](attachment:att_x)`.
+ *
  * Actual images are loaded on-demand via the load_attachment tool.
  */
 export function formatMessagesWithTemporal(messages: MessageWithAttachments[], context: StreamContext): ModelMessage[] {
   const temporal = context.temporal
+
+  // Number image attachments in conversation order so the agent can reference
+  // them with stable `[Image #N]` text. Counter is shared across all messages.
+  const imageIndexById = new Map<string, number>()
+  let nextImageIndex = 1
+  for (const m of messages) {
+    if (!m.attachments) continue
+    for (const a of m.attachments) {
+      if (a.mimeType.startsWith("image/") && !imageIndexById.has(a.id)) {
+        imageIndexById.set(a.id, nextImageIndex++)
+      }
+    }
+  }
+
   if (!temporal) {
     // No temporal context - return messages with original content + attachment context
     return messages.map((m) => ({
       role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
-      content: formatMessageContent(m),
+      content: formatMessageContent(m, `${idTag(m)} `, imageIndexById),
     }))
   }
 
@@ -53,22 +78,32 @@ export function formatMessagesWithTemporal(messages: MessageWithAttachments[], c
       const authorName = authorNames.get(msg.authorId) ?? "Unknown"
       const hasMultipleUsers = context.streamType === StreamTypes.CHANNEL || context.streamType === StreamTypes.DM
       const namePrefix = hasMultipleUsers ? `[@${authorName}] ` : ""
-      const textPrefix = `${dateBoundaryPrefix}(${time}) ${namePrefix}`
+      const textPrefix = `${idTag(msg)} ${dateBoundaryPrefix}(${time}) ${namePrefix}`
 
       result.push({
         role,
-        content: formatMessageContent(msg, textPrefix),
+        content: formatMessageContent(msg, textPrefix, imageIndexById),
       })
     } else {
       // Assistant/persona messages - no timestamp or date markers to avoid model mimicking
       result.push({
         role,
-        content: formatMessageContent(msg),
+        content: formatMessageContent(msg, `${idTag(msg)} `, imageIndexById),
       })
     }
   }
 
   return result
+}
+
+/**
+ * Compact ID tag for inline use in formatted messages. Always includes
+ * `author:<id>` so the `quote:stream/msg/author/actorType` pointer-URL
+ * contract roundtrips for both user and persona messages — agents need
+ * the persona id to losslessly quote their own previous turns.
+ */
+function idTag(msg: MessageWithAttachments): string {
+  return formatMsgAuthorTag(msg.id, msg.authorId)
 }
 
 /**
@@ -92,11 +127,17 @@ function formatStructuredData(data: ChartData | TableData | DiagramData | null):
 }
 
 /**
- * Format a single attachment as a text description.
+ * Format a single attachment as a text description, annotated with the
+ * attachment id (and per-prompt image index) so the agent can resurface it
+ * via `[Image #N](attachment:att_x)` or `[filename](attachment:att_x)`.
  */
-function formatAttachmentDescription(att: AttachmentContext): string {
+function formatAttachmentDescription(att: AttachmentContext, imageIndexById: Map<string, number>): string {
   const isImage = att.mimeType.startsWith("image/")
-  let desc = isImage ? `[Image: ${att.filename}]` : `[Attachment: ${att.filename} (${att.mimeType})]`
+  const imageIndex = isImage ? imageIndexById.get(att.id) : undefined
+  const idTag = isImage && imageIndex ? formatAttachImageTag(att.id, imageIndex) : formatAttachTag(att.id)
+  let desc = isImage
+    ? `[Image: ${att.filename} (${idTag})]`
+    : `[Attachment: ${att.filename} (${att.mimeType}, ${idTag})]`
 
   if (att.extraction) {
     if (isImage) {
@@ -123,11 +164,15 @@ function formatAttachmentDescription(att: AttachmentContext): string {
  * Format message content including attachment context as text descriptions.
  * Actual images are loaded on-demand via the load_attachment tool.
  */
-function formatMessageContent(msg: MessageWithAttachments, textPrefix: string = ""): string {
+function formatMessageContent(
+  msg: MessageWithAttachments,
+  textPrefix: string = "",
+  imageIndexById: Map<string, number> = new Map()
+): string {
   let content = textPrefix + msg.contentMarkdown
 
   if (msg.attachments && msg.attachments.length > 0) {
-    const descriptions = msg.attachments.map(formatAttachmentDescription)
+    const descriptions = msg.attachments.map((a) => formatAttachmentDescription(a, imageIndexById))
     content += "\n\n" + descriptions.join("\n\n")
   }
 

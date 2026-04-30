@@ -11,7 +11,7 @@ import type { CommandRegistry, CommandDispatchedPayload } from "../commands"
 import { serializeBigInt } from "@threa/backend-common"
 import { eventId, commandId as generateCommandId } from "../../lib/id"
 import { toShortcode, normalizeMessage, toEmoji } from "../emoji"
-import { parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 import { messageMetadataSchema } from "./metadata-schema"
 
@@ -178,7 +178,13 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       }
 
       const data = result.data
-      const attachmentIds = data.attachmentIds
+      // Explicit `data.attachmentIds` is the fresh-upload list (each row's
+      // `messageId === null`, claimed by `attachToMessage` on send).
+      // The contentJson-derived list catches inline `attachment:` references
+      // — fresh uploads aren't represented there, references are.
+      // Merging both into the deduped union covers all flavors with one
+      // gate run + one projection write (mirrors the edit path).
+      const explicitAttachmentIds = data.attachmentIds ?? []
 
       const stream = await streamService.resolveWritableMessageStream({
         workspaceId,
@@ -234,6 +240,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       // Normalize to both JSON and markdown formats for normal message creation
       const { contentJson, contentMarkdown } = normalizeContent(data)
+      // Union of explicit fresh-upload ids and inline references parsed from
+      // the canonical contentJson. Without this, a markdown POST containing
+      // `[Image #1](attachment:att_x)` would skip the access gate AND the
+      // attachment_references projection write.
+      const inlineRefIds = collectAttachmentReferenceIds(contentJson)
+      const attachmentIds = [...new Set([...explicitAttachmentIds, ...inlineRefIds])]
 
       // Normal message creation
       const message = await eventService.createMessage({
@@ -243,7 +255,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         authorType: "user",
         contentJson,
         contentMarkdown,
-        attachmentIds,
+        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
         clientMessageId: data.clientMessageId,
         metadata: data.metadata,
         confirmedPrivacyWarning: data.confirmedPrivacyWarning,
@@ -286,6 +298,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       // Normalize to both JSON and markdown formats
       const { contentJson, contentMarkdown } = normalizeContent(result.data)
 
+      // Derive inline attachment ids from the new contentJson so event-service
+      // can refresh the `attachment_references` projection in sync (INV-7).
+      // Edits don't accept fresh-upload ids today (the schema only takes
+      // content), so this is reference-only by construction.
+      const attachmentIds = collectAttachmentReferenceIds(contentJson)
+
       const message = await eventService.editMessage({
         workspaceId,
         messageId,
@@ -293,6 +311,7 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         contentJson,
         contentMarkdown,
         actorId: userId,
+        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
         confirmedPrivacyWarning: result.data.confirmedPrivacyWarning,
       })
 

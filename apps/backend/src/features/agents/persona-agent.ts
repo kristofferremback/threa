@@ -26,6 +26,7 @@ import type { AI, CostContext } from "../../lib/ai/ai"
 import type { SearchService } from "../search"
 import type { ConversationSummaryService } from "./conversation-summary-service"
 import type { AttachmentService } from "../attachments"
+import type { MemoExplorerService } from "../memos"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
@@ -57,6 +58,7 @@ export interface PersonaAgentDeps {
   searchService: SearchService
   conversationSummaryService: ConversationSummaryService
   attachmentService: AttachmentService
+  memoExplorerService: MemoExplorerService
   storage: StorageProvider
   modelRegistry: ModelRegistry
   workspaceIntegrationService?: WorkspaceIntegrationService
@@ -70,6 +72,16 @@ export interface PersonaAgentDeps {
     content: string
     sources?: SourceItem[]
     sessionId?: string
+    /**
+     * Pre-computed access scope (from `AgentAccessSpec`) used to authorize
+     * inline attachment references and cross-stream share/quote pointers.
+     * Persona-authored messages must set this — personas have no
+     * `stream_members` rows so the membership-keyed gate always denies.
+     * The scope is invocation-bounded (a public channel agent only sees
+     * public streams, etc.); passing the user's full access here would be
+     * a privilege escalation.
+     */
+    accessibleStreamIds?: string[]
   }) => Promise<{ id: string }>
   editMessage: (params: {
     workspaceId: string
@@ -77,6 +89,8 @@ export interface PersonaAgentDeps {
     messageId: string
     actorId: string
     content: string
+    /** Same semantics as `createMessage.accessibleStreamIds`. */
+    accessibleStreamIds?: string[]
   }) => Promise<{ id: string } | null>
   deleteMessage: (params: {
     workspaceId: string
@@ -135,6 +149,7 @@ export class PersonaAgent {
       searchService,
       conversationSummaryService,
       attachmentService,
+      memoExplorerService,
       storage,
       modelRegistry,
       workspaceIntegrationService,
@@ -364,6 +379,7 @@ export class PersonaAgent {
                 messageId: reusableMessageId,
                 actorId: persona.id,
                 content: msgInput.content,
+                accessibleStreamIds: agentContext.accessibleStreamIds ? [...agentContext.accessibleStreamIds] : [],
               })
               if (editedMessage) {
                 return { messageId: editedMessage.id, operation: "edited" as const }
@@ -384,6 +400,17 @@ export class PersonaAgent {
             content: msgInput.content,
             sources: msgInput.sources,
             sessionId: session.id,
+            // Personas have no `stream_members` rows; pass the agent's
+            // scope-restricted `AgentAccessSpec` reach so inline-attachment
+            // and share gates run against the same set the workspace tools
+            // already use (private channel = that channel + public, public
+            // channel = public only, scratchpad = user-full). NOT the
+            // invoking user's full access — that would be a scope escalation.
+            // Always pass an array (even empty) so the persona path uses the
+            // set-membership gate. Falling back to `undefined` would route
+            // through the user-path membership check keyed by authorId, which
+            // unconditionally denies for personas (no `stream_members` rows).
+            accessibleStreamIds: agentContext.accessibleStreamIds ? [...agentContext.accessibleStreamIds] : [],
           })
           return { messageId: message.id, operation: "created" as const }
         }
@@ -401,6 +428,7 @@ export class PersonaAgent {
             invokingUserId: agentContext.invokingUserId,
             searchService,
             attachmentService,
+            memoExplorer: memoExplorerService,
             storage,
           }
         }

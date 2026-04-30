@@ -13,6 +13,7 @@ import {
   createGetStreamMessagesTool,
   createSearchAttachmentsTool,
   createGetAttachmentTool,
+  createDescribeMemoTool,
   createLoadAttachmentTool,
   createLoadPdfSectionTool,
   createLoadFileSectionTool,
@@ -92,6 +93,7 @@ export function buildToolSet(config: ToolSetConfig): AgentTool[] {
       ? createSearchAttachmentsTool(workspace)
       : null,
     workspace && isToolEnabled(enabledTools, AgentToolNames.GET_ATTACHMENT) ? createGetAttachmentTool(workspace) : null,
+    workspace && isToolEnabled(enabledTools, AgentToolNames.DESCRIBE_MEMO) ? createDescribeMemoTool(workspace) : null,
     workspace && supportsVision && isToolEnabled(enabledTools, AgentToolNames.LOAD_ATTACHMENT)
       ? createLoadAttachmentTool(workspace)
       : null,

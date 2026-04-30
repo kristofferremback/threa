@@ -161,6 +161,113 @@ describe("EventService attachment safety checks", () => {
       })
     ).rejects.toThrow("cannot reference an attachment without read access")
   })
+
+  it("uses accessibleStreamIds set-membership for the read-access check (persona path) and skips userId membership lookups", async () => {
+    // Regression for staging bug: persona-authored messages with inline
+    // attachment references blew up with "cannot reference an attachment
+    // without read access" because `checkStreamAccess` looked up the persona
+    // id in `stream_members` (where it never appears). The fix: when the
+    // agent layer passes `accessibleStreamIds` (= scope-restricted
+    // `AgentAccessSpec` reach), the gate becomes pure set membership and
+    // does NOT query `stream_members` keyed by the persona id at all.
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
+      {
+        id: "attach_1",
+        workspaceId: "ws_1",
+        streamId: "stream_source",
+        messageId: "msg_source",
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+        filename: "diagram.png",
+        mimeType: "image/png",
+        sizeBytes: 100,
+      },
+    ] as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue({
+      id: "stream_target",
+      workspaceId: "ws_1",
+      rootStreamId: null,
+      visibility: "private",
+      type: "channel",
+    } as any)
+    const isMemberSpy = spyOn(StreamMemberRepository, "isMember").mockResolvedValue(false)
+    spyOn(StreamMemberRepository, "update").mockResolvedValue(undefined as any)
+    spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue([])
+    spyOn(StreamEventRepository, "insert").mockImplementation((async (_client: any, params: any) => ({
+      id: "evt_1",
+      streamId: params.streamId,
+      sequence: 1n,
+      eventType: params.eventType,
+      payload: params.payload,
+      actorId: params.actorId,
+      actorType: params.actorType,
+      timestamp: new Date(),
+      createdAt: new Date(),
+    })) as any)
+    spyOn(MessageRepository, "insert").mockResolvedValue({ id: "msg_new" } as any)
+    spyOn(MessageRepository, "findByClientMessageId").mockResolvedValue(null)
+    spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
+    spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
+    spyOn(AttachmentReferenceRepository, "insertMany").mockResolvedValue(0)
+
+    const service = new EventService({} as any)
+    await service.createMessage({
+      workspaceId: "ws_1",
+      streamId: "stream_target",
+      authorId: "persona_ariadne",
+      authorType: "persona",
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "Resurfacing the diagram",
+      attachmentIds: ["attach_1"],
+      // Source stream is in scope — direct set-membership lets it through.
+      accessibleStreamIds: ["stream_target", "stream_source"],
+    })
+
+    // The persona id must never be used as a `stream_members` lookup key.
+    // (Step 0 / step 6 stream-update rows that touch isMember legitimately
+    // exist for the *target* stream, but never with the persona id as the
+    // member id.)
+    for (const call of isMemberSpy.mock.calls) {
+      expect(call[2]).not.toBe("persona_ariadne")
+    }
+  })
+
+  it("rejects persona-authored references whose source stream is outside the agent's scope", async () => {
+    // The agent's `accessibleStreamIds` is scope-restricted by
+    // `AgentAccessSpec` (e.g. a public-channel agent only sees public
+    // streams). An attachment whose source stream isn't in scope and has no
+    // referencing rows inside scope must fail the gate even though the
+    // invoking user might have full access to it from elsewhere.
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
+      {
+        id: "attach_secret",
+        workspaceId: "ws_1",
+        streamId: "stream_secret",
+        messageId: "msg_secret",
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+        filename: "secret.png",
+        mimeType: "image/png",
+        sizeBytes: 100,
+      },
+    ] as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue(null)
+    const findRefsSpy = spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue([])
+
+    const service = new EventService({} as any)
+    await expect(
+      service.createMessage({
+        workspaceId: "ws_1",
+        streamId: "stream_target",
+        authorId: "persona_ariadne",
+        authorType: "persona",
+        contentJson: { type: "doc", content: [] },
+        contentMarkdown: "leaking",
+        attachmentIds: ["attach_secret"],
+        accessibleStreamIds: ["stream_target"],
+      })
+    ).rejects.toThrow("cannot reference an attachment without read access")
+
+    expect(findRefsSpy).toHaveBeenCalled()
+  })
 })
 
 describe("EventService.editMessage version capture", () => {
@@ -220,6 +327,11 @@ describe("EventService.editMessage version capture", () => {
     spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
     spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
     spyOn(SharedMessageRepository, "insert").mockResolvedValue({} as any)
+    // Edit path now also refreshes the attachment_references projection in
+    // the same transaction; default mocks let the version-capture tests run
+    // without exercising the projection. Tests that care override these.
+    spyOn(AttachmentReferenceRepository, "deleteByMessageId").mockResolvedValue(0)
+    spyOn(AttachmentReferenceRepository, "insertMany").mockResolvedValue(0)
   })
 
   afterEach(() => {
@@ -331,6 +443,151 @@ describe("EventService.editMessage version capture", () => {
         actorType: "user",
       })
     )
+  })
+})
+
+describe("EventService.editMessage attachment_references refresh", () => {
+  // INV-7: edits that add or remove `attachment:` links must rewrite the
+  // `attachment_references` projection in the same transaction. Without it,
+  // download authorization stops matching the persisted body and copy-paste
+  // resends fail. These tests pin the delete-then-insert behavior.
+  const existingMessage = {
+    id: "msg_edit",
+    streamId: "stream_target",
+    contentJson: { type: "doc", content: [] },
+    contentMarkdown: "before edit",
+    authorId: "usr_1",
+    authorType: "user",
+  }
+  let deleteByMessageIdSpy: ReturnType<typeof spyOn>
+  let insertManySpy: ReturnType<typeof spyOn>
+
+  beforeEach(() => {
+    spyOn(db, "withTransaction").mockImplementation(((_db: unknown, callback: (client: any) => Promise<unknown>) =>
+      callback({})) as any)
+    spyOn(MessageRepository, "findByIdForUpdate").mockResolvedValue(existingMessage as any)
+    spyOn(MessageRepository, "findById").mockResolvedValue(existingMessage as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue({
+      id: "stream_target",
+      type: "scratchpad",
+      parentStreamId: null,
+      parentMessageId: null,
+    } as any)
+    spyOn(StreamMemberRepository, "isMember").mockResolvedValue(true)
+    spyOn(StreamPersonaParticipantRepository, "hasParticipated").mockResolvedValue(false)
+    spyOn(MessageVersionRepository, "insert").mockResolvedValue({} as any)
+    spyOn(StreamEventRepository, "insert").mockResolvedValue({
+      id: "evt_edit",
+      streamId: "stream_target",
+      sequence: 2n,
+      eventType: "message_edited",
+      payload: {},
+      actorId: "usr_1",
+      actorType: "user",
+      createdAt: new Date(),
+    } as any)
+    spyOn(MessageRepository, "updateContent").mockResolvedValue({
+      ...existingMessage,
+      contentMarkdown: "after edit",
+      editedAt: new Date(),
+    } as any)
+    spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
+    spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
+    deleteByMessageIdSpy = spyOn(AttachmentReferenceRepository, "deleteByMessageId").mockResolvedValue(0)
+    insertManySpy = spyOn(AttachmentReferenceRepository, "insertMany").mockResolvedValue(0)
+  })
+
+  afterEach(() => {
+    mock.restore()
+  })
+
+  it("clears existing attachment_references rows even when the new content has no attachments", async () => {
+    // The "remove an attachment" case: the edited content drops a previously
+    // referenced attachment. Without the delete the row stays and recipients
+    // can still resolve a download for content that no longer cites it.
+    const service = new EventService({} as any)
+    await service.editMessage({
+      workspaceId: "ws_1",
+      messageId: "msg_edit",
+      streamId: "stream_target",
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "after edit",
+      actorId: "usr_1",
+      // No attachmentIds passed — the edit removed the reference.
+    })
+
+    expect(deleteByMessageIdSpy).toHaveBeenCalledTimes(1)
+    expect(deleteByMessageIdSpy.mock.calls[0]?.[1]).toBe("ws_1")
+    expect(deleteByMessageIdSpy.mock.calls[0]?.[2]).toBe("msg_edit")
+    // Nothing to re-insert.
+    expect(insertManySpy).not.toHaveBeenCalled()
+  })
+
+  it("rewrites attachment_references rows when the new content adds an attachment ref", async () => {
+    // The "add an attachment" case: an edit gains an `attachment:` link, so
+    // a fresh row must be inserted for download authorization to match.
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
+      {
+        id: "att_a",
+        workspaceId: "ws_1",
+        streamId: "stream_source",
+        messageId: "msg_source",
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+        filename: "img.png",
+        mimeType: "image/png",
+        sizeBytes: 100,
+      },
+    ] as any)
+
+    const service = new EventService({} as any)
+    await service.editMessage({
+      workspaceId: "ws_1",
+      messageId: "msg_edit",
+      streamId: "stream_target",
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "now with image",
+      actorId: "usr_1",
+      attachmentIds: ["att_a"],
+      // Persona-flavor scope so the set-membership gate accepts stream_source.
+      accessibleStreamIds: ["stream_target", "stream_source"],
+    })
+
+    expect(deleteByMessageIdSpy).toHaveBeenCalledTimes(1)
+    expect(insertManySpy).toHaveBeenCalledTimes(1)
+    const inserted = insertManySpy.mock.calls[0]?.[1] as Array<{ attachmentId: string; messageId: string }>
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({ attachmentId: "att_a", messageId: "msg_edit" })
+  })
+
+  it("rejects fresh-upload attachment ids on edit (messageId === null)", async () => {
+    // Edits cannot claim ownership of a fresh upload — that's a create-time
+    // operation. Throw loudly so we don't orphan the upload or leave the
+    // attachment row in an inconsistent state.
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
+      {
+        id: "att_fresh",
+        workspaceId: "ws_1",
+        streamId: null,
+        messageId: null,
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+        filename: "fresh.png",
+        mimeType: "image/png",
+        sizeBytes: 100,
+      },
+    ] as any)
+
+    const service = new EventService({} as any)
+    await expect(
+      service.editMessage({
+        workspaceId: "ws_1",
+        messageId: "msg_edit",
+        streamId: "stream_target",
+        contentJson: { type: "doc", content: [] },
+        contentMarkdown: "trying to attach",
+        actorId: "usr_1",
+        attachmentIds: ["att_fresh"],
+      })
+    ).rejects.toThrow("edits cannot attach fresh uploads")
   })
 })
 

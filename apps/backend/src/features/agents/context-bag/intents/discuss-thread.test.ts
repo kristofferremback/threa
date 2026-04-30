@@ -38,10 +38,22 @@ describe("DiscussThreadIntent config", () => {
     expect(DiscussThreadIntent.systemPreamble.toLowerCase()).toContain("authoritative")
   })
 
-  test("system preamble forbids leaking internal ids to the user", () => {
+  test("system preamble forbids leaking internal ids to the user as raw prose", () => {
     // Regression for early behaviour where Ariadne copied `[msg_xyz]` into her
-    // user-facing output. The preamble must frame ids as internal-only.
-    expect(DiscussThreadIntent.systemPreamble.toLowerCase()).toContain("never include them")
+    // user-facing output. The preamble must frame raw ids as internal-only.
+    expect(DiscussThreadIntent.systemPreamble.toLowerCase()).toContain("do not paste raw")
+  })
+
+  test("system preamble carves out the structural pointer formats as the exception", () => {
+    // The "no raw ids" rule must not block `shared-message:`, `quote:`, or
+    // `attachment:` pointer URLs — those are the supported way to reference a
+    // specific message or file and roundtrip cleanly when the user copies the
+    // response. Without this carve-out the model defaults to paraphrasing.
+    const preamble = DiscussThreadIntent.systemPreamble
+    expect(preamble).toContain("shared-message:")
+    expect(preamble).toContain("quote:")
+    expect(preamble).toContain("attachment:")
+    expect(preamble).toContain("preferred way to point at")
   })
 })
 
