@@ -26,6 +26,7 @@ import type { AI, CostContext } from "../../lib/ai/ai"
 import type { SearchService } from "../search"
 import type { ConversationSummaryService } from "./conversation-summary-service"
 import type { AttachmentService } from "../attachments"
+import type { MemoExplorerService } from "../memos"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
@@ -57,6 +58,7 @@ export interface PersonaAgentDeps {
   searchService: SearchService
   conversationSummaryService: ConversationSummaryService
   attachmentService: AttachmentService
+  memoExplorerService: MemoExplorerService
   storage: StorageProvider
   modelRegistry: ModelRegistry
   workspaceIntegrationService?: WorkspaceIntegrationService
@@ -135,6 +137,7 @@ export class PersonaAgent {
       searchService,
       conversationSummaryService,
       attachmentService,
+      memoExplorerService,
       storage,
       modelRegistry,
       workspaceIntegrationService,
@@ -401,6 +404,7 @@ export class PersonaAgent {
             invokingUserId: agentContext.invokingUserId,
             searchService,
             attachmentService,
+            memoExplorer: memoExplorerService,
             storage,
           }
         }

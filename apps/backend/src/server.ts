@@ -488,6 +488,7 @@ export async function startServer(): Promise<ServerInstance> {
     searchService,
     conversationSummaryService,
     attachmentService,
+    memoExplorerService,
     storage,
     modelRegistry,
     workspaceIntegrationService,

@@ -1,5 +1,6 @@
 import type { Pool } from "pg"
 import type { AttachmentService } from "../../attachments"
+import type { MemoExplorerService } from "../../memos"
 import type { SearchService } from "../../search"
 import type { StorageProvider } from "../../../lib/storage/s3-client"
 
@@ -11,4 +12,5 @@ export interface WorkspaceToolDeps {
   searchService: SearchService
   storage: StorageProvider
   attachmentService: AttachmentService
+  memoExplorer: MemoExplorerService
 }

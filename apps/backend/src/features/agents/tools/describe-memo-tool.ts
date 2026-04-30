@@ -1,0 +1,100 @@
+import { z } from "zod"
+import { AgentStepTypes } from "@threa/types"
+import { logger } from "../../../lib/logger"
+import { defineAgentTool, type AgentToolResult } from "../runtime"
+import type { WorkspaceToolDeps } from "./tool-deps"
+
+const DescribeMemoSchema = z.object({
+  memoId: z.string().describe("The ID of the memo to describe (e.g. memo_xyz from a workspace_research result)"),
+})
+
+export type DescribeMemoInput = z.infer<typeof DescribeMemoSchema>
+
+/**
+ * Look up a memo by id and return its abstract + key points + the
+ * resolved source-message ids (with stream/author info) so the agent can
+ * forward or quote those messages with `shared-message:` / `quote:` pointer
+ * URLs.
+ *
+ * Access scope: gated by `accessibleStreamIds` inside `MemoExplorerService.getById`,
+ * which rejects memos whose source stream is outside the invoking user's reach
+ * and filters per-source-message access. Outputs only ids the caller could have
+ * obtained directly via `search_messages`, so emitting them as pointer URLs
+ * does not widen the access surface.
+ */
+export function createDescribeMemoTool(deps: WorkspaceToolDeps) {
+  const { workspaceId, accessibleStreamIds, memoExplorer } = deps
+
+  return defineAgentTool({
+    name: "describe_memo",
+    description: `Describe a memo by id: returns its abstract, key points, tags, and the source messages it was derived from.
+
+Use this after \`workspace_research\` surfaces a memo id (look for \`memo:…\` in retrieved-knowledge entries) when you need to:
+- Quote or forward a specific source message that backs the memo
+- See the original wording rather than the abstract
+- Resolve the conversation that produced the memo
+
+Returns the source messages with their \`messageId\`, \`streamId\`, and \`authorId\` so you can build \`shared-message:\` / \`quote:\` pointer URLs.`,
+    inputSchema: DescribeMemoSchema,
+
+    execute: async (input): Promise<AgentToolResult> => {
+      try {
+        const detail = await memoExplorer.getById(workspaceId, input.memoId, { accessibleStreamIds })
+        if (!detail) {
+          return {
+            output: JSON.stringify({
+              error: "Memo not found, archived, or you don't have access to its source stream",
+              memoId: input.memoId,
+            }),
+          }
+        }
+
+        const { memo, sourceStream, rootStream, sourceMessages } = detail
+
+        return {
+          output: JSON.stringify({
+            id: memo.id,
+            title: memo.title,
+            abstract: memo.abstract,
+            keyPoints: memo.keyPoints,
+            tags: memo.tags,
+            knowledgeType: memo.knowledgeType,
+            memoType: memo.memoType,
+            sourceStream: sourceStream
+              ? { id: sourceStream.id, type: sourceStream.type, name: sourceStream.name }
+              : null,
+            rootStream: rootStream ? { id: rootStream.id, type: rootStream.type, name: rootStream.name } : null,
+            sources: sourceMessages.map((m) => ({
+              messageId: m.id,
+              streamId: m.streamId,
+              streamName: m.streamName,
+              authorId: m.authorId,
+              authorType: m.authorType,
+              authorName: m.authorName,
+              contentMarkdownPreview: truncate(m.content, 400),
+              createdAt: m.createdAt.toISOString(),
+            })),
+          }),
+        }
+      } catch (error) {
+        logger.error({ error, memoId: input.memoId }, "describe_memo failed")
+        return {
+          output: JSON.stringify({
+            error: `Failed to describe memo: ${error instanceof Error ? error.message : "Unknown error"}`,
+            memoId: input.memoId,
+          }),
+        }
+      }
+    },
+
+    trace: {
+      stepType: AgentStepTypes.TOOL_CALL,
+      formatContent: (input) => JSON.stringify({ tool: "describe_memo", memoId: input.memoId }),
+    },
+  })
+}
+
+function truncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  return text.slice(0, maxLength - 3) + "..."
+}
