@@ -200,6 +200,67 @@ describe("AgentRuntime message counting", () => {
     })
   })
 
+  it("commits captured content text when a supersede rerun ends in keep_response", async () => {
+    // Reproduces the bug where a scratchpad rerun produces real assistant
+    // text alongside a keep_response tool call, then resolves with no message
+    // sent. The runtime should fall back to committing the captured text.
+    const events: AgentEvent[] = []
+    const sendMessage = mock(async (input: { content: string }) => ({
+      messageId: "msg_recovered",
+      operation: "created" as const,
+      content: input.content,
+    }))
+
+    const generateTextWithTools = mock(async () => ({
+      text: "Found it! You shared this in your Casual Greeting conversation.",
+      toolCalls: [
+        {
+          toolCallId: "tool_keep",
+          toolName: "keep_response",
+          input: { reason: "Previous response still fits." },
+        },
+      ],
+      response: {
+        messages: [
+          {
+            role: "assistant",
+            content: "Found it! You shared this in your Casual Greeting conversation.",
+          } as any,
+        ],
+      },
+    }))
+
+    const runtime = new AgentRuntime({
+      ai: { generateTextWithTools } as any,
+      model: {} as any,
+      systemPrompt: "You are helpful.",
+      messages: [{ role: "user", content: "I sent a picture of my daughter, can you find it?" }],
+      tools: [],
+      allowNoMessageOutput: true,
+      sendMessage,
+      observers: [
+        {
+          handle: async (event: AgentEvent) => {
+            events.push(event)
+          },
+        },
+      ],
+    })
+
+    const result = await runtime.run()
+
+    expect(result.messagesSent).toBe(1)
+    expect(result.sentMessageIds).toEqual(["msg_recovered"])
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]?.[0].content).toBe(
+      "Found it! You shared this in your Casual Greeting conversation."
+    )
+    // We sent a message, so we must NOT also have emitted a misleading
+    // "kept previous response" trace step.
+    expect(events.some((event) => event.type === "response:kept")).toBe(false)
+    expect(events.some((event) => event.type === "message:sent")).toBe(true)
+  })
+
   it("stops early when rerun keeps returning empty final decisions", async () => {
     const generateTextWithTools = mock(async () => ({
       text: " ",

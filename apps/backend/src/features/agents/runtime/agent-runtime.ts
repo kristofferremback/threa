@@ -211,10 +211,15 @@ export class AgentRuntime {
     let sources: SourceItem[] = []
     let retrievedContext: string | null = null
     let lastAssistantText: string | undefined
+    // Most recent non-empty assistant text observed across the loop, including
+    // text emitted alongside tool calls. Used as a fallback so that a session
+    // can never end with 0 messages when the model actually said something
+    // user-facing — covers the case where reconsideration ends in keep_response
+    // but earlier iterations produced real content.
+    let lastContentStep: string | null = null
     let hasTextReconsidered = false
     let lastProcessedSequence = nm?.lastProcessedSequence ?? BigInt(0)
     let keptResponseReason: string | null = null
-    let responseKeptEmitted = false
     let repeatedInvalidDraftCount = 0
     let lastInvalidDraft: string | null = null
     let emptyFinalDecisionAttempts = 0
@@ -251,6 +256,10 @@ export class AgentRuntime {
           ? result.text
           : JSON.stringify({ toolPlan: result.toolCalls.map((tc: { toolName: string }) => tc.toolName) })
         await this.emit({ type: "thinking", content: thinkingContent, durationMs })
+      }
+
+      if (result.text.trim()) {
+        lastContentStep = result.text.trim()
       }
 
       // Add assistant message to conversation
@@ -404,11 +413,10 @@ export class AgentRuntime {
         } else if (execResult.keepResponseReason) {
           if (newMessages.length === 0) {
             keptResponseReason = execResult.keepResponseReason
-            await this.emit({
-              type: "response:kept",
-              reason: keptResponseReason,
-            })
-            responseKeptEmitted = true
+            // Don't emit response:kept here — defer until after the loop so
+            // that, if we end up falling back to a captured content step, the
+            // trace reflects the message we sent rather than a misleading
+            // "kept previous response" step.
             break
           }
 
@@ -459,13 +467,26 @@ export class AgentRuntime {
 
         if (execResult.keepResponseReason) {
           keptResponseReason = execResult.keepResponseReason
-          await this.emit({
-            type: "response:kept",
-            reason: keptResponseReason,
-          })
-          responseKeptEmitted = true
+          // Defer response:kept emit; see equivalent comment above.
           break
         }
+      }
+    }
+
+    // Fallback: if the loop ended without committing a message but the model
+    // produced real assistant text along the way (e.g. a thinking step that
+    // was actually user-directed content like "Found it! You shared this in
+    // your Casual Greeting conversation"), commit that content. Otherwise an
+    // edit-triggered rerun whose chain ends in a reconsider/keep_response
+    // would silently emit nothing.
+    if (sent.ids.length === 0 && lastContentStep) {
+      const validationError = this.config.validateFinalResponse
+        ? await this.config.validateFinalResponse(lastContentStep)
+        : null
+      if (!validationError) {
+        const committed = await this.commitMessage({ content: lastContentStep, sources }, sent)
+        messagesSent += committed
+        keptResponseReason = null
       }
     }
 
@@ -474,12 +495,10 @@ export class AgentRuntime {
         const noMessageReason =
           keptResponseReason ?? "The existing response still fit the updated context, so no message changes were made."
 
-        if (!responseKeptEmitted) {
-          await this.emit({
-            type: "response:kept",
-            reason: noMessageReason,
-          })
-        }
+        await this.emit({
+          type: "response:kept",
+          reason: noMessageReason,
+        })
 
         logger.info(
           { sessionId: nm?.sessionId, streamId: nm?.streamId, iterations: this.maxIterations },
