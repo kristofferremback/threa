@@ -2,3 +2,4 @@ export { buildAgentContext, type ContextDeps, type ContextParams, type AgentCont
 export { buildToolSet, type ToolSetConfig } from "./tool-set"
 export { withCompanionSession, type WithSessionResult } from "./session"
 export { truncateMessages, MAX_MESSAGE_CHARS } from "./truncation"
+export { stripInaccessibleAgentRefs, type DroppedRef, type DroppedRefReason } from "./strip-inaccessible-refs"

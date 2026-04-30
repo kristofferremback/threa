@@ -19,8 +19,15 @@ export type {
 } from "./runtime"
 
 // Companion agent modules
-export { buildAgentContext, buildToolSet, withCompanionSession, truncateMessages, MAX_MESSAGE_CHARS } from "./companion"
-export type { ContextDeps, ContextParams, AgentContext, ToolSetConfig } from "./companion"
+export {
+  buildAgentContext,
+  buildToolSet,
+  withCompanionSession,
+  truncateMessages,
+  MAX_MESSAGE_CHARS,
+  stripInaccessibleAgentRefs,
+} from "./companion"
+export type { ContextDeps, ContextParams, AgentContext, ToolSetConfig, DroppedRef, DroppedRefReason } from "./companion"
 
 export { TraceEmitter, SessionTrace, ActiveStep } from "./trace-emitter"
 

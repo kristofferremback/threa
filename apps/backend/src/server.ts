@@ -81,6 +81,7 @@ import {
   ConversationSummaryService,
   COMPANION_SUMMARY_MODEL_ID,
   COMPANION_SUMMARY_TEMPERATURE,
+  stripInaccessibleAgentRefs,
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
@@ -317,8 +318,28 @@ export async function startServer(): Promise<ServerInstance> {
      */
     accessibleStreamIds?: string[]
   }) => {
-    const contentMarkdown = normalizeMessage(params.content)
-    const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+    const initialMarkdown = normalizeMessage(params.content)
+    const initialJson = parseMarkdown(initialMarkdown, undefined, toEmoji)
+    // For agent-authored messages, pre-validate the structural pointers
+    // (`shared-message:`, `quote:`, `attachment:`) and drop nodes that
+    // wouldn't pass event-service's strict gate. Without this, a single
+    // bad ref (out-of-scope stream, deleted message, cross-workspace id)
+    // causes the entire message to fail rather than just losing the
+    // pointer. The helper re-serializes the cleaned tree to keep the
+    // wire markdown in sync with `contentJson`.
+    let contentJson = initialJson
+    let contentMarkdown = initialMarkdown
+    if (params.accessibleStreamIds) {
+      const stripped = await stripInaccessibleAgentRefs({
+        pool,
+        workspaceId: params.workspaceId,
+        targetStreamId: params.streamId,
+        accessibleStreamIds: params.accessibleStreamIds,
+        contentJson: initialJson,
+      })
+      contentJson = stripped.contentJson
+      contentMarkdown = stripped.contentMarkdown
+    }
     // Surface inline `[name](attachment:id)` pointers so step 1 access checks
     // and step 6b `attachment_references` projection run. Without this, copy-
     // paste resends and recipients without source-stream access can't resolve
@@ -347,8 +368,21 @@ export async function startServer(): Promise<ServerInstance> {
     /** Same semantics as `createMessage.accessibleStreamIds`. */
     accessibleStreamIds?: string[]
   }) => {
-    const contentMarkdown = normalizeMessage(params.content)
-    const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+    const initialMarkdown = normalizeMessage(params.content)
+    const initialJson = parseMarkdown(initialMarkdown, undefined, toEmoji)
+    let contentJson = initialJson
+    let contentMarkdown = initialMarkdown
+    if (params.accessibleStreamIds) {
+      const stripped = await stripInaccessibleAgentRefs({
+        pool,
+        workspaceId: params.workspaceId,
+        targetStreamId: params.streamId,
+        accessibleStreamIds: params.accessibleStreamIds,
+        contentJson: initialJson,
+      })
+      contentJson = stripped.contentJson
+      contentMarkdown = stripped.contentMarkdown
+    }
     return eventService.editMessage({
       workspaceId: params.workspaceId,
       streamId: params.streamId,
