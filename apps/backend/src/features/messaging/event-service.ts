@@ -124,6 +124,21 @@ export interface CreateMessageParams {
    * crosses a privacy boundary before consulting this flag.
    */
   confirmedPrivacyWarning?: boolean
+  /**
+   * Pre-computed access scope used to authorize inline-attachment
+   * references and cross-stream share/quote pointers. When omitted, the
+   * gate falls back to membership lookups keyed by `authorId`, which is
+   * correct for user-authored messages.
+   *
+   * Persona-authored messages MUST set this to the agent's
+   * `accessibleStreamIds` from `AgentAccessSpec` — *not* the invoking
+   * user's full reach. The spec is scope-restricted: from a public channel
+   * the agent only sees public streams, from a private channel only that
+   * channel + public, from a DM only the participants' intersection, etc.
+   * Using the user's full access would let agents resurface attachments
+   * the user never could have surfaced from this scope.
+   */
+  accessibleStreamIds?: string[]
 }
 
 export interface EditMessageParams {
@@ -136,6 +151,8 @@ export interface EditMessageParams {
   actorType?: AuthorType
   /** Same semantics as `CreateMessageParams.confirmedPrivacyWarning`. */
   confirmedPrivacyWarning?: boolean
+  /** Same semantics as `CreateMessageParams.accessibleStreamIds`. */
+  accessibleStreamIds?: string[]
 }
 
 export interface DeleteMessageParams {
@@ -370,12 +387,39 @@ export class EventService {
           // to read it via the same chain `getDownloadUrl` honours so the
           // two paths can never disagree. Direct stream access first; the
           // shared helper covers the share-grant + inline-reference fallback.
+          //
+          // Two flavors:
+          // 1. User authors (no `accessibleStreamIds` provided): membership
+          //    lookups keyed by `authorId`, including the share-grant fallback.
+          // 2. Persona authors (`accessibleStreamIds` provided): mirrors
+          //    `AttachmentService.getAccessible` exactly — direct set
+          //    membership, then reference-projection intersection.
+          //    `accessibleStreamIds` comes from `AgentAccessSpec` and is
+          //    scope-restricted (from a public channel only public streams,
+          //    from a private channel only that channel + public, etc.) —
+          //    NOT the invoking user's full reach. Bypassing it with a
+          //    user-id check would let agents resurface attachments the
+          //    user couldn't surface from this invocation point.
           let accessible = false
-          if (a.streamId) {
-            accessible = (await checkStreamAccess(client, a.streamId, params.workspaceId, params.authorId)) !== null
-          }
-          if (!accessible) {
-            accessible = await isAttachmentReadableViaShareOrReference(client, a, params.workspaceId, params.authorId)
+          if (params.accessibleStreamIds) {
+            const accessibleSet = new Set(params.accessibleStreamIds)
+            if (a.streamId && accessibleSet.has(a.streamId)) {
+              accessible = true
+            } else {
+              const refStreamIds = await AttachmentReferenceRepository.findReferencingStreamIds(
+                client,
+                params.workspaceId,
+                a.id
+              )
+              accessible = refStreamIds.some((streamId) => accessibleSet.has(streamId))
+            }
+          } else {
+            if (a.streamId) {
+              accessible = (await checkStreamAccess(client, a.streamId, params.workspaceId, params.authorId)) !== null
+            }
+            if (!accessible) {
+              accessible = await isAttachmentReadableViaShareOrReference(client, a, params.workspaceId, params.authorId)
+            }
           }
           if (!accessible) {
             throw new Error("Invalid attachment IDs: cannot reference an attachment without read access")
@@ -492,6 +536,7 @@ export class EventService {
         targetStreamId: params.streamId,
         shareMessageId: msgId,
         sharerId: params.authorId,
+        accessibleStreamIds: params.accessibleStreamIds,
         contentJson: params.contentJson,
         findStream: (db, id) => StreamRepository.findById(db, id),
         resolveEffectiveStream: resolveEffectiveStreamAdapter,
@@ -593,6 +638,7 @@ export class EventService {
           targetStreamId: params.streamId,
           shareMessageId: params.messageId,
           sharerId: params.actorId,
+          accessibleStreamIds: params.accessibleStreamIds,
           contentJson: params.contentJson,
           findStream: (db, id) => StreamRepository.findById(db, id),
           resolveEffectiveStream: resolveEffectiveStreamAdapter,

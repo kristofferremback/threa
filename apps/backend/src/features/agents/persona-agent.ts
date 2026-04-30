@@ -72,6 +72,16 @@ export interface PersonaAgentDeps {
     content: string
     sources?: SourceItem[]
     sessionId?: string
+    /**
+     * Pre-computed access scope (from `AgentAccessSpec`) used to authorize
+     * inline attachment references and cross-stream share/quote pointers.
+     * Persona-authored messages must set this — personas have no
+     * `stream_members` rows so the membership-keyed gate always denies.
+     * The scope is invocation-bounded (a public channel agent only sees
+     * public streams, etc.); passing the user's full access here would be
+     * a privilege escalation.
+     */
+    accessibleStreamIds?: string[]
   }) => Promise<{ id: string }>
   editMessage: (params: {
     workspaceId: string
@@ -79,6 +89,8 @@ export interface PersonaAgentDeps {
     messageId: string
     actorId: string
     content: string
+    /** Same semantics as `createMessage.accessibleStreamIds`. */
+    accessibleStreamIds?: string[]
   }) => Promise<{ id: string } | null>
   deleteMessage: (params: {
     workspaceId: string
@@ -367,6 +379,9 @@ export class PersonaAgent {
                 messageId: reusableMessageId,
                 actorId: persona.id,
                 content: msgInput.content,
+                accessibleStreamIds: agentContext.accessibleStreamIds
+                  ? [...agentContext.accessibleStreamIds]
+                  : undefined,
               })
               if (editedMessage) {
                 return { messageId: editedMessage.id, operation: "edited" as const }
@@ -387,6 +402,13 @@ export class PersonaAgent {
             content: msgInput.content,
             sources: msgInput.sources,
             sessionId: session.id,
+            // Personas have no `stream_members` rows; pass the agent's
+            // scope-restricted `AgentAccessSpec` reach so inline-attachment
+            // and share gates run against the same set the workspace tools
+            // already use (private channel = that channel + public, public
+            // channel = public only, scratchpad = user-full). NOT the
+            // invoking user's full access — that would be a scope escalation.
+            accessibleStreamIds: agentContext.accessibleStreamIds ? [...agentContext.accessibleStreamIds] : undefined,
           })
           return { messageId: message.id, operation: "created" as const }
         }

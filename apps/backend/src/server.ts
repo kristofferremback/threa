@@ -307,6 +307,15 @@ export async function startServer(): Promise<ServerInstance> {
     sessionId?: string
     /** Idempotency key forwarded to `event-service.createMessage` so retried writes dedup via ON CONFLICT. */
     clientMessageId?: string
+    /**
+     * Pre-computed `AgentAccessSpec` reach for persona-authored messages.
+     * Authorizes inline-attachment / share-pointer gates via set membership
+     * — personas have no `stream_members` rows, so the user-path membership
+     * check always denies. The scope is invocation-bounded by design (a
+     * public channel only sees public streams, etc.); passing the invoking
+     * user's full access here would be a privilege escalation.
+     */
+    accessibleStreamIds?: string[]
   }) => {
     const contentMarkdown = normalizeMessage(params.content)
     const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
@@ -326,6 +335,7 @@ export async function startServer(): Promise<ServerInstance> {
       sources: params.sources,
       sessionId: params.sessionId,
       clientMessageId: params.clientMessageId,
+      accessibleStreamIds: params.accessibleStreamIds,
     })
   }
   const editMessage = async (params: {
@@ -334,6 +344,8 @@ export async function startServer(): Promise<ServerInstance> {
     messageId: string
     actorId: string
     content: string
+    /** Same semantics as `createMessage.accessibleStreamIds`. */
+    accessibleStreamIds?: string[]
   }) => {
     const contentMarkdown = normalizeMessage(params.content)
     const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
@@ -345,6 +357,7 @@ export async function startServer(): Promise<ServerInstance> {
       contentMarkdown,
       actorId: params.actorId,
       actorType: "persona",
+      accessibleStreamIds: params.accessibleStreamIds,
     })
   }
   const deleteMessage = (params: { workspaceId: string; streamId: string; messageId: string; actorId: string }) =>

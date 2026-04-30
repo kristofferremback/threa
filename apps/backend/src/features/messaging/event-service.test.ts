@@ -161,6 +161,113 @@ describe("EventService attachment safety checks", () => {
       })
     ).rejects.toThrow("cannot reference an attachment without read access")
   })
+
+  it("uses accessibleStreamIds set-membership for the read-access check (persona path) and skips userId membership lookups", async () => {
+    // Regression for staging bug: persona-authored messages with inline
+    // attachment references blew up with "cannot reference an attachment
+    // without read access" because `checkStreamAccess` looked up the persona
+    // id in `stream_members` (where it never appears). The fix: when the
+    // agent layer passes `accessibleStreamIds` (= scope-restricted
+    // `AgentAccessSpec` reach), the gate becomes pure set membership and
+    // does NOT query `stream_members` keyed by the persona id at all.
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
+      {
+        id: "attach_1",
+        workspaceId: "ws_1",
+        streamId: "stream_source",
+        messageId: "msg_source",
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+        filename: "diagram.png",
+        mimeType: "image/png",
+        sizeBytes: 100,
+      },
+    ] as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue({
+      id: "stream_target",
+      workspaceId: "ws_1",
+      rootStreamId: null,
+      visibility: "private",
+      type: "channel",
+    } as any)
+    const isMemberSpy = spyOn(StreamMemberRepository, "isMember").mockResolvedValue(false)
+    spyOn(StreamMemberRepository, "update").mockResolvedValue(undefined as any)
+    spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue([])
+    spyOn(StreamEventRepository, "insert").mockImplementation((async (_client: any, params: any) => ({
+      id: "evt_1",
+      streamId: params.streamId,
+      sequence: 1n,
+      eventType: params.eventType,
+      payload: params.payload,
+      actorId: params.actorId,
+      actorType: params.actorType,
+      timestamp: new Date(),
+      createdAt: new Date(),
+    })) as any)
+    spyOn(MessageRepository, "insert").mockResolvedValue({ id: "msg_new" } as any)
+    spyOn(MessageRepository, "findByClientMessageId").mockResolvedValue(null)
+    spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as any)
+    spyOn(SharedMessageRepository, "deleteByShareMessageId").mockResolvedValue(undefined)
+    spyOn(AttachmentReferenceRepository, "insertMany").mockResolvedValue(0)
+
+    const service = new EventService({} as any)
+    await service.createMessage({
+      workspaceId: "ws_1",
+      streamId: "stream_target",
+      authorId: "persona_ariadne",
+      authorType: "persona",
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "Resurfacing the diagram",
+      attachmentIds: ["attach_1"],
+      // Source stream is in scope — direct set-membership lets it through.
+      accessibleStreamIds: ["stream_target", "stream_source"],
+    })
+
+    // The persona id must never be used as a `stream_members` lookup key.
+    // (Step 0 / step 6 stream-update rows that touch isMember legitimately
+    // exist for the *target* stream, but never with the persona id as the
+    // member id.)
+    for (const call of isMemberSpy.mock.calls) {
+      expect(call[2]).not.toBe("persona_ariadne")
+    }
+  })
+
+  it("rejects persona-authored references whose source stream is outside the agent's scope", async () => {
+    // The agent's `accessibleStreamIds` is scope-restricted by
+    // `AgentAccessSpec` (e.g. a public-channel agent only sees public
+    // streams). An attachment whose source stream isn't in scope and has no
+    // referencing rows inside scope must fail the gate even though the
+    // invoking user might have full access to it from elsewhere.
+    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
+      {
+        id: "attach_secret",
+        workspaceId: "ws_1",
+        streamId: "stream_secret",
+        messageId: "msg_secret",
+        safetyStatus: AttachmentSafetyStatuses.CLEAN,
+        filename: "secret.png",
+        mimeType: "image/png",
+        sizeBytes: 100,
+      },
+    ] as any)
+    spyOn(StreamRepository, "findById").mockResolvedValue(null)
+    const findRefsSpy = spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue([])
+
+    const service = new EventService({} as any)
+    await expect(
+      service.createMessage({
+        workspaceId: "ws_1",
+        streamId: "stream_target",
+        authorId: "persona_ariadne",
+        authorType: "persona",
+        contentJson: { type: "doc", content: [] },
+        contentMarkdown: "leaking",
+        attachmentIds: ["attach_secret"],
+        accessibleStreamIds: ["stream_target"],
+      })
+    ).rejects.toThrow("cannot reference an attachment without read access")
+
+    expect(findRefsSpy).toHaveBeenCalled()
+  })
 })
 
 describe("EventService.editMessage version capture", () => {
