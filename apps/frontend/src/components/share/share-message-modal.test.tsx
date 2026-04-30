@@ -31,6 +31,11 @@ beforeEach(() => {
   // Default to desktop unless a test overrides — keeps the picker-rendering
   // tests pinned to one surface so cmdk-item assertions are stable.
   vi.spyOn(useMobileModule, "useIsMobile").mockReturnValue(false)
+  // No unread state in these picker tests; the modal reads counts/mute from
+  // here for urgency-based sorting and would otherwise hit Dexie on mount.
+  vi.spyOn(workspaceStoreModule, "useWorkspaceUnreadState").mockReturnValue(
+    undefined as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceUnreadState>
+  )
 })
 
 afterEach(() => {
@@ -48,6 +53,7 @@ describe("ShareMessageModal — picker filtering", () => {
         slug: "general",
         archivedAt: null,
         rootStreamId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
       },
       {
         id: "ch_priv_member",
@@ -57,6 +63,7 @@ describe("ShareMessageModal — picker filtering", () => {
         slug: "team",
         archivedAt: null,
         rootStreamId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
       },
       {
         id: "ch_priv_outsider",
@@ -66,6 +73,7 @@ describe("ShareMessageModal — picker filtering", () => {
         slug: "secret",
         archivedAt: null,
         rootStreamId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
       },
       {
         id: "ch_archived",
@@ -75,6 +83,7 @@ describe("ShareMessageModal — picker filtering", () => {
         slug: "old",
         archivedAt: "2026-01-01",
         rootStreamId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
       },
       {
         id: "thread_a",
@@ -84,6 +93,7 @@ describe("ShareMessageModal — picker filtering", () => {
         slug: null,
         archivedAt: null,
         rootStreamId: "ch_pub",
+        createdAt: "2026-01-01T00:00:00.000Z",
       },
       {
         id: "dm_self",
@@ -93,6 +103,7 @@ describe("ShareMessageModal — picker filtering", () => {
         slug: null,
         archivedAt: null,
         rootStreamId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
       },
       {
         id: "scratch_self",
@@ -102,6 +113,7 @@ describe("ShareMessageModal — picker filtering", () => {
         slug: null,
         archivedAt: null,
         rootStreamId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
       },
     ] as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceStreams>)
     vi.spyOn(workspaceStoreModule, "useWorkspaceStreamMemberships").mockReturnValue([
@@ -147,6 +159,7 @@ describe("ShareMessageModal — picker filtering", () => {
         slug: "general",
         archivedAt: null,
         rootStreamId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
       },
     ] as unknown as ReturnType<typeof workspaceStoreModule.useWorkspaceStreams>)
     vi.spyOn(workspaceStoreModule, "useWorkspaceStreamMemberships").mockReturnValue(

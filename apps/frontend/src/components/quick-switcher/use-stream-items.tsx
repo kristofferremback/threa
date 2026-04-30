@@ -10,7 +10,8 @@ import { useWorkspaceUnreadState } from "@/stores/workspace-store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { calculateUrgency, getActivityTime } from "@/components/layout/sidebar/utils"
+import { calculateUrgency } from "@/components/layout/sidebar/utils"
+import { compareStreamEntries, scoreStreamMatch } from "@/lib/stream-sort"
 import { FilterSelect } from "./filter-select"
 import {
   parseSearchQuery,
@@ -20,7 +21,6 @@ import {
   type FilterType,
 } from "./search-query-parser"
 import type { ModeContext, ModeResult, QuickSwitcherItem, WorkspaceStream } from "./types"
-import type { UrgencyLevel } from "@/components/layout/sidebar/types"
 
 const FILTER_TYPES: { type: FilterType; label: string; icon: React.ReactNode }[] = [
   { type: "type", label: "Stream type", icon: <Hash className="h-4 w-4" /> },
@@ -40,9 +40,6 @@ const ARCHIVE_STATUS_OPTIONS: { value: "active" | "archived"; label: string }[] 
 
 /** Stream with optional sidebar preview (CachedStream has it, API Stream doesn't) */
 type StreamLike = Stream & { lastMessagePreview?: WorkspaceStream["lastMessagePreview"] }
-
-/** Urgency priority for sorting: mentions > ai > activity > quiet */
-const URGENCY_ORDER: Record<UrgencyLevel, number> = { mentions: 0, ai: 1, activity: 2, quiet: 3 }
 
 function getStreamTypeLabel(type: StreamType): string {
   switch (type) {
@@ -166,23 +163,12 @@ export function useStreamItems(context: ModeContext): ModeResult {
       filteredStreams = filteredStreams.filter((s) => typeFilters.includes(s.type))
     }
 
-    // Score streams by match quality (lower = better)
-    const scoreStream = (stream: StreamLike): number => {
-      if (!searchText) return 0
-      const name = (getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")).toLowerCase()
-      if (name === lowerQuery) return 0 // Exact match
-      if (name.startsWith(lowerQuery)) return 1 // Starts with
-      if (name.includes(lowerQuery)) return 2 // Contains
-      if (stream.id.toLowerCase().includes(lowerQuery)) return 3 // ID match
-      return Infinity // No match
-    }
-
     const isSearching = searchText.length > 0
 
     // Pre-compute urgency and counts once per stream (used by both sort and item builder)
     const enriched = filteredStreams
       .map((stream) => {
-        const score = scoreStream(stream)
+        const score = scoreStreamMatch(stream, lowerQuery)
         const unreadCount = getUnreadCount(stream.id)
         const mentionCount = getMentionCount(stream.id)
         const isMuted = mutedStreamIds.has(stream.id)
@@ -191,25 +177,10 @@ export function useStreamItems(context: ModeContext): ModeResult {
       })
       .filter(({ score }) => score !== Infinity)
 
+    // Quick-switcher always uses the recency-style browsing order; the share
+    // pickers expose a toggle but reuse the same comparator.
     const streamItems = enriched
-      .sort((a, b) => {
-        if (isSearching) {
-          if (a.score !== b.score) return a.score - b.score
-          const aName = getStreamName(a.stream) ?? streamFallbackLabel(a.stream.type, "generic")
-          const bName = getStreamName(b.stream) ?? streamFallbackLabel(b.stream.type, "generic")
-          return aName.localeCompare(bName)
-        }
-
-        // When browsing (no query): sort like the sidebar
-        // Mentions first, then AI activity, then unread, then by recency, then alphabetically
-        const urgencyDiff = URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]
-        if (urgencyDiff !== 0) return urgencyDiff
-        const timeDiff = getActivityTime(b.stream) - getActivityTime(a.stream)
-        if (timeDiff !== 0) return timeDiff
-        const aName = getStreamName(a.stream) ?? streamFallbackLabel(a.stream.type, "generic")
-        const bName = getStreamName(b.stream) ?? streamFallbackLabel(b.stream.type, "generic")
-        return aName.localeCompare(bName)
-      })
+      .sort((a, b) => compareStreamEntries(a, b, { isSearching, mode: "recency" }))
       .map(({ stream, unreadCount, mentionCount, urgency }): QuickSwitcherItem => {
         const href = `/w/${workspaceId}/s/${stream.id}`
         const isArchived = stream.archivedAt != null
