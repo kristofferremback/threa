@@ -114,8 +114,14 @@ function formatMessagesSection(messages: EnrichedMessageResult[]): string {
       const author = msg.authorType === "user" ? `@${msg.authorName}` : msg.authorName
       const content = msg.content.replace(/\s+/g, " ").trim()
       const quoteBlock = msg.quoteContext ? `\n${msg.quoteContext}` : ""
+      // Surface ids needed for `shared-message:` / `quote:` pointer URLs.
+      // The pointer formats are taught in the "Referring to messages and
+      // attachments" prompt section; this header gives the agent the
+      // matching `[msg:… stream:… author:… type:…]` ids without a follow-
+      // up tool call.
+      const idTag = `[msg:${msg.id} stream:${msg.streamId} author:${msg.authorId} type:${msg.authorType}]`
 
-      return `> **${author}** in _${msg.streamName}_ (${relativeDate}):
+      return `> ${idTag} **${author}** in _${msg.streamName}_ (${relativeDate}):
 > ${content}${quoteBlock}`
     })
     .join("\n\n")
@@ -133,8 +139,10 @@ function formatAttachmentsSection(attachments: EnrichedAttachmentResult[]): stri
       const relativeDate = formatRelativeDate(att.createdAt)
       const contentInfo = att.contentType ? ` (${att.contentType})` : ""
       const summary = att.summary ? `\n${att.summary}` : ""
+      // Surface attachment id for `attachment:` resurfacing pointer URLs.
+      const streamTag = att.streamId ? ` stream:${att.streamId}` : ""
 
-      return `**${att.filename}**${contentInfo} _(${relativeDate})_${summary}`
+      return `**${att.filename}**${contentInfo} _(attach:${att.id}${streamTag}, ${relativeDate})_${summary}`
     })
     .join("\n\n")
 
