@@ -56,6 +56,10 @@ const TYPE_LABELS: Partial<Record<StreamType, string>> = {
   [StreamTypes.DM]: "Direct Message",
 }
 
+// Stable identity for the no-unread-state case so the items memo doesn't
+// re-sort on every render when the workspace has no cached unread bootstrap yet.
+const EMPTY_COUNTS: Record<string, number> = Object.freeze({}) as Record<string, number>
+
 /**
  * Share destination picker — workspace-scoped page shown when content is shared to Threa.
  *
@@ -70,21 +74,21 @@ export function SharePickerPage() {
   const idbDmPeers = useWorkspaceDmPeers(workspaceId!)
   const idbUsers = useWorkspaceUsers(workspaceId!)
   const unreadState = useWorkspaceUnreadState(workspaceId!)
-  const unreadCounts = unreadState?.unreadCounts ?? {}
-  const mentionCounts = unreadState?.mentionCounts ?? {}
+  const unreadCounts = unreadState?.unreadCounts ?? EMPTY_COUNTS
+  const mentionCounts = unreadState?.mentionCounts ?? EMPTY_COUNTS
   const mutedStreamIds = useMemo(() => new Set(unreadState?.mutedStreamIds ?? []), [unreadState?.mutedStreamIds])
   const { createShareDraft, saveShareContent } = useShareTarget()
 
   const [query, setQuery] = useState("")
   const [sortMode, setSortMode] = useState<StreamSortMode>(() => readStoredStreamSortMode())
   const [selectedIndex, setSelectedIndex] = useState(0)
+  // null = not yet loaded, [] = loaded but empty/unavailable
+  const [files, setFiles] = useState<File[] | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     writeStoredStreamSortMode(sortMode)
   }, [sortMode])
-  // null = not yet loaded, [] = loaded but empty/unavailable
-  const [files, setFiles] = useState<File[] | null>(null)
-  const [submitting, setSubmitting] = useState(false)
 
   // Only lightweight text metadata comes from navigation state — files stay in Cache API
   // to avoid hitting browser history.state serialization limits (~640 KB in Firefox).

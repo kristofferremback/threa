@@ -32,6 +32,10 @@ const TARGET_GROUPS: { id: "channel" | "dm" | "scratchpad"; heading: string; typ
   { id: "scratchpad", heading: "Your scratchpads", type: StreamTypes.SCRATCHPAD },
 ]
 
+// Stable identity for the no-unread-state case so the streamsByGroup memo doesn't
+// re-sort on every render when the workspace has no cached unread bootstrap yet.
+const EMPTY_COUNTS: Record<string, number> = Object.freeze({}) as Record<string, number>
+
 interface ShareMessageModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -67,8 +71,8 @@ export function ShareMessageModal({ open, onOpenChange, workspaceId, attrs }: Sh
   const streams = useWorkspaceStreams(workspaceId)
   const memberships = useWorkspaceStreamMemberships(workspaceId)
   const unreadState = useWorkspaceUnreadState(workspaceId)
-  const unreadCounts = unreadState?.unreadCounts ?? {}
-  const mentionCounts = unreadState?.mentionCounts ?? {}
+  const unreadCounts = unreadState?.unreadCounts ?? EMPTY_COUNTS
+  const mentionCounts = unreadState?.mentionCounts ?? EMPTY_COUNTS
   const mutedStreamIds = useMemo(() => new Set(unreadState?.mutedStreamIds ?? []), [unreadState?.mutedStreamIds])
   // The Drawer/Dialog split is owned by ResponsiveDialog; isMobile here only
   // governs the post-select navigation contract (mobile strips `?panel=…`).
