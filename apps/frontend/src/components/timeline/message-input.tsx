@@ -426,6 +426,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const [scheduledDrawerOpen, setScheduledDrawerOpen] = useState(false)
   const [selectedScheduledItem, setSelectedScheduledItem] = useState<ScheduledPickerItem | null>(null)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
+  const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
   const isMobile = useIsMobile()
   const connectionState = useConnectionState()
   const isOffline = connectionState === "offline"
@@ -773,6 +774,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onItemAction={handleScheduledLongPress}
         onSendNow={handleScheduledSendNow}
         onDelete={handleScheduledDelete}
+        onScheduleSelect={handleSchedule}
+        timezone={timezone}
         controlsDisabled={composer.isSending}
         scheduleDisabled={!composer.canSend}
       />
@@ -784,6 +787,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onItemAction={handleScheduledLongPress}
         onSendNow={handleScheduledSendNow}
         onDelete={handleScheduledDelete}
+        onScheduleSelect={handleSchedule}
+        timezone={timezone}
         controlsDisabled={composer.isSending}
         scheduleDisabled={!composer.canSend}
         size="fab"

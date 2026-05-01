@@ -8,7 +8,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatRelativeTime } from "@/lib/dates"
 import { cn } from "@/lib/utils"
-import { ScheduledActionsList } from "./schedule-ui"
+import { SchedulePresetList, ScheduledActionsList } from "./schedule-ui"
 
 export interface ScheduledPickerItem {
   id: string
@@ -25,6 +25,10 @@ interface ScheduledPickerProps {
   onItemAction: (item: ScheduledPickerItem) => void
   onSendNow: (id: string) => void
   onDelete: (id: string) => void
+  /** Desktop-only: called with the selected date when user picks a preset from the schedule popover. */
+  onScheduleSelect?: (date: Date) => void
+  /** Timezone for computing presets (required when onScheduleSelect is provided). */
+  timezone?: string
   controlsDisabled?: boolean
   scheduleDisabled?: boolean
   size?: "compact" | "fab"
@@ -85,6 +89,8 @@ export function ScheduledPicker({
   onItemAction,
   onSendNow,
   onDelete,
+  onScheduleSelect,
+  timezone,
   controlsDisabled = false,
   scheduleDisabled = false,
   size = "compact",
@@ -92,14 +98,28 @@ export function ScheduledPicker({
   const [open, setOpen] = useState(false)
   const [actionItem, setActionItem] = useState<ScheduledPickerItem | null>(null)
   const [actionOpen, setActionOpen] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
   const isMobile = useIsMobile()
   const count = scheduled.length
   const now = useMemo(() => new Date(), [open])
 
   const handleSchedule = useCallback(() => {
-    setOpen(false)
-    onScheduleOpen()
-  }, [onScheduleOpen])
+    if (isMobile || !onScheduleSelect) {
+      setOpen(false)
+      onScheduleOpen()
+      return
+    }
+    setScheduleOpen(true)
+  }, [isMobile, onScheduleSelect, onScheduleOpen])
+
+  const handlePresetSelect = useCallback(
+    (date: Date) => {
+      setScheduleOpen(false)
+      setOpen(false)
+      onScheduleSelect?.(date)
+    },
+    [onScheduleSelect]
+  )
 
   const handleRowAction = useCallback(
     (item: ScheduledPickerItem) => {
@@ -217,6 +237,31 @@ export function ScheduledPicker({
                 onDelete={handleDelete}
               />
             </div>
+          </PopoverContent>
+        </Popover>
+      )}
+
+      {/* Desktop schedule presets popover — opens when clicking "Schedule" on desktop */}
+      {!isMobile && onScheduleSelect && timezone !== undefined && (
+        <Popover open={scheduleOpen} onOpenChange={setScheduleOpen}>
+          <PopoverTrigger asChild>
+            <span className="hidden" />
+          </PopoverTrigger>
+          <PopoverContent align="end" side="top" className="w-64 p-1">
+            <div className="px-2 py-1.5 text-[11px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+              <Clock className="h-3 w-3" />
+              Schedule send
+            </div>
+            <SchedulePresetList
+              variant="popover"
+              onSelect={handlePresetSelect}
+              onCustomClick={() => {
+                setScheduleOpen(false)
+                onScheduleOpen()
+              }}
+              now={now}
+              timezone={timezone}
+            />
           </PopoverContent>
         </Popover>
       )}
