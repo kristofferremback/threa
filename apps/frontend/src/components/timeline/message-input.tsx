@@ -15,8 +15,14 @@ import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { FloatingComposerShell, MessageComposer, StashedDraftsPicker, ScheduleSheet } from "@/components/composer"
-import { ScheduledPicker } from "@/components/composer/scheduled-picker"
+import {
+  FloatingComposerShell,
+  MessageComposer,
+  StashedDraftsPicker,
+  ScheduleSheet,
+  ScheduledMessageDrawer,
+} from "@/components/composer"
+import { ScheduledPicker, type ScheduledPickerItem } from "@/components/composer/scheduled-picker"
 import type { ComposerControlHandle } from "@/components/composer"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
@@ -26,7 +32,13 @@ import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
 import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
-import { useScheduleMessage, useScheduledList, useCancelScheduled, useSendNowScheduled } from "@/hooks/use-scheduled"
+import {
+  useScheduleMessage,
+  useScheduledList,
+  useCancelScheduled,
+  useSendNowScheduled,
+  useUpdateScheduled,
+} from "@/hooks/use-scheduled"
 import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
@@ -197,6 +209,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const scheduledItems = useScheduledList(workspaceId)
   const cancelScheduledMutation = useCancelScheduled(workspaceId)
   const sendNowScheduledMutation = useSendNowScheduled(workspaceId)
+  const updateScheduledMutation = useUpdateScheduled(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   // Resolve stream context for broadcast mention filtering.
@@ -410,6 +423,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [pickerScheduleSheetOpen, setPickerScheduleSheetOpen] = useState(false)
+  const [scheduledDrawerOpen, setScheduledDrawerOpen] = useState(false)
+  const [selectedScheduledItem, setSelectedScheduledItem] = useState<ScheduledPickerItem | null>(null)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
   const isMobile = useIsMobile()
   const connectionState = useConnectionState()
@@ -610,7 +625,12 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     setPickerScheduleSheetOpen(true)
   }, [])
 
-  const handleSendNow = useCallback(
+  const handleScheduledLongPress = useCallback((item: ScheduledPickerItem) => {
+    setSelectedScheduledItem(item)
+    setScheduledDrawerOpen(true)
+  }, [])
+
+  const handleScheduledSendNow = useCallback(
     (id: string) => {
       sendNowScheduledMutation.mutate(id, {
         onSuccess: () => toast.success("Message sent"),
@@ -618,6 +638,41 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       })
     },
     [sendNowScheduledMutation]
+  )
+
+  const handleScheduledEditSave = useCallback(
+    (id: string, contentMarkdown: string, originalScheduledAt: string) => {
+      updateScheduledMutation.mutate(
+        { id, input: { contentMarkdown, scheduledAt: originalScheduledAt } },
+        {
+          onSuccess: () => toast.success("Message updated"),
+          onError: () => toast.error("Failed to update message"),
+        }
+      )
+    },
+    [updateScheduledMutation]
+  )
+
+  const handleScheduledChangeTime = useCallback(
+    (id: string, scheduledAt: Date) => {
+      updateScheduledMutation.mutate(
+        { id, input: { scheduledAt: scheduledAt.toISOString() } },
+        {
+          onError: () => toast.error("Failed to update time"),
+        }
+      )
+    },
+    [updateScheduledMutation]
+  )
+
+  const handleScheduledDelete = useCallback(
+    (id: string) => {
+      cancelScheduledMutation.mutate(id, {
+        onSuccess: () => toast.success("Scheduled message cancelled"),
+        onError: () => toast.error("Failed to cancel"),
+      })
+    },
+    [cancelScheduledMutation]
   )
 
   if (disabled && disabledReason) {
@@ -706,8 +761,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       <ScheduledPicker
         scheduled={scheduledItems ?? []}
         onScheduleOpen={handlePickerScheduleOpen}
-        onCancel={(id) => cancelScheduledMutation.mutate(id)}
-        onSendNow={handleSendNow}
+        onLongPress={handleScheduledLongPress}
         controlsDisabled={composer.isSending}
       />
     ),
@@ -715,8 +769,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       <ScheduledPicker
         scheduled={scheduledItems ?? []}
         onScheduleOpen={handlePickerScheduleOpen}
-        onCancel={(id) => cancelScheduledMutation.mutate(id)}
-        onSendNow={handleSendNow}
+        onLongPress={handleScheduledLongPress}
         controlsDisabled={composer.isSending}
         size="fab"
       />
@@ -740,6 +793,17 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         open={pickerScheduleSheetOpen}
         onOpenChange={setPickerScheduleSheetOpen}
         onSelect={(date) => handleSchedule(date)}
+      />
+
+      {/* Scheduled message actions drawer (long-press a row in the picker) */}
+      <ScheduledMessageDrawer
+        open={scheduledDrawerOpen}
+        onOpenChange={setScheduledDrawerOpen}
+        item={selectedScheduledItem}
+        onSendNow={handleScheduledSendNow}
+        onEditSave={handleScheduledEditSave}
+        onChangeTime={handleScheduledChangeTime}
+        onDelete={handleScheduledDelete}
       />
 
       {/* Inline composer — hidden while expanded. Mobile inline editing is handled

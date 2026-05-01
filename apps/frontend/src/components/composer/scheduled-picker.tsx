@@ -1,13 +1,15 @@
 import { useCallback, useMemo, useState } from "react"
-import { Clock, Trash2, SendHorizontal } from "lucide-react"
+import { Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useLongPress } from "@/hooks/use-long-press"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatRelativeTime } from "@/lib/dates"
 import { cn } from "@/lib/utils"
 
-interface ScheduledPickerItem {
+export interface ScheduledPickerItem {
   id: string
   contentMarkdown: string | unknown
   attachmentIds?: string[]
@@ -19,10 +21,8 @@ interface ScheduledPickerProps {
   scheduled: ScheduledPickerItem[]
   /** Called when the user clicks the schedule button — should open the time picker drawer. */
   onScheduleOpen: () => void
-  /** Called when the user clicks the cancel icon on a row. */
-  onCancel: (id: string) => void
-  /** Called when the user clicks the send-now action on a row. */
-  onSendNow: (id: string) => void
+  /** Called when the user long-presses a scheduled message row. */
+  onLongPress: (item: ScheduledPickerItem) => void
   /** When `controlsDisabled`, the trigger button is disabled (e.g. composer is sending). */
   controlsDisabled?: boolean
   /**
@@ -43,31 +43,53 @@ function getPreview(scheduled: ScheduledPickerItem): string {
   return "Empty message"
 }
 
+function ScheduledPickerRow({
+  item,
+  now,
+  onLongPress,
+}: {
+  item: ScheduledPickerItem
+  now: Date
+  onLongPress: (item: ScheduledPickerItem) => void
+}) {
+  const isMobile = useIsMobile()
+  const { handlers } = useLongPress({
+    enabled: isMobile,
+    onLongPress: () => onLongPress(item),
+  })
+  const preview = getPreview(item)
+
+  return (
+    <li>
+      <div
+        className="flex items-start gap-2 px-3 py-2 hover:bg-muted/60"
+        {...(isMobile ? handlers : {})}
+        onContextMenu={handlers.onContextMenu}
+      >
+        <div className="flex-1 min-w-0">
+          {item.streamDisplayName && (
+            <p className="text-[11px] text-muted-foreground truncate mb-0.5">{item.streamDisplayName}</p>
+          )}
+          <p className="text-sm line-clamp-2 break-words">{preview}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {formatRelativeTime(new Date(item.scheduledAt), now, undefined, { terse: true })}
+          </p>
+        </div>
+      </div>
+    </li>
+  )
+}
+
 export function ScheduledPicker({
   scheduled,
   onScheduleOpen,
-  onCancel,
-  onSendNow,
+  onLongPress,
   controlsDisabled = false,
   size = "compact",
 }: ScheduledPickerProps) {
   const [open, setOpen] = useState(false)
   const count = scheduled.length
   const now = useMemo(() => new Date(), [open])
-
-  const handleCancel = useCallback(
-    (id: string) => {
-      onCancel(id)
-    },
-    [onCancel]
-  )
-
-  const handleSendNow = useCallback(
-    (id: string) => {
-      onSendNow(id)
-    },
-    [onSendNow]
-  )
 
   const handleSchedule = useCallback(() => {
     setOpen(false)
@@ -124,52 +146,9 @@ export function ScheduledPicker({
           </div>
         ) : (
           <ul className="max-h-64 overflow-y-auto py-1" role="list">
-            {scheduled.map((item) => {
-              const preview = getPreview(item)
-              return (
-                <li key={item.id} className="group/row">
-                  <div className="flex items-start gap-2 px-3 py-2 hover:bg-muted/60">
-                    <div className="flex-1 min-w-0">
-                      {item.streamDisplayName && (
-                        <p className="text-[11px] text-muted-foreground truncate mb-0.5">{item.streamDisplayName}</p>
-                      )}
-                      <p className="text-sm line-clamp-2 break-words">{preview}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {formatRelativeTime(new Date(item.scheduledAt), now, undefined, { terse: true })}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/row:opacity-100 focus-within:opacity-100 max-sm:opacity-100">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Send now"
-                        className="h-7 w-7 shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleSendNow(item.id)
-                        }}
-                      >
-                        <SendHorizontal className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Cancel scheduled message"
-                        className="h-7 w-7 shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleCancel(item.id)
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </li>
-              )
-            })}
+            {scheduled.map((item) => (
+              <ScheduledPickerRow key={item.id} item={item} now={now} onLongPress={onLongPress} />
+            ))}
           </ul>
         )}
       </PopoverContent>
