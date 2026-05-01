@@ -83,15 +83,17 @@ export function useScheduleMessage(workspaceId: string) {
         id: optimisticId,
         workspaceId,
         authorId: "",
-        streamId: input.streamId,
-        parentMessageId: input.parentMessageId,
-        parentStreamId: input.parentStreamId,
+        streamId: input.streamId ?? null,
+        parentMessageId: input.parentMessageId ?? null,
+        parentStreamId: input.parentStreamId ?? null,
         contentJson: input.contentJson,
         contentMarkdown: input.contentMarkdown,
         attachmentIds: input.attachmentIds ?? [],
         scheduledAt: input.scheduledAt,
         sentAt: null,
         cancelledAt: null,
+        pausedAt: null,
+        messageId: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         streamDisplayName: null,
@@ -161,6 +163,58 @@ export function useSendNowScheduled(workspaceId: string) {
   return useMutation({
     mutationFn: (id: string) => scheduledMessagesApi.sendNow(workspaceId, id),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+    },
+  })
+}
+
+/** Pause a scheduled message (hold until resume). */
+export function usePauseScheduled(workspaceId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => scheduledMessagesApi.pause(workspaceId, id),
+    onSuccess: (result) => {
+      void persistScheduledRows([result.scheduled])
+      queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+    },
+  })
+}
+
+/** Resume a paused scheduled message. */
+export function useResumeScheduled(workspaceId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => scheduledMessagesApi.resume(workspaceId, id),
+    onSuccess: (result) => {
+      void persistScheduledRows([result.scheduled])
+      queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+    },
+  })
+}
+
+/** Pause a scheduled message. */
+export function usePauseScheduled(workspaceId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => scheduledMessagesApi.pause(workspaceId, id),
+    onSuccess: (result) => {
+      void persistScheduledRows([result.scheduled])
+      queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+    },
+  })
+}
+
+/** Resume a scheduled message. */
+export function useResumeScheduled(workspaceId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => scheduledMessagesApi.resume(workspaceId, id),
+    onSuccess: (result) => {
+      void persistScheduledRows([result.scheduled])
       queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
     },
   })

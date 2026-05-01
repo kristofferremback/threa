@@ -28,6 +28,7 @@ export async function resolveScheduledView(
     sentAt: row.sentAt?.toISOString() ?? null,
     cancelledAt: row.cancelledAt?.toISOString() ?? null,
     pausedAt: row.pausedAt?.toISOString() ?? null,
+    messageId: row.messageId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     streamDisplayName: row.streamId ? (streamById.get(row.streamId)?.displayName ?? null) : null,

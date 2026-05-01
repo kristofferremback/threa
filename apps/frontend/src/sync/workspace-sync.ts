@@ -26,6 +26,7 @@ import type {
 } from "@threa/types"
 import { persistSavedRows, removeSavedRow, savedKeys } from "@/hooks/use-saved"
 import { persistScheduledRows, removeScheduledRow, scheduledKeys } from "@/hooks/use-scheduled"
+import { scheduledMessagesApi } from "@/api/scheduled-messages"
 import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
 import { applyStreamBootstrapInCurrentTransaction } from "./stream-sync"
 
@@ -1328,8 +1329,17 @@ export function registerWorkspaceSocketHandlers(
 
   const handleScheduledMessageFired = (payload: ScheduledMessageFiredPayload) => {
     if (payload.workspaceId !== workspaceId) return
-    void removeScheduledRow(payload.scheduledId)
-    queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+    // Instead of removing, fetch the updated row (with sentAt) from the server
+    // and persist it so sent messages remain visible in the explorer.
+    void scheduledMessagesApi.list(workspaceId).then((result) => {
+      const row = result.scheduled.find((r) => r.id === payload.scheduledId)
+      if (row) {
+        void persistScheduledRows([row])
+      } else {
+        void removeScheduledRow(payload.scheduledId)
+      }
+      queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+    })
   }
 
   // Register all handlers

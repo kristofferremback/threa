@@ -756,6 +756,7 @@ export interface ScheduledMessageView {
   sentAt: string | null
   cancelledAt: string | null
   pausedAt: string | null
+  messageId: string | null
   createdAt: string
   updatedAt: string
   streamDisplayName: string | null

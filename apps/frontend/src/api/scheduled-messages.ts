@@ -42,4 +42,16 @@ export const scheduledMessagesApi = {
       scheduledAt: new Date().toISOString(),
     })
   },
+
+  async pause(workspaceId: string, id: string): Promise<{ scheduled: ScheduledMessageView }> {
+    return api.post<{ scheduled: ScheduledMessageView }>(
+      `/api/workspaces/${workspaceId}/scheduled-messages/${id}/pause`
+    )
+  },
+
+  async resume(workspaceId: string, id: string): Promise<{ scheduled: ScheduledMessageView }> {
+    return api.post<{ scheduled: ScheduledMessageView }>(
+      `/api/workspaces/${workspaceId}/scheduled-messages/${id}/resume`
+    )
+  },
 }
