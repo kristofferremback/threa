@@ -1,5 +1,5 @@
 import { type ReactNode } from "react"
-import { Clock, Calendar as CalendarIcon } from "lucide-react"
+import { Clock, Calendar as CalendarIcon, Edit2, CircleSlash, ArrowUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { SCHEDULE_PRESETS, computeScheduledAt } from "@/lib/schedule-presets"
@@ -31,15 +31,10 @@ export function PresetMenuButton({ children, onClick, className, variant = "draw
 }
 
 interface SchedulePresetListProps {
-  /** Which button style to use. */
   variant: "drawer" | "popover"
-  /** Called with the resolved Date when a preset is picked. */
   onSelect: (date: Date) => void
-  /** Called when "Pick a time…" is clicked. */
   onCustomClick: () => void
-  /** Current time for computing presets. */
   now: Date
-  /** User timezone. */
   timezone: string
 }
 
@@ -63,5 +58,44 @@ export function SchedulePresetList({ variant, onSelect, now, timezone, onCustomC
         Pick a time…
       </PresetMenuButton>
     </div>
+  )
+}
+
+interface ScheduledActionsListProps {
+  variant?: "drawer" | "popover"
+  onSendNow: () => void
+  onEdit: () => void
+  onChangeTime: () => void
+  onDelete: () => void
+}
+
+export function ScheduledActionsList({
+  variant = "drawer",
+  onSendNow,
+  onEdit,
+  onChangeTime,
+  onDelete,
+}: ScheduledActionsListProps) {
+  const iconClass = variant === "popover" ? "h-3.5 w-3.5" : "h-4 w-4"
+
+  return (
+    <>
+      <PresetMenuButton variant={variant} onClick={onSendNow}>
+        <ArrowUp className={cn(iconClass, "text-muted-foreground")} />
+        <span className="flex-1 text-left">Send now</span>
+      </PresetMenuButton>
+      <PresetMenuButton variant={variant} onClick={onEdit}>
+        <Edit2 className={cn(iconClass, "text-muted-foreground")} />
+        <span className="flex-1 text-left">Edit message</span>
+      </PresetMenuButton>
+      <PresetMenuButton variant={variant} onClick={onChangeTime}>
+        <Clock className={cn(iconClass, "text-muted-foreground")} />
+        <span className="flex-1 text-left">Change time</span>
+      </PresetMenuButton>
+      <PresetMenuButton variant={variant} onClick={onDelete} className="text-destructive">
+        <CircleSlash className={iconClass} />
+        <span className="flex-1 text-left">Delete</span>
+      </PresetMenuButton>
+    </>
   )
 }

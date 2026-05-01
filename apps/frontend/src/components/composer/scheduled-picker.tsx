@@ -8,6 +8,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatRelativeTime } from "@/lib/dates"
 import { cn } from "@/lib/utils"
+import { ScheduledActionsList } from "./schedule-ui"
 
 export interface ScheduledPickerItem {
   id: string
@@ -19,18 +20,13 @@ export interface ScheduledPickerItem {
 
 interface ScheduledPickerProps {
   scheduled: ScheduledPickerItem[]
-  /** Called when the user clicks the schedule button — should open the time picker drawer. */
   onScheduleOpen: () => void
-  /** Called when the user long-presses a scheduled message row. */
-  onLongPress: (item: ScheduledPickerItem) => void
-  /** When `controlsDisabled`, the trigger button is disabled (e.g. composer is sending). */
+  /** Called when the user triggers an action on a row (long-press on mobile, click on desktop). */
+  onItemAction: (item: ScheduledPickerItem) => void
+  onSendNow: (id: string) => void
+  onDelete: (id: string) => void
   controlsDisabled?: boolean
-  /** When true, the "Schedule" button in the header is disabled (no content to schedule). */
   scheduleDisabled?: boolean
-  /**
-   * Visual size of the trigger button. `compact` matches the 7x7 toolbar row on
-   * desktop inline; `fab` matches the 30x30 floating drawer in expanded mode.
-   */
   size?: "compact" | "fab"
 }
 
@@ -48,25 +44,26 @@ function getPreview(scheduled: ScheduledPickerItem): string {
 function ScheduledPickerRow({
   item,
   now,
-  onLongPress,
+  onAction,
 }: {
   item: ScheduledPickerItem
   now: Date
-  onLongPress: (item: ScheduledPickerItem) => void
+  onAction: (item: ScheduledPickerItem) => void
 }) {
   const isMobile = useIsMobile()
   const { handlers } = useLongPress({
     enabled: isMobile,
-    onLongPress: () => onLongPress(item),
+    onLongPress: () => onAction(item),
   })
   const preview = getPreview(item)
 
   return (
     <li>
       <div
-        className="flex items-start gap-2 px-3 py-2 hover:bg-muted/60"
+        className="flex items-start gap-2 px-3 py-2 hover:bg-muted/60 cursor-pointer"
         {...(isMobile ? handlers : {})}
         onContextMenu={handlers.onContextMenu}
+        onClick={isMobile ? undefined : () => onAction(item)}
       >
         <div className="flex-1 min-w-0">
           {item.streamDisplayName && (
@@ -85,12 +82,17 @@ function ScheduledPickerRow({
 export function ScheduledPicker({
   scheduled,
   onScheduleOpen,
-  onLongPress,
+  onItemAction,
+  onSendNow,
+  onDelete,
   controlsDisabled = false,
   scheduleDisabled = false,
   size = "compact",
 }: ScheduledPickerProps) {
   const [open, setOpen] = useState(false)
+  const [actionItem, setActionItem] = useState<ScheduledPickerItem | null>(null)
+  const [actionOpen, setActionOpen] = useState(false)
+  const isMobile = useIsMobile()
   const count = scheduled.length
   const now = useMemo(() => new Date(), [open])
 
@@ -99,77 +101,125 @@ export function ScheduledPicker({
     onScheduleOpen()
   }, [onScheduleOpen])
 
-  const handleLongPress = useCallback(
+  const handleRowAction = useCallback(
     (item: ScheduledPickerItem) => {
       setOpen(false)
-      onLongPress(item)
+      if (isMobile) {
+        onItemAction(item)
+      } else {
+        setActionItem(item)
+        setActionOpen(true)
+      }
     },
-    [onLongPress]
+    [isMobile, onItemAction]
   )
+
+  const handleSendNow = useCallback(() => {
+    if (actionItem) {
+      setActionOpen(false)
+      onSendNow(actionItem.id)
+    }
+  }, [actionItem, onSendNow])
+
+  const handleDelete = useCallback(() => {
+    if (actionItem) {
+      setActionOpen(false)
+      onDelete(actionItem.id)
+    }
+  }, [actionItem, onDelete])
+
+  const handleEditRequest = useCallback(() => {
+    if (actionItem) {
+      setActionOpen(false)
+      onItemAction(actionItem)
+    }
+  }, [actionItem, onItemAction])
 
   const triggerSizeClass = size === "fab" ? "h-[30px] w-[30px] rounded-md bg-background shadow-md" : "h-7 w-7"
   const triggerIconClass = size === "fab" ? "h-4 w-4" : "h-3.5 w-3.5"
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant={size === "fab" ? "outline" : "ghost"}
+                size="icon"
+                aria-label={count > 0 ? `Scheduled (${count})` : "Scheduled"}
+                className={cn("relative shrink-0 p-0", triggerSizeClass)}
+                disabled={controlsDisabled}
+                onPointerDown={size === "fab" ? (e) => e.preventDefault() : undefined}
+              >
+                <Clock className={triggerIconClass} />
+                {count > 0 && (
+                  <span
+                    className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/60 pointer-events-none"
+                    aria-hidden
+                  />
+                )}
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Scheduled
+          </TooltipContent>
+        </Tooltip>
+
+        <PopoverContent align="end" side="top" className="w-80 p-0">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b">
+            <p className="text-sm font-medium">
+              Scheduled
+              {count > 0 && <span className="text-muted-foreground font-normal ml-1.5">({count})</span>}
+            </p>
             <Button
               type="button"
-              variant={size === "fab" ? "outline" : "ghost"}
-              size="icon"
-              aria-label={count > 0 ? `Scheduled (${count})` : "Scheduled"}
-              className={cn("relative shrink-0 p-0", triggerSizeClass)}
-              disabled={controlsDisabled}
-              onPointerDown={size === "fab" ? (e) => e.preventDefault() : undefined}
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 gap-1 text-xs"
+              onClick={handleSchedule}
+              disabled={scheduleDisabled}
             >
-              <Clock className={triggerIconClass} />
-              {count > 0 && (
-                <span
-                  className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/60 pointer-events-none"
-                  aria-hidden
-                />
-              )}
+              <Clock className="h-3.5 w-3.5" />
+              <span>Schedule</span>
             </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          Scheduled
-        </TooltipContent>
-      </Tooltip>
-
-      <PopoverContent align="end" side="top" className="w-80 p-0">
-        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b">
-          <p className="text-sm font-medium">
-            Scheduled
-            {count > 0 && <span className="text-muted-foreground font-normal ml-1.5">({count})</span>}
-          </p>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 gap-1 text-xs"
-            onClick={handleSchedule}
-            disabled={scheduleDisabled}
-          >
-            <Clock className="h-3.5 w-3.5" />
-            <span>Schedule</span>
-          </Button>
-        </div>
-
-        {scheduled.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            No scheduled messages. Long-press the send button to schedule one.
           </div>
-        ) : (
-          <ul className="max-h-64 overflow-y-auto py-1" role="list">
-            {scheduled.map((item) => (
-              <ScheduledPickerRow key={item.id} item={item} now={now} onLongPress={handleLongPress} />
-            ))}
-          </ul>
-        )}
-      </PopoverContent>
-    </Popover>
+
+          {scheduled.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+              No scheduled messages. Long-press the send button to schedule one.
+            </div>
+          ) : (
+            <ul className="max-h-64 overflow-y-auto py-1" role="list">
+              {scheduled.map((item) => (
+                <ScheduledPickerRow key={item.id} item={item} now={now} onAction={handleRowAction} />
+              ))}
+            </ul>
+          )}
+        </PopoverContent>
+      </Popover>
+
+      {/* Desktop action popover — opens when clicking a row on desktop */}
+      {!isMobile && (
+        <Popover open={actionOpen} onOpenChange={setActionOpen}>
+          <PopoverTrigger asChild>
+            <span className="hidden" />
+          </PopoverTrigger>
+          <PopoverContent align="start" side="bottom" className="w-56 p-1">
+            <div className="flex flex-col gap-0">
+              <ScheduledActionsList
+                variant="popover"
+                onSendNow={handleSendNow}
+                onEdit={handleEditRequest}
+                onChangeTime={handleEditRequest}
+                onDelete={handleDelete}
+              />
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
+    </>
   )
 }

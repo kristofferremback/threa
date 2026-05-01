@@ -13,7 +13,6 @@ import {
 import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2 } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
-import { SchedulePopover } from "./schedule-popover"
 import { ScheduleSheet } from "./schedule-sheet"
 import { usePreferencesOptional } from "@/contexts"
 import { getEffectiveKeyBinding, matchesKeyBinding } from "@/lib/keyboard-shortcuts"
@@ -265,7 +264,6 @@ export function MessageComposer({
   const [mobileExpanded, setMobileExpanded] = useState(false)
   const [mobileFocused, setMobileFocused] = useState(false)
   const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
-  const [schedulePopoverOpen, setSchedulePopoverOpen] = useState(false)
   const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false)
   const isMobile = useIsMobile()
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -459,20 +457,13 @@ export function MessageComposer({
   )
 
   // ── Send button (shared between states) ──────────────────────────────
-  const sendButtonClass = cn("h-[30px] w-[30px] shrink-0 p-0 shadow-md", !isMobile && onSchedule && "rounded-r-none")
-  // On desktop with schedule, dock with the chevron button (left round, right square).
-  // On mobile, always fully rounded — the chevron is not rendered.
-  const sendButtonRightClass = isMobile || !onSchedule ? "rounded-md" : undefined
+  const sendButtonClass = "h-[30px] w-[30px] shrink-0 p-0 shadow-md rounded-md"
 
   const sendButton = hasFailed ? (
     <Tooltip>
       <TooltipTrigger asChild>
         <span>
-          <Button
-            disabled
-            className={cn(sendButtonClass, "pointer-events-none rounded-l-md", sendButtonRightClass)}
-            aria-label={submitLabel}
-          >
+          <Button disabled className={cn(sendButtonClass, "pointer-events-none")} aria-label={submitLabel}>
             <ArrowUp className="h-4 w-4" />
           </Button>
         </span>
@@ -487,23 +478,12 @@ export function MessageComposer({
       onClick={handleSubmit}
       disabled={!canSubmit}
       aria-label={isSubmitting ? submittingLabel : submitLabel}
-      className={cn(sendButtonClass, "rounded-l-md", sendButtonRightClass)}
+      className={sendButtonClass}
       {...(isMobile ? longPressHandlers : {})}
     >
       <ArrowUp className="h-4 w-4" />
     </Button>
   )
-
-  // Schedule chevron — only rendered on desktop when onSchedule is provided
-  const scheduleChevron =
-    !isMobile && onSchedule ? (
-      <SchedulePopover
-        open={schedulePopoverOpen}
-        onOpenChange={setSchedulePopoverOpen}
-        onSelect={(date) => onSchedule(date)}
-        disabled={controlsDisabled}
-      />
-    ) : null
 
   // ── Expanded (fullscreen) layout ──────────────────────────────────────────
   // Trailing content for the inline toolbar: just the close X
@@ -702,10 +682,7 @@ export function MessageComposer({
               <Plus className="h-4 w-4" />
             </Button>
             {/* Send button */}
-            <div className="flex items-center gap-0">
-              {sendButton}
-              {scheduleChevron}
-            </div>
+            <div className="flex items-center gap-0">{sendButton}</div>
           </div>
         </div>
       </TooltipProvider>
@@ -934,10 +911,7 @@ export function MessageComposer({
                     </Tooltip>
                     {scheduledPickerTrigger}
                     {stashedDraftsTrigger}
-                    <div className="flex items-center gap-0">
-                      {sendButton}
-                      {scheduleChevron}
-                    </div>
+                    <div className="flex items-center gap-0">{sendButton}</div>
                   </div>
                 )}
               </div>

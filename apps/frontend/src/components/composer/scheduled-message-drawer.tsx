@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Clock, Edit2, CircleSlash, ArrowUp, ChevronLeft } from "lucide-react"
+import { Clock, ChevronLeft } from "lucide-react"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { formatRelativeTime } from "@/lib/dates"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { usePreferences } from "@/contexts"
 import { toDateInput, toTimeInput, parseDateTimeInput } from "@/lib/schedule-presets"
-import { SchedulePresetList, PresetMenuButton } from "./schedule-ui"
+import { SchedulePresetList, ScheduledActionsList } from "./schedule-ui"
 import type { ScheduledPickerItem } from "./scheduled-picker"
 
 type DrawerMode = "actions" | "edit" | "change-time"
@@ -159,27 +159,16 @@ export function ScheduledMessageDrawer({
               </div>
 
               <div className="flex flex-col gap-1">
-                <PresetMenuButton onClick={handleSendNow}>
-                  <ArrowUp className="h-4 w-4 text-muted-foreground" />
-                  <span className="flex-1 text-left">Send now</span>
-                </PresetMenuButton>
-                <PresetMenuButton onClick={handleEnterEdit}>
-                  <Edit2 className="h-4 w-4 text-muted-foreground" />
-                  <span className="flex-1 text-left">Edit message</span>
-                </PresetMenuButton>
-                <PresetMenuButton
-                  onClick={() => {
+                <ScheduledActionsList
+                  variant="drawer"
+                  onSendNow={handleSendNow}
+                  onEdit={handleEnterEdit}
+                  onChangeTime={() => {
                     setChangeMode("presets")
                     setMode("change-time")
                   }}
-                >
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  <span className="flex-1 text-left">Change time</span>
-                </PresetMenuButton>
-                <PresetMenuButton onClick={handleDelete} className="text-destructive">
-                  <CircleSlash className="h-4 w-4" />
-                  <span className="flex-1 text-left">Delete</span>
-                </PresetMenuButton>
+                  onDelete={handleDelete}
+                />
               </div>
             </>
           )}

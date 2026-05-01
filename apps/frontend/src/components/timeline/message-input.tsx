@@ -770,7 +770,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       <ScheduledPicker
         scheduled={scheduledItems ?? []}
         onScheduleOpen={handlePickerScheduleOpen}
-        onLongPress={handleScheduledLongPress}
+        onItemAction={handleScheduledLongPress}
+        onSendNow={handleScheduledSendNow}
+        onDelete={handleScheduledDelete}
         controlsDisabled={composer.isSending}
         scheduleDisabled={!composer.canSend}
       />
@@ -779,7 +781,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       <ScheduledPicker
         scheduled={scheduledItems ?? []}
         onScheduleOpen={handlePickerScheduleOpen}
-        onLongPress={handleScheduledLongPress}
+        onItemAction={handleScheduledLongPress}
+        onSendNow={handleScheduledSendNow}
+        onDelete={handleScheduledDelete}
         controlsDisabled={composer.isSending}
         scheduleDisabled={!composer.canSend}
         size="fab"
