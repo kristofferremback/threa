@@ -380,6 +380,48 @@ describe("workspace-router", () => {
       }
     })
 
+    test("preserves upstream X-Forwarded-Host and X-Forwarded-Proto for local dev targets", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        const req = new Request("http://localhost:3001/api/workspaces/ws_123/messages", {
+          headers: {
+            "X-Forwarded-Host": "100.112.117.108:3000",
+            "X-Forwarded-Proto": "http",
+            "X-Forwarded-Port": "3000",
+          },
+        })
+        await worker.fetch(req, makeEnvWithKv())
+        const headers = new Headers(getProxiedInit(fn).headers as Record<string, string>)
+        expect(headers.get("X-Forwarded-Host")).toBe("100.112.117.108:3000")
+        expect(headers.get("X-Forwarded-Proto")).toBe("http")
+        expect(headers.get("X-Forwarded-Port")).toBe("3000")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("ignores spoofed upstream forwarding headers for remote targets", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        const req = new Request("https://app.threa.io/api/workspaces/ws_123/messages", {
+          headers: {
+            "X-Forwarded-Host": "evil.example",
+            "X-Forwarded-Proto": "http",
+            "X-Forwarded-Port": "1234",
+          },
+        })
+        await worker.fetch(req, makeEnvWithKv("eu-north-1"))
+        const headers = new Headers(getProxiedInit(fn).headers as Record<string, string>)
+        expect(headers.get("X-Forwarded-Host")).toBe("app.threa.io")
+        expect(headers.get("X-Forwarded-Proto")).toBe("https")
+        expect(headers.get("X-Forwarded-Port")).toBeNull()
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
     test("forwards CF-Connecting-IP as X-Forwarded-For", async () => {
       const originalFetch = globalThis.fetch
       const fn = mockFetchFn()

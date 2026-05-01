@@ -89,6 +89,25 @@ function deriveDatabaseName(dirPath: string): string {
   return sanitized || "threa"
 }
 
+function getExplicitLanHost(): string | undefined {
+  const raw = process.env.LAN_HOST ?? process.env.LAN_IP
+  if (!raw) return undefined
+
+  try {
+    const url = new URL(raw.includes("://") ? raw : `http://${raw}`)
+    return url.hostname
+  } catch {
+    console.error(`Invalid LAN_HOST/LAN_IP value: ${raw}`)
+    process.exit(1)
+  }
+}
+
+function getDefaultLanHost(): string | undefined {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .find((i) => i && i.family === "IPv4" && !i.internal)?.address
+}
+
 async function ensureWorktreeEnv(): Promise<void> {
   const cwd = process.cwd()
   const backendEnvPath = path.join(cwd, "apps/backend/.env")
@@ -313,13 +332,12 @@ async function main() {
   }
 
   // LAN mode: bind to WiFi IP so the app is reachable from phones
-  const lanMode = process.env.LAN_MODE === "true" || process.argv.includes("--lan")
+  const explicitLanHost = getExplicitLanHost()
+  const lanMode = process.env.LAN_MODE === "true" || process.argv.includes("--lan") || !!explicitLanHost
   let lanIp: string | undefined
 
   if (lanMode) {
-    lanIp = Object.values(os.networkInterfaces())
-      .flat()
-      .find((i) => i && i.family === "IPv4" && !i.internal)?.address
+    lanIp = explicitLanHost ?? getDefaultLanHost()
 
     if (!lanIp) {
       console.error("LAN_MODE enabled but no LAN IP found — are you connected to WiFi?")

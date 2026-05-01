@@ -370,6 +370,12 @@ export interface ParseMarkdownOptions {
   enableChannels?: boolean
   enableSlashCommands?: boolean
   enableEmoji?: boolean
+  /**
+   * Keep resolved emoji shortcodes as editable text instead of atom nodes.
+   * Useful for composer surfaces where mobile browsers struggle with deleting
+   * adjacent contenteditable=false emoji atoms.
+   */
+  emojiAsText?: boolean
 }
 
 interface ParseOptions extends ParseMarkdownOptions {
@@ -581,6 +587,7 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
   const allowChannels = options.enableChannels ?? true
   const allowSlashCommands = options.enableSlashCommands ?? true
   const allowEmoji = options.enableEmoji ?? true
+  const emojiAsText = options.emojiAsText ?? false
 
   // Default lookup for mention types (without context, can't determine "me")
   const lookupMentionType: MentionTypeLookup =
@@ -721,6 +728,12 @@ function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONCont
       const shortcode = match[23]
       const emoji = allowEmoji ? getEmoji?.(shortcode) : null
       if (allowEmoji && emoji) {
+        if (emojiAsText) {
+          result.push({ type: "text", text: emoji })
+          lastIndex = match.index + match[0].length
+          continue
+        }
+
         // Store both `shortcode` (the wire-format id) and `emoji` (the
         // resolved character). The TipTap `EmojiExtension` reads
         // `attrs.emoji` for `renderHTML`, so omitting it would render an
