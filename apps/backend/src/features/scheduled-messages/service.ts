@@ -149,6 +149,56 @@ export class ScheduledMessagesService {
   }
 
   async update(params: UpdateScheduledParams): Promise<ScheduledMessageView> {
+    // When the client sets scheduledAt to now, fire immediately instead of
+    // going through the queue. This is the "Send now" path.
+    const clampedAt = params.scheduledAt !== undefined ? clampScheduledAt(params.scheduledAt) : null
+    const isSendNow = clampedAt !== null && clampedAt.getTime() <= Date.now()
+
+    if (isSendNow) {
+      // Apply any content changes first, then fire immediately
+      if (
+        params.contentJson !== undefined ||
+        params.contentMarkdown !== undefined ||
+        params.attachmentIds !== undefined
+      ) {
+        await withTransaction(this.pool, async (client) => {
+          const existing = await ScheduledMessagesRepository.findById(
+            client,
+            params.workspaceId,
+            params.authorId,
+            params.scheduledId
+          )
+          if (!existing) {
+            throw new HttpError("Scheduled message not found", { status: 404, code: "SCHEDULED_NOT_FOUND" })
+          }
+          if (existing.sentAt || existing.cancelledAt) {
+            throw new HttpError("Scheduled message has already been sent or cancelled", {
+              status: 409,
+              code: "SCHEDULED_NOT_PENDING",
+            })
+          }
+          await ScheduledMessagesRepository.updateContent(
+            client,
+            params.workspaceId,
+            params.authorId,
+            params.scheduledId,
+            {
+              contentJson: params.contentJson ?? existing.contentJson,
+              contentMarkdown: params.contentMarkdown ?? existing.contentMarkdown,
+              attachmentIds: params.attachmentIds ?? existing.attachmentIds,
+            }
+          )
+        })
+      }
+
+      await this.fire({ scheduledId: params.scheduledId })
+
+      // Re-read after fire to get the final view
+      const row = await ScheduledMessagesRepository.findByIdUnscoped(this.pool, params.scheduledId)
+      const [view] = await resolveScheduledView(this.pool, params.authorId, row ? [row] : [])
+      return view!
+    }
+
     return withTransaction(this.pool, async (client) => {
       const existing = await ScheduledMessagesRepository.findById(
         client,
@@ -188,13 +238,13 @@ export class ScheduledMessagesService {
       }
 
       if (params.scheduledAt !== undefined) {
-        const clampedAt = clampScheduledAt(params.scheduledAt)
+        const modifiedClampedAt = clampScheduledAt(params.scheduledAt)
         const updated = await ScheduledMessagesRepository.updateScheduledAt(
           client,
           params.workspaceId,
           params.authorId,
           params.scheduledId,
-          clampedAt
+          modifiedClampedAt
         )
         if (updated) row = updated
       }

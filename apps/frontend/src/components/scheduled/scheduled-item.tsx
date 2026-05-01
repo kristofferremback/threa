@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { stripMarkdownToInline } from "@/lib/markdown/strip"
 import { RelativeTime } from "@/components/relative-time"
-import { X } from "lucide-react"
+import { Send, X } from "lucide-react"
 
 interface ScheduledItemData {
   id: string
@@ -13,9 +13,10 @@ interface ScheduledItemData {
 interface ScheduledItemProps {
   scheduled: ScheduledItemData
   onCancel: () => void
+  onSendNow: () => void
 }
 
-export function ScheduledItem({ scheduled, onCancel }: ScheduledItemProps) {
+export function ScheduledItem({ scheduled, onCancel, onSendNow }: ScheduledItemProps) {
   const preview = stripMarkdownToInline(scheduled.contentMarkdown)
 
   return (
@@ -31,6 +32,9 @@ export function ScheduledItem({ scheduled, onCancel }: ScheduledItemProps) {
           <RelativeTime date={scheduled.scheduledAt} />
         </p>
       </div>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onSendNow} aria-label="Send now">
+        <Send className="h-3.5 w-3.5" />
+      </Button>
       <Button
         variant="ghost"
         size="icon"

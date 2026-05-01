@@ -4,7 +4,7 @@ import { toast } from "sonner"
 import { buttonVariants } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
-import { useScheduledList, useCancelScheduled } from "@/hooks/use-scheduled"
+import { useScheduledList, useCancelScheduled, useUpdateScheduled } from "@/hooks/use-scheduled"
 import { SidebarToggle } from "@/components/layout"
 import { ScheduledItem } from "@/components/scheduled/scheduled-item"
 import { ScheduledEmpty } from "@/components/scheduled/scheduled-empty"
@@ -21,12 +21,23 @@ export function ScheduledPage() {
 function ScheduledPageInner({ workspaceId }: { workspaceId: string }) {
   const items = useScheduledList(workspaceId)
   const cancelMutation = useCancelScheduled(workspaceId)
+  const updateMutation = useUpdateScheduled(workspaceId)
 
   const handleCancel = (scheduledId: string) => {
     cancelMutation.mutate(scheduledId, {
       onSuccess: () => toast.success("Scheduled message cancelled"),
       onError: () => toast.error("Could not cancel scheduled message"),
     })
+  }
+
+  const handleSendNow = (scheduledId: string) => {
+    updateMutation.mutate(
+      { id: scheduledId, input: { scheduledAt: new Date().toISOString() } },
+      {
+        onSuccess: () => toast.success("Message sent"),
+        onError: () => toast.error("Could not send message"),
+      }
+    )
   }
 
   let content = <ScheduledSkeleton />
@@ -37,7 +48,12 @@ function ScheduledPageInner({ workspaceId }: { workspaceId: string }) {
       content = (
         <div className="flex flex-col">
           {items.map((scheduled) => (
-            <ScheduledItem key={scheduled.id} scheduled={scheduled} onCancel={() => handleCancel(scheduled.id)} />
+            <ScheduledItem
+              key={scheduled.id}
+              scheduled={scheduled}
+              onCancel={() => handleCancel(scheduled.id)}
+              onSendNow={() => handleSendNow(scheduled.id)}
+            />
           ))}
         </div>
       )

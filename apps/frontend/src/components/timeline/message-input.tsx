@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 import {
   useDraftComposer,
   getDraftMessageKey,
@@ -15,6 +16,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
 import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
+import { ScheduledPicker } from "@/components/composer/scheduled-picker"
 import type { ComposerControlHandle } from "@/components/composer"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
@@ -24,6 +26,7 @@ import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
 import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
+import { useScheduleMessage, useScheduledList, useCancelScheduled } from "@/hooks/use-scheduled"
 import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
@@ -190,6 +193,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const { preferences } = usePreferences()
   const { stream, sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
+  const scheduleMutation = useScheduleMessage(workspaceId)
+  const scheduledItems = useScheduledList(workspaceId)
+  const cancelScheduledMutation = useCancelScheduled(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   // Resolve stream context for broadcast mention filtering.
@@ -561,6 +567,43 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     [composer, sendMessage, navigate, workspaceId, streamId, startDiscussWithAriadne]
   )
 
+  const handleSchedule = useCallback(
+    (scheduledAt: Date) => {
+      if (!composer.canSend) return
+
+      const pendingAttachments = composer.getPendingAttachmentsSnapshot()
+      const normalizedContent = materializePendingAttachmentReferences(composer.content, pendingAttachments)
+      const attachments = extractUploadedAttachments(normalizedContent)
+      const contentMarkdown = serializeToMarkdown(normalizedContent)
+      const savedContent = composer.content
+
+      composer.setContent(EMPTY_DOC)
+      composer.clearDraft()
+      composer.clearAttachments()
+      setExpanded(false)
+
+      scheduleMutation.mutate(
+        {
+          streamId,
+          parentMessageId: null,
+          parentStreamId: null,
+          contentJson: normalizedContent,
+          contentMarkdown,
+          attachmentIds: attachments.map((a) => a.id),
+          scheduledAt: scheduledAt.toISOString(),
+        },
+        {
+          onSuccess: () => toast.success("Message scheduled"),
+          onError: () => {
+            toast.error("Failed to schedule message")
+            composer.setContent(savedContent)
+          },
+        }
+      )
+    },
+    [composer, streamId, scheduleMutation]
+  )
+
   if (disabled && disabledReason) {
     return (
       <div className="border-t">
@@ -587,6 +630,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     onFileUpload: composer.uploadFile,
     imageCount: composer.imageCount,
     onSubmit: handleSubmit,
+    onSchedule: handleSchedule,
     canSubmit: composer.canSend,
     isSubmitting: composer.isSending,
     hasFailed: composer.hasFailed,
@@ -638,6 +682,23 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onStashCurrent={stash.handleStashDraft}
         onRestore={stash.handleRestoreStashed}
         onDelete={stash.handleDeleteStashed}
+        controlsDisabled={composer.isSending}
+        size="fab"
+      />
+    ),
+    scheduledPickerTrigger: (
+      <ScheduledPicker
+        scheduled={scheduledItems ?? []}
+        workspaceId={workspaceId}
+        onCancel={(id) => cancelScheduledMutation.mutate(id)}
+        controlsDisabled={composer.isSending}
+      />
+    ),
+    scheduledPickerTriggerFab: (
+      <ScheduledPicker
+        scheduled={scheduledItems ?? []}
+        workspaceId={workspaceId}
+        onCancel={(id) => cancelScheduledMutation.mutate(id)}
         controlsDisabled={composer.isSending}
         size="fab"
       />

@@ -11,6 +11,7 @@ import {
   useLiveSavedCount,
   useUnreadCounts,
 } from "@/hooks"
+import { useScheduledList } from "@/hooks/use-scheduled"
 import { useSyncStatus } from "@/sync/sync-status"
 import { useSyncEngine } from "@/sync/sync-engine"
 import {
@@ -74,8 +75,11 @@ export function Sidebar({ workspaceId }: SidebarProps) {
 
   const draftCount = allDrafts.length
   const savedCount = useLiveSavedCount(workspaceId)
+  const scheduledRows = useScheduledList(workspaceId)
+  const scheduledCount = scheduledRows?.length ?? 0
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
   const isSavedPage = splat === "saved" || window.location.pathname.endsWith("/saved")
+  const isScheduledPage = splat === "scheduled" || window.location.pathname.endsWith("/scheduled")
   const isActivityPage = splat === "activity" || window.location.pathname.endsWith("/activity")
   const isMemoryPage = splat === "memory" || location.pathname.endsWith("/memory")
 
@@ -368,6 +372,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
               draftCount={draftCount}
               isSavedPage={isSavedPage}
               savedCount={savedCount}
+              isScheduledPage={isScheduledPage}
+              scheduledCount={scheduledCount}
               isActivityPage={isActivityPage}
               isMemoryPage={isMemoryPage}
               unreadActivityCount={unreadActivityCount}

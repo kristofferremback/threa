@@ -12,6 +12,9 @@ import {
 } from "react"
 import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2 } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useLongPress } from "@/hooks/use-long-press"
+import { SchedulePopover } from "./schedule-popover"
+import { ScheduleSheet } from "./schedule-sheet"
 import { usePreferencesOptional } from "@/contexts"
 import { getEffectiveKeyBinding, matchesKeyBinding } from "@/lib/keyboard-shortcuts"
 import { RichEditor, EditorToolbar, EditorActionBar } from "@/components/editor"
@@ -161,6 +164,21 @@ export interface MessageComposerProps {
   /** Called when ArrowUp is pressed in an empty editor — triggers edit-last-message */
   onEditLastMessage?: () => void
 
+  /** Called when the user selects a schedule time from the popover/sheet. */
+  onSchedule?: (scheduledAt: Date) => void
+
+  /**
+   * Slot for the scheduled-messages picker trigger used in the desktop inline
+   * toolbar and the mobile action bar (compact size).
+   */
+  scheduledPickerTrigger?: ReactNode
+
+  /**
+   * Separate slot for the expanded-mode FAB drawer, where the trigger needs
+   * to match the 30x30 outline-shadow style of the other drawer buttons.
+   */
+  scheduledPickerTriggerFab?: ReactNode
+
   /** Called when the desktop expand button is clicked — opens fullscreen document editor */
   onExpandClick?: () => void
 
@@ -216,6 +234,7 @@ export function MessageComposer({
   submitLabel = "Send",
   submittingLabel = "Sending...",
   isSubmitting = false,
+  onSchedule,
   hasFailed = false,
   placeholder = "Type a message...",
   disabled = false,
@@ -232,6 +251,8 @@ export function MessageComposer({
   onStashDraft,
   stashedDraftsTrigger,
   stashedDraftsTriggerFab,
+  scheduledPickerTrigger,
+  scheduledPickerTriggerFab,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -244,9 +265,16 @@ export function MessageComposer({
   const [mobileExpanded, setMobileExpanded] = useState(false)
   const [mobileFocused, setMobileFocused] = useState(false)
   const [mobileLinkPopoverOpen, setMobileLinkPopoverOpen] = useState(false)
+  const [schedulePopoverOpen, setSchedulePopoverOpen] = useState(false)
+  const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false)
   const isMobile = useIsMobile()
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const instructionsId = useId()
+
+  const { handlers: longPressHandlers } = useLongPress({
+    enabled: isMobile && !!onSchedule,
+    onLongPress: () => setScheduleSheetOpen(true),
+  })
 
   // Close inline format toolbar and collapse expansion when navigating to a different stream/scope
   useEffect(() => {
@@ -431,13 +459,15 @@ export function MessageComposer({
   )
 
   // ── Send button (shared between states) ──────────────────────────────
+  const sendButtonClass = cn("h-[30px] w-[30px] shrink-0 p-0 shadow-md", onSchedule && "rounded-r-none")
+
   const sendButton = hasFailed ? (
     <Tooltip>
       <TooltipTrigger asChild>
         <span>
           <Button
             disabled
-            className="h-[30px] w-[30px] shrink-0 p-0 pointer-events-none rounded-md"
+            className={cn(sendButtonClass, "pointer-events-none rounded-l-md", !onSchedule && "rounded-md")}
             aria-label={submitLabel}
           >
             <ArrowUp className="h-4 w-4" />
@@ -454,11 +484,23 @@ export function MessageComposer({
       onClick={handleSubmit}
       disabled={!canSubmit}
       aria-label={isSubmitting ? submittingLabel : submitLabel}
-      className="h-[30px] w-[30px] shrink-0 p-0 rounded-md"
+      className={cn(sendButtonClass, "rounded-l-md", !onSchedule && "rounded-md")}
+      {...(isMobile ? longPressHandlers : {})}
     >
       <ArrowUp className="h-4 w-4" />
     </Button>
   )
+
+  // Schedule chevron — only rendered on desktop when onSchedule is provided
+  const scheduleChevron =
+    !isMobile && onSchedule ? (
+      <SchedulePopover
+        open={schedulePopoverOpen}
+        onOpenChange={setSchedulePopoverOpen}
+        onSelect={(date) => onSchedule(date)}
+        disabled={controlsDisabled}
+      />
+    ) : null
 
   // ── Expanded (fullscreen) layout ──────────────────────────────────────────
   // Trailing content for the inline toolbar: just the close X
@@ -562,6 +604,7 @@ export function MessageComposer({
             {/* Action drawer — slides out from behind the + button on hover or focus-within */}
             <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[240px] group-hover/fab:opacity-100 group-focus-within/fab:max-w-[240px] group-focus-within/fab:opacity-100 transition-all duration-200 ease-out">
               {stashedDraftsTriggerFab}
+              {scheduledPickerTriggerFab}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -656,42 +699,10 @@ export function MessageComposer({
               <Plus className="h-4 w-4" />
             </Button>
             {/* Send button */}
-            {hasFailed ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span>
-                    <Button
-                      disabled
-                      className="h-[30px] w-[30px] shrink-0 p-0 pointer-events-none rounded-md shadow-md"
-                      aria-label={submitLabel}
-                    >
-                      <ArrowUp className="h-4 w-4" />
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>Remove failed uploads before sending</p>
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    onPointerDown={(e) => e.preventDefault()}
-                    onClick={handleSubmit}
-                    disabled={!canSubmit}
-                    aria-label={isSubmitting ? submittingLabel : submitLabel}
-                    className="h-[30px] w-[30px] shrink-0 p-0 rounded-md shadow-md"
-                  >
-                    <ArrowUp className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left" className="text-xs">
-                  {sendHint}
-                </TooltipContent>
-              </Tooltip>
-            )}
+            <div className="flex items-center gap-0">
+              {sendButton}
+              {scheduleChevron}
+            </div>
           </div>
         </div>
       </TooltipProvider>
@@ -793,6 +804,7 @@ export function MessageComposer({
                     trailingContent={
                       stashedDraftsTrigger ? (
                         <div className="flex items-center gap-1">
+                          {scheduledPickerTrigger}
                           {stashedDraftsTrigger}
                           {sendButton}
                         </div>
@@ -917,8 +929,12 @@ export function MessageComposer({
                         Attach files
                       </TooltipContent>
                     </Tooltip>
+                    {scheduledPickerTrigger}
                     {stashedDraftsTrigger}
-                    {sendButton}
+                    <div className="flex items-center gap-0">
+                      {sendButton}
+                      {scheduleChevron}
+                    </div>
                   </div>
                 )}
               </div>
@@ -946,6 +962,15 @@ export function MessageComposer({
           </span>
         </div>
       </div>
+
+      {/* Schedule sheet (mobile) */}
+      {isMobile && onSchedule && (
+        <ScheduleSheet
+          open={scheduleSheetOpen}
+          onOpenChange={setScheduleSheetOpen}
+          onSelect={(date) => onSchedule(date)}
+        />
+      )}
     </TooltipProvider>
   )
 }
