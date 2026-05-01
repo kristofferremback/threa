@@ -15,7 +15,7 @@ export function createScheduledMessageFireWorker(deps: {
     } else {
       logger.debug(
         { jobId: job.id, scheduledMessageId, workspaceId, authorId },
-        "Scheduled message skipped (already sent or cancelled)"
+        "Scheduled message skipped (already sent, cancelled, or paused)"
       )
     }
   }

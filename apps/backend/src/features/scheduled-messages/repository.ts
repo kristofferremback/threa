@@ -16,6 +16,8 @@ interface ScheduledMessageRow {
   scheduled_at: Date
   sent_at: Date | null
   cancelled_at: Date | null
+  paused_at: Date | null
+  message_id: string | null
   created_at: Date
   updated_at: Date
 }
@@ -33,6 +35,8 @@ export interface ScheduledMessage {
   scheduledAt: Date
   sentAt: Date | null
   cancelledAt: Date | null
+  pausedAt: Date | null
+  messageId: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -50,7 +54,7 @@ export interface InsertScheduledParams {
 }
 
 const SCHEDULED_MESSAGE_COLUMNS =
-  "id, workspace_id, author_id, stream_id, parent_message_id, parent_stream_id, content_json, content_markdown, attachment_ids, scheduled_at, sent_at, cancelled_at, created_at, updated_at"
+  "id, workspace_id, author_id, stream_id, parent_message_id, parent_stream_id, content_json, content_markdown, attachment_ids, scheduled_at, sent_at, cancelled_at, paused_at, message_id, created_at, updated_at"
 
 function mapRow(row: ScheduledMessageRow): ScheduledMessage {
   return {
@@ -66,6 +70,8 @@ function mapRow(row: ScheduledMessageRow): ScheduledMessage {
     scheduledAt: row.scheduled_at,
     sentAt: row.sent_at,
     cancelledAt: row.cancelled_at,
+    pausedAt: row.paused_at,
+    messageId: row.message_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -116,7 +122,7 @@ export const ScheduledMessagesRepository = {
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
-  async findPendingByUser(
+  async findByUser(
     db: Querier,
     workspaceId: string,
     authorId: string,
@@ -128,8 +134,6 @@ export const ScheduledMessagesRepository = {
         FROM scheduled_messages
         WHERE workspace_id = ${workspaceId}
           AND author_id = ${authorId}
-          AND sent_at IS NULL
-          AND cancelled_at IS NULL
           AND stream_id = ${streamId}
         ORDER BY scheduled_at ASC
       `)
@@ -140,8 +144,6 @@ export const ScheduledMessagesRepository = {
       FROM scheduled_messages
       WHERE workspace_id = ${workspaceId}
         AND author_id = ${authorId}
-        AND sent_at IS NULL
-        AND cancelled_at IS NULL
       ORDER BY scheduled_at ASC
     `)
     return result.rows.map(mapRow)
@@ -187,15 +189,58 @@ export const ScheduledMessagesRepository = {
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
+  async markPaused(
+    db: Querier,
+    workspaceId: string,
+    authorId: string,
+    scheduledId: string,
+    pausedAt: Date
+  ): Promise<ScheduledMessage | null> {
+    const result = await db.query<ScheduledMessageRow>(sql`
+      UPDATE scheduled_messages SET
+        paused_at = ${pausedAt},
+        updated_at = NOW()
+      WHERE id = ${scheduledId}
+        AND workspace_id = ${workspaceId}
+        AND author_id = ${authorId}
+        AND sent_at IS NULL
+        AND cancelled_at IS NULL
+      RETURNING ${sql.raw(SCHEDULED_MESSAGE_COLUMNS)}
+    `)
+    return result.rows[0] ? mapRow(result.rows[0]) : null
+  },
+
+  async markResumed(
+    db: Querier,
+    workspaceId: string,
+    authorId: string,
+    scheduledId: string
+  ): Promise<ScheduledMessage | null> {
+    const result = await db.query<ScheduledMessageRow>(sql`
+      UPDATE scheduled_messages SET
+        paused_at = NULL,
+        updated_at = NOW()
+      WHERE id = ${scheduledId}
+        AND workspace_id = ${workspaceId}
+        AND author_id = ${authorId}
+        AND sent_at IS NULL
+        AND cancelled_at IS NULL
+      RETURNING ${sql.raw(SCHEDULED_MESSAGE_COLUMNS)}
+    `)
+    return result.rows[0] ? mapRow(result.rows[0]) : null
+  },
+
   async markSent(
     db: Querier,
     workspaceId: string,
     scheduledId: string,
-    sentAt: Date
+    sentAt: Date,
+    messageId: string
   ): Promise<ScheduledMessage | null> {
     const result = await db.query<ScheduledMessageRow>(sql`
       UPDATE scheduled_messages SET
         sent_at = ${sentAt},
+        message_id = ${messageId},
         updated_at = NOW()
       WHERE id = ${scheduledId}
         AND workspace_id = ${workspaceId}
@@ -220,6 +265,7 @@ export const ScheduledMessagesRepository = {
       WHERE id = ${scheduledId}
         AND workspace_id = ${workspaceId}
         AND author_id = ${authorId}
+        AND sent_at IS NULL
       RETURNING ${sql.raw(SCHEDULED_MESSAGE_COLUMNS)}
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null

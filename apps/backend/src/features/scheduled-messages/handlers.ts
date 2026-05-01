@@ -10,9 +10,9 @@ const contentJsonSchema = z.object({
 
 const scheduleSchema = z
   .object({
-    streamId: z.string().nullable(),
-    parentMessageId: z.string().nullable(),
-    parentStreamId: z.string().nullable(),
+    streamId: z.string().nullable().optional(),
+    parentMessageId: z.string().nullable().optional(),
+    parentStreamId: z.string().nullable().optional(),
     contentJson: contentJsonSchema,
     contentMarkdown: z.string(),
     attachmentIds: z.array(z.string()).default([]),
@@ -52,9 +52,9 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
       const result = await scheduledMessagesService.schedule({
         workspaceId,
         authorId: userId,
-        streamId: parsed.data.streamId,
-        parentMessageId: parsed.data.parentMessageId,
-        parentStreamId: parsed.data.parentStreamId,
+        streamId: parsed.data.streamId ?? null,
+        parentMessageId: parsed.data.parentMessageId ?? null,
+        parentStreamId: parsed.data.parentStreamId ?? null,
         contentJson: parsed.data.contentJson,
         contentMarkdown: parsed.data.contentMarkdown,
         attachmentIds: parsed.data.attachmentIds,
@@ -117,6 +117,49 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
       })
 
       res.json({ ok: true })
+    },
+
+    async pause(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+      const scheduledId = req.params.id!
+
+      const scheduled = await scheduledMessagesService.pause({
+        workspaceId,
+        authorId: userId,
+        scheduledId,
+      })
+
+      res.json({ scheduled })
+    },
+
+    async resume(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+      const scheduledId = req.params.id!
+
+      const scheduled = await scheduledMessagesService.resume({
+        workspaceId,
+        authorId: userId,
+        scheduledId,
+      })
+
+      res.json({ scheduled })
+    },
+
+    async sendNow(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+      const scheduledId = req.params.id!
+
+      const scheduled = await scheduledMessagesService.update({
+        workspaceId,
+        authorId: userId,
+        scheduledId,
+        scheduledAt: new Date(),
+      })
+
+      res.json({ scheduled })
     },
   }
 }

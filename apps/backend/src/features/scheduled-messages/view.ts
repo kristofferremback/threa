@@ -5,7 +5,7 @@ import type { ScheduledMessage } from "./repository"
 
 export async function resolveScheduledView(
   db: Querier,
-  userId: string,
+  _userId: string,
   rows: ScheduledMessage[]
 ): Promise<ScheduledMessageView[]> {
   if (rows.length === 0) return []
@@ -27,6 +27,7 @@ export async function resolveScheduledView(
     scheduledAt: row.scheduledAt.toISOString(),
     sentAt: row.sentAt?.toISOString() ?? null,
     cancelledAt: row.cancelledAt?.toISOString() ?? null,
+    pausedAt: row.pausedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     streamDisplayName: row.streamId ? (streamById.get(row.streamId)?.displayName ?? null) : null,

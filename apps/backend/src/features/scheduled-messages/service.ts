@@ -88,7 +88,6 @@ export class ScheduledMessagesService {
   }
 
   private async scheduleAndSendNow(params: ScheduleParams): Promise<{ view: ScheduledMessageView; sentNow: boolean }> {
-    // Resolve target stream
     const targetStreamId = await resolveTargetStream(this.pool, {
       streamId: params.streamId,
       parentMessageId: params.parentMessageId,
@@ -100,7 +99,6 @@ export class ScheduledMessagesService {
       })
     }
 
-    // Insert the row first (so we have an ID for idempotency)
     const row = await ScheduledMessagesRepository.insert(this.pool, {
       workspaceId: params.workspaceId,
       authorId: params.authorId,
@@ -113,7 +111,6 @@ export class ScheduledMessagesService {
       scheduledAt: new Date(),
     })
 
-    // Create the message using clientMessageId for idempotency on retry
     const clientMessageId = `scheduled:${row.id}`
     await this.eventService.createMessage({
       workspaceId: params.workspaceId,
@@ -152,13 +149,10 @@ export class ScheduledMessagesService {
   }
 
   async update(params: UpdateScheduledParams): Promise<ScheduledMessageView> {
-    // When the client sets scheduledAt to now, fire immediately instead of
-    // going through the queue. This is the "Send now" path.
     const clampedAt = params.scheduledAt !== undefined ? clampScheduledAt(params.scheduledAt) : null
     const isSendNow = clampedAt !== null && clampedAt.getTime() <= Date.now()
 
     if (isSendNow) {
-      // Apply any content changes first, then fire immediately
       if (
         params.contentJson !== undefined ||
         params.contentMarkdown !== undefined ||
@@ -196,7 +190,6 @@ export class ScheduledMessagesService {
 
       await this.fire({ scheduledId: params.scheduledId })
 
-      // Re-read after fire to get the final view
       const row = await ScheduledMessagesRepository.findByIdUnscoped(this.pool, params.scheduledId)
       const [view] = await resolveScheduledView(this.pool, params.authorId, row ? [row] : [])
       return view!
@@ -252,6 +245,125 @@ export class ScheduledMessagesService {
         if (updated) row = updated
       }
 
+      // Clear paused_at on save so the message resumes normal scheduling
+      if (row.pausedAt) {
+        const resumed = await ScheduledMessagesRepository.markResumed(
+          client,
+          params.workspaceId,
+          params.authorId,
+          params.scheduledId
+        )
+        if (resumed) row = resumed
+      }
+
+      const [view] = await resolveScheduledView(client, params.authorId, [row])
+
+      await OutboxRepository.insert(client, "scheduled_message:updated", {
+        workspaceId: params.workspaceId,
+        targetUserId: params.authorId,
+        scheduled: view!,
+      })
+
+      return view!
+    })
+  }
+
+  async pause(params: { workspaceId: string; authorId: string; scheduledId: string }): Promise<ScheduledMessageView> {
+    return withTransaction(this.pool, async (client) => {
+      const existing = await ScheduledMessagesRepository.findById(
+        client,
+        params.workspaceId,
+        params.authorId,
+        params.scheduledId
+      )
+      if (!existing) {
+        throw new HttpError("Scheduled message not found", { status: 404, code: "SCHEDULED_NOT_FOUND" })
+      }
+      if (existing.sentAt) {
+        throw new HttpError("Scheduled message has already been sent", {
+          status: 409,
+          code: "SCHEDULED_ALREADY_SENT",
+        })
+      }
+      if (existing.cancelledAt) {
+        throw new HttpError("Scheduled message has already been cancelled", {
+          status: 409,
+          code: "SCHEDULED_ALREADY_CANCELLED",
+        })
+      }
+      if (existing.pausedAt) {
+        const [view] = await resolveScheduledView(client, params.authorId, [existing])
+        return view!
+      }
+
+      const row = await ScheduledMessagesRepository.markPaused(
+        client,
+        params.workspaceId,
+        params.authorId,
+        params.scheduledId,
+        new Date()
+      )
+      if (!row) {
+        throw new HttpError("Scheduled message not found", { status: 404, code: "SCHEDULED_NOT_FOUND" })
+      }
+
+      const [view] = await resolveScheduledView(client, params.authorId, [row])
+
+      await OutboxRepository.insert(client, "scheduled_message:updated", {
+        workspaceId: params.workspaceId,
+        targetUserId: params.authorId,
+        scheduled: view!,
+      })
+
+      return view!
+    })
+  }
+
+  async resume(params: { workspaceId: string; authorId: string; scheduledId: string }): Promise<ScheduledMessageView> {
+    return withTransaction(this.pool, async (client) => {
+      const existing = await ScheduledMessagesRepository.findById(
+        client,
+        params.workspaceId,
+        params.authorId,
+        params.scheduledId
+      )
+      if (!existing) {
+        throw new HttpError("Scheduled message not found", { status: 404, code: "SCHEDULED_NOT_FOUND" })
+      }
+      if (existing.sentAt) {
+        throw new HttpError("Scheduled message has already been sent", {
+          status: 409,
+          code: "SCHEDULED_ALREADY_SENT",
+        })
+      }
+      if (existing.cancelledAt) {
+        throw new HttpError("Scheduled message has already been cancelled", {
+          status: 409,
+          code: "SCHEDULED_ALREADY_CANCELLED",
+        })
+      }
+      if (!existing.pausedAt) {
+        const [view] = await resolveScheduledView(client, params.authorId, [existing])
+        return view!
+      }
+
+      const row = await ScheduledMessagesRepository.markResumed(
+        client,
+        params.workspaceId,
+        params.authorId,
+        params.scheduledId
+      )
+      if (!row) {
+        throw new HttpError("Scheduled message not found", { status: 404, code: "SCHEDULED_NOT_FOUND" })
+      }
+
+      await enqueueFireJob(client, {
+        workspaceId: params.workspaceId,
+        authorId: params.authorId,
+        scheduledId: params.scheduledId,
+        scheduledAt: row.scheduledAt,
+      })
+
       const [view] = await resolveScheduledView(client, params.authorId, [row])
 
       await OutboxRepository.insert(client, "scheduled_message:updated", {
@@ -306,7 +418,7 @@ export class ScheduledMessagesService {
     authorId: string
     streamId?: string
   }): Promise<ScheduledMessageView[]> {
-    const rows = await ScheduledMessagesRepository.findPendingByUser(
+    const rows = await ScheduledMessagesRepository.findByUser(
       this.pool,
       params.workspaceId,
       params.authorId,
@@ -319,7 +431,7 @@ export class ScheduledMessagesService {
    * Worker entry point. Fires the scheduled message with at-most-once semantics.
    *
    * Steps:
-   * 1. Read the row outside a tx to validate it's still pending
+   * 1. Read the row outside a tx to validate it's still pending and not paused
    * 2. Resolve the target stream (create thread if needed)
    * 3. Create the message via EventService (idempotent via clientMessageId)
    * 4. In a tx: mark as sent + emit outbox event
@@ -330,13 +442,11 @@ export class ScheduledMessagesService {
    * double-emit of the outbox event.
    */
   async fire(params: { scheduledId: string }): Promise<{ fired: boolean }> {
-    // Step 1: Read outside tx
     const row = await ScheduledMessagesRepository.findByIdUnscoped(this.pool, params.scheduledId)
-    if (!row || row.sentAt || row.cancelledAt) {
+    if (!row || row.sentAt || row.cancelledAt || row.pausedAt) {
       return { fired: false }
     }
 
-    // Step 2: Resolve target stream
     const targetStreamId = await resolveTargetStream(this.pool, {
       streamId: row.streamId,
       parentMessageId: row.parentMessageId,
@@ -349,7 +459,6 @@ export class ScheduledMessagesService {
       return { fired: false }
     }
 
-    // Step 3: Create message (idempotent via clientMessageId)
     const clientMessageId = `scheduled:${params.scheduledId}`
     try {
       await this.eventService.createMessage({
@@ -370,7 +479,6 @@ export class ScheduledMessagesService {
       throw err
     }
 
-    // Step 4: Mark as sent in a tx with the outbox event (INV-7)
     return withTransaction(this.pool, async (client) => {
       const now = new Date()
       const updated = await ScheduledMessagesRepository.markSent(client, row.workspaceId, params.scheduledId, now)

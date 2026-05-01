@@ -755,15 +755,16 @@ export interface ScheduledMessageView {
   scheduledAt: string
   sentAt: string | null
   cancelledAt: string | null
+  pausedAt: string | null
   createdAt: string
   updatedAt: string
   streamDisplayName: string | null
 }
 
 export interface ScheduleMessageInput {
-  streamId: string | null
-  parentMessageId: string | null
-  parentStreamId: string | null
+  streamId?: string | null
+  parentMessageId?: string | null
+  parentStreamId?: string | null
   contentJson: JSONContent
   contentMarkdown: string
   attachmentIds?: string[]

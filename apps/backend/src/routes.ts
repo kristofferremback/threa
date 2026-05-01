@@ -349,6 +349,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/scheduled-messages", ...authed, scheduledMessages.list)
   app.patch("/api/workspaces/:workspaceId/scheduled-messages/:id", ...authed, scheduledMessages.update)
   app.delete("/api/workspaces/:workspaceId/scheduled-messages/:id", ...authed, scheduledMessages.cancel)
+  app.post("/api/workspaces/:workspaceId/scheduled-messages/:id/pause", ...authed, scheduledMessages.pause)
+  app.post("/api/workspaces/:workspaceId/scheduled-messages/:id/resume", ...authed, scheduledMessages.resume)
+  app.post("/api/workspaces/:workspaceId/scheduled-messages/:id/send-now", ...authed, scheduledMessages.sendNow)
 
   // Push notifications
   const push = createPushHandlers({ pushService })

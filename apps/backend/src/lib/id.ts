@@ -44,6 +44,7 @@ export {
   botChannelAccessId,
   videoTranscodeJobId,
   savedMessageId,
+  scheduledMessageId,
   reminderQueueId,
   sharedMessageId,
   attachmentReferenceId,
