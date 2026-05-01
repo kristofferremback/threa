@@ -374,6 +374,27 @@ export interface CachedSavedMessage {
   _cachedAt: number
 }
 
+export interface CachedScheduledMessage {
+  id: string
+  workspaceId: string
+  authorId: string
+  streamId: string | null
+  parentMessageId: string | null
+  parentStreamId: string | null
+  contentJson: unknown
+  contentMarkdown: string
+  attachmentIds: string[]
+  scheduledAt: string
+  sentAt: string | null
+  cancelledAt: string | null
+  createdAt: string
+  updatedAt: string
+  streamDisplayName: string | null
+  _status: "pending-sync" | "synced"
+  _scheduledAtMs: number
+  _cachedAt: number
+}
+
 export interface CachedWorkspaceMetadata {
   id: string // workspaceId
   workspaceId: string
@@ -415,6 +436,7 @@ class ThreaDatabase extends Dexie {
   markdownBlockCollapse!: EntityTable<CachedMarkdownBlockCollapse, "id">
   linkPreviewCollapse!: EntityTable<CachedLinkPreviewCollapse, "id">
   savedMessages!: EntityTable<CachedSavedMessage, "id">
+  scheduledMessages!: EntityTable<CachedScheduledMessage, "id">
 
   constructor() {
     super("threa")
@@ -650,6 +672,14 @@ class ThreaDatabase extends Dexie {
       stashedDrafts: "id, workspaceId, scope, [workspaceId+scope], createdAt",
     })
 
+    // v27: Scheduled messages — offline-ready queue for message scheduling.
+    // _scheduledAtMs is a numeric mirror for efficient range queries.
+    // _status lets the dispatch hook drain unsynced rows on connect.
+    this.version(27).stores({
+      scheduledMessages:
+        "id, workspaceId, authorId, streamId, [workspaceId+_scheduledAtMs], [workspaceId+streamId+_scheduledAtMs], [workspaceId+_status]",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -677,6 +707,7 @@ export async function clearAllCachedData(): Promise<void> {
       db.markdownBlockCollapse.clear(),
       db.linkPreviewCollapse.clear(),
       db.savedMessages.clear(),
+      db.scheduledMessages.clear(),
       db.stashedDrafts.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])

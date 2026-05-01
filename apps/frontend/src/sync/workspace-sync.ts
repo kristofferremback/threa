@@ -19,8 +19,13 @@ import type {
   SavedUpsertedPayload,
   SavedDeletedPayload,
   SavedReminderFiredPayload,
+  ScheduledMessageCreatedPayload,
+  ScheduledMessageUpdatedPayload,
+  ScheduledMessageCancelledPayload,
+  ScheduledMessageFiredPayload,
 } from "@threa/types"
 import { persistSavedRows, removeSavedRow, savedKeys } from "@/hooks/use-saved"
+import { persistScheduledRows, removeScheduledRow, scheduledKeys } from "@/hooks/use-scheduled"
 import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
 import { applyStreamBootstrapInCurrentTransaction } from "./stream-sync"
 
@@ -384,6 +389,7 @@ export function registerWorkspaceSocketHandlers(
   // during the disconnect. `refetchOnReconnect: true` alone only covers
   // browser network online/offline, not socket.io reconnects.
   queryClient.invalidateQueries({ queryKey: savedKeys.all })
+  queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
 
   // Handle stream created
   const handleStreamCreated = (payload: StreamPayload) => {
@@ -1301,6 +1307,31 @@ export function registerWorkspaceSocketHandlers(
     queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "saved") })
   }
 
+  // Scheduled messages — write-through to IDB and invalidate TanStack caches.
+  const handleScheduledMessageCreated = (payload: ScheduledMessageCreatedPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void persistScheduledRows([payload.scheduled])
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+  }
+
+  const handleScheduledMessageUpdated = (payload: ScheduledMessageUpdatedPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void persistScheduledRows([payload.scheduled])
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+  }
+
+  const handleScheduledMessageCancelled = (payload: ScheduledMessageCancelledPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void removeScheduledRow(payload.scheduledId)
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+  }
+
+  const handleScheduledMessageFired = (payload: ScheduledMessageFiredPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void removeScheduledRow(payload.scheduledId)
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+  }
+
   // Register all handlers
   socket.on("stream:created", handleStreamCreated)
   socket.on("stream:updated", handleStreamUpdated)
@@ -1322,6 +1353,10 @@ export function registerWorkspaceSocketHandlers(
   socket.on("saved:upserted", handleSavedUpserted)
   socket.on("saved:deleted", handleSavedDeleted)
   socket.on("saved_reminder:fired", handleSavedReminderFired)
+  socket.on("scheduled_message:created", handleScheduledMessageCreated)
+  socket.on("scheduled_message:updated", handleScheduledMessageUpdated)
+  socket.on("scheduled_message:cancelled", handleScheduledMessageCancelled)
+  socket.on("scheduled_message:fired", handleScheduledMessageFired)
   socket.on("attachment:transcoded", handleAttachmentTranscoded)
 
   return () => {
@@ -1348,6 +1383,10 @@ export function registerWorkspaceSocketHandlers(
     socket.off("saved:upserted", handleSavedUpserted)
     socket.off("saved:deleted", handleSavedDeleted)
     socket.off("saved_reminder:fired", handleSavedReminderFired)
+    socket.off("scheduled_message:created", handleScheduledMessageCreated)
+    socket.off("scheduled_message:updated", handleScheduledMessageUpdated)
+    socket.off("scheduled_message:cancelled", handleScheduledMessageCancelled)
+    socket.off("scheduled_message:fired", handleScheduledMessageFired)
     socket.off("attachment:transcoded", handleAttachmentTranscoded)
   }
 }

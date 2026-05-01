@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 import {
   useDraftComposer,
   getDraftMessageKey,
@@ -14,7 +15,14 @@ import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
+import {
+  FloatingComposerShell,
+  MessageComposer,
+  StashedDraftsPicker,
+  ScheduleSheet,
+  ScheduledMessageDrawer,
+} from "@/components/composer"
+import { ScheduledPicker, type ScheduledPickerItem } from "@/components/composer/scheduled-picker"
 import type { ComposerControlHandle } from "@/components/composer"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
@@ -24,6 +32,13 @@ import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
 import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
+import {
+  useScheduleMessage,
+  useScheduledList,
+  useCancelScheduled,
+  useSendNowScheduled,
+  useUpdateScheduled,
+} from "@/hooks/use-scheduled"
 import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
@@ -190,6 +205,11 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const { preferences } = usePreferences()
   const { stream, sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
+  const scheduleMutation = useScheduleMessage(workspaceId)
+  const scheduledItems = useScheduledList(workspaceId)
+  const cancelScheduledMutation = useCancelScheduled(workspaceId)
+  const sendNowScheduledMutation = useSendNowScheduled(workspaceId)
+  const updateScheduledMutation = useUpdateScheduled(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   // Resolve stream context for broadcast mention filtering.
@@ -402,7 +422,11 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [pickerScheduleSheetOpen, setPickerScheduleSheetOpen] = useState(false)
+  const [scheduledDrawerOpen, setScheduledDrawerOpen] = useState(false)
+  const [selectedScheduledItem, setSelectedScheduledItem] = useState<ScheduledPickerItem | null>(null)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
+  const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
   const isMobile = useIsMobile()
   const connectionState = useConnectionState()
   const isOffline = connectionState === "offline"
@@ -561,6 +585,106 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     [composer, sendMessage, navigate, workspaceId, streamId, startDiscussWithAriadne]
   )
 
+  const handleSchedule = useCallback(
+    (scheduledAt: Date) => {
+      if (!composer.canSend) return
+
+      const pendingAttachments = composer.getPendingAttachmentsSnapshot()
+      const normalizedContent = materializePendingAttachmentReferences(composer.content, pendingAttachments)
+      const attachments = extractUploadedAttachments(normalizedContent)
+      const contentMarkdown = serializeToMarkdown(normalizedContent)
+      const savedContent = composer.content
+      const savedAttachments = pendingAttachments.map((a) => ({
+        id: a.id,
+        filename: a.filename,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+      }))
+
+      composer.setContent(EMPTY_DOC)
+      composer.clearDraft()
+      composer.clearAttachments()
+      setExpanded(false)
+
+      scheduleMutation.mutate(
+        {
+          streamId,
+          parentMessageId: null,
+          parentStreamId: null,
+          contentJson: normalizedContent,
+          contentMarkdown,
+          attachmentIds: attachments.map((a) => a.id),
+          scheduledAt: scheduledAt.toISOString(),
+        },
+        {
+          onSuccess: () => toast.success("Message scheduled"),
+          onError: () => {
+            toast.error("Failed to schedule message")
+            composer.setContent(savedContent)
+            if (savedAttachments.length > 0) {
+              composer.restoreAttachments(savedAttachments)
+            }
+          },
+        }
+      )
+    },
+    [composer, streamId, scheduleMutation]
+  )
+
+  const handlePickerScheduleOpen = useCallback(() => {
+    setPickerScheduleSheetOpen(true)
+  }, [])
+
+  const handleScheduledLongPress = useCallback((item: ScheduledPickerItem) => {
+    setSelectedScheduledItem(item)
+    setScheduledDrawerOpen(true)
+  }, [])
+
+  const handleScheduledSendNow = useCallback(
+    (id: string) => {
+      sendNowScheduledMutation.mutate(id, {
+        onSuccess: () => toast.success("Message sent"),
+        onError: () => toast.error("Failed to send message"),
+      })
+    },
+    [sendNowScheduledMutation]
+  )
+
+  const handleScheduledEditSave = useCallback(
+    (id: string, contentMarkdown: string, originalScheduledAt: string) => {
+      updateScheduledMutation.mutate(
+        { id, input: { contentMarkdown, scheduledAt: originalScheduledAt } },
+        {
+          onSuccess: () => toast.success("Message updated"),
+          onError: () => toast.error("Failed to update message"),
+        }
+      )
+    },
+    [updateScheduledMutation]
+  )
+
+  const handleScheduledChangeTime = useCallback(
+    (id: string, scheduledAt: Date) => {
+      updateScheduledMutation.mutate(
+        { id, input: { scheduledAt: scheduledAt.toISOString() } },
+        {
+          onError: () => toast.error("Failed to update time"),
+        }
+      )
+    },
+    [updateScheduledMutation]
+  )
+
+  const handleScheduledDelete = useCallback(
+    (id: string) => {
+      cancelScheduledMutation.mutate(id, {
+        onSuccess: () => toast.success("Scheduled message cancelled"),
+        onError: () => toast.error("Failed to cancel"),
+      })
+    },
+    [cancelScheduledMutation]
+  )
+
   if (disabled && disabledReason) {
     return (
       <div className="border-t">
@@ -587,6 +711,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     onFileUpload: composer.uploadFile,
     imageCount: composer.imageCount,
     onSubmit: handleSubmit,
+    onSchedule: handleSchedule,
     canSubmit: composer.canSend,
     isSubmitting: composer.isSending,
     hasFailed: composer.hasFailed,
@@ -642,6 +767,33 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         size="fab"
       />
     ),
+    scheduledPickerTrigger: (
+      <ScheduledPicker
+        scheduled={scheduledItems ?? []}
+        onScheduleOpen={handlePickerScheduleOpen}
+        onItemAction={handleScheduledLongPress}
+        onSendNow={handleScheduledSendNow}
+        onDelete={handleScheduledDelete}
+        onScheduleSelect={handleSchedule}
+        timezone={timezone}
+        controlsDisabled={composer.isSending}
+        scheduleDisabled={!composer.canSend}
+      />
+    ),
+    scheduledPickerTriggerFab: (
+      <ScheduledPicker
+        scheduled={scheduledItems ?? []}
+        onScheduleOpen={handlePickerScheduleOpen}
+        onItemAction={handleScheduledLongPress}
+        onSendNow={handleScheduledSendNow}
+        onDelete={handleScheduledDelete}
+        onScheduleSelect={handleSchedule}
+        timezone={timezone}
+        controlsDisabled={composer.isSending}
+        scheduleDisabled={!composer.canSend}
+        size="fab"
+      />
+    ),
   } as const
 
   return (
@@ -655,6 +807,24 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           </div>,
           portalTargetRef.current
         )}
+
+      {/* Schedule sheet triggered from the scheduled messages picker */}
+      <ScheduleSheet
+        open={pickerScheduleSheetOpen}
+        onOpenChange={setPickerScheduleSheetOpen}
+        onSelect={(date) => handleSchedule(date)}
+      />
+
+      {/* Scheduled message actions drawer (long-press a row in the picker) */}
+      <ScheduledMessageDrawer
+        open={scheduledDrawerOpen}
+        onOpenChange={setScheduledDrawerOpen}
+        item={selectedScheduledItem}
+        onSendNow={handleScheduledSendNow}
+        onEditSave={handleScheduledEditSave}
+        onChangeTime={handleScheduledChangeTime}
+        onDelete={handleScheduledDelete}
+      />
 
       {/* Inline composer — hidden while expanded. Mobile inline editing is handled
           via CSS: `body:has([data-inline-edit])` matches whenever a MessageEditForm or

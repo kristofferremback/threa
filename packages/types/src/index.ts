@@ -292,6 +292,15 @@ export type {
   SavedUpsertedPayload,
   SavedDeletedPayload,
   SavedReminderFiredPayload,
+  // Scheduled messages
+  ScheduledMessageView,
+  ScheduleMessageInput,
+  UpdateScheduledMessageInput,
+  ScheduledMessageListResponse,
+  ScheduledMessageCreatedPayload,
+  ScheduledMessageUpdatedPayload,
+  ScheduledMessageCancelledPayload,
+  ScheduledMessageFiredPayload,
   // Emojis
   EmojiEntry,
   // Commands

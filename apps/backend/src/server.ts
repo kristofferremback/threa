@@ -86,6 +86,7 @@ import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { ActivityService, ActivityFeedHandler } from "./features/activity"
 import { SavedMessagesService, createSavedReminderWorker } from "./features/saved-messages"
+import { ScheduledMessagesService, createScheduledMessageFireWorker } from "./features/scheduled-messages"
 import { PushService, PushNotificationHandler, createPushSessionCleanup } from "./features/push"
 import { AttachmentUploadedHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
@@ -353,6 +354,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   const activityService = new ActivityService({ pool })
   const savedMessagesService = new SavedMessagesService({ pool })
+  const scheduledMessagesService = new ScheduledMessagesService({ pool, eventService })
   // PushService runs on pools.realtime so push delivery (outbox hot path) has
   // reserved DB capacity isolated from background workers. Subscription CRUD
   // endpoints also use this pool — low volume, plenty of headroom.
@@ -417,6 +419,7 @@ export async function startServer(): Promise<ServerInstance> {
     invitationService,
     activityService,
     savedMessagesService,
+    scheduledMessagesService,
     pushService,
     s3Config: config.s3,
     commandRegistry,
@@ -734,6 +737,13 @@ export async function startServer(): Promise<ServerInstance> {
   // Saved message reminder worker — delegates to service, no long I/O
   const savedReminderWorker = createSavedReminderWorker({ savedMessagesService })
   jobQueue.registerHandler(JobQueues.SAVED_REMINDER_FIRE, savedReminderWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
+
+  // Scheduled message fire worker — creates the message when the scheduled time arrives
+  const scheduledMessageFireWorker = createScheduledMessageFireWorker({ scheduledMessagesService })
+  jobQueue.registerHandler(JobQueues.SCHEDULED_MESSAGE_FIRE, scheduledMessageFireWorker, {
     tier: QueueTiers.LIGHT,
     fairness: QueueFairness.NONE,
   })

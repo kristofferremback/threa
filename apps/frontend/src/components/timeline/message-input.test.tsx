@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Router } from "react-router-dom"
 import { useState } from "react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import * as contextsModule from "@/contexts"
 import * as hooksModule from "@/hooks"
 import * as workspaceStoreModule from "@/stores/workspace-store"
@@ -13,6 +14,7 @@ import * as composerModule from "@/components/composer"
 import * as discussModule from "@/hooks/use-discuss-with-ariadne"
 import * as streamContextBagModule from "@/hooks/use-stream-context-bag"
 import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
+import * as scheduledModule from "@/hooks/use-scheduled"
 import type { JSONContent } from "@threa/types"
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
@@ -160,6 +162,23 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useStreamOrDraft").mockReturnValue({
     sendMessage: mockSendMessage,
   } as unknown as ReturnType<typeof hooksModule.useStreamOrDraft>)
+  vi.spyOn(scheduledModule, "useScheduledList").mockReturnValue([])
+  vi.spyOn(scheduledModule, "useScheduleMessage").mockImplementation(
+    () =>
+      ({ mutate: vi.fn(), mutateAsync: vi.fn() }) as unknown as ReturnType<typeof scheduledModule.useScheduleMessage>
+  )
+  vi.spyOn(scheduledModule, "useCancelScheduled").mockImplementation(
+    () =>
+      ({ mutate: vi.fn(), mutateAsync: vi.fn() }) as unknown as ReturnType<typeof scheduledModule.useCancelScheduled>
+  )
+  vi.spyOn(scheduledModule, "useSendNowScheduled").mockImplementation(
+    () =>
+      ({ mutate: vi.fn(), mutateAsync: vi.fn() }) as unknown as ReturnType<typeof scheduledModule.useSendNowScheduled>
+  )
+  vi.spyOn(scheduledModule, "useUpdateScheduled").mockImplementation(
+    () =>
+      ({ mutate: vi.fn(), mutateAsync: vi.fn() }) as unknown as ReturnType<typeof scheduledModule.useUpdateScheduled>
+  )
   // `useDiscussWithAriadne` internally pulls in `useCreateStream` → services
   // context + query client, none of which the test wrapper provides. Stub it
   // out; the command-routing branch is exercised by its own dedicated tests
@@ -298,8 +317,14 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   )
 }
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+
 function render$(ui: React.ReactElement) {
-  return render(<Wrapper>{ui}</Wrapper>)
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <Wrapper>{ui}</Wrapper>
+    </QueryClientProvider>
+  )
 }
 
 describe("MessageInput", () => {

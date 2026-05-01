@@ -28,6 +28,8 @@ function renderQuickLinks(props: Partial<Parameters<typeof SidebarQuickLinks>[0]
         draftCount={0}
         isSavedPage={false}
         savedCount={0}
+        isScheduledPage={false}
+        scheduledCount={0}
         isActivityPage={false}
         isMemoryPage={false}
         unreadActivityCount={0}
@@ -47,6 +49,8 @@ describe("SidebarQuickLinks", () => {
     renderQuickLinks()
 
     expect(screen.getByText("Drafts")).toBeInTheDocument()
+    expect(screen.getByText("Saved")).toBeInTheDocument()
+    expect(screen.getByText("Scheduled")).toBeInTheDocument()
     expect(screen.getByText("Threads")).toBeInTheDocument()
     expect(screen.getByText("Memory")).toBeInTheDocument()
     expect(screen.getByText("Activity")).toBeInTheDocument()
