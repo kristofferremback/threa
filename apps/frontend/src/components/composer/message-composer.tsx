@@ -459,7 +459,10 @@ export function MessageComposer({
   )
 
   // ── Send button (shared between states) ──────────────────────────────
-  const sendButtonClass = cn("h-[30px] w-[30px] shrink-0 p-0 shadow-md", onSchedule && "rounded-r-none")
+  const sendButtonClass = cn("h-[30px] w-[30px] shrink-0 p-0 shadow-md", !isMobile && onSchedule && "rounded-r-none")
+  // On desktop with schedule, dock with the chevron button (left round, right square).
+  // On mobile, always fully rounded — the chevron is not rendered.
+  const sendButtonRightClass = isMobile || !onSchedule ? "rounded-md" : undefined
 
   const sendButton = hasFailed ? (
     <Tooltip>
@@ -467,7 +470,7 @@ export function MessageComposer({
         <span>
           <Button
             disabled
-            className={cn(sendButtonClass, "pointer-events-none rounded-l-md", !onSchedule && "rounded-md")}
+            className={cn(sendButtonClass, "pointer-events-none rounded-l-md", sendButtonRightClass)}
             aria-label={submitLabel}
           >
             <ArrowUp className="h-4 w-4" />
@@ -484,7 +487,7 @@ export function MessageComposer({
       onClick={handleSubmit}
       disabled={!canSubmit}
       aria-label={isSubmitting ? submittingLabel : submitLabel}
-      className={cn(sendButtonClass, "rounded-l-md", !onSchedule && "rounded-md")}
+      className={cn(sendButtonClass, "rounded-l-md", sendButtonRightClass)}
       {...(isMobile ? longPressHandlers : {})}
     >
       <ArrowUp className="h-4 w-4" />
