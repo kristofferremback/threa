@@ -10,7 +10,7 @@ import {
   useEffect,
   useId,
 } from "react"
-import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2 } from "lucide-react"
+import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2, Save } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
 import { ScheduleSheet } from "./schedule-sheet"
@@ -214,6 +214,13 @@ export interface MessageComposerProps {
    * context rather than shared by reference.
    */
   stashedDraftsTriggerFab?: ReactNode
+
+  /**
+   * When true, the composer is editing a scheduled message. The send button
+   * icon changes from ArrowUp to a floppy disk (Save), Enter/Cmd+Enter saves
+   * instead of sending, and a subtle banner shows the editing state.
+   */
+  isEditingScheduled?: boolean
 }
 
 export function MessageComposer({
@@ -252,6 +259,7 @@ export function MessageComposer({
   stashedDraftsTriggerFab,
   scheduledPickerTrigger,
   scheduledPickerTriggerFab,
+  isEditingScheduled = false,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -327,11 +335,14 @@ export function MessageComposer({
   // is the only way to send, so Enter just inserts a newline.
   const effectiveSendMode = expanded || isMobile ? "cmdEnter" : messageSendMode
   const sendHint = useMemo(() => {
+    if (isEditingScheduled) {
+      return effectiveSendMode === "enter" ? `Enter to save · Shift+Enter for new line` : `${MOD_SYMBOL}Enter to save`
+    }
     if (effectiveSendMode === "enter") {
       return `Enter to send · Shift+Enter for new line`
     }
     return `${MOD_SYMBOL}Enter to send`
-  }, [effectiveSendMode])
+  }, [effectiveSendMode, isEditingScheduled])
 
   const screenReaderInstructions = useMemo(() => {
     const sendInstructions =
@@ -464,7 +475,7 @@ export function MessageComposer({
       <TooltipTrigger asChild>
         <span>
           <Button disabled className={cn(sendButtonClass, "pointer-events-none")} aria-label={submitLabel}>
-            <ArrowUp className="h-4 w-4" />
+            {isEditingScheduled ? <Save className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
           </Button>
         </span>
       </TooltipTrigger>
@@ -477,11 +488,11 @@ export function MessageComposer({
       type="button"
       onClick={handleSubmit}
       disabled={!canSubmit}
-      aria-label={isSubmitting ? submittingLabel : submitLabel}
+      aria-label={isSubmitting ? submittingLabel : isEditingScheduled ? "Save" : submitLabel}
       className={sendButtonClass}
-      {...(isMobile ? longPressHandlers : {})}
+      {...(isMobile && !isEditingScheduled ? longPressHandlers : {})}
     >
-      <ArrowUp className="h-4 w-4" />
+      {isEditingScheduled ? <Save className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
     </Button>
   )
 
@@ -716,6 +727,12 @@ export function MessageComposer({
             ) : null
           }
         />
+
+        {isEditingScheduled && (
+          <div className="px-0 py-1 text-[11px] text-muted-foreground">
+            Editing scheduled message — sends paused until you save
+          </div>
+        )}
 
         {/* Hidden file input */}
         <input

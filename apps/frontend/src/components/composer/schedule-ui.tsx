@@ -1,5 +1,5 @@
 import { type ReactNode } from "react"
-import { Clock, Calendar as CalendarIcon, Edit2, CircleSlash, ArrowUp } from "lucide-react"
+import { Clock, Calendar as CalendarIcon, Edit2, CircleSlash, ArrowUp, Pause, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { SCHEDULE_PRESETS, computeScheduledAt } from "@/lib/schedule-presets"
@@ -67,6 +67,9 @@ interface ScheduledActionsListProps {
   onEdit: () => void
   onChangeTime: () => void
   onDelete: () => void
+  onPause?: () => void
+  onResume?: () => void
+  isPaused?: boolean
 }
 
 export function ScheduledActionsList({
@@ -75,6 +78,9 @@ export function ScheduledActionsList({
   onEdit,
   onChangeTime,
   onDelete,
+  onPause,
+  onResume,
+  isPaused = false,
 }: ScheduledActionsListProps) {
   const iconClass = variant === "popover" ? "h-3.5 w-3.5" : "h-4 w-4"
 
@@ -92,6 +98,17 @@ export function ScheduledActionsList({
         <Clock className={cn(iconClass, "text-muted-foreground")} />
         <span className="flex-1 text-left">Change time</span>
       </PresetMenuButton>
+      {isPaused ? (
+        <PresetMenuButton variant={variant} onClick={onResume}>
+          <Play className={cn(iconClass, "text-muted-foreground")} />
+          <span className="flex-1 text-left">Resume</span>
+        </PresetMenuButton>
+      ) : (
+        <PresetMenuButton variant={variant} onClick={onPause}>
+          <Pause className={cn(iconClass, "text-muted-foreground")} />
+          <span className="flex-1 text-left">Pause</span>
+        </PresetMenuButton>
+      )}
       <PresetMenuButton variant={variant} onClick={onDelete} className="text-destructive">
         <CircleSlash className={iconClass} />
         <span className="flex-1 text-left">Delete</span>

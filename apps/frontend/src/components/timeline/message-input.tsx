@@ -38,6 +38,8 @@ import {
   useCancelScheduled,
   useSendNowScheduled,
   useUpdateScheduled,
+  usePauseScheduled,
+  useResumeScheduled,
 } from "@/hooks/use-scheduled"
 import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
@@ -210,6 +212,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const cancelScheduledMutation = useCancelScheduled(workspaceId)
   const sendNowScheduledMutation = useSendNowScheduled(workspaceId)
   const updateScheduledMutation = useUpdateScheduled(workspaceId)
+  const pauseScheduledMutation = usePauseScheduled(workspaceId)
+  const resumeScheduledMutation = useResumeScheduled(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   // Resolve stream context for broadcast mention filtering.
@@ -425,6 +429,14 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const [pickerScheduleSheetOpen, setPickerScheduleSheetOpen] = useState(false)
   const [scheduledDrawerOpen, setScheduledDrawerOpen] = useState(false)
   const [selectedScheduledItem, setSelectedScheduledItem] = useState<ScheduledPickerItem | null>(null)
+  const [editingScheduledId, setEditingScheduledId] = useState<string | null>(null)
+  const [editingScheduledOriginal, setEditingScheduledOriginal] = useState<{
+    contentJson: JSONContent
+    contentMarkdown: string
+    scheduledAt: string
+  } | null>(null)
+  const pauseRetryCountRef = useRef(0)
+  const pauseRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
   const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
   const isMobile = useIsMobile()
@@ -685,6 +697,148 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     [cancelScheduledMutation]
   )
 
+  const handleScheduledPause = useCallback(
+    (id: string) => {
+      pauseScheduledMutation.mutate(id, {
+        onSuccess: () => toast.success("Message paused"),
+        onError: () => toast.error("Failed to pause"),
+      })
+    },
+    [pauseScheduledMutation]
+  )
+
+  const handleScheduledResume = useCallback(
+    (id: string) => {
+      resumeScheduledMutation.mutate(id, {
+        onSuccess: () => toast.success("Message resumed"),
+        onError: () => toast.error("Failed to resume"),
+      })
+    },
+    [resumeScheduledMutation]
+  )
+
+  const cancelEditScheduled = useCallback(async () => {
+    if (!editingScheduledId) return
+
+    const id = editingScheduledId
+    const original = editingScheduledOriginal
+
+    setEditingScheduledId(null)
+    setEditingScheduledOriginal(null)
+    composer.setContent(EMPTY_DOC)
+    composer.clearDraft()
+    composer.clearAttachments()
+    setExpanded(false)
+
+    if (pauseRetryTimerRef.current) {
+      clearTimeout(pauseRetryTimerRef.current)
+      pauseRetryTimerRef.current = null
+    }
+
+    if (original) {
+      resumeScheduledMutation.mutate(id, {
+        onError: () => {
+          toast.warning("Could not resume scheduled message. It will stay paused until you manually resume it.")
+        },
+      })
+    }
+  }, [editingScheduledId, editingScheduledOriginal, composer, resumeScheduledMutation, setExpanded])
+
+  const startEditScheduled = useCallback(
+    async (scheduled: ScheduledPickerItem & { contentJson?: unknown; contentMarkdown?: string }) => {
+      const scheduledAt = new Date(scheduled.scheduledAt)
+      const msUntilFire = scheduledAt.getTime() - Date.now()
+      const isImminent = msUntilFire < 30_000
+
+      setEditingScheduledId(scheduled.id)
+      setEditingScheduledOriginal({
+        contentJson: (scheduled.contentJson as JSONContent) ?? EMPTY_DOC,
+        contentMarkdown: typeof scheduled.contentMarkdown === "string" ? scheduled.contentMarkdown : "",
+        scheduledAt: scheduled.scheduledAt,
+      })
+
+      composer.setContent((scheduled.contentJson as JSONContent) ?? EMPTY_DOC)
+      composer.restoreAttachments(
+        (scheduled.attachmentIds ?? []).map((id) => ({ id, filename: "", mimeType: "", sizeBytes: 0 }))
+      )
+
+      if (isImminent) {
+        try {
+          await pauseScheduledMutation.mutateAsync(scheduled.id)
+        } catch {
+          toast.error("Could not pause message — too close to send time")
+          setEditingScheduledId(null)
+          setEditingScheduledOriginal(null)
+          composer.setContent(EMPTY_DOC)
+          composer.clearAttachments()
+          return
+        }
+      } else {
+        pauseScheduledMutation.mutate(scheduled.id, {
+          onError: () => {
+            pauseRetryCountRef.current++
+            if (pauseRetryCountRef.current >= 3) {
+              toast.warning("Failed to pause scheduled message. It may still send at the scheduled time.", {
+                duration: 8000,
+              })
+            } else {
+              pauseRetryTimerRef.current = setTimeout(() => {
+                pauseScheduledMutation.mutate(scheduled.id)
+              }, 2000 * pauseRetryCountRef.current)
+            }
+          },
+        })
+      }
+    },
+    [composer, pauseScheduledMutation]
+  )
+
+  const handleSaveScheduled = useCallback(
+    async (editorContent?: JSONContent) => {
+      if (!editingScheduledId || !editingScheduledOriginal) return
+
+      const pendingAttachments = composer.getPendingAttachmentsSnapshot()
+      const liveContent = editorContent ?? composer.content
+      const normalizedContent = materializePendingAttachmentReferences(liveContent, pendingAttachments)
+      const contentMarkdown = serializeToMarkdown(normalizedContent)
+      const attachments = extractUploadedAttachments(normalizedContent)
+
+      try {
+        await updateScheduledMutation.mutateAsync({
+          id: editingScheduledId,
+          input: {
+            contentJson: normalizedContent,
+            contentMarkdown,
+            attachmentIds: attachments.map((a) => a.id),
+            scheduledAt: editingScheduledOriginal.scheduledAt,
+          },
+        })
+
+        setEditingScheduledId(null)
+        setEditingScheduledOriginal(null)
+        composer.setContent(EMPTY_DOC)
+        composer.clearDraft()
+        composer.clearAttachments()
+        setExpanded(false)
+        toast.success("Scheduled message updated")
+      } catch {
+        toast.error("Failed to save changes")
+      }
+    },
+    [editingScheduledId, editingScheduledOriginal, composer, updateScheduledMutation, setExpanded]
+  )
+
+  const handleComposerSubmit = useCallback(
+    async (editorContent?: JSONContent) => {
+      if (editingScheduledId) {
+        await handleSaveScheduled(editorContent)
+      } else {
+        await handleSubmit(editorContent)
+      }
+    },
+    [editingScheduledId, handleSaveScheduled, handleSubmit]
+  )
+
   if (disabled && disabledReason) {
     return (
       <div className="border-t">
@@ -710,7 +864,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     onFileSelect: composer.handleFileSelect,
     onFileUpload: composer.uploadFile,
     imageCount: composer.imageCount,
-    onSubmit: handleSubmit,
+    onSubmit: handleComposerSubmit,
+    isEditingScheduled: !!editingScheduledId,
     onSchedule: handleSchedule,
     canSubmit: composer.canSend,
     isSubmitting: composer.isSending,
@@ -774,6 +929,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onItemAction={handleScheduledLongPress}
         onSendNow={handleScheduledSendNow}
         onDelete={handleScheduledDelete}
+        onPause={handleScheduledPause}
+        onResume={handleScheduledResume}
         onScheduleSelect={handleSchedule}
         timezone={timezone}
         controlsDisabled={composer.isSending}
@@ -787,6 +944,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onItemAction={handleScheduledLongPress}
         onSendNow={handleScheduledSendNow}
         onDelete={handleScheduledDelete}
+        onPause={handleScheduledPause}
+        onResume={handleScheduledResume}
         onScheduleSelect={handleSchedule}
         timezone={timezone}
         controlsDisabled={composer.isSending}
@@ -824,6 +983,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onEditSave={handleScheduledEditSave}
         onChangeTime={handleScheduledChangeTime}
         onDelete={handleScheduledDelete}
+        onPause={handleScheduledPause}
+        onResume={handleScheduledResume}
       />
 
       {/* Inline composer — hidden while expanded. Mobile inline editing is handled

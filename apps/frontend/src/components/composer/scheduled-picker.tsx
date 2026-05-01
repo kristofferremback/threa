@@ -16,6 +16,9 @@ export interface ScheduledPickerItem {
   attachmentIds?: string[]
   scheduledAt: string
   streamDisplayName: string | null
+  pausedAt?: string | null
+  sentAt?: string | null
+  cancelledAt?: string | null
 }
 
 interface ScheduledPickerProps {
@@ -25,6 +28,8 @@ interface ScheduledPickerProps {
   onItemAction: (item: ScheduledPickerItem) => void
   onSendNow: (id: string) => void
   onDelete: (id: string) => void
+  onPause?: (id: string) => void
+  onResume?: (id: string) => void
   /** Desktop-only: called with the selected date when user picks a preset from the schedule popover. */
   onScheduleSelect?: (date: Date) => void
   /** Timezone for computing presets (required when onScheduleSelect is provided). */
@@ -89,6 +94,8 @@ export function ScheduledPicker({
   onItemAction,
   onSendNow,
   onDelete,
+  onPause,
+  onResume,
   onScheduleSelect,
   timezone,
   controlsDisabled = false,
@@ -154,6 +161,20 @@ export function ScheduledPicker({
       onItemAction(actionItem)
     }
   }, [actionItem, onItemAction])
+
+  const handlePause = useCallback(() => {
+    if (actionItem) {
+      setActionOpen(false)
+      onPause?.(actionItem.id)
+    }
+  }, [actionItem, onPause])
+
+  const handleResume = useCallback(() => {
+    if (actionItem) {
+      setActionOpen(false)
+      onResume?.(actionItem.id)
+    }
+  }, [actionItem, onResume])
 
   const triggerSizeClass = size === "fab" ? "h-[30px] w-[30px] rounded-md bg-background shadow-md" : "h-7 w-7"
   const triggerIconClass = size === "fab" ? "h-4 w-4" : "h-3.5 w-3.5"
@@ -229,13 +250,16 @@ export function ScheduledPicker({
           </PopoverTrigger>
           <PopoverContent align="start" side="bottom" className="w-56 p-1">
             <div className="flex flex-col gap-0">
-              <ScheduledActionsList
-                variant="popover"
-                onSendNow={handleSendNow}
-                onEdit={handleEditRequest}
-                onChangeTime={handleEditRequest}
-                onDelete={handleDelete}
-              />
+            <ScheduledActionsList
+              variant="popover"
+              onSendNow={handleSendNow}
+              onEdit={handleEditRequest}
+              onChangeTime={handleEditRequest}
+              onDelete={handleDelete}
+              onPause={handlePause}
+              onResume={handleResume}
+              isPaused={!!actionItem?.pausedAt}
+            />
             </div>
           </PopoverContent>
         </Popover>

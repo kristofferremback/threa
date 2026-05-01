@@ -13,8 +13,6 @@ import type { ScheduledPickerItem } from "./scheduled-picker"
 
 type Mode = "actions" | "edit" | "change-time"
 
-const PAUSE_OFFSET_MS = 24 * 60 * 60 * 1000
-
 function getPreview(contentMarkdown: unknown): string {
   const md = typeof contentMarkdown === "string" ? contentMarkdown : ""
   const stripped = stripMarkdownToInline(md).trim()
@@ -29,6 +27,8 @@ interface ScheduledMessageDrawerProps {
   onEditSave: (id: string, contentMarkdown: string, originalScheduledAt: string) => void
   onChangeTime: (id: string, scheduledAt: Date) => void
   onDelete: (id: string) => void
+  onPause?: (id: string) => void
+  onResume?: (id: string) => void
 }
 
 export function ScheduledMessageDrawer({
@@ -39,6 +39,8 @@ export function ScheduledMessageDrawer({
   onEditSave,
   onChangeTime,
   onDelete,
+  onPause,
+  onResume,
 }: ScheduledMessageDrawerProps) {
   const { preferences } = usePreferences()
   const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -49,33 +51,24 @@ export function ScheduledMessageDrawer({
   const [customDate, setCustomDate] = useState("")
   const [customTime, setCustomTime] = useState("")
   const originalScheduledAtRef = useRef<string | null>(null)
-  const hasPausedRef = useRef(false)
-  const pausedItemIdRef = useRef<string | null>(null)
-  const onChangeTimeRef = useRef(onChangeTime)
-  onChangeTimeRef.current = onChangeTime
   const now = useMemo(() => new Date(), [open, mode])
   const minDate = useMemo(() => toDateInput(new Date()), [open, mode])
 
   useEffect(() => {
     if (!open) {
-      if (hasPausedRef.current && pausedItemIdRef.current && originalScheduledAtRef.current) {
-        onChangeTimeRef.current(pausedItemIdRef.current, new Date(originalScheduledAtRef.current))
-      }
-      hasPausedRef.current = false
-      originalScheduledAtRef.current = null
-      pausedItemIdRef.current = null
+      setMode("actions")
+      setEditText("")
+      setChangeMode("presets")
+      setCustomDate("")
+      setCustomTime("")
     }
-    setMode("actions")
-    setEditText("")
-    setChangeMode("presets")
-    setCustomDate("")
-    setCustomTime("")
   }, [open, item?.id])
 
   if (!item) return null
 
   const preview = getPreview(item.contentMarkdown)
   const attachmentCount = item.attachmentIds?.length ?? 0
+  const isPaused = !!item.pausedAt
 
   const handleSendNow = () => {
     onOpenChange(false)
@@ -87,32 +80,29 @@ export function ScheduledMessageDrawer({
     onDelete(item.id)
   }
 
+  const handlePause = () => {
+    onOpenChange(false)
+    onPause?.(item.id)
+  }
+
+  const handleResume = () => {
+    onOpenChange(false)
+    onResume?.(item.id)
+  }
+
   const handleEnterEdit = () => {
     const currentMd = typeof item.contentMarkdown === "string" ? item.contentMarkdown : ""
     setEditText(currentMd)
     originalScheduledAtRef.current = item.scheduledAt
-    pausedItemIdRef.current = item.id
-    const originalMs = new Date(item.scheduledAt).getTime()
-    const pauseMs = Date.now() + PAUSE_OFFSET_MS
-    const pausedTime = new Date(Math.max(originalMs, pauseMs))
-    if (pausedTime.getTime() > originalMs) {
-      onChangeTime(item.id, pausedTime)
-      hasPausedRef.current = true
-    }
     setMode("edit")
   }
 
   const handleEditSave = () => {
     onEditSave(item.id, editText, originalScheduledAtRef.current ?? item.scheduledAt)
-    hasPausedRef.current = false
     onOpenChange(false)
   }
 
   const handleEditCancel = () => {
-    if (originalScheduledAtRef.current && pausedItemIdRef.current && hasPausedRef.current) {
-      onChangeTime(pausedItemIdRef.current, new Date(originalScheduledAtRef.current))
-      hasPausedRef.current = false
-    }
     setEditText("")
     setMode("actions")
   }
@@ -175,6 +165,9 @@ export function ScheduledMessageDrawer({
                 setMode("change-time")
               }}
               onDelete={handleDelete}
+              onPause={handlePause}
+              onResume={handleResume}
+              isPaused={isPaused}
             />
           </div>
         </>
