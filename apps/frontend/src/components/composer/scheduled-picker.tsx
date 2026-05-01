@@ -99,6 +99,14 @@ export function ScheduledPicker({
     onScheduleOpen()
   }, [onScheduleOpen])
 
+  const handleLongPress = useCallback(
+    (item: ScheduledPickerItem) => {
+      setOpen(false)
+      onLongPress(item)
+    },
+    [onLongPress]
+  )
+
   const triggerSizeClass = size === "fab" ? "h-[30px] w-[30px] rounded-md bg-background shadow-md" : "h-7 w-7"
   const triggerIconClass = size === "fab" ? "h-4 w-4" : "h-3.5 w-3.5"
 
@@ -157,7 +165,7 @@ export function ScheduledPicker({
         ) : (
           <ul className="max-h-64 overflow-y-auto py-1" role="list">
             {scheduled.map((item) => (
-              <ScheduledPickerRow key={item.id} item={item} now={now} onLongPress={onLongPress} />
+              <ScheduledPickerRow key={item.id} item={item} now={now} onLongPress={handleLongPress} />
             ))}
           </ul>
         )}
