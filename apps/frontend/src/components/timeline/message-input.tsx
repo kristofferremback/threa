@@ -763,6 +763,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onScheduleOpen={handlePickerScheduleOpen}
         onLongPress={handleScheduledLongPress}
         controlsDisabled={composer.isSending}
+        scheduleDisabled={!composer.canSend}
       />
     ),
     scheduledPickerTriggerFab: (
@@ -771,6 +772,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onScheduleOpen={handlePickerScheduleOpen}
         onLongPress={handleScheduledLongPress}
         controlsDisabled={composer.isSending}
+        scheduleDisabled={!composer.canSend}
         size="fab"
       />
     ),

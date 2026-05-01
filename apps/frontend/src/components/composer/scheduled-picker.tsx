@@ -25,6 +25,8 @@ interface ScheduledPickerProps {
   onLongPress: (item: ScheduledPickerItem) => void
   /** When `controlsDisabled`, the trigger button is disabled (e.g. composer is sending). */
   controlsDisabled?: boolean
+  /** When true, the "Schedule" button in the header is disabled (no content to schedule). */
+  scheduleDisabled?: boolean
   /**
    * Visual size of the trigger button. `compact` matches the 7x7 toolbar row on
    * desktop inline; `fab` matches the 30x30 floating drawer in expanded mode.
@@ -85,6 +87,7 @@ export function ScheduledPicker({
   onScheduleOpen,
   onLongPress,
   controlsDisabled = false,
+  scheduleDisabled = false,
   size = "compact",
 }: ScheduledPickerProps) {
   const [open, setOpen] = useState(false)
@@ -134,7 +137,14 @@ export function ScheduledPicker({
             Scheduled
             {count > 0 && <span className="text-muted-foreground font-normal ml-1.5">({count})</span>}
           </p>
-          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 gap-1 text-xs" onClick={handleSchedule}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 gap-1 text-xs"
+            onClick={handleSchedule}
+            disabled={scheduleDisabled}
+          >
             <Clock className="h-3.5 w-3.5" />
             <span>Schedule</span>
           </Button>
