@@ -593,6 +593,12 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       const attachments = extractUploadedAttachments(normalizedContent)
       const contentMarkdown = serializeToMarkdown(normalizedContent)
       const savedContent = composer.content
+      const savedAttachments = pendingAttachments.map((a) => ({
+        id: a.id,
+        filename: a.filename,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+      }))
 
       composer.setContent(EMPTY_DOC)
       composer.clearDraft()
@@ -614,6 +620,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           onError: () => {
             toast.error("Failed to schedule message")
             composer.setContent(savedContent)
+            if (savedAttachments.length > 0) {
+              composer.restoreAttachments(savedAttachments)
+            }
           },
         }
       )

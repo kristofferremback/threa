@@ -4,7 +4,7 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
-import { SCHEDULE_PRESETS, computeScheduledAt } from "@/lib/schedule-presets"
+import { SCHEDULE_PRESETS, computeScheduledAt, buildZonedDate } from "@/lib/schedule-presets"
 
 interface ScheduleSheetProps {
   open: boolean
@@ -41,8 +41,10 @@ export function ScheduleSheet({ open, onOpenChange, onSelect }: ScheduleSheetPro
 
   const handleCustom = () => {
     if (!customDate || !customTime) return
-    const parsed = new Date(`${customDate}T${customTime}`)
-    if (isNaN(parsed.getTime())) return
+    const [y, m, d] = customDate.split("-").map(Number)
+    const [h, min] = customTime.split(":").map(Number)
+    if (isNaN(y) || isNaN(m) || isNaN(d) || isNaN(h) || isNaN(min)) return
+    const parsed = buildZonedDate(timezone, y, m - 1, d, h, min)
     handlePreset(parsed)
   }
 

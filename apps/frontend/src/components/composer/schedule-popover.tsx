@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
-import { SCHEDULE_PRESETS, computeScheduledAt } from "@/lib/schedule-presets"
+import { SCHEDULE_PRESETS, computeScheduledAt, buildZonedDate } from "@/lib/schedule-presets"
 
 interface SchedulePopoverProps {
   open: boolean
@@ -39,8 +39,12 @@ export function SchedulePopover({ open, onOpenChange, onSelect, disabled }: Sche
 
   const handleCustom = () => {
     if (!customDateTime) return
-    const parsed = new Date(customDateTime)
-    if (isNaN(parsed.getTime())) return
+    const [datePart, timePart] = customDateTime.split("T")
+    if (!datePart || !timePart) return
+    const [y, m, d] = datePart.split("-").map(Number)
+    const [h, min] = timePart.split(":").map(Number)
+    if (isNaN(y) || isNaN(m) || isNaN(d) || isNaN(h) || isNaN(min)) return
+    const parsed = buildZonedDate(timezone, y, m - 1, d, h, min)
     handlePreset(parsed)
   }
 

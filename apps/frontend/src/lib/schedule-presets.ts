@@ -34,7 +34,14 @@ function calendarInZone(date: Date, timezone: string): { y: number; m: number; d
   }
 }
 
-function buildZonedDate(timezone: string, y: number, m: number, d: number, hours: number, minutes: number): Date {
+export function buildZonedDate(
+  timezone: string,
+  y: number,
+  m: number,
+  d: number,
+  hours: number,
+  minutes: number
+): Date {
   let candidate = new Date(Date.UTC(y, m, d, hours, minutes))
   const readLocal = (date: Date) => {
     const p = new Intl.DateTimeFormat("en-US", {

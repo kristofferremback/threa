@@ -6,7 +6,7 @@ import { formatRelativeTime } from "@/lib/dates"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
-import { SCHEDULE_PRESETS, computeScheduledAt } from "@/lib/schedule-presets"
+import { SCHEDULE_PRESETS, computeScheduledAt, buildZonedDate } from "@/lib/schedule-presets"
 import type { ScheduledPickerItem } from "./scheduled-picker"
 
 type DrawerMode = "actions" | "edit" | "change-time"
@@ -47,6 +47,8 @@ export function ScheduledMessageDrawer({
   const [customTime, setCustomTime] = useState("")
   const originalScheduledAtRef = useRef<string | null>(null)
   const hasPausedRef = useRef(false)
+  const onChangeTimeRef = useRef(onChangeTime)
+  onChangeTimeRef.current = onChangeTime
   const now = useMemo(() => new Date(), [open, mode])
   const minDate = useMemo(() => toDateInput(new Date()), [open, mode])
 
@@ -55,7 +57,7 @@ export function ScheduledMessageDrawer({
     if (!open) {
       // If we paused, restore the original time before closing
       if (hasPausedRef.current && item && originalScheduledAtRef.current) {
-        onChangeTime(item.id, new Date(originalScheduledAtRef.current))
+        onChangeTimeRef.current(item.id, new Date(originalScheduledAtRef.current))
       }
       hasPausedRef.current = false
       originalScheduledAtRef.current = null
@@ -133,8 +135,9 @@ export function ScheduledMessageDrawer({
 
   const handleChangeTimeCustom = () => {
     if (!customDate || !customTime) return
-    const parsed = new Date(`${customDate}T${customTime}`)
-    if (isNaN(parsed.getTime())) return
+    const [y, m, d] = customDate.split("-").map(Number)
+    const [h, min] = customTime.split(":").map(Number)
+    const parsed = buildZonedDate(timezone, y, m - 1, d, h, min)
     handleChangeTimePreset(parsed)
   }
 
