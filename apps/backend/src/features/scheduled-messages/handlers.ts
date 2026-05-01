@@ -3,18 +3,28 @@ import type { Request, Response } from "express"
 import { HttpError } from "../../lib/errors"
 import type { ScheduledMessagesService } from "./service"
 
-const scheduleSchema = z.object({
-  streamId: z.string().nullable(),
-  parentMessageId: z.string().nullable(),
-  parentStreamId: z.string().nullable(),
-  contentJson: z.unknown(),
-  contentMarkdown: z.string(),
-  attachmentIds: z.array(z.string()).default([]),
-  scheduledAt: z.string().datetime(),
+const contentJsonSchema = z.object({
+  type: z.literal("doc"),
+  content: z.array(z.any()),
 })
 
+const scheduleSchema = z
+  .object({
+    streamId: z.string().nullable(),
+    parentMessageId: z.string().nullable(),
+    parentStreamId: z.string().nullable(),
+    contentJson: contentJsonSchema,
+    contentMarkdown: z.string(),
+    attachmentIds: z.array(z.string()).default([]),
+    scheduledAt: z.string().datetime(),
+  })
+  .refine((v) => v.streamId !== null || v.parentMessageId !== null, {
+    message: "Either streamId or parentMessageId is required",
+    path: ["streamId"],
+  })
+
 const updateSchema = z.object({
-  contentJson: z.unknown().optional(),
+  contentJson: contentJsonSchema.optional(),
   contentMarkdown: z.string().optional(),
   attachmentIds: z.array(z.string()).optional(),
   scheduledAt: z.string().datetime().optional(),
@@ -45,7 +55,7 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
         streamId: parsed.data.streamId,
         parentMessageId: parsed.data.parentMessageId,
         parentStreamId: parsed.data.parentStreamId,
-        contentJson: parsed.data.contentJson as import("@threa/types").JSONContent,
+        contentJson: parsed.data.contentJson,
         contentMarkdown: parsed.data.contentMarkdown,
         attachmentIds: parsed.data.attachmentIds,
         scheduledAt: new Date(parsed.data.scheduledAt),
@@ -86,7 +96,7 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
         workspaceId,
         authorId: userId,
         scheduledId,
-        contentJson: parsed.data.contentJson as import("@threa/types").JSONContent | undefined,
+        contentJson: parsed.data.contentJson,
         contentMarkdown: parsed.data.contentMarkdown,
         attachmentIds: parsed.data.attachmentIds,
         scheduledAt: parsed.data.scheduledAt ? new Date(parsed.data.scheduledAt) : undefined,

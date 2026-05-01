@@ -59,13 +59,12 @@ function buildZonedDate(timezone: string, y: number, m: number, d: number, hours
 function nextMondayAt9(now: Date, timezone: string): Date {
   const today = calendarInZone(now, timezone)
   const daysUntilMonday = today.weekday === 1 ? 7 : (1 - today.weekday + 7) % 7 || 7
-  const target = calendarInZone(new Date(now.getTime() + daysUntilMonday * 24 * 60 * 60_000), timezone)
-  return buildZonedDate(timezone, target.y, target.m, target.d, 9, 0)
+  return buildZonedDate(timezone, today.y, today.m, today.d + daysUntilMonday, 9, 0)
 }
 
 function tomorrowAt9(now: Date, timezone: string): Date {
-  const tomorrow = calendarInZone(new Date(now.getTime() + 24 * 60 * 60_000), timezone)
-  return buildZonedDate(timezone, tomorrow.y, tomorrow.m, tomorrow.d, 9, 0)
+  const today = calendarInZone(now, timezone)
+  return buildZonedDate(timezone, today.y, today.m, today.d + 1, 9, 0)
 }
 
 export function computeScheduledAt(preset: SchedulePreset, now: Date, timezone: string): Date {

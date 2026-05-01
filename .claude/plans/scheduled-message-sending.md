@@ -6,8 +6,8 @@
 
 ## Backend
 
-| Endpoint |
-|---|
+| Endpoint | Purpose |
+|---|---|
 | `POST /api/workspaces/:wid/scheduled-messages` | Schedule |
 | `GET /api/workspaces/:wid/scheduled-messages?streamId=` | List pending |
 | `PATCH /:id` | Edit content and/or `scheduledAt` |
@@ -26,7 +26,7 @@
 ## Frontend State
 
 **IDB v27 — `scheduledMessages`**:
-```
+```text
 id, workspaceId, authorId, streamId | null, parentMessageId | null, parentStreamId | null
 contentJson, contentMarkdown, attachmentIds[]
 scheduledAt, sentAt | null, cancelledAt | null, createdAt, updatedAt

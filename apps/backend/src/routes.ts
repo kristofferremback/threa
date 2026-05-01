@@ -340,7 +340,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.delete("/api/workspaces/:workspaceId/saved/:savedId", ...authed, savedMessages.delete)
 
   // Scheduled messages
-  app.post("/api/workspaces/:workspaceId/scheduled-messages", ...authed, scheduledMessages.schedule)
+  app.post(
+    "/api/workspaces/:workspaceId/scheduled-messages",
+    ...authed,
+    rateLimits.messageCreate,
+    scheduledMessages.schedule
+  )
   app.get("/api/workspaces/:workspaceId/scheduled-messages", ...authed, scheduledMessages.list)
   app.patch("/api/workspaces/:workspaceId/scheduled-messages/:id", ...authed, scheduledMessages.update)
   app.delete("/api/workspaces/:workspaceId/scheduled-messages/:id", ...authed, scheduledMessages.cancel)

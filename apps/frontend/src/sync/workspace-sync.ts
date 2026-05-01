@@ -25,6 +25,7 @@ import type {
   ScheduledMessageFiredPayload,
 } from "@threa/types"
 import { persistSavedRows, removeSavedRow, savedKeys } from "@/hooks/use-saved"
+import { scheduledKeys } from "@/hooks/use-scheduled"
 import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
 import { applyStreamBootstrapInCurrentTransaction } from "./stream-sync"
 
@@ -388,6 +389,7 @@ export function registerWorkspaceSocketHandlers(
   // during the disconnect. `refetchOnReconnect: true` alone only covers
   // browser network online/offline, not socket.io reconnects.
   queryClient.invalidateQueries({ queryKey: savedKeys.all })
+  queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
 
   // Handle stream created
   const handleStreamCreated = (payload: StreamPayload) => {
@@ -1325,21 +1327,25 @@ export function registerWorkspaceSocketHandlers(
   const handleScheduledMessageCreated = (payload: ScheduledMessageCreatedPayload) => {
     if (payload.workspaceId !== workspaceId) return
     void persistScheduledRow(workspaceId, payload.scheduled)
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
   }
 
   const handleScheduledMessageUpdated = (payload: ScheduledMessageUpdatedPayload) => {
     if (payload.workspaceId !== workspaceId) return
     void persistScheduledRow(workspaceId, payload.scheduled)
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
   }
 
   const handleScheduledMessageCancelled = (payload: ScheduledMessageCancelledPayload) => {
     if (payload.workspaceId !== workspaceId) return
     void removeScheduledRow(payload.scheduledId)
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
   }
 
   const handleScheduledMessageFired = (payload: ScheduledMessageFiredPayload) => {
     if (payload.workspaceId !== workspaceId) return
     void removeScheduledRow(payload.scheduledId)
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
   }
 
   // Register all handlers

@@ -222,6 +222,15 @@ export class ScheduledMessagesService {
       if (!existing) {
         throw new HttpError("Scheduled message not found", { status: 404, code: "SCHEDULED_NOT_FOUND" })
       }
+      if (existing.sentAt) {
+        throw new HttpError("Scheduled message has already been sent", {
+          status: 409,
+          code: "SCHEDULED_ALREADY_SENT",
+        })
+      }
+      if (existing.cancelledAt) {
+        return
+      }
 
       await ScheduledMessagesRepository.markCancelled(
         client,
@@ -357,7 +366,6 @@ async function enqueueFireJob(
     scheduledAt: Date
   }
 ): Promise<void> {
-  let queueMessageId = queueId()
   const now = new Date()
   const payload = {
     workspaceId: params.workspaceId,
@@ -366,6 +374,7 @@ async function enqueueFireJob(
   }
 
   for (let attempt = 1; attempt <= 5; attempt++) {
+    const queueMessageId = queueId()
     try {
       await QueueRepository.insert(client, {
         id: queueMessageId,
@@ -381,6 +390,8 @@ async function enqueueFireJob(
       logger.warn({ attempt, queueMessageId }, "Scheduled fire queue id collision; retrying")
     }
   }
+
+  throw new Error("Failed to enqueue scheduled_message.fire after 5 attempts")
 }
 
 function clampScheduledAt(scheduledAt: Date): Date {

@@ -18,3 +18,9 @@ CREATE TABLE scheduled_messages (
 CREATE INDEX idx_sm_workspace ON scheduled_messages (workspace_id);
 CREATE INDEX idx_sm_workspace_scheduled ON scheduled_messages (workspace_id, scheduled_at);
 CREATE INDEX idx_sm_workspace_stream ON scheduled_messages (workspace_id, stream_id);
+CREATE INDEX idx_sm_workspace_author_pending_scheduled
+  ON scheduled_messages (workspace_id, author_id, scheduled_at)
+  WHERE sent_at IS NULL AND cancelled_at IS NULL;
+CREATE INDEX idx_sm_workspace_author_stream_pending_scheduled
+  ON scheduled_messages (workspace_id, author_id, stream_id, scheduled_at)
+  WHERE sent_at IS NULL AND cancelled_at IS NULL;
