@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Clock, Edit2, CircleSlash, ArrowUp, ChevronLeft, Calendar as CalendarIcon } from "lucide-react"
+import { Clock, Edit2, CircleSlash, ArrowUp, ChevronLeft } from "lucide-react"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { formatRelativeTime } from "@/lib/dates"
 import { stripMarkdownToInline } from "@/lib/markdown"
-import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
-import { SCHEDULE_PRESETS, computeScheduledAt, buildZonedDate } from "@/lib/schedule-presets"
+import { toDateInput, toTimeInput, parseDateTimeInput } from "@/lib/schedule-presets"
+import { SchedulePresetList, PresetMenuButton } from "./schedule-ui"
 import type { ScheduledPickerItem } from "./scheduled-picker"
 
 type DrawerMode = "actions" | "edit" | "change-time"
 
-const PAUSE_OFFSET_MS = 24 * 60 * 60 * 1000 // Push 24h out while editing to prevent accidental fire
+const PAUSE_OFFSET_MS = 24 * 60 * 60 * 1000
 
 function getPreview(contentMarkdown: unknown): string {
   const md = typeof contentMarkdown === "string" ? contentMarkdown : ""
@@ -53,10 +53,8 @@ export function ScheduledMessageDrawer({
   const now = useMemo(() => new Date(), [open, mode])
   const minDate = useMemo(() => toDateInput(new Date()), [open, mode])
 
-  // Reset state when drawer opens/closes, or when the item changes while open
   useEffect(() => {
     if (!open) {
-      // If we paused, restore the original time before closing
       if (hasPausedRef.current && pausedItemIdRef.current && originalScheduledAtRef.current) {
         onChangeTimeRef.current(pausedItemIdRef.current, new Date(originalScheduledAtRef.current))
       }
@@ -86,14 +84,11 @@ export function ScheduledMessageDrawer({
     onDelete(item.id)
   }
 
-  // ── Edit mode ──────────────────────────────────────────────────────────
-
   const handleEnterEdit = () => {
     const currentMd = typeof item.contentMarkdown === "string" ? item.contentMarkdown : ""
     setEditText(currentMd)
     originalScheduledAtRef.current = item.scheduledAt
     pausedItemIdRef.current = item.id
-    // Pause: push scheduled time at least 24h out so it won't fire during editing
     const originalMs = new Date(item.scheduledAt).getTime()
     const pauseMs = Date.now() + PAUSE_OFFSET_MS
     const pausedTime = new Date(Math.max(originalMs, pauseMs))
@@ -111,22 +106,12 @@ export function ScheduledMessageDrawer({
   }
 
   const handleEditCancel = () => {
-    // Restore original scheduled time before going back
     if (originalScheduledAtRef.current && pausedItemIdRef.current && hasPausedRef.current) {
       onChangeTime(pausedItemIdRef.current, new Date(originalScheduledAtRef.current))
       hasPausedRef.current = false
     }
     setEditText("")
     setMode("actions")
-  }
-
-  // ── Change time mode ───────────────────────────────────────────────────
-
-  const handleEnterChangeTime = () => {
-    setChangeMode("presets")
-    setCustomDate("")
-    setCustomTime("")
-    setMode("change-time")
   }
 
   const handleChangeTimePreset = (date: Date) => {
@@ -142,22 +127,10 @@ export function ScheduledMessageDrawer({
   }
 
   const handleChangeTimeCustom = () => {
-    if (!customDate || !customTime) return
-    const [y, m, d] = customDate.split("-").map(Number)
-    const [h, min] = customTime.split(":").map(Number)
-    const parsed = buildZonedDate(timezone, y, m - 1, d, h, min)
-    if (parsed.getTime() <= Date.now()) return
+    const parsed = parseDateTimeInput(customDate, customTime, timezone)
+    if (!parsed) return
     handleChangeTimePreset(parsed)
   }
-
-  const handleBackFromChangeTime = () => {
-    setChangeMode("presets")
-    setCustomDate("")
-    setCustomTime("")
-    setMode("actions")
-  }
-
-  // ── Render ─────────────────────────────────────────────────────────────
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -165,12 +138,8 @@ export function ScheduledMessageDrawer({
         <div className="flex flex-col px-5 pt-3 pb-6 pb-safe">
           {mode === "actions" && (
             <>
-              {/* Header */}
-              <div className="flex items-center justify-between mb-1">
-                <DrawerTitle className="text-lg font-semibold">Scheduled message</DrawerTitle>
-              </div>
+              <DrawerTitle className="text-lg font-semibold mb-1">Scheduled message</DrawerTitle>
 
-              {/* Preview card */}
               <div className="rounded-lg border bg-muted/30 px-4 py-3 mb-4">
                 <p className="text-sm line-clamp-3 break-words">{preview}</p>
                 {attachmentCount > 0 && (
@@ -189,24 +158,28 @@ export function ScheduledMessageDrawer({
                 )}
               </div>
 
-              {/* Actions */}
               <div className="flex flex-col gap-1">
-                <DrawerMenuButton onClick={handleSendNow}>
+                <PresetMenuButton onClick={handleSendNow}>
                   <ArrowUp className="h-4 w-4 text-muted-foreground" />
                   <span className="flex-1 text-left">Send now</span>
-                </DrawerMenuButton>
-                <DrawerMenuButton onClick={handleEnterEdit}>
+                </PresetMenuButton>
+                <PresetMenuButton onClick={handleEnterEdit}>
                   <Edit2 className="h-4 w-4 text-muted-foreground" />
                   <span className="flex-1 text-left">Edit message</span>
-                </DrawerMenuButton>
-                <DrawerMenuButton onClick={handleEnterChangeTime}>
+                </PresetMenuButton>
+                <PresetMenuButton
+                  onClick={() => {
+                    setChangeMode("presets")
+                    setMode("change-time")
+                  }}
+                >
                   <Clock className="h-4 w-4 text-muted-foreground" />
                   <span className="flex-1 text-left">Change time</span>
-                </DrawerMenuButton>
-                <DrawerMenuButton onClick={handleDelete} className="text-destructive">
+                </PresetMenuButton>
+                <PresetMenuButton onClick={handleDelete} className="text-destructive">
                   <CircleSlash className="h-4 w-4" />
                   <span className="flex-1 text-left">Delete</span>
-                </DrawerMenuButton>
+                </PresetMenuButton>
               </div>
             </>
           )}
@@ -259,27 +232,27 @@ export function ScheduledMessageDrawer({
                     {changeMode === "custom" ? "Pick a time" : "Change time"}
                   </DrawerTitle>
                 </div>
-                <Button variant="ghost" size="sm" className="h-9 px-2 text-xs" onClick={handleBackFromChangeTime}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 px-2 text-xs"
+                  onClick={() => {
+                    setChangeMode("presets")
+                    setMode("actions")
+                  }}
+                >
                   Cancel
                 </Button>
               </div>
 
               {changeMode === "presets" ? (
-                <div className="flex flex-col gap-1">
-                  {SCHEDULE_PRESETS.map((preset) => (
-                    <DrawerMenuButton
-                      key={preset.label}
-                      onClick={() => handleChangeTimePreset(computeScheduledAt(preset, new Date(), timezone))}
-                    >
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      {preset.label}
-                    </DrawerMenuButton>
-                  ))}
-                  <DrawerMenuButton onClick={openChangeTimeCustom}>
-                    <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                    Pick a time…
-                  </DrawerMenuButton>
-                </div>
+                <SchedulePresetList
+                  variant="drawer"
+                  onSelect={handleChangeTimePreset}
+                  onCustomClick={openChangeTimeCustom}
+                  now={now}
+                  timezone={timezone}
+                />
               ) : (
                 <div className="flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-3">
@@ -318,34 +291,4 @@ export function ScheduledMessageDrawer({
       </DrawerContent>
     </Drawer>
   )
-}
-
-function DrawerMenuButton({
-  children,
-  onClick,
-  className,
-}: {
-  children: React.ReactNode
-  onClick: () => void
-  className?: string
-}) {
-  return (
-    <Button
-      variant="ghost"
-      onClick={onClick}
-      className={cn("w-full justify-start gap-3 h-11 text-sm font-normal px-3", className)}
-    >
-      {children}
-    </Button>
-  )
-}
-
-function toDateInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-
-function toTimeInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }

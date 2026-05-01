@@ -1,10 +1,10 @@
-import { useMemo, useState, type ReactNode } from "react"
-import { Clock, Calendar as CalendarIcon, ChevronDown } from "lucide-react"
+import { useMemo, useState } from "react"
+import { Clock, ChevronDown } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 import { usePreferences } from "@/contexts"
-import { SCHEDULE_PRESETS, computeScheduledAt, buildZonedDate } from "@/lib/schedule-presets"
+import { toDateTimeLocal, parseDateTimeInput } from "@/lib/schedule-presets"
+import { SchedulePresetList } from "./schedule-ui"
 
 interface SchedulePopoverProps {
   open: boolean
@@ -19,14 +19,14 @@ export function SchedulePopover({ open, onOpenChange, onSelect, disabled }: Sche
   const [customOpen, setCustomOpen] = useState(false)
   const [customDateTime, setCustomDateTime] = useState("")
   const minDateTime = useMemo(() => (customOpen ? toDateTimeLocal(new Date()) : ""), [customOpen])
+  const now = useMemo(() => new Date(), [open])
 
   const openCustom = () => {
     if (customOpen) {
       setCustomOpen(false)
       return
     }
-    const baseline = new Date(Date.now() + 15 * 60_000)
-    setCustomDateTime(toDateTimeLocal(baseline))
+    setCustomDateTime(toDateTimeLocal(new Date(Date.now() + 15 * 60_000)))
     setCustomOpen(true)
   }
 
@@ -40,11 +40,8 @@ export function SchedulePopover({ open, onOpenChange, onSelect, disabled }: Sche
   const handleCustom = () => {
     if (!customDateTime) return
     const [datePart, timePart] = customDateTime.split("T")
-    if (!datePart || !timePart) return
-    const [y, m, d] = datePart.split("-").map(Number)
-    const [h, min] = timePart.split(":").map(Number)
-    if (isNaN(y) || isNaN(m) || isNaN(d) || isNaN(h) || isNaN(min)) return
-    const parsed = buildZonedDate(timezone, y, m - 1, d, h, min)
+    const parsed = parseDateTimeInput(datePart, timePart, timezone)
+    if (!parsed) return
     handlePreset(parsed)
   }
 
@@ -66,19 +63,13 @@ export function SchedulePopover({ open, onOpenChange, onSelect, disabled }: Sche
           <Clock className="h-3 w-3" />
           Schedule send
         </div>
-        {SCHEDULE_PRESETS.map((preset) => (
-          <PopoverMenuButton
-            key={preset.label}
-            onClick={() => handlePreset(computeScheduledAt(preset, new Date(), timezone))}
-          >
-            <Clock className="h-3.5 w-3.5" />
-            {preset.label}
-          </PopoverMenuButton>
-        ))}
-        <PopoverMenuButton onClick={openCustom}>
-          <CalendarIcon className="h-3.5 w-3.5" />
-          Pick a time…
-        </PopoverMenuButton>
+        <SchedulePresetList
+          variant="popover"
+          onSelect={handlePreset}
+          onCustomClick={openCustom}
+          now={now}
+          timezone={timezone}
+        />
         {customOpen && (
           <div className="flex items-center gap-1.5 px-2 py-1.5">
             <input
@@ -96,30 +87,4 @@ export function SchedulePopover({ open, onOpenChange, onSelect, disabled }: Sche
       </PopoverContent>
     </Popover>
   )
-}
-
-function PopoverMenuButton({
-  children,
-  onClick,
-  className,
-}: {
-  children: ReactNode
-  onClick: () => void
-  className?: string
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={onClick}
-      className={cn("w-full justify-start gap-2 h-auto px-2 py-1.5 text-sm font-normal", className)}
-    >
-      {children}
-    </Button>
-  )
-}
-
-function toDateTimeLocal(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }

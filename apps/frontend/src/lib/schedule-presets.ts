@@ -82,3 +82,33 @@ export function computeScheduledAt(preset: SchedulePreset, now: Date, timezone: 
       return preset.calendar === "tomorrow-9am" ? tomorrowAt9(now, timezone) : nextMondayAt9(now, timezone)
   }
 }
+
+// ── Shared date-input formatting utilities ──────────────────────────────
+
+export function toDateInput(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+export function toTimeInput(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+export function toDateTimeLocal(date: Date): string {
+  return `${toDateInput(date)}T${toTimeInput(date)}`
+}
+
+/**
+ * Parse separate date and time input strings into a timezone-aware Date.
+ * Returns null if the input is invalid or the resulting time is in the past.
+ */
+export function parseDateTimeInput(dateStr: string, timeStr: string, timezone: string): Date | null {
+  if (!dateStr || !timeStr) return null
+  const [y, m, d] = dateStr.split("-").map(Number)
+  const [h, min] = timeStr.split(":").map(Number)
+  if (isNaN(y) || isNaN(m) || isNaN(d) || isNaN(h) || isNaN(min)) return null
+  const parsed = buildZonedDate(timezone, y, m - 1, d, h, min)
+  if (parsed.getTime() <= Date.now()) return null
+  return parsed
+}
