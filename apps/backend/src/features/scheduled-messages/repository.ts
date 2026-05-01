@@ -187,12 +187,18 @@ export const ScheduledMessagesRepository = {
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
-  async markSent(db: Querier, scheduledId: string, sentAt: Date): Promise<ScheduledMessage | null> {
+  async markSent(
+    db: Querier,
+    workspaceId: string,
+    scheduledId: string,
+    sentAt: Date
+  ): Promise<ScheduledMessage | null> {
     const result = await db.query<ScheduledMessageRow>(sql`
       UPDATE scheduled_messages SET
         sent_at = ${sentAt},
         updated_at = NOW()
       WHERE id = ${scheduledId}
+        AND workspace_id = ${workspaceId}
         AND sent_at IS NULL
         AND cancelled_at IS NULL
       RETURNING ${sql.raw(SCHEDULED_MESSAGE_COLUMNS)}

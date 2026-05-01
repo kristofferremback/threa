@@ -11,7 +11,7 @@ export const scheduledKeys = {
 }
 
 /** Write incoming server rows to IDB with cached metadata. */
-export async function persistScheduledRows(_workspaceId: string, rows: ScheduledMessageView[]) {
+export async function persistScheduledRows(rows: ScheduledMessageView[]) {
   await db.scheduledMessages.bulkPut(
     rows.map((row) => ({
       ...row,
@@ -45,7 +45,7 @@ function useScheduledBootstrap(workspaceId: string) {
         if (stale.length > 0) {
           await db.scheduledMessages.bulkDelete(stale.map((r) => r.id))
         }
-        await persistScheduledRows(workspaceId, result.scheduled)
+        await persistScheduledRows(result.scheduled)
       })
       return result
     },
@@ -106,7 +106,7 @@ export function useScheduleMessage(workspaceId: string) {
       if (ctx) {
         void db.scheduledMessages.delete(ctx.optimisticId)
       }
-      void persistScheduledRows("", [result.scheduled])
+      void persistScheduledRows([result.scheduled])
       queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
     },
     onError: (_error, _input, ctx) => {
@@ -125,7 +125,7 @@ export function useUpdateScheduled(workspaceId: string) {
     mutationFn: ({ id, input }: { id: string; input: Parameters<typeof scheduledMessagesApi.update>[2] }) =>
       scheduledMessagesApi.update(workspaceId, id, input),
     onSuccess: (result) => {
-      void persistScheduledRows(workspaceId, [result.scheduled])
+      void persistScheduledRows([result.scheduled])
       queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
     },
   })
@@ -138,12 +138,17 @@ export function useCancelScheduled(workspaceId: string) {
   return useMutation({
     mutationFn: (id: string) => scheduledMessagesApi.cancel(workspaceId, id),
     onMutate: async (id) => {
+      const existing = await db.scheduledMessages.get(id)
       await db.scheduledMessages.delete(id)
+      return { deleted: existing }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
     },
-    onError: () => {
+    onError: (_error, _id, ctx) => {
+      if (ctx?.deleted) {
+        void db.scheduledMessages.put(ctx.deleted)
+      }
       queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
     },
   })

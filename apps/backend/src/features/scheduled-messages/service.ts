@@ -128,9 +128,12 @@ export class ScheduledMessagesService {
 
     return withTransaction(this.pool, async (client) => {
       const now = new Date()
-      await ScheduledMessagesRepository.markSent(client, row.id, now)
+      const sentRow = await ScheduledMessagesRepository.markSent(client, row.workspaceId, row.id, now)
+      if (!sentRow) {
+        throw new HttpError("Scheduled message state changed unexpectedly", { status: 409 })
+      }
 
-      const [view] = await resolveScheduledView(client, params.authorId, [row])
+      const [view] = await resolveScheduledView(client, params.authorId, [sentRow])
 
       await OutboxRepository.insert(client, "scheduled_message:created", {
         workspaceId: params.workspaceId,
@@ -370,7 +373,7 @@ export class ScheduledMessagesService {
     // Step 4: Mark as sent in a tx with the outbox event (INV-7)
     return withTransaction(this.pool, async (client) => {
       const now = new Date()
-      const updated = await ScheduledMessagesRepository.markSent(client, params.scheduledId, now)
+      const updated = await ScheduledMessagesRepository.markSent(client, row.workspaceId, params.scheduledId, now)
       if (!updated) return { fired: false }
 
       await OutboxRepository.insert(client, "scheduled_message:fired", {

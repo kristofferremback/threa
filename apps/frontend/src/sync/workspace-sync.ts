@@ -25,7 +25,7 @@ import type {
   ScheduledMessageFiredPayload,
 } from "@threa/types"
 import { persistSavedRows, removeSavedRow, savedKeys } from "@/hooks/use-saved"
-import { scheduledKeys } from "@/hooks/use-scheduled"
+import { persistScheduledRows, removeScheduledRow, scheduledKeys } from "@/hooks/use-scheduled"
 import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
 import { applyStreamBootstrapInCurrentTransaction } from "./stream-sync"
 
@@ -1308,31 +1308,15 @@ export function registerWorkspaceSocketHandlers(
   }
 
   // Scheduled messages — write-through to IDB and invalidate TanStack caches.
-  const persistScheduledRow = async (_workspaceId: string, scheduled: any) => {
-    const scheduledAtMs = Date.parse(scheduled.scheduledAt)
-    await db.scheduledMessages.put({
-      ...scheduled,
-      _status: "synced",
-      _scheduledAtMs: scheduledAtMs,
-      _cachedAt: Date.now(),
-      contentJson:
-        typeof scheduled.contentJson === "string" ? JSON.parse(scheduled.contentJson) : scheduled.contentJson,
-    })
-  }
-
-  const removeScheduledRow = async (scheduledId: string) => {
-    await db.scheduledMessages.delete(scheduledId)
-  }
-
   const handleScheduledMessageCreated = (payload: ScheduledMessageCreatedPayload) => {
     if (payload.workspaceId !== workspaceId) return
-    void persistScheduledRow(workspaceId, payload.scheduled)
+    void persistScheduledRows([payload.scheduled])
     queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
   }
 
   const handleScheduledMessageUpdated = (payload: ScheduledMessageUpdatedPayload) => {
     if (payload.workspaceId !== workspaceId) return
-    void persistScheduledRow(workspaceId, payload.scheduled)
+    void persistScheduledRows([payload.scheduled])
     queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
   }
 
