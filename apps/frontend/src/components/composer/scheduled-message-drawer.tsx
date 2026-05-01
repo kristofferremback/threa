@@ -29,6 +29,8 @@ interface ScheduledMessageDrawerProps {
   onDelete: (id: string) => void
   onPause?: (id: string) => void
   onResume?: (id: string) => void
+  /** Called when the user wants to edit in the composer instead of the drawer textarea. */
+  onEditInComposer?: (item: ScheduledPickerItem) => void
 }
 
 export function ScheduledMessageDrawer({
@@ -41,6 +43,7 @@ export function ScheduledMessageDrawer({
   onDelete,
   onPause,
   onResume,
+  onEditInComposer,
 }: ScheduledMessageDrawerProps) {
   const { preferences } = usePreferences()
   const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -91,9 +94,22 @@ export function ScheduledMessageDrawer({
   }
 
   const handleEnterEdit = () => {
+    if (onEditInComposer) {
+      onOpenChange(false)
+      onEditInComposer(item)
+      return
+    }
     const currentMd = typeof item.contentMarkdown === "string" ? item.contentMarkdown : ""
     setEditText(currentMd)
     originalScheduledAtRef.current = item.scheduledAt
+    pausedItemIdRef.current = item.id
+    const originalMs = new Date(item.scheduledAt).getTime()
+    const pauseMs = Date.now() + PAUSE_OFFSET_MS
+    const pausedTime = new Date(Math.max(originalMs, pauseMs))
+    if (pausedTime.getTime() > originalMs) {
+      onChangeTime(item.id, pausedTime)
+      hasPausedRef.current = true
+    }
     setMode("edit")
   }
 

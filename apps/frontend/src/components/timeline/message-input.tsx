@@ -931,6 +931,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onDelete={handleScheduledDelete}
         onPause={handleScheduledPause}
         onResume={handleScheduledResume}
+        onEdit={startEditScheduled}
         onScheduleSelect={handleSchedule}
         timezone={timezone}
         controlsDisabled={composer.isSending}
@@ -946,6 +947,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onDelete={handleScheduledDelete}
         onPause={handleScheduledPause}
         onResume={handleScheduledResume}
+        onEdit={startEditScheduled}
         onScheduleSelect={handleSchedule}
         timezone={timezone}
         controlsDisabled={composer.isSending}
@@ -985,6 +987,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onDelete={handleScheduledDelete}
         onPause={handleScheduledPause}
         onResume={handleScheduledResume}
+        onEditInComposer={startEditScheduled}
       />
 
       {/* Inline composer — hidden while expanded. Mobile inline editing is handled

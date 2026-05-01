@@ -13,6 +13,7 @@ import { SchedulePresetList, ScheduledActionsList } from "./schedule-ui"
 export interface ScheduledPickerItem {
   id: string
   contentMarkdown: string | unknown
+  contentJson?: unknown
   attachmentIds?: string[]
   scheduledAt: string
   streamDisplayName: string | null
@@ -30,6 +31,8 @@ interface ScheduledPickerProps {
   onDelete: (id: string) => void
   onPause?: (id: string) => void
   onResume?: (id: string) => void
+  /** Called when the user selects "Edit message" from the action menu. */
+  onEdit?: (item: ScheduledPickerItem) => void
   /** Desktop-only: called with the selected date when user picks a preset from the schedule popover. */
   onScheduleSelect?: (date: Date) => void
   /** Timezone for computing presets (required when onScheduleSelect is provided). */
@@ -96,6 +99,7 @@ export function ScheduledPicker({
   onDelete,
   onPause,
   onResume,
+  onEdit,
   onScheduleSelect,
   timezone,
   controlsDisabled = false,
@@ -158,9 +162,9 @@ export function ScheduledPicker({
   const handleEditRequest = useCallback(() => {
     if (actionItem) {
       setActionOpen(false)
-      onItemAction(actionItem)
+      onEdit?.(actionItem)
     }
-  }, [actionItem, onItemAction])
+  }, [actionItem, onEdit])
 
   const handlePause = useCallback(() => {
     if (actionItem) {
