@@ -47,6 +47,7 @@ export function ScheduledMessageDrawer({
   const [customTime, setCustomTime] = useState("")
   const originalScheduledAtRef = useRef<string | null>(null)
   const hasPausedRef = useRef(false)
+  const pausedItemIdRef = useRef<string | null>(null)
   const onChangeTimeRef = useRef(onChangeTime)
   onChangeTimeRef.current = onChangeTime
   const now = useMemo(() => new Date(), [open, mode])
@@ -56,11 +57,12 @@ export function ScheduledMessageDrawer({
   useEffect(() => {
     if (!open) {
       // If we paused, restore the original time before closing
-      if (hasPausedRef.current && item && originalScheduledAtRef.current) {
-        onChangeTimeRef.current(item.id, new Date(originalScheduledAtRef.current))
+      if (hasPausedRef.current && pausedItemIdRef.current && originalScheduledAtRef.current) {
+        onChangeTimeRef.current(pausedItemIdRef.current, new Date(originalScheduledAtRef.current))
       }
       hasPausedRef.current = false
       originalScheduledAtRef.current = null
+      pausedItemIdRef.current = null
     }
     setMode("actions")
     setEditText("")
@@ -90,9 +92,15 @@ export function ScheduledMessageDrawer({
     const currentMd = typeof item.contentMarkdown === "string" ? item.contentMarkdown : ""
     setEditText(currentMd)
     originalScheduledAtRef.current = item.scheduledAt
-    // Pause: push scheduled time 24h out so it won't fire during editing
-    onChangeTime(item.id, new Date(Date.now() + PAUSE_OFFSET_MS))
-    hasPausedRef.current = true
+    pausedItemIdRef.current = item.id
+    // Pause: push scheduled time at least 24h out so it won't fire during editing
+    const originalMs = new Date(item.scheduledAt).getTime()
+    const pauseMs = Date.now() + PAUSE_OFFSET_MS
+    const pausedTime = new Date(Math.max(originalMs, pauseMs))
+    if (pausedTime.getTime() > originalMs) {
+      onChangeTime(item.id, pausedTime)
+      hasPausedRef.current = true
+    }
     setMode("edit")
   }
 
@@ -104,8 +112,8 @@ export function ScheduledMessageDrawer({
 
   const handleEditCancel = () => {
     // Restore original scheduled time before going back
-    if (originalScheduledAtRef.current && hasPausedRef.current) {
-      onChangeTime(item.id, new Date(originalScheduledAtRef.current))
+    if (originalScheduledAtRef.current && pausedItemIdRef.current && hasPausedRef.current) {
+      onChangeTime(pausedItemIdRef.current, new Date(originalScheduledAtRef.current))
       hasPausedRef.current = false
     }
     setEditText("")
@@ -138,6 +146,7 @@ export function ScheduledMessageDrawer({
     const [y, m, d] = customDate.split("-").map(Number)
     const [h, min] = customTime.split(":").map(Number)
     const parsed = buildZonedDate(timezone, y, m - 1, d, h, min)
+    if (parsed.getTime() <= Date.now()) return
     handleChangeTimePreset(parsed)
   }
 

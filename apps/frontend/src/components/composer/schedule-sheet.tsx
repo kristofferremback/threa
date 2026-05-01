@@ -45,6 +45,7 @@ export function ScheduleSheet({ open, onOpenChange, onSelect }: ScheduleSheetPro
     const [h, min] = customTime.split(":").map(Number)
     if (isNaN(y) || isNaN(m) || isNaN(d) || isNaN(h) || isNaN(min)) return
     const parsed = buildZonedDate(timezone, y, m - 1, d, h, min)
+    if (parsed.getTime() <= Date.now()) return
     handlePreset(parsed)
   }
 
