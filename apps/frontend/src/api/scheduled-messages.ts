@@ -36,4 +36,10 @@ export const scheduledMessagesApi = {
   async cancel(workspaceId: string, id: string): Promise<void> {
     await api.delete<{ ok: true }>(`/api/workspaces/${workspaceId}/scheduled-messages/${id}`)
   },
+
+  async sendNow(workspaceId: string, id: string): Promise<{ scheduled: ScheduledMessageView }> {
+    return api.patch<{ scheduled: ScheduledMessageView }>(`/api/workspaces/${workspaceId}/scheduled-messages/${id}`, {
+      scheduledAt: new Date().toISOString(),
+    })
+  },
 }

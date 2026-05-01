@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from "react"
-import { Clock, Trash2 } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Clock, Trash2, SendHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -18,10 +17,12 @@ interface ScheduledPickerItem {
 
 interface ScheduledPickerProps {
   scheduled: ScheduledPickerItem[]
-  /** Workspace id for linking to the full scheduled page. */
-  workspaceId: string
+  /** Called when the user clicks the schedule button — should open the time picker drawer. */
+  onScheduleOpen: () => void
   /** Called when the user clicks the cancel icon on a row. */
   onCancel: (id: string) => void
+  /** Called when the user clicks the send-now action on a row. */
+  onSendNow: (id: string) => void
   /** When `controlsDisabled`, the trigger button is disabled (e.g. composer is sending). */
   controlsDisabled?: boolean
   /**
@@ -44,8 +45,9 @@ function getPreview(scheduled: ScheduledPickerItem): string {
 
 export function ScheduledPicker({
   scheduled,
-  workspaceId,
+  onScheduleOpen,
   onCancel,
+  onSendNow,
   controlsDisabled = false,
   size = "compact",
 }: ScheduledPickerProps) {
@@ -59,6 +61,18 @@ export function ScheduledPicker({
     },
     [onCancel]
   )
+
+  const handleSendNow = useCallback(
+    (id: string) => {
+      onSendNow(id)
+    },
+    [onSendNow]
+  )
+
+  const handleSchedule = useCallback(() => {
+    setOpen(false)
+    onScheduleOpen()
+  }, [onScheduleOpen])
 
   const triggerSizeClass = size === "fab" ? "h-[30px] w-[30px] rounded-md bg-background shadow-md" : "h-7 w-7"
   const triggerIconClass = size === "fab" ? "h-4 w-4" : "h-3.5 w-3.5"
@@ -98,10 +112,9 @@ export function ScheduledPicker({
             Scheduled
             {count > 0 && <span className="text-muted-foreground font-normal ml-1.5">({count})</span>}
           </p>
-          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 gap-1 text-xs" asChild>
-            <Link to={`/w/${workspaceId}/scheduled`} onClick={() => setOpen(false)}>
-              View all
-            </Link>
+          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 gap-1 text-xs" onClick={handleSchedule}>
+            <Clock className="h-3.5 w-3.5" />
+            <span>Schedule</span>
           </Button>
         </div>
 
@@ -125,19 +138,34 @@ export function ScheduledPicker({
                         {formatRelativeTime(new Date(item.scheduledAt), now, undefined, { terse: true })}
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Cancel scheduled message"
-                      className="h-7 w-7 shrink-0 opacity-0 group-hover/row:opacity-100 focus:opacity-100 max-sm:opacity-100"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleCancel(item.id)
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/row:opacity-100 focus-within:opacity-100 max-sm:opacity-100">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Send now"
+                        className="h-7 w-7 shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSendNow(item.id)
+                        }}
+                      >
+                        <SendHorizontal className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Cancel scheduled message"
+                        className="h-7 w-7 shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleCancel(item.id)
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 </li>
               )

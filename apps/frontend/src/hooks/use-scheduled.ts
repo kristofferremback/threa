@@ -148,3 +148,15 @@ export function useCancelScheduled(workspaceId: string) {
     },
   })
 }
+
+/** Send a scheduled message immediately. */
+export function useSendNowScheduled(workspaceId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => scheduledMessagesApi.sendNow(workspaceId, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: scheduledKeys.list(workspaceId) })
+    },
+  })
+}

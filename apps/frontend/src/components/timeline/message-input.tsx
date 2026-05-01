@@ -15,7 +15,7 @@ import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer, StashedDraftsPicker, ScheduleSheet } from "@/components/composer"
 import { ScheduledPicker } from "@/components/composer/scheduled-picker"
 import type { ComposerControlHandle } from "@/components/composer"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
@@ -26,7 +26,7 @@ import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
 import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
-import { useScheduleMessage, useScheduledList, useCancelScheduled } from "@/hooks/use-scheduled"
+import { useScheduleMessage, useScheduledList, useCancelScheduled, useSendNowScheduled } from "@/hooks/use-scheduled"
 import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
@@ -196,6 +196,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const scheduleMutation = useScheduleMessage(workspaceId)
   const scheduledItems = useScheduledList(workspaceId)
   const cancelScheduledMutation = useCancelScheduled(workspaceId)
+  const sendNowScheduledMutation = useSendNowScheduled(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   // Resolve stream context for broadcast mention filtering.
@@ -408,6 +409,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [pickerScheduleSheetOpen, setPickerScheduleSheetOpen] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
   const isMobile = useIsMobile()
   const connectionState = useConnectionState()
@@ -604,6 +606,20 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     [composer, streamId, scheduleMutation]
   )
 
+  const handlePickerScheduleOpen = useCallback(() => {
+    setPickerScheduleSheetOpen(true)
+  }, [])
+
+  const handleSendNow = useCallback(
+    (id: string) => {
+      sendNowScheduledMutation.mutate(id, {
+        onSuccess: () => toast.success("Message sent"),
+        onError: () => toast.error("Failed to send message"),
+      })
+    },
+    [sendNowScheduledMutation]
+  )
+
   if (disabled && disabledReason) {
     return (
       <div className="border-t">
@@ -689,16 +705,18 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     scheduledPickerTrigger: (
       <ScheduledPicker
         scheduled={scheduledItems ?? []}
-        workspaceId={workspaceId}
+        onScheduleOpen={handlePickerScheduleOpen}
         onCancel={(id) => cancelScheduledMutation.mutate(id)}
+        onSendNow={handleSendNow}
         controlsDisabled={composer.isSending}
       />
     ),
     scheduledPickerTriggerFab: (
       <ScheduledPicker
         scheduled={scheduledItems ?? []}
-        workspaceId={workspaceId}
+        onScheduleOpen={handlePickerScheduleOpen}
         onCancel={(id) => cancelScheduledMutation.mutate(id)}
+        onSendNow={handleSendNow}
         controlsDisabled={composer.isSending}
         size="fab"
       />
@@ -716,6 +734,13 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           </div>,
           portalTargetRef.current
         )}
+
+      {/* Schedule sheet triggered from the scheduled messages picker */}
+      <ScheduleSheet
+        open={pickerScheduleSheetOpen}
+        onOpenChange={setPickerScheduleSheetOpen}
+        onSelect={(date) => handleSchedule(date)}
+      />
 
       {/* Inline composer — hidden while expanded. Mobile inline editing is handled
           via CSS: `body:has([data-inline-edit])` matches whenever a MessageEditForm or
