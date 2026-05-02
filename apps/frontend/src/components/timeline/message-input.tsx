@@ -13,6 +13,10 @@ import {
   useUpdateScheduledMessage,
   useScheduledMessagesList,
   useEditLockScheduledMessage,
+  usePauseScheduledMessage,
+  useResumeScheduledMessage,
+  useSendScheduledMessageNow,
+  useDeleteScheduledMessage,
 } from "@/hooks"
 import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
@@ -35,7 +39,8 @@ import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
 import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
-import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
+import { ScheduledMessageStatuses, StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
+import type { ScheduledMessageView } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { PendingAttachment } from "@/hooks/use-attachments"
 
@@ -276,14 +281,23 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const scheduleMutation = useCreateScheduledMessage(workspaceId)
   const updateScheduledMutation = useUpdateScheduledMessage(workspaceId)
   const editLockMutation = useEditLockScheduledMessage(workspaceId)
+  const pauseScheduledMutation = usePauseScheduledMessage(workspaceId)
+  const resumeScheduledMutation = useResumeScheduledMessage(workspaceId)
+  const sendScheduledNowMutation = useSendScheduledMessageNow(workspaceId)
+  const deleteScheduledMutation = useDeleteScheduledMessage(workspaceId)
   const scheduledEditId = searchParams.get("scheduled")
   const scheduledEditItem = useMemo(
     () => scheduledList.items.find((item) => item.id === scheduledEditId) ?? null,
     [scheduledList.items, scheduledEditId]
   )
+  const currentStreamScheduledMessages = useMemo(
+    () => scheduledList.items.filter((item) => item.streamId === streamId),
+    [scheduledList.items, streamId]
+  )
   const loadedScheduledEditRef = useRef<string | null>(null)
   const scheduledEditVersionRef = useRef<number | null>(null)
   const scheduledEditSavingRef = useRef(false)
+  const [scheduledActionInFlightId, setScheduledActionInFlightId] = useState<string | null>(null)
 
   // Use a ref so the handler always reads fresh composer state without
   // re-registering on every render (composer object is not memoized).
@@ -447,6 +461,40 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       { replace: true }
     )
   }, [setSearchParams])
+
+  const openScheduledMessage = useCallback(
+    (item: ScheduledMessageView) => {
+      if (item.status === ScheduledMessageStatuses.SENT && item.sentMessageId) {
+        navigate(`/w/${workspaceId}/s/${item.streamId}?m=${item.sentMessageId}`)
+        return
+      }
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current)
+          next.set("scheduled", item.id)
+          return next
+        },
+        { replace: true }
+      )
+    },
+    [navigate, setSearchParams, workspaceId]
+  )
+
+  const runScheduledAction = useCallback(
+    async (item: ScheduledMessageView, action: () => Promise<unknown>, success: string) => {
+      if (scheduledActionInFlightId) return
+      setScheduledActionInFlightId(item.id)
+      try {
+        await action()
+        toast.success(success)
+      } catch {
+        toast.error("Could not update scheduled message")
+      } finally {
+        setScheduledActionInFlightId(null)
+      }
+    },
+    [scheduledActionInFlightId]
+  )
 
   const cancelScheduledEdit = useCallback(async () => {
     const item = scheduledEditItem
@@ -877,7 +925,42 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     composerRef: composerFocusRef,
     onStashDraft: stash.handleStashDraft,
     scheduleTrigger: !scheduledEditItem ? (
-      <ScheduleMessagePicker canSchedule={composer.canSend} onSchedule={handleSchedule} disabled={composer.isSending} />
+      <ScheduleMessagePicker
+        canSchedule={composer.canSend}
+        onSchedule={handleSchedule}
+        disabled={composer.isSending}
+        scheduledMessages={currentStreamScheduledMessages}
+        inFlightId={scheduledActionInFlightId}
+        onEdit={openScheduledMessage}
+        onPause={(item) =>
+          runScheduledAction(
+            item,
+            () => pauseScheduledMutation.mutateAsync({ scheduledId: item.id, expectedVersion: item.version }),
+            "Scheduled message paused"
+          )
+        }
+        onResume={(item) =>
+          runScheduledAction(
+            item,
+            () => resumeScheduledMutation.mutateAsync({ scheduledId: item.id, expectedVersion: item.version }),
+            "Scheduled message resumed"
+          )
+        }
+        onSendNow={(item) =>
+          runScheduledAction(
+            item,
+            () => sendScheduledNowMutation.mutateAsync({ scheduledId: item.id, expectedVersion: item.version }),
+            "Scheduled to send now"
+          )
+        }
+        onDelete={(item) =>
+          runScheduledAction(
+            item,
+            () => deleteScheduledMutation.mutateAsync({ scheduledId: item.id, expectedVersion: item.version }),
+            "Scheduled message deleted"
+          )
+        }
+      />
     ) : null,
     stashedDraftsTrigger: (
       <StashedDraftsPicker
@@ -894,6 +977,37 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         canSchedule={composer.canSend}
         onSchedule={handleSchedule}
         disabled={composer.isSending}
+        scheduledMessages={currentStreamScheduledMessages}
+        inFlightId={scheduledActionInFlightId}
+        onEdit={openScheduledMessage}
+        onPause={(item) =>
+          runScheduledAction(
+            item,
+            () => pauseScheduledMutation.mutateAsync({ scheduledId: item.id, expectedVersion: item.version }),
+            "Scheduled message paused"
+          )
+        }
+        onResume={(item) =>
+          runScheduledAction(
+            item,
+            () => resumeScheduledMutation.mutateAsync({ scheduledId: item.id, expectedVersion: item.version }),
+            "Scheduled message resumed"
+          )
+        }
+        onSendNow={(item) =>
+          runScheduledAction(
+            item,
+            () => sendScheduledNowMutation.mutateAsync({ scheduledId: item.id, expectedVersion: item.version }),
+            "Scheduled to send now"
+          )
+        }
+        onDelete={(item) =>
+          runScheduledAction(
+            item,
+            () => deleteScheduledMutation.mutateAsync({ scheduledId: item.id, expectedVersion: item.version }),
+            "Scheduled message deleted"
+          )
+        }
         size="fab"
       />
     ) : null,

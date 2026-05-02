@@ -220,6 +220,18 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useEditLockScheduledMessage").mockReturnValue({
     mutateAsync: vi.fn(),
   } as unknown as ReturnType<typeof hooksModule.useEditLockScheduledMessage>)
+  vi.spyOn(hooksModule, "usePauseScheduledMessage").mockReturnValue({
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof hooksModule.usePauseScheduledMessage>)
+  vi.spyOn(hooksModule, "useResumeScheduledMessage").mockReturnValue({
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof hooksModule.useResumeScheduledMessage>)
+  vi.spyOn(hooksModule, "useSendScheduledMessageNow").mockReturnValue({
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof hooksModule.useSendScheduledMessageNow>)
+  vi.spyOn(hooksModule, "useDeleteScheduledMessage").mockReturnValue({
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof hooksModule.useDeleteScheduledMessage>)
   vi.spyOn(hooksModule, "useComposerHeightPublish").mockImplementation(
     () => undefined as unknown as ReturnType<typeof hooksModule.useComposerHeightPublish>
   )
@@ -493,6 +505,7 @@ describe("MessageInput", () => {
       render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
       await userEvent.click(screen.getByRole("button", { name: /schedule message/i }))
+      await userEvent.click(await screen.findByRole("button", { name: /schedule current/i }))
       await userEvent.click(await screen.findByRole("button", { name: /in 15 minutes/i }))
 
       await waitFor(() => expect(mockCreateScheduledMessage).toHaveBeenCalledTimes(1))
