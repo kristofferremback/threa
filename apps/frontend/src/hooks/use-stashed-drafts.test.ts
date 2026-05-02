@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { generateStashId, createStashedDraft, popStashedDraft, deleteStashedDraftById } from "./use-stashed-drafts"
+import {
+  generateStashId,
+  createStashedDraft,
+  popStashedDraft,
+  deleteStashedDraftById,
+  dedupeStashedDrafts,
+} from "./use-stashed-drafts"
 import type { JSONContent } from "@threa/types"
 import * as dbModule from "@/db"
 
@@ -143,5 +149,36 @@ describe("deleteStashedDraftById", () => {
     await deleteStashedDraftById("stash_xyz")
 
     expect(mockDelete).toHaveBeenCalledWith("stash_xyz")
+  })
+})
+
+describe("dedupeStashedDrafts", () => {
+  it("keeps the newest copy when duplicate stashed rows exist", () => {
+    const content = makeDoc("Repeated")
+    const rows = [
+      {
+        id: "stash_new",
+        workspaceId: "ws_123",
+        scope: "stream:stream_456",
+        contentJson: content,
+        createdAt: 2000,
+      },
+      {
+        id: "stash_old",
+        workspaceId: "ws_123",
+        scope: "stream:stream_456",
+        contentJson: content,
+        createdAt: 1000,
+      },
+      {
+        id: "stash_other",
+        workspaceId: "ws_123",
+        scope: "stream:stream_456",
+        contentJson: makeDoc("Different"),
+        createdAt: 500,
+      },
+    ]
+
+    expect(dedupeStashedDrafts(rows).map((row) => row.id)).toEqual(["stash_new", "stash_other"])
   })
 })

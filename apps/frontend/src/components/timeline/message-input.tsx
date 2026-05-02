@@ -560,7 +560,6 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
     const enterEdit = () => {
       if (cancelled) return
-      if (composer.canSend) void stash.handleStashDraft()
       composer.setContent(scheduledEditItem.contentJson)
       composer.restoreAttachments(extractUploadedAttachments(scheduledEditItem.contentJson))
       loadedScheduledEditRef.current = scheduledEditId
@@ -616,7 +615,6 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     scheduledEditItem,
     streamId,
     composer,
-    stash,
     editLockMutation,
     updateScheduledMutation,
     cancelScheduledEdit,

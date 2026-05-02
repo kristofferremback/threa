@@ -110,7 +110,7 @@ export function useStashedDrafts(workspaceId: string, scope: string | undefined)
       if (!workspaceId || !scope) return [] as StashedDraft[]
       const rows = await db.stashedDrafts.where("[workspaceId+scope]").equals([workspaceId, scope]).sortBy("createdAt")
       // Dexie sorts ascending; reverse so newest is first (what the picker wants).
-      return rows.reverse()
+      return dedupeStashedDrafts(rows.reverse())
     },
     [workspaceId, scope],
     undefined
@@ -127,4 +127,19 @@ export function useStashedDrafts(workspaceId: string, scope: string | undefined)
   const deleteStashedDraft = useCallback((id: string) => deleteStashedDraftById(id), [])
 
   return { drafts, isLoaded, stashDraft, restoreStashedDraft, deleteStashedDraft }
+}
+
+export function dedupeStashedDrafts(rows: StashedDraft[]): StashedDraft[] {
+  const seen = new Set<string>()
+  const deduped: StashedDraft[] = []
+  for (const row of rows) {
+    const key = JSON.stringify({
+      contentJson: row.contentJson,
+      attachments: row.attachments ?? [],
+    })
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(row)
+  }
+  return deduped
 }

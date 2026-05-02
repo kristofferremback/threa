@@ -9,7 +9,7 @@ import {
 } from "@/stores/draft-store"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { isDraftId } from "./use-draft-scratchpads"
-import { deleteStashedDraftById } from "./use-stashed-drafts"
+import { dedupeStashedDrafts, deleteStashedDraftById } from "./use-stashed-drafts"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent, StreamType } from "@threa/types"
 import { isEmptyContent } from "@/lib/prosemirror-utils"
@@ -201,6 +201,7 @@ export function useAllDrafts(workspaceId: string) {
           .reverse()
           .limit(WORKSPACE_STASH_SCAN_LIMIT)
           .toArray()
+          .then(dedupeStashedDrafts)
       },
       [workspaceId],
       []
