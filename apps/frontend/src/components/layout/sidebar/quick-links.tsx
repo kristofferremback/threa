@@ -1,4 +1,4 @@
-import { Bell, Bookmark, Brain, FileEdit, MessageSquareText } from "lucide-react"
+import { Bell, Bookmark, Brain, CalendarClock, FileEdit, MessageSquareText } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { UnreadBadge } from "@/components/unread-badge"
@@ -10,6 +10,8 @@ interface SidebarQuickLinksProps {
   workspaceId: string
   isDraftsPage: boolean
   draftCount: number
+  scheduledCount: number
+  isScheduledPage: boolean
   isSavedPage: boolean
   savedCount: number
   isActivityPage: boolean
@@ -34,6 +36,8 @@ export function SidebarQuickLinks({
   workspaceId,
   isDraftsPage,
   draftCount,
+  scheduledCount,
+  isScheduledPage,
   isSavedPage,
   savedCount,
   isActivityPage,
@@ -52,6 +56,16 @@ export function SidebarQuickLinks({
       isActive: isDraftsPage,
       unreadCount: draftCount,
       signalSlot: draftCount > 0 ? <span className="ml-auto text-xs text-muted-foreground">({draftCount})</span> : null,
+    },
+    {
+      key: "scheduled",
+      to: `/w/${workspaceId}/scheduled`,
+      icon: CalendarClock,
+      label: "Scheduled",
+      isActive: isScheduledPage,
+      unreadCount: scheduledCount,
+      signalSlot:
+        scheduledCount > 0 ? <span className="ml-auto text-xs text-muted-foreground">({scheduledCount})</span> : null,
     },
     {
       key: "saved",

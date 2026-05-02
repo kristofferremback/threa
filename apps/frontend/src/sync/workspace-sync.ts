@@ -19,8 +19,11 @@ import type {
   SavedUpsertedPayload,
   SavedDeletedPayload,
   SavedReminderFiredPayload,
+  ScheduledMessageUpsertedPayload,
+  ScheduledMessageDeletedPayload,
 } from "@threa/types"
 import { persistSavedRows, removeSavedRow, savedKeys } from "@/hooks/use-saved"
+import { persistScheduledRows, removeScheduledRow, scheduledMessageKeys } from "@/hooks/use-scheduled-messages"
 import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
 import { applyStreamBootstrapInCurrentTransaction } from "./stream-sync"
 
@@ -1301,6 +1304,18 @@ export function registerWorkspaceSocketHandlers(
     queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "saved") })
   }
 
+  const handleScheduledMessageUpserted = (payload: ScheduledMessageUpsertedPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void persistScheduledRows([payload.scheduled])
+    queryClient.invalidateQueries({ queryKey: scheduledMessageKeys.list(workspaceId) })
+  }
+
+  const handleScheduledMessageDeleted = (payload: ScheduledMessageDeletedPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void removeScheduledRow(payload.scheduledId)
+    queryClient.invalidateQueries({ queryKey: scheduledMessageKeys.list(workspaceId) })
+  }
+
   // Register all handlers
   socket.on("stream:created", handleStreamCreated)
   socket.on("stream:updated", handleStreamUpdated)
@@ -1322,6 +1337,8 @@ export function registerWorkspaceSocketHandlers(
   socket.on("saved:upserted", handleSavedUpserted)
   socket.on("saved:deleted", handleSavedDeleted)
   socket.on("saved_reminder:fired", handleSavedReminderFired)
+  socket.on("scheduled_message:upserted", handleScheduledMessageUpserted)
+  socket.on("scheduled_message:deleted", handleScheduledMessageDeleted)
   socket.on("attachment:transcoded", handleAttachmentTranscoded)
 
   return () => {
@@ -1348,6 +1365,8 @@ export function registerWorkspaceSocketHandlers(
     socket.off("saved:upserted", handleSavedUpserted)
     socket.off("saved:deleted", handleSavedDeleted)
     socket.off("saved_reminder:fired", handleSavedReminderFired)
+    socket.off("scheduled_message:upserted", handleScheduledMessageUpserted)
+    socket.off("scheduled_message:deleted", handleScheduledMessageDeleted)
     socket.off("attachment:transcoded", handleAttachmentTranscoded)
   }
 }

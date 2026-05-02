@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
+import { toast } from "sonner"
 import {
   useDraftComposer,
   getDraftMessageKey,
@@ -8,14 +9,24 @@ import {
   useComposerHeightPublish,
   useStreamBootstrap,
   useStashComposer,
+  useCreateScheduledMessage,
+  useUpdateScheduledMessage,
+  useScheduledMessagesList,
+  useEditLockScheduledMessage,
 } from "@/hooks"
 import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
+import {
+  FloatingComposerShell,
+  MessageComposer,
+  ScheduleMessagePicker,
+  StashedDraftsPicker,
+} from "@/components/composer"
 import type { ComposerControlHandle } from "@/components/composer"
+import { Button } from "@/components/ui/button"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
 import { extractCommandNode } from "@/lib/commands"
@@ -182,11 +193,25 @@ export function materializePendingAttachmentReferences(
   }
 }
 
+async function retryEditLock<T>(lock: () => Promise<T>, attempts: number): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await lock()
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)))
+    }
+  }
+  throw lastError
+}
+
 export function MessageInput({ workspaceId, streamId, disabled, disabledReason, autoFocus }: MessageInputProps) {
   const editLastCtx = useEditLastMessage()
   const triggerEditLast = editLastCtx?.triggerEditLast
   const scrollToMessage = editLastCtx?.scrollToMessage
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { preferences } = usePreferences()
   const { stream, sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
@@ -247,6 +272,17 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   // Active DraftMessage stays one-per-scope; this hook manages the sibling
   // many-per-scope stash and the `?stash=<id>` URL auto-restore.
   const stash = useStashComposer(composer, workspaceId, draftKey)
+  const scheduledList = useScheduledMessagesList(workspaceId)
+  const scheduleMutation = useCreateScheduledMessage(workspaceId)
+  const updateScheduledMutation = useUpdateScheduledMessage(workspaceId)
+  const editLockMutation = useEditLockScheduledMessage(workspaceId)
+  const scheduledEditId = searchParams.get("scheduled")
+  const scheduledEditItem = useMemo(
+    () => scheduledList.items.find((item) => item.id === scheduledEditId) ?? null,
+    [scheduledList.items, scheduledEditId]
+  )
+  const loadedScheduledEditRef = useRef<string | null>(null)
+  const scheduledEditVersionRef = useRef<number | null>(null)
 
   // Use a ref so the handler always reads fresh composer state without
   // re-registering on every render (composer object is not memoized).
@@ -400,8 +436,42 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     }
   }, [streamId])
 
+  const clearScheduledEditParam = useCallback(() => {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        next.delete("scheduled")
+        return next
+      },
+      { replace: true }
+    )
+  }, [setSearchParams])
+
+  const cancelScheduledEdit = useCallback(() => {
+    const item = scheduledEditItem
+    if (item) {
+      void updateScheduledMutation
+        .mutateAsync({
+          scheduledId: item.id,
+          input: {
+            expectedVersion: scheduledEditVersionRef.current ?? item.version,
+          },
+        })
+        .catch(() => {
+          toast.error("Could not resume scheduled message")
+        })
+    }
+    loadedScheduledEditRef.current = null
+    scheduledEditVersionRef.current = null
+    setScheduledEditAt("")
+    composer.setContent(EMPTY_DOC)
+    composer.clearAttachments()
+    clearScheduledEditParam()
+  }, [composer, clearScheduledEditParam, scheduledEditItem, updateScheduledMutation])
+
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [scheduledEditAt, setScheduledEditAt] = useState("")
   const messageSendMode = preferences?.messageSendMode ?? "enter"
   const isMobile = useIsMobile()
   const connectionState = useConnectionState()
@@ -418,6 +488,50 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     setError(null)
     setExpanded(false)
   }, [streamId])
+
+  useEffect(() => {
+    if (!scheduledEditId || !scheduledEditItem || loadedScheduledEditRef.current === scheduledEditId) return
+    if (scheduledEditItem.streamId !== streamId) return
+
+    const enterEdit = () => {
+      if (composer.canSend) void stash.handleStashDraft()
+      composer.setContent(scheduledEditItem.contentJson)
+      composer.restoreAttachments(extractUploadedAttachments(scheduledEditItem.contentJson))
+      loadedScheduledEditRef.current = scheduledEditId
+      scheduledEditVersionRef.current = scheduledEditItem.version
+      setScheduledEditAt(toDateTimeLocal(new Date(scheduledEditItem.scheduledAt)))
+      composerFocusRef.current?.focus()
+    }
+
+    const msUntilSend = Date.parse(scheduledEditItem.scheduledAt) - Date.now()
+    const lock = () =>
+      editLockMutation.mutateAsync({
+        scheduledId: scheduledEditId,
+        expectedVersion: scheduledEditItem.version,
+      })
+
+    if (msUntilSend <= 30_000) {
+      void lock()
+        .then((locked) => {
+          scheduledEditVersionRef.current = locked.version
+          enterEdit()
+        })
+        .catch(() => {
+          toast.error("Could not open scheduled message for editing")
+          cancelScheduledEdit()
+        })
+      return
+    }
+
+    enterEdit()
+    void retryEditLock(lock, 3)
+      .then((locked) => {
+        scheduledEditVersionRef.current = locked.version
+      })
+      .catch(() => {
+        toast.error("Scheduled message may send before edits are saved")
+      })
+  }, [scheduledEditId, scheduledEditItem, streamId, composer, stash, editLockMutation, cancelScheduledEdit])
 
   // Collapse expanded overlay when viewport crosses to mobile (expand is desktop-only)
   useEffect(() => {
@@ -530,6 +644,31 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       const contentJson = liveContent
 
       try {
+        if (scheduledEditItem) {
+          const scheduledAt = new Date(scheduledEditAt)
+          if (!scheduledEditAt || isNaN(scheduledAt.getTime())) {
+            setError("Choose a valid scheduled time.")
+            return
+          }
+          const saved = await updateScheduledMutation.mutateAsync({
+            scheduledId: scheduledEditItem.id,
+            input: {
+              contentJson: normalizedContent,
+              attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+              scheduledAt: scheduledAt.toISOString(),
+              expectedVersion: scheduledEditVersionRef.current ?? scheduledEditItem.version,
+            },
+          })
+          composer.setContent(EMPTY_DOC)
+          composer.clearDraft()
+          composer.clearAttachments()
+          loadedScheduledEditRef.current = null
+          scheduledEditVersionRef.current = null
+          clearScheduledEditParam()
+          toast.success(saved.status === "paused" ? "Scheduled message saved" : "Scheduled message updated")
+          return
+        }
+
         // Clear the editor immediately so the composer does not briefly show the
         // just-sent content alongside the optimistic timeline event.
         // We keep the durable draft until send succeeds, so failures can still
@@ -553,12 +692,60 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         // This only happens for draft promotion failure (stream creation failed)
         // Real stream message failures are handled in the timeline with retry
         composer.setContent(contentJson)
-        setError("Failed to create stream. Please try again.")
+        setError(
+          scheduledEditItem
+            ? "Failed to update scheduled message. Please try again."
+            : "Failed to create stream. Please try again."
+        )
       } finally {
         composer.setIsSending(false)
       }
     },
-    [composer, sendMessage, navigate, workspaceId, streamId, startDiscussWithAriadne]
+    [
+      composer,
+      sendMessage,
+      navigate,
+      workspaceId,
+      streamId,
+      startDiscussWithAriadne,
+      scheduledEditItem,
+      updateScheduledMutation,
+      scheduledEditAt,
+    ]
+  )
+
+  const handleSchedule = useCallback(
+    async (scheduledAt: Date) => {
+      if (!composer.canSend) return
+      composer.setIsSending(true)
+      setError(null)
+
+      const pendingAttachments = composer.getPendingAttachmentsSnapshot()
+      const liveContent = composer.content
+      const normalizedContent = materializePendingAttachmentReferences(liveContent, pendingAttachments)
+      const attachments = extractUploadedAttachments(normalizedContent)
+      const attachmentIds = attachments.map((attachment) => attachment.id)
+
+      try {
+        await scheduleMutation.mutateAsync({
+          streamId,
+          contentJson: normalizedContent,
+          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+          scheduledAt: scheduledAt.toISOString(),
+        })
+        composer.setContent(EMPTY_DOC)
+        composer.clearDraft()
+        composer.clearAttachments()
+        setExpanded(false)
+        toast.success("Message scheduled")
+      } catch {
+        composer.setContent(liveContent)
+        toast.error("Could not schedule message")
+      } finally {
+        composer.setIsSending(false)
+      }
+    },
+    [composer, scheduleMutation, streamId]
   )
 
   if (disabled && disabledReason) {
@@ -590,6 +777,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     canSubmit: composer.canSend,
     isSubmitting: composer.isSending,
     hasFailed: composer.hasFailed,
+    submitLabel: scheduledEditItem ? "Save scheduled message" : "Send",
+    submittingLabel: scheduledEditItem ? "Saving..." : "Sending...",
+    submitIcon: scheduledEditItem ? "save" : "send",
     placeholder: isOffline ? "Type a message (sent when back online)" : undefined,
     messageSendMode,
     scopeId: streamId,
@@ -621,6 +811,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     streamContext,
     composerRef: composerFocusRef,
     onStashDraft: stash.handleStashDraft,
+    scheduleTrigger: !scheduledEditItem ? (
+      <ScheduleMessagePicker canSchedule={composer.canSend} onSchedule={handleSchedule} disabled={composer.isSending} />
+    ) : null,
     stashedDraftsTrigger: (
       <StashedDraftsPicker
         drafts={stash.drafts}
@@ -631,6 +824,14 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         controlsDisabled={composer.isSending}
       />
     ),
+    scheduleTriggerFab: !scheduledEditItem ? (
+      <ScheduleMessagePicker
+        canSchedule={composer.canSend}
+        onSchedule={handleSchedule}
+        disabled={composer.isSending}
+        size="fab"
+      />
+    ) : null,
     stashedDraftsTriggerFab: (
       <StashedDraftsPicker
         drafts={stash.drafts}
@@ -663,9 +864,34 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           This replaces a previous ref-counted React state mechanism that was prone to
           leaks across hydration races and virtualization cycles. */}
       <FloatingComposerShell ref={selfRef} hidden={expanded} data-message-composer-root>
+        {!expanded && scheduledEditItem && (
+          <div className="mb-2 flex flex-col gap-2 rounded-lg border bg-muted/40 px-3 py-2 sm:flex-row sm:items-center">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium">Editing scheduled message</p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                {scheduledEditItem.streamName ?? "Conversation"}
+              </p>
+            </div>
+            <input
+              type="datetime-local"
+              value={scheduledEditAt}
+              min={toDateTimeLocal(new Date())}
+              onChange={(event) => setScheduledEditAt(event.target.value)}
+              className="h-8 rounded border bg-background px-2 text-xs"
+            />
+            <Button type="button" variant="ghost" size="sm" className="h-8" onClick={cancelScheduledEdit}>
+              Cancel
+            </Button>
+          </div>
+        )}
         {!expanded && <MessageComposer {...composerProps} autoFocus={autoFocus} onExpandClick={handleExpandClick} />}
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </FloatingComposerShell>
     </>
   )
+}
+
+function toDateTimeLocal(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }

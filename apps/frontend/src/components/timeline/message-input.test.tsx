@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { ReactNode } from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Router } from "react-router-dom"
 import { useState } from "react"
@@ -13,6 +13,7 @@ import * as composerModule from "@/components/composer"
 import * as discussModule from "@/hooks/use-discuss-with-ariadne"
 import * as streamContextBagModule from "@/hooks/use-stream-context-bag"
 import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import type { JSONContent } from "@threa/types"
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
@@ -59,6 +60,8 @@ const mockClearDraft = vi.fn()
 const mockClearAttachments = vi.fn()
 const mockSetContent = vi.fn()
 const mockSetIsSending = vi.fn()
+const mockCreateScheduledMessage = vi.fn()
+const mockRestoreAttachments = vi.fn()
 const mockHandleContentChange = vi.fn()
 const mockHandleRemoveAttachment = vi.fn()
 const mockHandleFileSelect = vi.fn()
@@ -100,6 +103,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockSendMessage.mockReset()
   mockSendMessage.mockResolvedValue({})
+  mockCreateScheduledMessage.mockReset()
+  mockCreateScheduledMessage.mockResolvedValue({})
   mockNavigate.mockReset()
   mockMessageSendMode = "enter"
   mockComposerState = {
@@ -195,9 +200,26 @@ beforeEach(() => {
         setIsSending: mockSetIsSending,
         clearDraft: mockClearDraft,
         clearAttachments: mockClearAttachments,
+        restoreAttachments: mockRestoreAttachments,
         isLoaded: mockComposerState.isLoaded,
       }) as unknown as ReturnType<typeof hooksModule.useDraftComposer>
   )
+  vi.spyOn(hooksModule, "useScheduledMessagesList").mockReturnValue({
+    items: [],
+    isLoading: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof hooksModule.useScheduledMessagesList>)
+  vi.spyOn(hooksModule, "useCreateScheduledMessage").mockReturnValue({
+    mutateAsync: mockCreateScheduledMessage,
+  } as unknown as ReturnType<typeof hooksModule.useCreateScheduledMessage>)
+  vi.spyOn(hooksModule, "useUpdateScheduledMessage").mockReturnValue({
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof hooksModule.useUpdateScheduledMessage>)
+  vi.spyOn(hooksModule, "useEditLockScheduledMessage").mockReturnValue({
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof hooksModule.useEditLockScheduledMessage>)
   vi.spyOn(hooksModule, "useComposerHeightPublish").mockImplementation(
     () => undefined as unknown as ReturnType<typeof hooksModule.useComposerHeightPublish>
   )
@@ -216,6 +238,7 @@ beforeEach(() => {
     hasFailed,
     pendingAttachments,
     composerRef,
+    scheduleTrigger,
   }: {
     content: JSONContent
     onContentChange: (v: JSONContent) => void
@@ -225,6 +248,7 @@ beforeEach(() => {
     hasFailed: boolean
     pendingAttachments: Array<{ id: string; filename: string; sizeBytes: number; status: string }>
     composerRef?: { current: { focus: () => void; focusAfterQuoteReply: () => void } | null }
+    scheduleTrigger?: ReactNode
   }) => {
     if (composerRef) {
       composerRef.current = {
@@ -236,6 +260,7 @@ beforeEach(() => {
     return (
       <div data-testid="message-composer">
         <textarea data-testid="rich-editor" />
+        {scheduleTrigger}
         {pendingAttachments.map((a) => (
           <div key={a.id}>
             <span>{a.filename}</span>
@@ -288,13 +313,15 @@ function Wrapper({ children }: { children: React.ReactNode }) {
     block: () => () => {},
   }
   return (
-    <Router
-      location={location}
-      navigator={navigator as unknown as Parameters<typeof Router>[0]["navigator"]}
-      navigationType={"POP" as Parameters<typeof Router>[0]["navigationType"]}
-    >
-      {children}
-    </Router>
+    <TooltipProvider>
+      <Router
+        location={location}
+        navigator={navigator as unknown as Parameters<typeof Router>[0]["navigator"]}
+        navigationType={"POP" as Parameters<typeof Router>[0]["navigationType"]}
+      >
+        {children}
+      </Router>
+    </TooltipProvider>
   )
 }
 
@@ -454,6 +481,30 @@ describe("MessageInput", () => {
       await userEvent.click(sendButton)
 
       expect(mockNavigate).toHaveBeenCalledWith("/w/ws_123/s/new_stream", { replace: true })
+    })
+  })
+
+  describe("scheduling messages", () => {
+    it("schedules the current composer content without sending immediately", async () => {
+      const helloContent = makeDoc("Send this later")
+      mockComposerState.canSend = true
+      mockComposerState.content = helloContent
+
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      await userEvent.click(screen.getByRole("button", { name: /schedule message/i }))
+      await userEvent.click(await screen.findByRole("button", { name: /in 15 minutes/i }))
+
+      await waitFor(() => expect(mockCreateScheduledMessage).toHaveBeenCalledTimes(1))
+      expect(mockCreateScheduledMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          streamId,
+          contentJson: helloContent,
+        })
+      )
+      expect(mockSendMessage).not.toHaveBeenCalled()
+      expect(mockClearDraft).toHaveBeenCalled()
+      expect(mockClearAttachments).toHaveBeenCalled()
     })
   })
 

@@ -10,6 +10,7 @@ import type {
   LastMessagePreview,
   Bot as WireBot,
   SavedMessageView,
+  ScheduledMessageView,
 } from "@threa/types"
 
 /**
@@ -59,6 +60,8 @@ export type OutboxEventType =
   | "saved:upserted"
   | "saved:deleted"
   | "saved_reminder:fired"
+  | "scheduled_message:upserted"
+  | "scheduled_message:deleted"
   | "bot:created"
   | "bot:updated"
   | "link_preview:ready"
@@ -403,6 +406,16 @@ export interface SavedReminderFiredOutboxPayload extends WorkspaceScopedPayload 
   saved: SavedMessageView
 }
 
+export interface ScheduledMessageUpsertedOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+export interface ScheduledMessageDeletedOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  scheduledId: string
+}
+
 // Bot event payloads
 export interface BotCreatedOutboxPayload extends WorkspaceScopedPayload {
   bot: WireBot
@@ -479,6 +492,8 @@ export interface OutboxEventPayloadMap {
   "saved:upserted": SavedUpsertedOutboxPayload
   "saved:deleted": SavedDeletedOutboxPayload
   "saved_reminder:fired": SavedReminderFiredOutboxPayload
+  "scheduled_message:upserted": ScheduledMessageUpsertedOutboxPayload
+  "scheduled_message:deleted": ScheduledMessageDeletedOutboxPayload
   "bot:created": BotCreatedOutboxPayload
   "bot:updated": BotUpdatedOutboxPayload
   "link_preview:ready": LinkPreviewReadyOutboxPayload
@@ -570,13 +585,21 @@ export function isAuthorScopedEvent(event: OutboxEvent): event is OutboxEvent<Au
 }
 
 /** Events that are scoped to a specific target user (delivered to that user's sockets) */
-export type UserScopedEventType = "activity:created" | "saved:upserted" | "saved:deleted" | "saved_reminder:fired"
+export type UserScopedEventType =
+  | "activity:created"
+  | "saved:upserted"
+  | "saved:deleted"
+  | "saved_reminder:fired"
+  | "scheduled_message:upserted"
+  | "scheduled_message:deleted"
 
 const USER_SCOPED_EVENTS: UserScopedEventType[] = [
   "activity:created",
   "saved:upserted",
   "saved:deleted",
   "saved_reminder:fired",
+  "scheduled_message:upserted",
+  "scheduled_message:deleted",
 ]
 
 /**

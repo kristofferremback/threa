@@ -8,6 +8,7 @@ export {
   useConversationService,
   useActivityService,
   useSavedService,
+  useScheduledMessagesService,
   type Services,
   type WorkspaceService,
   type StreamService,
@@ -15,6 +16,7 @@ export {
   type ConversationService,
   type ActivityService,
   type SavedService,
+  type ScheduledMessagesService,
 } from "./services-context"
 export {
   SocketProvider,

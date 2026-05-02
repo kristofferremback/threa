@@ -36,6 +36,7 @@ export const JobQueues = {
   VIDEO_TRANSCODE_SUBMIT: "video.transcode_submit",
   VIDEO_TRANSCODE_CHECK: "video.transcode_check",
   SAVED_REMINDER_FIRE: "saved.reminder_fire",
+  SCHEDULED_MESSAGE_FIRE: "scheduled_message.fire",
   CONTEXT_BAG_PRECOMPUTE: "context_bag.precompute",
 } as const
 
@@ -186,6 +187,11 @@ export interface SavedReminderFireJobData {
   savedMessageId: string
 }
 
+export interface ScheduledMessageFireJobData {
+  workspaceId: string
+  scheduledMessageId: string
+}
+
 /**
  * Context-bag pre-compute job. Warms the shared `context_summaries` cache and
  * persists the initial render snapshot for a newly-created bag-attached
@@ -219,6 +225,7 @@ export interface JobDataMap {
   [JobQueues.VIDEO_TRANSCODE_SUBMIT]: VideoTranscodeSubmitJobData
   [JobQueues.VIDEO_TRANSCODE_CHECK]: VideoTranscodeCheckJobData
   [JobQueues.SAVED_REMINDER_FIRE]: SavedReminderFireJobData
+  [JobQueues.SCHEDULED_MESSAGE_FIRE]: ScheduledMessageFireJobData
   [JobQueues.CONTEXT_BAG_PRECOMPUTE]: ContextBagPrecomputeJobData
 }
 

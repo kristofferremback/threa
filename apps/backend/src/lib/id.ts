@@ -45,6 +45,8 @@ export {
   videoTranscodeJobId,
   savedMessageId,
   reminderQueueId,
+  scheduledMessageId,
+  scheduledMessageQueueId,
   sharedMessageId,
   attachmentReferenceId,
   streamContextAttachmentId,

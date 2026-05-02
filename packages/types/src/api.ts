@@ -4,7 +4,14 @@
  * These types define the contracts between frontend and backend.
  */
 
-import type { StreamType, Visibility, CompanionMode, SavedStatus, AuthorType } from "./constants"
+import type {
+  StreamType,
+  Visibility,
+  CompanionMode,
+  SavedStatus,
+  AuthorType,
+  ScheduledMessageStatus,
+} from "./constants"
 import type { ContextBag, ContextIntent } from "./context-bag"
 import type { UserId } from "./ids"
 import type { JSONContent } from "./prosemirror"
@@ -736,4 +743,67 @@ export interface SavedReminderFiredPayload {
   messageId: string
   streamId: string
   saved: SavedMessageView
+}
+
+// ============================================================================
+// Scheduled Messages API
+// ============================================================================
+
+export interface ScheduledMessageView {
+  id: string
+  workspaceId: string
+  userId: string
+  streamId: string
+  status: ScheduledMessageStatus
+  scheduledAt: string
+  contentJson: JSONContent
+  contentMarkdown: string
+  attachmentIds: string[]
+  sentMessageId: string | null
+  version: number
+  createdAt: string
+  updatedAt: string
+  sentAt: string | null
+  deletedAt: string | null
+  failedAt: string | null
+  failureReason: string | null
+  streamName: string | null
+}
+
+export interface ScheduledMessageListResponse {
+  scheduled: ScheduledMessageView[]
+}
+
+export interface CreateScheduledMessageInput {
+  streamId: string
+  contentJson: JSONContent
+  contentMarkdown?: string
+  attachmentIds?: string[]
+  scheduledAt: string
+  clientMessageId?: string
+}
+
+export interface UpdateScheduledMessageInput {
+  contentJson?: JSONContent
+  contentMarkdown?: string
+  attachmentIds?: string[]
+  scheduledAt?: string
+  status?: Extract<ScheduledMessageStatus, "scheduled" | "paused">
+  expectedVersion?: number
+}
+
+export interface ScheduledMessageVersionInput {
+  expectedVersion?: number
+}
+
+export interface ScheduledMessageUpsertedPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+export interface ScheduledMessageDeletedPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduledId: string
 }

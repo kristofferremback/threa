@@ -374,6 +374,30 @@ export interface CachedSavedMessage {
   _cachedAt: number
 }
 
+export interface CachedScheduledMessage {
+  id: string
+  workspaceId: string
+  userId: string
+  streamId: string
+  status: string
+  scheduledAt: string
+  contentJson: unknown
+  contentMarkdown: string
+  attachmentIds: string[]
+  sentMessageId: string | null
+  version: number
+  createdAt: string
+  updatedAt: string
+  sentAt: string | null
+  deletedAt: string | null
+  failedAt: string | null
+  failureReason: string | null
+  streamName: string | null
+  _scheduledAtMs: number
+  _updatedAtMs: number
+  _cachedAt: number
+}
+
 export interface CachedWorkspaceMetadata {
   id: string // workspaceId
   workspaceId: string
@@ -415,6 +439,7 @@ class ThreaDatabase extends Dexie {
   markdownBlockCollapse!: EntityTable<CachedMarkdownBlockCollapse, "id">
   linkPreviewCollapse!: EntityTable<CachedLinkPreviewCollapse, "id">
   savedMessages!: EntityTable<CachedSavedMessage, "id">
+  scheduledMessages!: EntityTable<CachedScheduledMessage, "id">
 
   constructor() {
     super("threa")
@@ -650,6 +675,11 @@ class ThreaDatabase extends Dexie {
       stashedDrafts: "id, workspaceId, scope, [workspaceId+scope], createdAt",
     })
 
+    this.version(27).stores({
+      scheduledMessages:
+        "id, workspaceId, streamId, status, [workspaceId+status+_scheduledAtMs], [workspaceId+_scheduledAtMs], _updatedAtMs, _cachedAt",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -677,6 +707,7 @@ export async function clearAllCachedData(): Promise<void> {
       db.markdownBlockCollapse.clear(),
       db.linkPreviewCollapse.clear(),
       db.savedMessages.clear(),
+      db.scheduledMessages.clear(),
       db.stashedDrafts.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])

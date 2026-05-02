@@ -26,6 +26,8 @@ function renderQuickLinks(props: Partial<Parameters<typeof SidebarQuickLinks>[0]
         workspaceId="workspace_1"
         isDraftsPage={false}
         draftCount={0}
+        isScheduledPage={false}
+        scheduledCount={0}
         isSavedPage={false}
         savedCount={0}
         isActivityPage={false}

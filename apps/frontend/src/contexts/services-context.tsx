@@ -1,5 +1,13 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react"
-import { workspacesApi, streamsApi, messagesApi, conversationsApi, activityApi, savedApi } from "@/api"
+import {
+  workspacesApi,
+  streamsApi,
+  messagesApi,
+  conversationsApi,
+  activityApi,
+  savedApi,
+  scheduledMessagesApi,
+} from "@/api"
 
 // Service interfaces - components depend on these, not implementations
 export interface WorkspaceService {
@@ -63,6 +71,17 @@ export interface SavedService {
   delete: typeof savedApi.delete
 }
 
+export interface ScheduledMessagesService {
+  list: typeof scheduledMessagesApi.list
+  create: typeof scheduledMessagesApi.create
+  update: typeof scheduledMessagesApi.update
+  pause: typeof scheduledMessagesApi.pause
+  resume: typeof scheduledMessagesApi.resume
+  sendNow: typeof scheduledMessagesApi.sendNow
+  editLock: typeof scheduledMessagesApi.editLock
+  delete: typeof scheduledMessagesApi.delete
+}
+
 export interface Services {
   workspaces: WorkspaceService
   streams: StreamService
@@ -70,6 +89,7 @@ export interface Services {
   conversations: ConversationService
   activity: ActivityService
   saved: SavedService
+  scheduledMessages: ScheduledMessagesService
 }
 
 const ServicesContext = createContext<Services | null>(null)
@@ -89,6 +109,7 @@ export function ServicesProvider({ children, services: overrides }: ServicesProv
       conversations: overrides?.conversations ?? conversationsApi,
       activity: overrides?.activity ?? activityApi,
       saved: overrides?.saved ?? savedApi,
+      scheduledMessages: overrides?.scheduledMessages ?? scheduledMessagesApi,
     }),
     [overrides]
   )
@@ -127,4 +148,8 @@ export function useActivityService(): ActivityService {
 
 export function useSavedService(): SavedService {
   return useServices().saved
+}
+
+export function useScheduledMessagesService(): ScheduledMessagesService {
+  return useServices().scheduledMessages
 }

@@ -10,7 +10,7 @@ import {
   useEffect,
   useId,
 } from "react"
-import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2 } from "lucide-react"
+import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2, Save } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferencesOptional } from "@/contexts"
 import { getEffectiveKeyBinding, matchesKeyBinding } from "@/lib/keyboard-shortcuts"
@@ -139,6 +139,7 @@ export interface MessageComposerProps {
   canSubmit: boolean
   submitLabel?: string
   submittingLabel?: string
+  submitIcon?: "send" | "save"
 
   // State
   isSubmitting?: boolean
@@ -189,6 +190,7 @@ export interface MessageComposerProps {
    * affordance entirely (used by edit forms and other non-draft consumers).
    */
   stashedDraftsTrigger?: ReactNode
+  scheduleTrigger?: ReactNode
 
   /**
    * Separate slot for the expanded-mode FAB drawer, where the trigger needs
@@ -197,6 +199,7 @@ export interface MessageComposerProps {
    * context rather than shared by reference.
    */
   stashedDraftsTriggerFab?: ReactNode
+  scheduleTriggerFab?: ReactNode
 }
 
 export function MessageComposer({
@@ -215,6 +218,7 @@ export function MessageComposer({
   canSubmit,
   submitLabel = "Send",
   submittingLabel = "Sending...",
+  submitIcon = "send",
   isSubmitting = false,
   hasFailed = false,
   placeholder = "Type a message...",
@@ -231,7 +235,9 @@ export function MessageComposer({
   composerRef,
   onStashDraft,
   stashedDraftsTrigger,
+  scheduleTrigger,
   stashedDraftsTriggerFab,
+  scheduleTriggerFab,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -431,6 +437,7 @@ export function MessageComposer({
   )
 
   // ── Send button (shared between states) ──────────────────────────────
+  const SubmitIcon = submitIcon === "save" ? Save : ArrowUp
   const sendButton = hasFailed ? (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -440,7 +447,7 @@ export function MessageComposer({
             className="h-[30px] w-[30px] shrink-0 p-0 pointer-events-none rounded-md"
             aria-label={submitLabel}
           >
-            <ArrowUp className="h-4 w-4" />
+            <SubmitIcon className="h-4 w-4" />
           </Button>
         </span>
       </TooltipTrigger>
@@ -456,7 +463,7 @@ export function MessageComposer({
       aria-label={isSubmitting ? submittingLabel : submitLabel}
       className="h-[30px] w-[30px] shrink-0 p-0 rounded-md"
     >
-      <ArrowUp className="h-4 w-4" />
+      <SubmitIcon className="h-4 w-4" />
     </Button>
   )
 
@@ -561,6 +568,7 @@ export function MessageComposer({
           <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1.5 group/fab">
             {/* Action drawer — slides out from behind the + button on hover or focus-within */}
             <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[240px] group-hover/fab:opacity-100 group-focus-within/fab:max-w-[240px] group-focus-within/fab:opacity-100 transition-all duration-200 ease-out">
+              {scheduleTriggerFab}
               {stashedDraftsTriggerFab}
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -665,7 +673,7 @@ export function MessageComposer({
                       className="h-[30px] w-[30px] shrink-0 p-0 pointer-events-none rounded-md shadow-md"
                       aria-label={submitLabel}
                     >
-                      <ArrowUp className="h-4 w-4" />
+                      <SubmitIcon className="h-4 w-4" />
                     </Button>
                   </span>
                 </TooltipTrigger>
@@ -684,7 +692,7 @@ export function MessageComposer({
                     aria-label={isSubmitting ? submittingLabel : submitLabel}
                     className="h-[30px] w-[30px] shrink-0 p-0 rounded-md shadow-md"
                   >
-                    <ArrowUp className="h-4 w-4" />
+                    <SubmitIcon className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="left" className="text-xs">
@@ -791,8 +799,9 @@ export function MessageComposer({
                     showAttach
                     onAttachClick={handleAttachClick}
                     trailingContent={
-                      stashedDraftsTrigger ? (
+                      stashedDraftsTrigger || scheduleTrigger ? (
                         <div className="flex items-center gap-1">
+                          {scheduleTrigger}
                           {stashedDraftsTrigger}
                           {sendButton}
                         </div>
@@ -917,6 +926,7 @@ export function MessageComposer({
                         Attach files
                       </TooltipContent>
                     </Tooltip>
+                    {scheduleTrigger}
                     {stashedDraftsTrigger}
                     {sendButton}
                   </div>
