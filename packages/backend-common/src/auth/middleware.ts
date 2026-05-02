@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express"
 import type { AuthService } from "./auth-service"
-import { SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG } from "../cookies"
+import { SESSION_COOKIE_NAME, clearSessionCookie, setSessionCookie } from "../cookies"
 
 interface AuthenticatedUser {
   id: string
@@ -35,16 +35,12 @@ export function createAuthMiddleware({ authService }: Dependencies) {
     const result = await authService.authenticateSession(session)
 
     if (!result.success || !result.user) {
-      // Pass domain/path from SESSION_COOKIE_CONFIG so the browser actually
-      // drops the cookie when COOKIE_DOMAIN is set — clearCookie needs the
-      // same attributes that set it.
-      const { maxAge: _, ...clearOpts } = SESSION_COOKIE_CONFIG
-      res.clearCookie(SESSION_COOKIE_NAME, clearOpts)
+      clearSessionCookie(res)
       return res.status(401).json({ error: "Session expired" })
     }
 
     if (result.refreshed && result.sealedSession) {
-      res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
+      setSessionCookie(res, result.sealedSession)
     }
 
     req.workosUserId = result.user.id

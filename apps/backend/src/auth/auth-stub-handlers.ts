@@ -4,8 +4,8 @@ import {
   renderLoginPage,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
-  SESSION_COOKIE_NAME,
   SESSION_COOKIE_CONFIG,
+  setSessionCookie,
   type StubAuthService,
 } from "@threa/backend-common"
 import type { WorkspaceService } from "../features/workspaces"
@@ -53,7 +53,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
       name: user.name,
     })
 
-    res.cookie(SESSION_COOKIE_NAME, session, { ...SESSION_COOKIE_CONFIG, secure: false })
+    setSessionCookie(res, session, { ...SESSION_COOKIE_CONFIG, secure: false })
 
     // If user was accepted into exactly one workspace, redirect to setup
     if (acceptedWorkspaceIds.length === 1) {
@@ -69,7 +69,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
 
     const { user, session } = await authStubService.devLogin({ email, name })
 
-    res.cookie(SESSION_COOKIE_NAME, session, { ...SESSION_COOKIE_CONFIG, secure: false })
+    setSessionCookie(res, session, { ...SESSION_COOKIE_CONFIG, secure: false })
 
     res.json({ user })
   }
