@@ -65,6 +65,8 @@ const mockClearAttachments = vi.fn()
 const mockSetContent = vi.fn()
 const mockSetIsSending = vi.fn()
 const mockCreateScheduledMessage = vi.fn()
+const mockUpdateScheduledMessage = vi.fn()
+const mockEditLockScheduledMessage = vi.fn()
 const mockRestoreAttachments = vi.fn()
 const mockHandleContentChange = vi.fn()
 const mockHandleRemoveAttachment = vi.fn()
@@ -109,6 +111,10 @@ beforeEach(() => {
   mockSendMessage.mockResolvedValue({})
   mockCreateScheduledMessage.mockReset()
   mockCreateScheduledMessage.mockResolvedValue({})
+  mockUpdateScheduledMessage.mockReset()
+  mockUpdateScheduledMessage.mockResolvedValue({})
+  mockEditLockScheduledMessage.mockReset()
+  mockEditLockScheduledMessage.mockResolvedValue({})
   mockNavigate.mockReset()
   mockMessageSendMode = "enter"
   mockComposerState = {
@@ -219,10 +225,10 @@ beforeEach(() => {
     mutateAsync: mockCreateScheduledMessage,
   } as unknown as ReturnType<typeof hooksModule.useCreateScheduledMessage>)
   vi.spyOn(hooksModule, "useUpdateScheduledMessage").mockReturnValue({
-    mutateAsync: vi.fn(),
+    mutateAsync: mockUpdateScheduledMessage,
   } as unknown as ReturnType<typeof hooksModule.useUpdateScheduledMessage>)
   vi.spyOn(hooksModule, "useEditLockScheduledMessage").mockReturnValue({
-    mutateAsync: vi.fn(),
+    mutateAsync: mockEditLockScheduledMessage,
   } as unknown as ReturnType<typeof hooksModule.useEditLockScheduledMessage>)
   vi.spyOn(hooksModule, "usePauseScheduledMessage").mockReturnValue({
     mutateAsync: vi.fn(),
@@ -296,14 +302,14 @@ function toPathString(to: { pathname: string; search?: string; hash?: string }):
   return `${to.pathname}${to.search ?? ""}${to.hash ?? ""}`
 }
 
-function Wrapper({ children }: { children: React.ReactNode }) {
+function Wrapper({ children, search = "" }: { children: React.ReactNode; search?: string }) {
   // Bare <Router> lets us inject a custom `navigator` that records every
   // push/replace as `mockNavigate(path, { replace })`. This reproduces the
   // shape production code passes to `useNavigate()` without needing to spy
   // on the frozen `react-router-dom` ESM namespace.
   const [location] = useState(() => ({
     pathname: "/",
-    search: "",
+    search,
     hash: "",
     state: null,
     key: "default",
@@ -341,8 +347,8 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   )
 }
 
-function render$(ui: React.ReactElement) {
-  return render(<Wrapper>{ui}</Wrapper>)
+function render$(ui: React.ReactElement, options: { search?: string } = {}) {
+  return render(<Wrapper search={options.search}>{ui}</Wrapper>)
 }
 
 function makeScheduledMessage(
@@ -592,6 +598,59 @@ describe("MessageInput", () => {
       expect(mockSendMessage).not.toHaveBeenCalled()
       expect(mockClearDraft).toHaveBeenCalled()
       expect(mockClearAttachments).toHaveBeenCalled()
+    })
+
+    it("does not try to resume when opening a near-due scheduled message fails before locking", async () => {
+      const scheduledAt = new Date(Date.now() + 10_000).toISOString()
+      mockEditLockScheduledMessage.mockRejectedValue(new Error("already firing"))
+      vi.spyOn(hooksModule, "useScheduledMessagesList").mockReturnValue({
+        items: [makeScheduledMessage(ScheduledMessageStatuses.SCHEDULED, scheduledAt)],
+        isLoading: false,
+        isFetching: false,
+        error: null,
+        refetch: vi.fn(),
+      } as unknown as ReturnType<typeof hooksModule.useScheduledMessagesList>)
+
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />, { search: "?scheduled=scheduled_123" })
+
+      await waitFor(() => expect(mockEditLockScheduledMessage).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true }))
+
+      expect(mockUpdateScheduledMessage).not.toHaveBeenCalled()
+    })
+
+    it("saves a near-due scheduled edit with the version returned by the edit lock", async () => {
+      const scheduledAt = new Date(Date.now() + 10_000).toISOString()
+      const scheduled = makeScheduledMessage(ScheduledMessageStatuses.SCHEDULED, scheduledAt, { version: 3 })
+      mockComposerState.canSend = true
+      mockComposerState.content = makeDoc("Updated scheduled message")
+      mockEditLockScheduledMessage.mockResolvedValue(
+        makeScheduledMessage(ScheduledMessageStatuses.EDITING, scheduledAt, { version: 8 })
+      )
+      mockUpdateScheduledMessage.mockResolvedValue(
+        makeScheduledMessage(ScheduledMessageStatuses.SCHEDULED, scheduledAt, { version: 9 })
+      )
+      vi.spyOn(hooksModule, "useScheduledMessagesList").mockReturnValue({
+        items: [scheduled],
+        isLoading: false,
+        isFetching: false,
+        error: null,
+        refetch: vi.fn(),
+      } as unknown as ReturnType<typeof hooksModule.useScheduledMessagesList>)
+
+      render$(<MessageInput workspaceId={workspaceId} streamId={streamId} />, { search: "?scheduled=scheduled_123" })
+
+      await waitFor(() => expect(mockEditLockScheduledMessage).toHaveBeenCalledTimes(1))
+      await userEvent.click(screen.getByRole("button", { name: /send/i }))
+
+      await waitFor(() =>
+        expect(mockUpdateScheduledMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            scheduledId: "scheduled_123",
+            input: expect.objectContaining({ expectedVersion: 8 }),
+          })
+        )
+      )
     })
   })
 

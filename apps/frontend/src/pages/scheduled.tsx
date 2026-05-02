@@ -60,6 +60,7 @@ export function ScheduledPage() {
       <div className="mx-auto flex w-full max-w-3xl flex-col divide-y">
         {items.map((item) => {
           const disabled = inFlightId === item.id
+          const mutable = isMutableScheduledMessage(item)
           return (
             <article key={item.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start">
               <button
@@ -70,6 +71,7 @@ export function ScheduledPage() {
                     navigate(`/w/${workspaceId}/s/${item.streamId}?m=${item.sentMessageId}`)
                     return
                   }
+                  if (!mutable) return
                   navigate(`/w/${workspaceId}/s/${item.streamId}?scheduled=${item.id}`)
                 }}
               >
@@ -83,7 +85,7 @@ export function ScheduledPage() {
                 <p className="mt-1 text-xs text-muted-foreground">{timestampLabel(item)}</p>
               </button>
 
-              {item.status !== ScheduledMessageStatuses.SENT && (
+              {mutable && (
                 <div className="flex shrink-0 items-center gap-1 self-end sm:self-start">
                   <IconAction
                     label="Edit scheduled message"
@@ -169,6 +171,15 @@ export function ScheduledPage() {
 
       <main className="flex-1 overflow-y-auto">{content}</main>
     </div>
+  )
+}
+
+function isMutableScheduledMessage(item: ScheduledMessageView): boolean {
+  return (
+    item.status === ScheduledMessageStatuses.SCHEDULED ||
+    item.status === ScheduledMessageStatuses.PAUSED ||
+    item.status === ScheduledMessageStatuses.EDITING ||
+    item.status === ScheduledMessageStatuses.FAILED
   )
 }
 

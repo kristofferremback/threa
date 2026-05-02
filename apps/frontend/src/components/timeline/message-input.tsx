@@ -311,12 +311,17 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const loadedScheduledEditRef = useRef<string | null>(null)
   const scheduledEditVersionRef = useRef<number | null>(null)
   const scheduledEditSavingRef = useRef(false)
+  const scheduledEditReleaseInFlightRef = useRef<string | null>(null)
   const [scheduledActionInFlightId, setScheduledActionInFlightId] = useState<string | null>(null)
 
   // Use a ref so the handler always reads fresh composer state without
   // re-registering on every render (composer object is not memoized).
   const composerRef = useRef(composer)
   composerRef.current = composer
+  const updateScheduledMutationRef = useRef(updateScheduledMutation)
+  updateScheduledMutationRef.current = updateScheduledMutation
+  const editLockMutationRef = useRef(editLockMutation)
+  editLockMutationRef.current = editLockMutation
 
   // Imperative handle for programmatic focus from outside (e.g. quote reply insertion)
   const composerFocusRef = useRef<ComposerControlHandle | null>(null)
@@ -515,7 +520,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     if (item) {
       try {
         scheduledEditSavingRef.current = true
-        await updateScheduledMutation.mutateAsync({
+        await updateScheduledMutationRef.current.mutateAsync({
           scheduledId: item.id,
           input: {
             expectedVersion: scheduledEditVersionRef.current ?? item.version,
@@ -534,7 +539,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     composer.clearAttachments()
     clearScheduledEditParam()
     scheduledEditSavingRef.current = false
-  }, [composer, clearScheduledEditParam, scheduledEditItem, updateScheduledMutation])
+  }, [composer, clearScheduledEditParam, scheduledEditItem])
 
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -562,29 +567,28 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     let cancelled = false
 
     const releaseLockedEdit = (version: number) => {
-      void updateScheduledMutation
+      void updateScheduledMutationRef.current
         .mutateAsync({
           scheduledId: scheduledEditId,
           input: { expectedVersion: version },
         })
-        .catch(() => {
-          toast.error("Could not resume scheduled message")
-        })
+        .catch(() => {})
     }
 
-    const enterEdit = () => {
+    const enterEdit = (version: number = scheduledEditItem.version) => {
       if (cancelled) return
-      composer.setContent(scheduledEditItem.contentJson)
-      composer.restoreAttachments(extractUploadedAttachments(scheduledEditItem.contentJson))
+      const currentComposer = composerRef.current
+      currentComposer.setContent(scheduledEditItem.contentJson)
+      currentComposer.restoreAttachments(extractUploadedAttachments(scheduledEditItem.contentJson))
       loadedScheduledEditRef.current = scheduledEditId
-      scheduledEditVersionRef.current = scheduledEditItem.version
+      scheduledEditVersionRef.current = version
       setScheduledEditAt(toDateTimeLocal(new Date(scheduledEditItem.scheduledAt)))
       composerFocusRef.current?.focus()
     }
 
     const msUntilSend = Date.parse(scheduledEditItem.scheduledAt) - Date.now()
     const lock = () =>
-      editLockMutation.mutateAsync({
+      editLockMutationRef.current.mutateAsync({
         scheduledId: scheduledEditId,
         expectedVersion: scheduledEditItem.version,
       })
@@ -596,12 +600,15 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
             releaseLockedEdit(locked.version)
             return
           }
-          scheduledEditVersionRef.current = locked.version
-          enterEdit()
+          enterEdit(locked.version)
         })
         .catch(() => {
           toast.error("Could not open scheduled message for editing")
-          void cancelScheduledEdit()
+          loadedScheduledEditRef.current = null
+          scheduledEditVersionRef.current = null
+          scheduledEditSavingRef.current = false
+          setScheduledEditAt("")
+          clearScheduledEditParam()
         })
       return () => {
         cancelled = true
@@ -624,15 +631,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     return () => {
       cancelled = true
     }
-  }, [
-    scheduledEditId,
-    scheduledEditItem,
-    streamId,
-    composer,
-    editLockMutation,
-    updateScheduledMutation,
-    cancelScheduledEdit,
-  ])
+  }, [scheduledEditId, scheduledEditItem, streamId, clearScheduledEditParam])
 
   useEffect(() => {
     if (!scheduledEditId) return
@@ -641,19 +640,24 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       if (loadedScheduledEditRef.current !== scheduledEditId) return
       const version = scheduledEditVersionRef.current
       if (version === null) return
+      if (scheduledEditReleaseInFlightRef.current === scheduledEditId) return
 
       loadedScheduledEditRef.current = null
       scheduledEditVersionRef.current = null
-      void updateScheduledMutation
+      scheduledEditReleaseInFlightRef.current = scheduledEditId
+      void updateScheduledMutationRef.current
         .mutateAsync({
           scheduledId: scheduledEditId,
           input: { expectedVersion: version },
         })
-        .catch(() => {
-          toast.error("Could not resume scheduled message")
+        .catch(() => {})
+        .finally(() => {
+          if (scheduledEditReleaseInFlightRef.current === scheduledEditId) {
+            scheduledEditReleaseInFlightRef.current = null
+          }
         })
     }
-  }, [scheduledEditId, streamId, updateScheduledMutation])
+  }, [scheduledEditId])
 
   // Collapse expanded overlay when viewport crosses to mobile (expand is desktop-only)
   useEffect(() => {

@@ -122,6 +122,10 @@ describe("dates", () => {
       expect(formatRelativeTime(new Date("2025-06-15T12:00:30Z"), fixedNow, undefined, { terse: true })).toBe("<1m")
       expect(formatRelativeTime(new Date("2025-06-15T12:05:00Z"), fixedNow, undefined, { terse: true })).toBe("5m")
       expect(formatRelativeTime(new Date("2025-06-15T14:00:00Z"), fixedNow, undefined, { terse: true })).toBe("2h")
+      expect(formatRelativeTime(new Date("2025-06-16T12:00:00Z"), fixedNow, undefined, { terse: true })).toBe(
+        "tomorrow"
+      )
+      expect(formatRelativeTime(new Date("2025-06-18T12:00:00Z"), fixedNow, undefined, { terse: true })).toMatch(/Wed/i)
     })
   })
 

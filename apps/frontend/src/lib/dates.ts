@@ -171,6 +171,20 @@ function formatRelativeTimeTerse(date: Date, now: Date): string {
     if (futureSec < 60) return "<1m"
     if (futureMin < 60) return `${futureMin}m`
     if (futureHour < 24) return `${futureHour}h`
+
+    const daysUntil = differenceInDays(startOfDay(date), startOfDay(now))
+    if (daysUntil === 1) return "tomorrow"
+    if (daysUntil < 7 && daysUntil > 0) {
+      return date.toLocaleDateString(undefined, { weekday: "short" })
+    }
+    if (date.getFullYear() === now.getFullYear()) {
+      return date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    }
+    return date.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "2-digit",
+    })
   }
 
   const diffSec = Math.floor(diffMs / 1000)
