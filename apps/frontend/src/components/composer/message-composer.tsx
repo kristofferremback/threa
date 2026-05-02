@@ -30,6 +30,17 @@ import type { MessageSendMode, JSONContent } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import type { Editor } from "@tiptap/react"
 
+function getSubmitAriaLabel(
+  isSubmitting: boolean,
+  isEditingScheduled: boolean,
+  submittingLabel: string,
+  submitLabel: string
+): string {
+  if (isSubmitting) return submittingLabel
+  if (isEditingScheduled) return "Save"
+  return submitLabel
+}
+
 /** Check whether the document has content beyond a single line. */
 function isMultiLine(doc: JSONContent): boolean {
   const blocks = doc.content
@@ -488,7 +499,7 @@ export function MessageComposer({
       type="button"
       onClick={handleSubmit}
       disabled={!canSubmit}
-      aria-label={isSubmitting ? submittingLabel : isEditingScheduled ? "Save" : submitLabel}
+      aria-label={getSubmitAriaLabel(isSubmitting, isEditingScheduled, submittingLabel, submitLabel)}
       className={sendButtonClass}
       {...(isMobile && !isEditingScheduled ? longPressHandlers : {})}
     >

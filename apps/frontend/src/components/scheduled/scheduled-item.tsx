@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { stripMarkdownToInline } from "@/lib/markdown/strip"
 import { RelativeTime } from "@/components/relative-time"
 import { Send, X, Pause, Play } from "lucide-react"
-import type { CachedScheduledMessage } from "@/db"
+import type { CachedScheduledMessage } from "@/lib/scheduled-messages/types"
 
 interface ScheduledItemProps {
   scheduled: CachedScheduledMessage
