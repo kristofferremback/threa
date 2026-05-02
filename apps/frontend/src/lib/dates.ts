@@ -163,6 +163,16 @@ function formatRelativeTimeVerbose(date: Date, now: Date, prefs?: TimePrefs): st
 /** Terse format: compact, no time (e.g., "2m ago", "yesterday") */
 function formatRelativeTimeTerse(date: Date, now: Date): string {
   const diffMs = now.getTime() - date.getTime()
+  if (diffMs < 0) {
+    const futureSec = Math.ceil(Math.abs(diffMs) / 1000)
+    const futureMin = Math.ceil(futureSec / 60)
+    const futureHour = Math.ceil(futureMin / 60)
+
+    if (futureSec < 60) return "<1m"
+    if (futureMin < 60) return `${futureMin}m`
+    if (futureHour < 24) return `${futureHour}h`
+  }
+
   const diffSec = Math.floor(diffMs / 1000)
   const diffMin = Math.floor(diffSec / 60)
   const diffHour = Math.floor(diffMin / 60)

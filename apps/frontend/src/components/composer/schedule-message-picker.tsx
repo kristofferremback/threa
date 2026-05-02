@@ -57,7 +57,11 @@ export function ScheduleMessagePicker({
   const controlsDisabled = disabled
   const triggerSizeClass = size === "fab" ? "h-[30px] w-[30px] rounded-md bg-background shadow-md" : "h-7 w-7"
   const triggerIconClass = size === "fab" ? "h-4 w-4" : "h-3.5 w-3.5"
-  const count = scheduledMessages.length
+  const visibleScheduledMessages = useMemo(
+    () => scheduledMessages.filter((item) => shouldShowInComposerPicker(item, Date.now())),
+    [scheduledMessages, open]
+  )
+  const count = visibleScheduledMessages.length
 
   if (isMobile) {
     return (
@@ -81,7 +85,7 @@ export function ScheduleMessagePicker({
           open={open}
           onOpenChange={setOpen}
           canSchedule={canSchedule}
-          scheduledMessages={scheduledMessages}
+          scheduledMessages={visibleScheduledMessages}
           inFlightId={inFlightId}
           onSchedule={onSchedule}
           onEdit={onEdit}
@@ -115,7 +119,7 @@ export function ScheduleMessagePicker({
       <PopoverContent align="end" side="top" className="w-80 p-0">
         <SchedulePopoverContent
           canSchedule={canSchedule}
-          scheduledMessages={scheduledMessages}
+          scheduledMessages={visibleScheduledMessages}
           inFlightId={inFlightId}
           onEdit={onEdit}
           onPause={onPause}
@@ -130,6 +134,19 @@ export function ScheduleMessagePicker({
       </PopoverContent>
     </Popover>
   )
+}
+
+function shouldShowInComposerPicker(item: ScheduledMessageView, nowMs: number): boolean {
+  if (
+    item.status === ScheduledMessageStatuses.SENT ||
+    item.status === ScheduledMessageStatuses.DELETED ||
+    item.status === ScheduledMessageStatuses.FIRING
+  ) {
+    return false
+  }
+
+  const scheduledAtMs = Date.parse(item.scheduledAt)
+  return Number.isFinite(scheduledAtMs) && scheduledAtMs > nowMs
 }
 
 const ScheduleTriggerButton = forwardRef<

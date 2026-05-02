@@ -385,12 +385,24 @@ describe("shouldShowScheduledMessageInComposer", () => {
     ).toBe(true)
   })
 
-  it("hides sent and past scheduled messages from the composer menu", () => {
+  it("hides sent, firing, due, and past scheduled messages from the composer menu", () => {
     expect(
       shouldShowScheduledMessageInComposer(
         makeScheduledMessage(ScheduledMessageStatuses.SENT, "2026-05-02T10:05:00.000Z", {
           sentAt: "2026-05-02T10:05:02.000Z",
         }),
+        now
+      )
+    ).toBe(false)
+    expect(
+      shouldShowScheduledMessageInComposer(
+        makeScheduledMessage(ScheduledMessageStatuses.FIRING, "2026-05-02T10:05:00.000Z"),
+        now
+      )
+    ).toBe(false)
+    expect(
+      shouldShowScheduledMessageInComposer(
+        makeScheduledMessage(ScheduledMessageStatuses.SCHEDULED, "2026-05-02T10:00:00.000Z"),
         now
       )
     ).toBe(false)

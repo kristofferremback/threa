@@ -91,10 +91,16 @@ export function extractUploadedAttachments(content: JSONContent): Array<{
 }
 
 export function shouldShowScheduledMessageInComposer(item: ScheduledMessageView, nowMs: number = Date.now()): boolean {
-  if (item.status === ScheduledMessageStatuses.SENT || item.status === ScheduledMessageStatuses.DELETED) return false
+  if (
+    item.status === ScheduledMessageStatuses.SENT ||
+    item.status === ScheduledMessageStatuses.DELETED ||
+    item.status === ScheduledMessageStatuses.FIRING
+  ) {
+    return false
+  }
 
   const scheduledAtMs = Date.parse(item.scheduledAt)
-  return Number.isFinite(scheduledAtMs) && scheduledAtMs >= nowMs
+  return Number.isFinite(scheduledAtMs) && scheduledAtMs > nowMs
 }
 
 export function materializePendingAttachmentReferences(

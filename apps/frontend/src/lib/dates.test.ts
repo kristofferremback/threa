@@ -117,6 +117,12 @@ describe("dates", () => {
       const result = formatRelativeTime(lastYear, fixedNow)
       expect(result).toMatch(/March 15, 2024/i)
     })
+
+    it("should show terse future durations without saying ago or now", () => {
+      expect(formatRelativeTime(new Date("2025-06-15T12:00:30Z"), fixedNow, undefined, { terse: true })).toBe("<1m")
+      expect(formatRelativeTime(new Date("2025-06-15T12:05:00Z"), fixedNow, undefined, { terse: true })).toBe("5m")
+      expect(formatRelativeTime(new Date("2025-06-15T14:00:00Z"), fixedNow, undefined, { terse: true })).toBe("2h")
+    })
   })
 
   describe("formatFullDateTime", () => {
