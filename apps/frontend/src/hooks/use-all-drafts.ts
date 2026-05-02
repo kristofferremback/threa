@@ -9,7 +9,7 @@ import {
 } from "@/stores/draft-store"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { isDraftId } from "./use-draft-scratchpads"
-import { dedupeStashedDrafts, deleteStashedDraftById } from "./use-stashed-drafts"
+import { dedupeStashedDrafts, deleteStashedDraftFamily } from "./use-stashed-drafts"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent, StreamType } from "@threa/types"
 import { isEmptyContent } from "@/lib/prosemirror-utils"
@@ -387,7 +387,7 @@ export function useAllDrafts(workspaceId: string) {
   const deleteDraft = useCallback(
     async (draftId: string) => {
       if (isStashId(draftId)) {
-        await deleteStashedDraftById(draftId)
+        await deleteStashedDraftFamily(draftId)
         return
       }
 

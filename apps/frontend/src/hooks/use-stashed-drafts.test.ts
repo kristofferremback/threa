@@ -4,6 +4,7 @@ import {
   createStashedDraft,
   popStashedDraft,
   deleteStashedDraftById,
+  deleteStashedDraftFamily,
   dedupeStashedDrafts,
 } from "./use-stashed-drafts"
 import type { JSONContent } from "@threa/types"
@@ -18,6 +19,10 @@ const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 const mockAdd = vi.fn()
 const mockGet = vi.fn()
 const mockDelete = vi.fn()
+const mockBulkDelete = vi.fn()
+const mockWhere = vi.fn()
+const mockEquals = vi.fn()
+const mockToArray = vi.fn()
 
 describe("generateStashId", () => {
   it("uses the stash_ prefix (distinct from draft_)", () => {
@@ -149,6 +154,75 @@ describe("deleteStashedDraftById", () => {
     await deleteStashedDraftById("stash_xyz")
 
     expect(mockDelete).toHaveBeenCalledWith("stash_xyz")
+  })
+})
+
+describe("deleteStashedDraftFamily", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    mockGet.mockReset()
+    mockBulkDelete.mockReset()
+    mockWhere.mockReset()
+    mockEquals.mockReset()
+    mockToArray.mockReset()
+
+    vi.spyOn(dbModule.db, "transaction").mockImplementation((async (...args: unknown[]) => {
+      const callback = args[args.length - 1] as () => unknown
+      return callback()
+    }) as unknown as typeof dbModule.db.transaction)
+    vi.spyOn(dbModule.db.stashedDrafts, "get").mockImplementation(((...args: unknown[]) =>
+      mockGet(...args)) as unknown as typeof dbModule.db.stashedDrafts.get)
+    vi.spyOn(dbModule.db.stashedDrafts, "where").mockImplementation(((...args: unknown[]) =>
+      mockWhere(...args)) as unknown as typeof dbModule.db.stashedDrafts.where)
+    vi.spyOn(dbModule.db.stashedDrafts, "bulkDelete").mockImplementation(((...args: unknown[]) =>
+      mockBulkDelete(...args)) as unknown as typeof dbModule.db.stashedDrafts.bulkDelete)
+
+    mockWhere.mockReturnValue({ equals: mockEquals })
+    mockEquals.mockReturnValue({ toArray: mockToArray })
+    mockBulkDelete.mockResolvedValue(undefined)
+  })
+
+  it("deletes the selected draft and exact duplicates in the same scope", async () => {
+    const content = makeDoc("Repeated")
+    const target = {
+      id: "stash_new",
+      workspaceId: "ws_123",
+      scope: "stream:stream_456",
+      contentJson: content,
+      createdAt: 2000,
+    }
+    mockGet.mockResolvedValue(target)
+    mockToArray.mockResolvedValue([
+      target,
+      {
+        id: "stash_old",
+        workspaceId: "ws_123",
+        scope: "stream:stream_456",
+        contentJson: content,
+        createdAt: 1000,
+      },
+      {
+        id: "stash_other",
+        workspaceId: "ws_123",
+        scope: "stream:stream_456",
+        contentJson: makeDoc("Different"),
+        createdAt: 500,
+      },
+    ])
+
+    await deleteStashedDraftFamily("stash_new")
+
+    expect(mockWhere).toHaveBeenCalledWith("[workspaceId+scope]")
+    expect(mockEquals).toHaveBeenCalledWith(["ws_123", "stream:stream_456"])
+    expect(mockBulkDelete).toHaveBeenCalledWith(["stash_new", "stash_old"])
+  })
+
+  it("no-ops when the selected draft no longer exists", async () => {
+    mockGet.mockResolvedValue(undefined)
+
+    await deleteStashedDraftFamily("stash_missing")
+
+    expect(mockBulkDelete).not.toHaveBeenCalled()
   })
 })
 

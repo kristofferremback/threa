@@ -94,13 +94,34 @@ export async function deleteStashedDraftById(id: string): Promise<void> {
 }
 
 /**
+ * Delete the selected stashed draft plus exact duplicate rows in the same
+ * workspace/scope. This keeps the UI behavior intuitive after duplicate rows
+ * were accidentally created: deleting the visible row should not reveal an
+ * identical hidden copy underneath it.
+ */
+export async function deleteStashedDraftFamily(id: string): Promise<void> {
+  await db.transaction("rw", db.stashedDrafts, async () => {
+    const target = await db.stashedDrafts.get(id)
+    if (!target) return
+
+    const targetKey = stashedDraftContentKey(target)
+    const siblings = await db.stashedDrafts
+      .where("[workspaceId+scope]")
+      .equals([target.workspaceId, target.scope])
+      .toArray()
+    const ids = siblings.filter((row) => stashedDraftContentKey(row) === targetKey).map((row) => row.id)
+    await db.stashedDrafts.bulkDelete(ids)
+  })
+}
+
+/**
  * Query + mutate stashed drafts for a specific scope (a stream or a thread's
  * parent message). Pass `undefined` for `scope` when the host is still
  * resolving what scope to target — the hook will return an empty list and
  * silently no-op mutations rather than throw.
  *
  * The mutation methods are thin wrappers over the module-level helpers
- * (`createStashedDraft`, `popStashedDraft`, `deleteStashedDraftById`) so the
+ * (`createStashedDraft`, `popStashedDraft`, `deleteStashedDraftFamily`) so the
  * mutation behavior is testable without `renderHook` or mocking
  * `useLiveQuery`.
  */
@@ -124,7 +145,7 @@ export function useStashedDrafts(workspaceId: string, scope: string | undefined)
     [workspaceId, scope]
   )
   const restoreStashedDraft = useCallback((id: string) => popStashedDraft(id), [])
-  const deleteStashedDraft = useCallback((id: string) => deleteStashedDraftById(id), [])
+  const deleteStashedDraft = useCallback((id: string) => deleteStashedDraftFamily(id), [])
 
   return { drafts, isLoaded, stashDraft, restoreStashedDraft, deleteStashedDraft }
 }
@@ -133,13 +154,17 @@ export function dedupeStashedDrafts(rows: StashedDraft[]): StashedDraft[] {
   const seen = new Set<string>()
   const deduped: StashedDraft[] = []
   for (const row of rows) {
-    const key = JSON.stringify({
-      contentJson: row.contentJson,
-      attachments: row.attachments ?? [],
-    })
+    const key = stashedDraftContentKey(row)
     if (seen.has(key)) continue
     seen.add(key)
     deduped.push(row)
   }
   return deduped
+}
+
+function stashedDraftContentKey(row: Pick<StashedDraft, "contentJson" | "attachments">): string {
+  return JSON.stringify({
+    contentJson: row.contentJson,
+    attachments: row.attachments ?? [],
+  })
 }
