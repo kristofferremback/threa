@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { forwardRef, useMemo, useState } from "react"
 import type { ComponentType, ReactNode } from "react"
 import {
   Calendar as CalendarIcon,
@@ -132,23 +132,20 @@ export function ScheduleMessagePicker({
   )
 }
 
-function ScheduleTriggerButton({
-  size,
-  triggerSizeClass,
-  triggerIconClass,
-  disabled,
-  onClick,
-  count = 0,
-}: {
-  size: "compact" | "fab"
-  triggerSizeClass: string
-  triggerIconClass: string
-  disabled: boolean
-  onClick?: () => void
-  count?: number
-}) {
+const ScheduleTriggerButton = forwardRef<
+  HTMLButtonElement,
+  {
+    size: "compact" | "fab"
+    triggerSizeClass: string
+    triggerIconClass: string
+    disabled: boolean
+    onClick?: () => void
+    count?: number
+  }
+>(function ScheduleTriggerButton({ size, triggerSizeClass, triggerIconClass, disabled, onClick, count = 0 }, ref) {
   return (
     <Button
+      ref={ref}
       type="button"
       variant={size === "fab" ? "outline" : "ghost"}
       size="icon"
@@ -167,7 +164,7 @@ function ScheduleTriggerButton({
       )}
     </Button>
   )
-}
+})
 
 function ScheduleDrawer({
   open,
@@ -306,6 +303,7 @@ function ScheduleOverview({
   onDelete?: (item: ScheduledMessageView) => void
   mobile?: boolean
 }) {
+  const now = useMemo(() => new Date(), [scheduledMessages])
   return (
     <div className={cn("flex flex-col", mobile ? "gap-3" : "divide-y")}>
       <div className={cn("flex items-center justify-between gap-2", mobile ? "mb-1" : "px-3 py-2 border-b")}>
@@ -330,7 +328,7 @@ function ScheduleOverview({
 
       {scheduledMessages.length === 0 ? (
         <div className={cn("text-center text-xs text-muted-foreground", mobile ? "py-8" : "px-3 py-6")}>
-          No scheduled messages in this stream.
+          No scheduled messages yet. Use "Schedule current" to send what you're typing later.
         </div>
       ) : (
         <ul className={cn("overflow-y-auto py-1", mobile ? "max-h-[55vh]" : "max-h-72")} role="list">
@@ -344,6 +342,7 @@ function ScheduleOverview({
               onResume={onResume}
               onSendNow={onSendNow}
               onDelete={onDelete}
+              now={now}
             />
           ))}
         </ul>
@@ -360,6 +359,7 @@ function ScheduledMessageRow({
   onResume,
   onSendNow,
   onDelete,
+  now,
 }: {
   item: ScheduledMessageView
   disabled: boolean
@@ -368,6 +368,7 @@ function ScheduledMessageRow({
   onResume?: (item: ScheduledMessageView) => void
   onSendNow?: (item: ScheduledMessageView) => void
   onDelete?: (item: ScheduledMessageView) => void
+  now: Date
 }) {
   const sent = item.status === ScheduledMessageStatuses.SENT
   return (
@@ -379,8 +380,8 @@ function ScheduledMessageRow({
             <span className="capitalize">{item.status}</span>
             <span className="mx-1">·</span>
             {sent && item.sentAt
-              ? `Sent ${formatRelativeTime(new Date(item.sentAt), new Date(), undefined, { terse: true })}`
-              : formatScheduledAt(item.scheduledAt)}
+              ? `Sent ${formatRelativeTime(new Date(item.sentAt), now, undefined, { terse: true })}`
+              : `Sends ${formatRelativeTime(new Date(item.scheduledAt), now, undefined, { terse: true })}`}
           </p>
         </button>
         {!sent && (
@@ -628,15 +629,6 @@ function previewScheduled(item: ScheduledMessageView): string {
   if (item.attachmentIds.length > 0)
     return `${item.attachmentIds.length} attachment${item.attachmentIds.length === 1 ? "" : "s"}`
   return "Empty message"
-}
-
-function formatScheduledAt(value: string): string {
-  return new Date(value).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  })
 }
 
 function computeScheduleAt(preset: ReminderPreset, now: Date): Date {
