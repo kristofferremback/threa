@@ -52,7 +52,9 @@ cleanupOutdatedCaches()
 // get the latest HTML with correct asset references. The precache still
 // serves as an offline fallback.
 self.addEventListener("fetch", (event) => {
-  if (event.request.mode !== "navigate") return
+  // Only app-shell GET navigations belong here. Web Share Target launches use
+  // a POST navigation to /share, which must fall through to the handler below.
+  if (event.request.mode !== "navigate" || event.request.method !== "GET") return
 
   event.respondWith(
     fetch(event.request).catch(async () => {
