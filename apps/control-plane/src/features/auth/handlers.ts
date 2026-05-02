@@ -3,9 +3,10 @@ import { z } from "zod/v4"
 import {
   HttpError,
   SESSION_COOKIE_NAME,
-  SESSION_COOKIE_CONFIG,
+  clearSessionCookie,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
+  setSessionCookie,
   type AuthService,
 } from "@threa/backend-common"
 
@@ -119,15 +120,14 @@ export function createControlPlaneAuthHandlers({
         redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
       }
 
-      res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
+      setSessionCookie(res, result.sealedSession)
       res.redirect(redirectUrl)
     },
 
     async logout(req: Request, res: Response) {
       const session = req.cookies[SESSION_COOKIE_NAME]
 
-      const { maxAge: _, ...clearOpts } = SESSION_COOKIE_CONFIG
-      res.clearCookie(SESSION_COOKIE_NAME, clearOpts)
+      clearSessionCookie(res)
 
       const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
 

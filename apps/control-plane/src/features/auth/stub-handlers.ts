@@ -2,10 +2,9 @@ import type { Request, Response } from "express"
 import { z } from "zod/v4"
 import {
   HttpError,
-  SESSION_COOKIE_NAME,
-  SESSION_COOKIE_CONFIG,
   decodeAndSanitizeRedirectState,
   renderLoginPage,
+  setSessionCookie,
   type StubAuthService,
 } from "@threa/backend-common"
 
@@ -41,7 +40,7 @@ export function createAuthStubHandlers({ authStubService }: Dependencies) {
 
       const redirectUrl = state ? decodeAndSanitizeRedirectState(state) : "/"
 
-      res.cookie(SESSION_COOKIE_NAME, result.session, SESSION_COOKIE_CONFIG)
+      setSessionCookie(res, result.session)
       res.redirect(redirectUrl)
     },
 
@@ -51,7 +50,7 @@ export function createAuthStubHandlers({ authStubService }: Dependencies) {
         throw new HttpError("Invalid login parameters", { status: 400, code: "INVALID_LOGIN" })
       }
       const result = await authStubService.devLogin(parsed.data)
-      res.cookie(SESSION_COOKIE_NAME, result.session, SESSION_COOKIE_CONFIG)
+      setSessionCookie(res, result.session)
       res.json({ user: result.user })
     },
   }
