@@ -12,9 +12,13 @@ import * as quoteReplyModule from "./quote-reply-context"
 import * as composerModule from "@/components/composer"
 import * as discussModule from "@/hooks/use-discuss-with-ariadne"
 import * as streamContextBagModule from "@/hooks/use-stream-context-bag"
-import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
+import {
+  MessageInput,
+  materializePendingAttachmentReferences,
+  shouldShowScheduledMessageInComposer,
+} from "./message-input"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import type { JSONContent } from "@threa/types"
+import { ScheduledMessageStatuses, type JSONContent, type ScheduledMessageView } from "@threa/types"
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 const makeDoc = (text: string): JSONContent => ({
@@ -340,6 +344,64 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 function render$(ui: React.ReactElement) {
   return render(<Wrapper>{ui}</Wrapper>)
 }
+
+function makeScheduledMessage(
+  status: ScheduledMessageView["status"],
+  scheduledAt: string,
+  overrides: Partial<ScheduledMessageView> = {}
+): ScheduledMessageView {
+  return {
+    id: "scheduled_123",
+    workspaceId: "ws_123",
+    userId: "user_123" as ScheduledMessageView["userId"],
+    streamId: "stream_456",
+    status,
+    scheduledAt,
+    contentJson: makeDoc("Later"),
+    contentMarkdown: "Later",
+    attachmentIds: [],
+    sentMessageId: null,
+    version: 1,
+    createdAt: "2026-05-02T10:00:00.000Z",
+    updatedAt: "2026-05-02T10:00:00.000Z",
+    sentAt: null,
+    deletedAt: null,
+    failedAt: null,
+    failureReason: null,
+    streamName: "General",
+    ...overrides,
+  }
+}
+
+describe("shouldShowScheduledMessageInComposer", () => {
+  const now = Date.parse("2026-05-02T10:00:00.000Z")
+
+  it("shows future unsent scheduled messages", () => {
+    expect(
+      shouldShowScheduledMessageInComposer(
+        makeScheduledMessage(ScheduledMessageStatuses.SCHEDULED, "2026-05-02T10:05:00.000Z"),
+        now
+      )
+    ).toBe(true)
+  })
+
+  it("hides sent and past scheduled messages from the composer menu", () => {
+    expect(
+      shouldShowScheduledMessageInComposer(
+        makeScheduledMessage(ScheduledMessageStatuses.SENT, "2026-05-02T10:05:00.000Z", {
+          sentAt: "2026-05-02T10:05:02.000Z",
+        }),
+        now
+      )
+    ).toBe(false)
+    expect(
+      shouldShowScheduledMessageInComposer(
+        makeScheduledMessage(ScheduledMessageStatuses.SCHEDULED, "2026-05-02T09:55:00.000Z"),
+        now
+      )
+    ).toBe(false)
+  })
+})
 
 describe("MessageInput", () => {
   const workspaceId = "ws_123"

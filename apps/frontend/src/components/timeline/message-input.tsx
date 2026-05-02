@@ -90,6 +90,13 @@ export function extractUploadedAttachments(content: JSONContent): Array<{
   return Array.from(attachments.values())
 }
 
+export function shouldShowScheduledMessageInComposer(item: ScheduledMessageView, nowMs: number = Date.now()): boolean {
+  if (item.status === ScheduledMessageStatuses.SENT || item.status === ScheduledMessageStatuses.DELETED) return false
+
+  const scheduledAtMs = Date.parse(item.scheduledAt)
+  return Number.isFinite(scheduledAtMs) && scheduledAtMs >= nowMs
+}
+
 export function materializePendingAttachmentReferences(
   content: JSONContent,
   pendingAttachments: PendingAttachment[]
@@ -291,7 +298,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     [scheduledList.items, scheduledEditId]
   )
   const currentStreamScheduledMessages = useMemo(
-    () => scheduledList.items.filter((item) => item.streamId === streamId),
+    () =>
+      scheduledList.items.filter((item) => item.streamId === streamId && shouldShowScheduledMessageInComposer(item)),
     [scheduledList.items, streamId]
   )
   const loadedScheduledEditRef = useRef<string | null>(null)
