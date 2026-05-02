@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS scheduled_messages (
   sent_message_id TEXT,
   edit_previous_status TEXT,
   version INTEGER NOT NULL DEFAULT 1,
+  firing_started_at TIMESTAMPTZ,
   sent_at TIMESTAMPTZ,
   deleted_at TIMESTAMPTZ,
   failed_at TIMESTAMPTZ,

@@ -24,11 +24,11 @@ const updateScheduledSchema = z.object({
   attachmentIds: z.array(z.string().min(1)).optional(),
   scheduledAt: z.string().datetime().optional(),
   status: z.enum([ScheduledMessageStatuses.SCHEDULED, ScheduledMessageStatuses.PAUSED]).optional(),
-  expectedVersion: z.number().int().positive().optional(),
+  expectedVersion: z.number().int().positive(),
 })
 
 const versionSchema = z.object({
-  expectedVersion: z.number().int().positive().optional(),
+  expectedVersion: z.number().int().positive(),
 })
 
 interface Dependencies {

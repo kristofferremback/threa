@@ -387,6 +387,7 @@ export function registerWorkspaceSocketHandlers(
   // during the disconnect. `refetchOnReconnect: true` alone only covers
   // browser network online/offline, not socket.io reconnects.
   queryClient.invalidateQueries({ queryKey: savedKeys.all })
+  queryClient.invalidateQueries({ queryKey: scheduledMessageKeys.list(workspaceId) })
 
   // Handle stream created
   const handleStreamCreated = (payload: StreamPayload) => {

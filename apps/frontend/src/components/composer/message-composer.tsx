@@ -306,25 +306,26 @@ export function MessageComposer({
   // Expanded (fullscreen) and mobile always use cmdEnter — on mobile the send button
   // is the only way to send, so Enter just inserts a newline.
   const effectiveSendMode = expanded || isMobile ? "cmdEnter" : messageSendMode
+  const submitVerb = submitIcon === "save" ? "save" : "send"
   const sendHint = useMemo(() => {
     if (effectiveSendMode === "enter") {
-      return `Enter to send · Shift+Enter for new line`
+      return `Enter to ${submitVerb} · Shift+Enter for new line`
     }
-    return `${MOD_SYMBOL}Enter to send`
-  }, [effectiveSendMode])
+    return `${MOD_SYMBOL}Enter to ${submitVerb}`
+  }, [effectiveSendMode, submitVerb])
 
   const screenReaderInstructions = useMemo(() => {
     const sendInstructions =
       effectiveSendMode === "enter"
-        ? "Press Enter to send and Shift+Enter for a new line."
-        : `Press ${MOD_KEY_NAME}+Enter to send.`
+        ? `Press Enter to ${submitVerb} and Shift+Enter for a new line.`
+        : `Press ${MOD_KEY_NAME}+Enter to ${submitVerb}.`
 
     if (expanded) {
       return `${sendInstructions} Tab and Shift+Tab indent content. Press Escape to leave the editor. Press Escape again to close the fullscreen editor.`
     }
 
     return `${sendInstructions} Tab and Shift+Tab indent content. Press Escape to leave the editor.`
-  }, [effectiveSendMode, expanded])
+  }, [effectiveSendMode, expanded, submitVerb])
 
   // Plain-text first line for the mobile collapsed preview bar
   const previewText = useMemo(() => getPreviewText(content), [content])

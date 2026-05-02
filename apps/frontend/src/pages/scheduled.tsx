@@ -156,11 +156,11 @@ export function ScheduledPage() {
     <div className="flex h-full flex-col">
       <header className="flex h-12 items-center gap-2 border-b px-4">
         <SidebarToggle location="page" />
-        <Link to={`/w/${workspaceId}`}>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
+        <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+          <Link to={`/w/${workspaceId}`} aria-label="Back to workspace">
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <div className="flex items-center gap-2">
           <CalendarClock className="h-5 w-5 text-muted-foreground" />
           <h1 className="font-semibold">Scheduled</h1>

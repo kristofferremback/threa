@@ -45,7 +45,7 @@ function fromCached(row: CachedScheduledMessage): ScheduledMessageView {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
-    userId: row.userId,
+    userId: row.userId as ScheduledMessageView["userId"],
     streamId: row.streamId,
     status: row.status as ScheduledMessageView["status"],
     scheduledAt: row.scheduledAt,
@@ -213,11 +213,11 @@ export function useEditLockScheduledMessage(workspaceId: string) {
 
 function useScheduledAction(
   workspaceId: string,
-  action: (scheduledId: string, expectedVersion?: number) => Promise<ScheduledMessageView>
+  action: (scheduledId: string, expectedVersion: number) => Promise<ScheduledMessageView>
 ) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ scheduledId, expectedVersion }: { scheduledId: string; expectedVersion?: number }) =>
+    mutationFn: ({ scheduledId, expectedVersion }: { scheduledId: string; expectedVersion: number }) =>
       action(scheduledId, expectedVersion),
     onSuccess: async (scheduled) => {
       await persistScheduledRows([scheduled])
@@ -230,7 +230,7 @@ export function useDeleteScheduledMessage(workspaceId: string) {
   const service = useScheduledMessagesService()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ scheduledId, expectedVersion }: { scheduledId: string; expectedVersion?: number }) =>
+    mutationFn: ({ scheduledId, expectedVersion }: { scheduledId: string; expectedVersion: number }) =>
       service.delete(workspaceId, scheduledId, { expectedVersion }),
     onSuccess: async (_result, vars) => {
       await removeScheduledRow(vars.scheduledId)

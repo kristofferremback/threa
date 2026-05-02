@@ -35,7 +35,7 @@ export const scheduledMessagesApi = {
   async pause(
     workspaceId: string,
     scheduledId: string,
-    input: ScheduledMessageVersionInput = {}
+    input: ScheduledMessageVersionInput
   ): Promise<ScheduledMessageView> {
     const res = await api.post<{ scheduled: ScheduledMessageView }>(
       `/api/workspaces/${workspaceId}/scheduled-messages/${scheduledId}/pause`,
@@ -47,7 +47,7 @@ export const scheduledMessagesApi = {
   async resume(
     workspaceId: string,
     scheduledId: string,
-    input: ScheduledMessageVersionInput = {}
+    input: ScheduledMessageVersionInput
   ): Promise<ScheduledMessageView> {
     const res = await api.post<{ scheduled: ScheduledMessageView }>(
       `/api/workspaces/${workspaceId}/scheduled-messages/${scheduledId}/resume`,
@@ -59,7 +59,7 @@ export const scheduledMessagesApi = {
   async sendNow(
     workspaceId: string,
     scheduledId: string,
-    input: ScheduledMessageVersionInput = {}
+    input: ScheduledMessageVersionInput
   ): Promise<ScheduledMessageView> {
     const res = await api.post<{ scheduled: ScheduledMessageView }>(
       `/api/workspaces/${workspaceId}/scheduled-messages/${scheduledId}/send-now`,
@@ -71,7 +71,7 @@ export const scheduledMessagesApi = {
   async editLock(
     workspaceId: string,
     scheduledId: string,
-    input: ScheduledMessageVersionInput = {}
+    input: ScheduledMessageVersionInput
   ): Promise<ScheduledMessageView> {
     const res = await api.post<{ scheduled: ScheduledMessageView }>(
       `/api/workspaces/${workspaceId}/scheduled-messages/${scheduledId}/edit-lock`,
@@ -80,7 +80,7 @@ export const scheduledMessagesApi = {
     return res.scheduled
   },
 
-  delete(workspaceId: string, scheduledId: string, input: ScheduledMessageVersionInput = {}): Promise<void> {
+  delete(workspaceId: string, scheduledId: string, input: ScheduledMessageVersionInput): Promise<void> {
     return api.delete(`/api/workspaces/${workspaceId}/scheduled-messages/${scheduledId}`, {
       body: JSON.stringify(input),
     })

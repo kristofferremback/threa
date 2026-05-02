@@ -49,6 +49,7 @@ export interface UpdateScheduledMessageParams {
 }
 
 const MAX_QUEUE_ID_RETRIES = 5
+const FIRING_LEASE_MS = 5 * 60_000
 const ACTIVE_STATUSES = new Set<ScheduledMessageStatus>([
   ScheduledMessageStatuses.SCHEDULED,
   ScheduledMessageStatuses.PAUSED,
@@ -69,7 +70,7 @@ export class ScheduledMessagesService {
 
   async create(params: CreateScheduledMessageParams): Promise<ScheduledMessageView> {
     const scheduledAt = clampToNow(params.scheduledAt)
-    const contentMarkdown = params.contentMarkdown ?? serializeToMarkdown(params.contentJson)
+    const contentMarkdown = serializeToMarkdown(params.contentJson)
 
     return withTransaction(this.pool, async (client) => {
       const stream = await this.streamService.resolveWritableMessageStream({
@@ -102,6 +103,13 @@ export class ScheduledMessagesService {
   }
 
   async update(params: UpdateScheduledMessageParams): Promise<ScheduledMessageView> {
+    if (params.contentMarkdown !== undefined && params.contentJson === undefined) {
+      throw new HttpError("contentJson is required when changing scheduled message content", {
+        status: 400,
+        code: "SCHEDULED_CONTENT_JSON_REQUIRED",
+      })
+    }
+
     return withTransaction(this.pool, async (client) => {
       const existing = await this.getMutable(client, params.workspaceId, params.userId, params.scheduledId)
       if (params.expectedVersion !== undefined && existing.version !== params.expectedVersion) {
@@ -122,9 +130,7 @@ export class ScheduledMessagesService {
         params.scheduledId,
         {
           contentJson: params.contentJson,
-          contentMarkdown: params.contentJson
-            ? (params.contentMarkdown ?? serializeToMarkdown(params.contentJson))
-            : params.contentMarkdown,
+          contentMarkdown: params.contentJson ? serializeToMarkdown(params.contentJson) : undefined,
           attachmentIds: params.attachmentIds,
           scheduledAt: params.scheduledAt ? clampToNow(params.scheduledAt) : undefined,
           status: nextStatus,
@@ -208,8 +214,10 @@ export class ScheduledMessagesService {
   }
 
   async fireDue(params: { scheduledId: string }): Promise<{ fired: boolean }> {
+    const now = new Date()
+    const staleBefore = new Date(now.getTime() - FIRING_LEASE_MS)
     const claimed = await withTransaction(this.pool, async (client) =>
-      ScheduledMessagesRepository.claimDueForFire(client, params.scheduledId, new Date())
+      ScheduledMessagesRepository.claimDueForFire(client, params.scheduledId, now, staleBefore)
     )
     if (!claimed) return { fired: false }
 

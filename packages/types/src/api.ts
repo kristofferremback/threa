@@ -752,7 +752,7 @@ export interface SavedReminderFiredPayload {
 export interface ScheduledMessageView {
   id: string
   workspaceId: string
-  userId: string
+  userId: UserId
   streamId: string
   status: ScheduledMessageStatus
   scheduledAt: string
@@ -789,21 +789,21 @@ export interface UpdateScheduledMessageInput {
   attachmentIds?: string[]
   scheduledAt?: string
   status?: Extract<ScheduledMessageStatus, "scheduled" | "paused">
-  expectedVersion?: number
+  expectedVersion: number
 }
 
 export interface ScheduledMessageVersionInput {
-  expectedVersion?: number
+  expectedVersion: number
 }
 
 export interface ScheduledMessageUpsertedPayload {
   workspaceId: string
-  targetUserId: string
+  targetUserId: UserId
   scheduled: ScheduledMessageView
 }
 
 export interface ScheduledMessageDeletedPayload {
   workspaceId: string
-  targetUserId: string
+  targetUserId: UserId
   scheduledId: string
 }

@@ -12,7 +12,7 @@ export async function resolveScheduledView(db: Querier, rows: ScheduledMessage[]
   return rows.map((row) => ({
     id: row.id,
     workspaceId: row.workspaceId,
-    userId: row.userId,
+    userId: row.userId as ScheduledMessageView["userId"],
     streamId: row.streamId,
     status: row.status,
     scheduledAt: row.scheduledAt.toISOString(),

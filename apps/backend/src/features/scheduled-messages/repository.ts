@@ -18,6 +18,7 @@ interface ScheduledMessageRow {
   sent_message_id: string | null
   edit_previous_status: string | null
   version: number
+  firing_started_at: Date | null
   sent_at: Date | null
   deleted_at: Date | null
   failed_at: Date | null
@@ -41,6 +42,7 @@ export interface ScheduledMessage {
   sentMessageId: string | null
   editPreviousStatus: ScheduledMessageStatus | null
   version: number
+  firingStartedAt: Date | null
   sentAt: Date | null
   deletedAt: Date | null
   failedAt: Date | null
@@ -74,7 +76,7 @@ const COLUMNS = sql.raw(`
   id, workspace_id, user_id, stream_id, status, scheduled_at, content_json,
   content_markdown, attachment_ids, client_message_id, queue_message_id,
   sent_message_id, edit_previous_status, version, sent_at, deleted_at,
-  failed_at, failure_reason, created_at, updated_at
+  firing_started_at, failed_at, failure_reason, created_at, updated_at
 `)
 
 function mapRow(row: ScheduledMessageRow): ScheduledMessage {
@@ -93,6 +95,7 @@ function mapRow(row: ScheduledMessageRow): ScheduledMessage {
     sentMessageId: row.sent_message_id,
     editPreviousStatus: row.edit_previous_status as ScheduledMessageStatus | null,
     version: row.version,
+    firingStartedAt: row.firing_started_at,
     sentAt: row.sent_at,
     deletedAt: row.deleted_at,
     failedAt: row.failed_at,
@@ -160,6 +163,7 @@ export const ScheduledMessagesRepository = {
         status = COALESCE(${params.status ?? null}, status),
         queue_message_id = ${params.queueMessageId === undefined ? sql.raw("queue_message_id") : params.queueMessageId},
         edit_previous_status = NULL,
+        firing_started_at = NULL,
         version = version + 1,
         updated_at = NOW(),
         failed_at = NULL,
@@ -201,6 +205,7 @@ export const ScheduledMessagesRepository = {
         status = ${ScheduledMessageStatuses.EDITING},
         edit_previous_status = status,
         queue_message_id = NULL,
+        firing_started_at = NULL,
         version = version + 1,
         updated_at = NOW()
       WHERE id = ${id}
@@ -225,6 +230,7 @@ export const ScheduledMessagesRepository = {
       SET
         status = ${ScheduledMessageStatuses.DELETED},
         queue_message_id = NULL,
+        firing_started_at = NULL,
         deleted_at = NOW(),
         version = version + 1,
         updated_at = NOW()
@@ -238,13 +244,19 @@ export const ScheduledMessagesRepository = {
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
-  async claimDueForFire(db: Querier, id: string, now: Date): Promise<ScheduledMessage | null> {
+  async claimDueForFire(db: Querier, id: string, now: Date, staleBefore: Date): Promise<ScheduledMessage | null> {
     const result = await db.query<ScheduledMessageRow>(sql`
       UPDATE scheduled_messages
-      SET status = ${ScheduledMessageStatuses.FIRING}, version = version + 1, updated_at = NOW()
+      SET
+        status = ${ScheduledMessageStatuses.FIRING},
+        firing_started_at = ${now},
+        version = version + 1,
+        updated_at = NOW()
       WHERE id = ${id}
-        AND status = ${ScheduledMessageStatuses.SCHEDULED}
-        AND scheduled_at <= ${now}
+        AND (
+          (status = ${ScheduledMessageStatuses.SCHEDULED} AND scheduled_at <= ${now})
+          OR (status = ${ScheduledMessageStatuses.FIRING} AND firing_started_at <= ${staleBefore})
+        )
       RETURNING ${COLUMNS}
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null
@@ -258,6 +270,7 @@ export const ScheduledMessagesRepository = {
         sent_message_id = ${sentMessageId},
         sent_at = NOW(),
         queue_message_id = NULL,
+        firing_started_at = NULL,
         version = version + 1,
         updated_at = NOW()
       WHERE id = ${id}
@@ -275,6 +288,7 @@ export const ScheduledMessagesRepository = {
         failed_at = NOW(),
         failure_reason = ${reason},
         queue_message_id = NULL,
+        firing_started_at = NULL,
         version = version + 1,
         updated_at = NOW()
       WHERE id = ${id}

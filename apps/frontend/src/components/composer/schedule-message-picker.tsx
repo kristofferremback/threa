@@ -140,18 +140,18 @@ function ScheduleOptions({ onSchedule }: { onSchedule: (date: Date) => void }) {
   const [customOpen, setCustomOpen] = useState(false)
   const [customDate, setCustomDate] = useState("")
   const [customTime, setCustomTime] = useState("")
-  const minDate = useMemo(() => toDateInput(new Date()), [customOpen])
+  const minDate = useMemo(() => toDateInput(new Date(), timezone), [customOpen, timezone])
 
   const openCustom = () => {
     const baseline = new Date(Date.now() + 15 * 60_000)
-    setCustomDate(toDateInput(baseline))
-    setCustomTime(toTimeInput(baseline))
+    setCustomDate(toDateInput(baseline, timezone))
+    setCustomTime(toTimeInput(baseline, timezone))
     setCustomOpen(true)
   }
 
   const handleCustom = () => {
     if (!customDate || !customTime) return
-    const parsed = new Date(`${customDate}T${customTime}`)
+    const parsed = buildZonedDateTime(customDate, customTime, timezone)
     if (isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
       toast.error("Choose a future time")
       return
@@ -184,6 +184,7 @@ function ScheduleOptions({ onSchedule }: { onSchedule: (date: Date) => void }) {
         <div className="grid grid-cols-[1fr_92px_auto] gap-2 p-2">
           <input
             type="date"
+            aria-label="Custom date"
             value={customDate}
             min={minDate}
             onChange={(e) => setCustomDate(e.target.value)}
@@ -191,6 +192,7 @@ function ScheduleOptions({ onSchedule }: { onSchedule: (date: Date) => void }) {
           />
           <input
             type="time"
+            aria-label="Custom time"
             value={customTime}
             onChange={(e) => setCustomTime(e.target.value)}
             className="rounded border bg-background px-2 py-1.5 text-sm"
@@ -210,18 +212,18 @@ function ScheduleSheetOptions({ onSchedule }: { onSchedule: (date: Date) => void
   const [mode, setMode] = useState<"presets" | "custom">("presets")
   const [customDate, setCustomDate] = useState("")
   const [customTime, setCustomTime] = useState("")
-  const minDate = useMemo(() => toDateInput(new Date()), [mode])
+  const minDate = useMemo(() => toDateInput(new Date(), timezone), [mode, timezone])
 
   const openCustom = () => {
     const baseline = new Date(Date.now() + 15 * 60_000)
-    setCustomDate(toDateInput(baseline))
-    setCustomTime(toTimeInput(baseline))
+    setCustomDate(toDateInput(baseline, timezone))
+    setCustomTime(toTimeInput(baseline, timezone))
     setMode("custom")
   }
 
   const handleCustom = () => {
     if (!customDate || !customTime) return
-    const parsed = new Date(`${customDate}T${customTime}`)
+    const parsed = buildZonedDateTime(customDate, customTime, timezone)
     if (isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
       toast.error("Choose a future time")
       return
@@ -327,12 +329,59 @@ function ScheduleMenuButton({
   )
 }
 
-function toDateInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
+function toDateInput(date: Date, timezone?: string): string {
+  if (timezone) {
+    const parts = partsInZone(date, timezone)
+    return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`
+  }
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
-function toTimeInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
+function toTimeInput(date: Date, timezone?: string): string {
+  if (timezone) {
+    const parts = partsInZone(date, timezone)
+    return `${pad(parts.hour)}:${pad(parts.minute)}`
+  }
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function buildZonedDateTime(date: string, time: string, timezone: string): Date {
+  const [year, month, day] = date.split("-").map(Number)
+  const [hour, minute] = time.split(":").map(Number)
+  if (!year || !month || !day || hour === undefined || minute === undefined) return new Date(Number.NaN)
+
+  let candidate = new Date(Date.UTC(year, month - 1, day, hour, minute))
+  const offset1 = localAsUtc(candidate, timezone).getTime() - candidate.getTime()
+  candidate = new Date(candidate.getTime() - offset1)
+  const offset2 = localAsUtc(candidate, timezone).getTime() - candidate.getTime()
+  return offset2 === 0 ? candidate : new Date(candidate.getTime() - offset2)
+}
+
+function localAsUtc(date: Date, timezone: string): Date {
+  const parts = partsInZone(date, timezone)
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute))
+}
+
+function partsInZone(date: Date, timezone: string) {
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date)
+  const get = (type: string) => Number(formatted.find((part) => part.type === type)?.value ?? 0)
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour"),
+    minute: get("minute"),
+  }
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0")
 }
