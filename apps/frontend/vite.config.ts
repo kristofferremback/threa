@@ -101,6 +101,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    // The editor syntax-highlighting grammars intentionally produce a few large lazy chunks.
+    chunkSizeWarningLimit: 1200,
+  },
   test: {
     globals: true,
     environment: "jsdom",

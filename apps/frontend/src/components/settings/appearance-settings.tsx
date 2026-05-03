@@ -3,7 +3,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import {
   THEME_OPTIONS,
   MESSAGE_DISPLAY_OPTIONS,

@@ -1,5 +1,6 @@
 import Dexie from "dexie"
 import { useLiveQuery } from "dexie-react-hooks"
+import { registerCacheReset } from "@/db/cache-reset-registry"
 import { db, type CachedEvent, type CachedStream } from "@/db"
 
 /**
@@ -11,6 +12,8 @@ const DEFAULT_IDB_EVENT_LIMIT = 150
 
 /** No-op — the in-memory event cache has been removed. Kept for clearAllCachedData compat. */
 export function resetStreamStoreCache(): void {}
+
+registerCacheReset(resetStreamStoreCache)
 
 /**
  * Read events for a stream from IndexedDB, sorted ASC by `_sequenceNum`.

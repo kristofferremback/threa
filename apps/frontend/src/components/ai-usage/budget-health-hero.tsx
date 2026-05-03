@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import { cn } from "@/lib/utils"
 import { formatCurrency, formatShortDate, statusStyles, type BudgetMetrics } from "./metrics"
 import { Stat } from "./primitives"

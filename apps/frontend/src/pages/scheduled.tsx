@@ -12,7 +12,7 @@ import {
   useScheduledMessagesList,
   useSendScheduledMessageNow,
   useUpdateScheduledMessage,
-} from "@/hooks"
+} from "@/hooks/use-scheduled-messages"
 import { useAttachments } from "@/hooks/use-attachments"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -33,7 +33,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { MessageComposer } from "@/components/composer"
 import { formatRelativeTime } from "@/lib/dates"
 import { stripMarkdownToInline } from "@/lib/markdown"
+import { getStreamName, resolveDmDisplayName, streamFallbackLabel } from "@/lib/streams"
 import { cn } from "@/lib/utils"
+import { useWorkspaceDmPeers, useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
 import { extractUploadedAttachments, materializePendingAttachmentReferences } from "@/components/timeline/message-input"
 
 type ScheduledTab = "scheduled" | "sent"
@@ -62,6 +64,9 @@ function ScheduledPageInner({ workspaceId, tab }: { workspaceId: string; tab: Sc
   const resumeMutation = useResumeScheduledMessage(workspaceId)
   const sendNowMutation = useSendScheduledMessageNow(workspaceId)
   const deleteMutation = useDeleteScheduledMessage(workspaceId)
+  const streams = useWorkspaceStreams(workspaceId)
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const dmPeers = useWorkspaceDmPeers(workspaceId)
 
   const visibleItems = useMemo(
     () =>
@@ -70,7 +75,14 @@ function ScheduledPageInner({ workspaceId, tab }: { workspaceId: string; tab: Sc
       ),
     [items, tab]
   )
-  const groups = useMemo(() => groupByStream(visibleItems), [visibleItems])
+  const streamLabels = useMemo(() => {
+    const labels = new Map<string, string>()
+    for (const item of visibleItems) {
+      labels.set(item.streamId, resolveScheduledStreamLabel(item, streams, workspaceUsers, dmPeers))
+    }
+    return labels
+  }, [visibleItems, streams, workspaceUsers, dmPeers])
+  const groups = useMemo(() => groupByStream(visibleItems, streamLabels), [visibleItems, streamLabels])
 
   const runAction = useCallback(
     async (item: ScheduledMessageView, action: () => Promise<unknown>, success: string) => {
@@ -110,6 +122,7 @@ function ScheduledPageInner({ workspaceId, tab }: { workspaceId: string; tab: Sc
                 <ScheduledRow
                   key={item.id}
                   item={item}
+                  streamLabel={streamLabels.get(item.streamId) ?? "Conversation"}
                   workspaceId={workspaceId}
                   disabled={inFlightId === item.id}
                   onEdit={() => setEditingItem(item)}
@@ -189,7 +202,12 @@ function ScheduledPageInner({ workspaceId, tab }: { workspaceId: string; tab: Sc
       </ScrollArea>
 
       {editingItem && (
-        <ScheduledEditDialog workspaceId={workspaceId} item={editingItem} onClose={() => setEditingItem(null)} />
+        <ScheduledEditDialog
+          workspaceId={workspaceId}
+          item={editingItem}
+          streamLabel={streamLabels.get(editingItem.streamId) ?? "Conversation"}
+          onClose={() => setEditingItem(null)}
+        />
       )}
     </div>
   )
@@ -197,6 +215,7 @@ function ScheduledPageInner({ workspaceId, tab }: { workspaceId: string; tab: Sc
 
 function ScheduledRow({
   item,
+  streamLabel,
   workspaceId,
   disabled,
   onEdit,
@@ -206,6 +225,7 @@ function ScheduledRow({
   onDelete,
 }: {
   item: ScheduledMessageView
+  streamLabel: string
   workspaceId: string
   disabled: boolean
   onEdit: () => void
@@ -286,6 +306,7 @@ function ScheduledRow({
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
           item={item}
+          streamLabel={streamLabel}
           disabled={disabled}
           onEdit={() => handleAction(onEdit)}
           onPause={() => handleAction(onPause)}
@@ -302,6 +323,7 @@ function ScheduledActionDrawer({
   open,
   onOpenChange,
   item,
+  streamLabel,
   disabled,
   onEdit,
   onPause,
@@ -312,6 +334,7 @@ function ScheduledActionDrawer({
   open: boolean
   onOpenChange: (open: boolean) => void
   item: ScheduledMessageView
+  streamLabel: string
   disabled: boolean
   onEdit: () => void
   onPause: () => void
@@ -326,7 +349,7 @@ function ScheduledActionDrawer({
 
         <div className="px-4 pt-1 pb-3">
           <div className="rounded-xl bg-muted/60 px-3.5 py-2.5">
-            <p className="mb-1 text-sm font-medium text-foreground">{item.streamName ?? "Conversation"}</p>
+            <p className="mb-1 text-sm font-medium text-foreground">{streamLabel}</p>
             <p className="mb-1 text-[13px] text-muted-foreground">{timestampLabel(item)}</p>
             <p className="line-clamp-3 text-sm leading-snug text-foreground/80">{preview(item)}</p>
           </div>
@@ -380,10 +403,12 @@ function DrawerAction({
 function ScheduledEditDialog({
   workspaceId,
   item,
+  streamLabel,
   onClose,
 }: {
   workspaceId: string
   item: ScheduledMessageView
+  streamLabel: string
   onClose: () => void
 }) {
   const updateMutation = useUpdateScheduledMessage(workspaceId)
@@ -548,9 +573,7 @@ function ScheduledEditDialog({
       <ResponsiveDialogContent desktopClassName="max-w-2xl" drawerClassName="max-h-[92dvh]">
         <ResponsiveDialogHeader className="border-b px-4 py-3 sm:px-0 sm:pb-3 sm:pt-0">
           <ResponsiveDialogTitle className="text-base">Edit scheduled message</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription className="text-xs">
-            {item.streamName ?? "Conversation"}
-          </ResponsiveDialogDescription>
+          <ResponsiveDialogDescription className="text-xs">{streamLabel}</ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
         <div className="flex flex-col gap-3 px-4 py-3 sm:px-0">
@@ -621,7 +644,8 @@ function isMutableScheduledMessage(item: ScheduledMessageView): boolean {
 }
 
 function groupByStream(
-  items: ScheduledMessageView[]
+  items: ScheduledMessageView[],
+  streamLabels: Map<string, string>
 ): Array<{ key: string; label: string; items: ScheduledMessageView[] }> {
   const groups = new Map<string, { key: string; label: string; items: ScheduledMessageView[] }>()
   for (const item of items) {
@@ -633,11 +657,28 @@ function groupByStream(
     }
     groups.set(key, {
       key,
-      label: item.streamName ?? "Conversation",
+      label: streamLabels.get(key) ?? "Conversation",
       items: [item],
     })
   }
   return [...groups.values()]
+}
+
+function resolveScheduledStreamLabel(
+  item: ScheduledMessageView,
+  streams: ReturnType<typeof useWorkspaceStreams>,
+  workspaceUsers: ReturnType<typeof useWorkspaceUsers>,
+  dmPeers: ReturnType<typeof useWorkspaceDmPeers>
+): string {
+  const stream = streams.find((candidate) => candidate.id === item.streamId)
+  if (!stream) return item.streamName ?? "Conversation"
+
+  if (stream.type === "dm") {
+    const dmName = resolveDmDisplayName(stream.id, workspaceUsers, dmPeers)
+    if (dmName) return dmName
+  }
+
+  return getStreamName(stream) ?? item.streamName ?? streamFallbackLabel(stream.type, "generic")
 }
 
 async function retryScheduledEditLock(lock: () => Promise<ScheduledMessageView>, attempts: number) {

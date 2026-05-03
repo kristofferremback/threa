@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from "react"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import {
   SHORTCUT_ACTIONS,
   matchesKeyBinding,

@@ -22,7 +22,7 @@ import {
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import { getEffectiveEditorBindings } from "@/lib/keyboard-shortcuts"
 import type { UploadResult } from "@/hooks/use-attachments"
 import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"

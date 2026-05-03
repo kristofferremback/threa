@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { RotateCcw } from "lucide-react"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import {
   SHORTCUT_ACTIONS,
   getShortcutsByCategory,

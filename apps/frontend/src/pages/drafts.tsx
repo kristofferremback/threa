@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/responsive-alert-dialog"
 import { ItemList, type QuickSwitcherItem } from "@/components/quick-switcher"
 import { SidebarToggle } from "@/components/layout"
-import { useAllDrafts, type UnifiedDraft, type DraftType } from "@/hooks"
+import { useAllDrafts, type DraftType, type UnifiedDraft } from "@/hooks/use-all-drafts"
 
 const TYPE_ICONS: Record<DraftType, React.ComponentType<{ className?: string }>> = {
   scratchpad: FileText,

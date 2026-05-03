@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from "dexie"
+import { resetRegisteredCaches } from "./cache-reset-registry"
 import type {
   AuthorType,
   CompanionMode,
@@ -712,14 +713,7 @@ export async function clearAllCachedData(): Promise<void> {
       // Note: we keep pendingMessages to retry sending after re-login
     ])
   } finally {
-    const [{ resetWorkspaceStoreCache }, { resetStreamStoreCache }, { resetDraftStoreCache }] = await Promise.all([
-      import("@/stores/workspace-store"),
-      import("@/stores/stream-store"),
-      import("@/stores/draft-store"),
-    ])
-    resetWorkspaceStoreCache()
-    resetStreamStoreCache()
-    resetDraftStoreCache()
+    resetRegisteredCaches()
   }
 }
 

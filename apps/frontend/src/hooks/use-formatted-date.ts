@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import { formatDisplayDate, formatTime, formatRelativeTime, formatFullDateTime } from "@/lib/dates"
 
 /**

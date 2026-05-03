@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
-import { useCoordinatedLoading, useSocketStatus } from "@/contexts"
+import { useCoordinatedLoading } from "@/contexts/coordinated-loading-context"
+import { useSocketStatus } from "@/contexts/socket-context"
 import { usePageActivity } from "@/hooks/use-page-activity"
 import { WifiOff, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"

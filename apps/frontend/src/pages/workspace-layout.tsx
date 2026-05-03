@@ -14,40 +14,30 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import { MentionableMarkdownWrapper, type MentionableMarkdownWrapperProps } from "@/components/ui/markdown-content"
 import type { MentionType } from "@/lib/markdown/mention-context"
-import { UserProfileProvider, useUserProfile } from "@/components/user-profile"
+import { UserProfileProvider, useUserProfile } from "@/components/user-profile/user-profile-context"
 import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
 import { WorkspaceCommandListProvider } from "@/components/workspace-command-list"
 import { ChannelLinkProvider } from "@/lib/markdown/channel-link-context"
 import {
-  SocketProvider,
-  useSocket,
-  useSocketReconnectCount,
-  useSocketStatus,
-  useWorkspaceService,
-  useStreamService,
-  useMessageService,
-  PanelProvider,
-  QuickSwitcherProvider,
-  PreferencesProvider,
-  SettingsProvider,
-  useSettings,
-  CoordinatedLoadingProvider,
   CoordinatedLoadingGate,
+  CoordinatedLoadingProvider,
   MainContentGate,
-  SidebarProvider,
-  useSidebar,
-  TraceProvider,
-  useTrace,
-  MediaGalleryProvider,
-} from "@/contexts"
-import {
-  useKeyboardShortcuts,
-  useMentionables,
-  usePersistLastStream,
-  useAppUpdate,
-  useMessageQueue,
-  useUnreadTabIndicator,
-} from "@/hooks"
+} from "@/contexts/coordinated-loading-context"
+import { MediaGalleryProvider } from "@/contexts/media-gallery-context"
+import { PanelProvider } from "@/contexts/panel-context"
+import { PreferencesProvider } from "@/contexts/preferences-context"
+import { QuickSwitcherProvider } from "@/contexts/quick-switcher-context"
+import { useMessageService, useStreamService, useWorkspaceService } from "@/contexts/services-context"
+import { SettingsProvider, useSettings } from "@/contexts/settings-context"
+import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context"
+import { SocketProvider, useSocket, useSocketReconnectCount, useSocketStatus } from "@/contexts/socket-context"
+import { TraceProvider, useTrace } from "@/contexts/trace-context"
+import { useAppUpdate } from "@/hooks/use-app-update"
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
+import { useMentionables } from "@/hooks/use-mentionables"
+import { useMessageQueue } from "@/hooks/use-message-queue"
+import { usePersistLastStream } from "@/hooks/use-last-stream"
+import { useUnreadTabIndicator } from "@/hooks/use-unread-tab-indicator"
 import { usePageResume } from "@/hooks/use-page-resume"
 import { useAuth } from "@/auth"
 import { useWorkspaceStreams } from "@/stores/workspace-store"

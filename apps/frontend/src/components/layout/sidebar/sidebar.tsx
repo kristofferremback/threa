@@ -3,15 +3,13 @@ import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { useAuth } from "@/auth"
-import {
-  useActivityCounts,
-  useAllDrafts,
-  createDmDraftId,
-  useDraftScratchpads,
-  useLiveSavedCount,
-  useScheduledMessagesCount,
-  useUnreadCounts,
-} from "@/hooks"
+import { useActivityCounts } from "@/hooks/use-activity-counts"
+import { useAllDrafts } from "@/hooks/use-all-drafts"
+import { createDmDraftId } from "@/hooks/use-stream-or-draft"
+import { useDraftScratchpads } from "@/hooks/use-draft-scratchpads"
+import { useLiveSavedCount } from "@/hooks/use-saved"
+import { useScheduledMessagesCount } from "@/hooks/use-scheduled-messages"
+import { useUnreadCounts } from "@/hooks/use-unread-counts"
 import { useSyncStatus } from "@/sync/sync-status"
 import { useSyncEngine } from "@/sync/sync-engine"
 import {
@@ -22,7 +20,8 @@ import {
   useWorkspaceFromStore,
   useWorkspaceUnreadState,
 } from "@/stores/workspace-store"
-import { useCoordinatedLoading, useSidebar } from "@/contexts"
+import { useCoordinatedLoading } from "@/contexts/coordinated-loading-context"
+import { useSidebar } from "@/contexts/sidebar-context"
 import { useCreateChannel } from "@/components/create-channel"
 import { Button } from "@/components/ui/button"
 import { SidebarShell } from "./sidebar-shell"

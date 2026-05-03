@@ -4,25 +4,22 @@ import { Virtuoso } from "react-virtuoso"
 import { MessageSquare, ArrowDown, X, Move, Loader2, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
-import {
-  useEvents,
-  useStreamSocket,
-  useVirtuosoScroll,
-  useScrollBehavior,
-  useStreamBootstrap,
-  useWorkspaceUserId,
-  useAutoMarkAsRead,
-  useUnreadDivider,
-  useNewMessageIndicator,
-  useAgentActivity,
-  useAbortResearch,
-  useEditLastMessageTrigger,
-  useKeyboardShortcuts,
-  streamKeys,
-  workspaceKeys,
-} from "@/hooks"
-import { useSocket, useCoordinatedLoading } from "@/contexts"
-import { useMessageService } from "@/contexts"
+import { useCoordinatedLoading } from "@/contexts/coordinated-loading-context"
+import { useMessageService } from "@/contexts/services-context"
+import { useSocket } from "@/contexts/socket-context"
+import { useAbortResearch } from "@/hooks/use-abort-research"
+import { useAgentActivity } from "@/hooks/use-agent-activity"
+import { useAutoMarkAsRead } from "@/hooks/use-auto-mark-as-read"
+import { useEditLastMessageTrigger } from "@/hooks/use-edit-last-message-trigger"
+import { useEvents } from "@/hooks/use-events"
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
+import { useNewMessageIndicator } from "@/hooks/use-new-message-indicator"
+import { useScrollBehavior } from "@/hooks/use-scroll-behavior"
+import { useStreamBootstrap, streamKeys } from "@/hooks/use-streams"
+import { useStreamSocket } from "@/hooks/use-stream-socket"
+import { useUnreadDivider } from "@/hooks/use-unread-divider"
+import { useVirtuosoScroll } from "@/hooks/use-virtuoso-scroll"
+import { useWorkspaceUserId, workspaceKeys } from "@/hooks/use-workspaces"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
 import { useUser } from "@/auth"

@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { useCoordinatedLoading } from "@/contexts"
+import { useCoordinatedLoading } from "@/contexts/coordinated-loading-context"
 import { ApiError } from "@/api/client"
 import { useSyncError } from "@/sync/sync-status"
 

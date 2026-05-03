@@ -11,9 +11,10 @@ import {
   type CommandCompletedPayload,
   type CommandFailedPayload,
 } from "@threa/types"
-import type { MessageAgentActivity } from "@/hooks"
-import { useSocket, useCoordinatedLoading } from "@/contexts"
-import { useAbortResearch } from "@/hooks"
+import { useCoordinatedLoading } from "@/contexts/coordinated-loading-context"
+import { useSocket } from "@/contexts/socket-context"
+import { useAbortResearch } from "@/hooks/use-abort-research"
+import type { MessageAgentActivity } from "@/hooks/use-agent-activity"
 import { EventItem } from "./event-item"
 import { AgentSessionEvent } from "./agent-session-event"
 import { CommandEvent } from "./command-event"

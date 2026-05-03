@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ReferenceDot, ReferenceLine, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import { cn } from "@/lib/utils"
 import { formatCurrency, formatShortDate, MS_PER_DAY, statusStyles, type BudgetMetrics } from "./metrics"
 

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import type { ThreadSummary } from "@threa/types"
-import { getStepLabel, type MessageAgentActivity } from "@/hooks"
-import { useTrace } from "@/contexts"
+import { useTrace } from "@/contexts/trace-context"
+import { getStepLabel, type MessageAgentActivity } from "@/hooks/use-agent-activity"
 import { cn } from "@/lib/utils"
 import { ThreadCard } from "./thread-card"
 
@@ -100,7 +100,7 @@ export function ThreadSlot({ activity, replyCount, threadHref, summary, workspac
           snap to the final rows without transition, which matches previous
           behavior. */}
       <div
-        className="grid transition-[grid-template-rows] duration-[450ms] ease-out"
+        className="grid transition-[grid-template-rows] [transition-duration:450ms] ease-out"
         style={{
           gridTemplateRows: hasThread ? "0fr 1fr" : "1fr 0fr",
         }}

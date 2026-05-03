@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Bell, BellOff } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatFutureTime } from "@/lib/dates"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 
 interface ReminderBadgeProps {
   /** ISO date string; null when no reminder is set. */

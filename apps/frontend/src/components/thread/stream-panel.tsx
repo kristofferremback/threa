@@ -12,16 +12,16 @@ import {
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { SidebarActionDrawer, type SidebarActionItem } from "@/components/layout/sidebar/sidebar-actions"
-import {
-  useStreamBootstrap,
-  useDraftComposer,
-  getDraftMessageKey,
-  useThreadAncestors,
-  useQueueDraftMessage,
-  useComposerHeightPublish,
-  useStashComposer,
-} from "@/hooks"
-import { useCoordinatedLoading, usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
+import { useDraftComposer } from "@/hooks/use-draft-composer"
+import { getDraftMessageKey } from "@/hooks/use-draft-message"
+import { useComposerHeightPublish } from "@/hooks/use-composer-height-publish"
+import { useQueueDraftMessage } from "@/hooks/use-queue-draft-message"
+import { useStashComposer } from "@/hooks/use-stash-composer"
+import { useStreamBootstrap } from "@/hooks/use-streams"
+import { useThreadAncestors } from "@/hooks/use-thread-ancestors"
+import { useCoordinatedLoading } from "@/contexts/coordinated-loading-context"
+import { isDraftPanel, parseDraftPanel, usePanel } from "@/contexts/panel-context"
+import { useSidebar } from "@/contexts/sidebar-context"
 import { useUser } from "@/auth"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams } from "@/stores/workspace-store"

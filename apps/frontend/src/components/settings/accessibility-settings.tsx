@@ -2,7 +2,7 @@ import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import { FONT_SIZE_OPTIONS, FONT_FAMILY_OPTIONS, type FontSize, type FontFamily } from "@threa/types"
 
 const FONT_SIZE_LABELS: Record<FontSize, string> = {

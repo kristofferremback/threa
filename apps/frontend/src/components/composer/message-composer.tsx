@@ -12,7 +12,7 @@ import {
 } from "react"
 import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2, Save } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { usePreferencesOptional } from "@/contexts"
+import { usePreferencesOptional } from "@/contexts/preferences-context"
 import { getEffectiveKeyBinding, matchesKeyBinding } from "@/lib/keyboard-shortcuts"
 import { RichEditor, EditorToolbar, EditorActionBar } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"

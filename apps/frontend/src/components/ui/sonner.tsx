@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react"
 import { CircleCheck, Info, LoaderCircle, OctagonX, TriangleAlert } from "lucide-react"
 import { SonnerRoot as Sonner, toast, useSonner, type ToastT } from "@/lib/sonner-module"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import { useIsMobile } from "@/hooks/use-mobile"
 
 type ToasterProps = React.ComponentProps<typeof Sonner>

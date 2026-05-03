@@ -7,7 +7,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { usePreferences, useSettings } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
+import { useSettings } from "@/contexts/settings-context"
 import type { Theme } from "@threa/types"
 
 export function ThemeDropdown() {

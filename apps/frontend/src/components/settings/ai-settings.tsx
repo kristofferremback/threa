@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { serializeToMarkdown, parseMarkdown } from "@/components/editor/editor-markdown"
 import { EditorActionBar, RichEditor, type RichEditorHandle } from "@/components/editor"
 import { Button } from "@/components/ui/button"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import { useIsMobile } from "@/hooks/use-mobile"
 import type { JSONContent } from "@threa/types"
 

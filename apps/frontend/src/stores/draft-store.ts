@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 import { useLiveQuery } from "dexie-react-hooks"
+import { registerCacheReset } from "@/db/cache-reset-registry"
 import { db, type DraftMessage, type DraftScratchpad } from "@/db"
 
 const cache = {
@@ -73,6 +74,8 @@ export function resetDraftStoreCache(): void {
     emitDraftCacheChange(workspaceId)
   }
 }
+
+registerCacheReset(resetDraftStoreCache)
 
 export function seedDraftCache(
   workspaceId: string,

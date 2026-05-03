@@ -40,7 +40,7 @@ import {
   toggleMultilineBlock,
 } from "./multiline-blocks"
 import { cn } from "@/lib/utils"
-import { usePreferences } from "@/contexts"
+import { usePreferences } from "@/contexts/preferences-context"
 import { getEffectiveEditorBindings, formatKeyBinding } from "@/lib/keyboard-shortcuts"
 
 interface DocumentEditorModalProps {

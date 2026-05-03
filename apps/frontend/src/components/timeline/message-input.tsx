@@ -10,18 +10,18 @@ import {
   useStreamBootstrap,
   useStashComposer,
   useCreateScheduledMessage,
-  useUpdateScheduledMessage,
   useScheduledMessagesList,
   useEditLockScheduledMessage,
   usePauseScheduledMessage,
   useResumeScheduledMessage,
   useSendScheduledMessageNow,
   useDeleteScheduledMessage,
+  useUpdateScheduledMessage,
 } from "@/hooks"
 import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { usePreferences } from "@/contexts"
+import { usePreferencesOptional } from "@/contexts/preferences-context"
 import { useConnectionState } from "@/components/layout/connection-status"
 import {
   FloatingComposerShell,
@@ -230,7 +230,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const scrollToMessage = editLastCtx?.scrollToMessage
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { preferences } = usePreferences()
+  const preferencesContext = usePreferencesOptional()
+  const preferences = preferencesContext?.preferences ?? null
   const { stream, sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })

@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/responsive-dialog"
 import { ResponsiveSettingsNav, SETTINGS_DIALOG_LAYOUT_CLASSNAMES } from "@/components/ui/responsive-settings-nav"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
-import { useSettings } from "@/contexts"
+import { useSettings } from "@/contexts/settings-context"
 import { SETTINGS_TABS, type SettingsTab } from "@threa/types"
 import { AISettings } from "./ai-settings"
 import { ProfileSettings } from "./profile-settings"

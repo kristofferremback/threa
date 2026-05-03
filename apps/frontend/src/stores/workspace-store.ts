@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 import { useLiveQuery } from "dexie-react-hooks"
+import { registerCacheReset } from "@/db/cache-reset-registry"
 import {
   db,
   type CachedWorkspace,
@@ -112,6 +113,8 @@ export function resetWorkspaceStoreCache(): void {
     emitWorkspaceCacheChange(workspaceId)
   }
 }
+
+registerCacheReset(resetWorkspaceStoreCache)
 
 /**
  * Prime the in-memory cache from IndexedDB. Called on workspace layout mount

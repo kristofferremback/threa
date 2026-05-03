@@ -16,21 +16,20 @@ import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-co
 import { MessageContextBadge } from "@/components/composer"
 import { RelativeTime } from "@/components/relative-time"
 import { ActorAvatar } from "@/components/actor-avatar"
-import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
-import { useUserProfile } from "@/components/user-profile"
+import { useMessageService } from "@/contexts/services-context"
+import { createDraftPanelId, usePanel } from "@/contexts/panel-context"
+import { usePendingMessages } from "@/contexts/pending-messages-context"
+import { useTrace } from "@/contexts/trace-context"
+import { useUserProfile } from "@/components/user-profile/user-profile-context"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
 import { useMessageMarkdownCopy } from "@/hooks/use-message-markdown-copy"
 import { useEditLastMessage } from "./edit-last-message-context"
-import {
-  useActors,
-  useMovedTombstone,
-  useWorkspaceUserId,
-  useMessageReactions,
-  stripColons,
-  reactionShortcodes,
-  focusAtEnd,
-  type MessageAgentActivity,
-} from "@/hooks"
+import { useActors } from "@/hooks/use-actors"
+import { focusAtEnd } from "@/hooks/use-type-to-focus"
+import { useMovedTombstone } from "@/hooks/use-moved-tombstone"
+import { reactionShortcodes, stripColons, useMessageReactions } from "@/hooks/use-message-reactions"
+import { useWorkspaceUserId } from "@/hooks/use-workspaces"
+import type { MessageAgentActivity } from "@/hooks/use-agent-activity"
 import { Quote, MessageSquareReply, Check } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
