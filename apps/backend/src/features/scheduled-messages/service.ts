@@ -124,6 +124,18 @@ export class ScheduledMessagesService {
             code: "SCHEDULED_MESSAGE_PARENT_UNAVAILABLE",
           })
         }
+        // Workspace-scope check (INV-8): MessageRepository.findById is keyed
+        // by the message PK alone, so we must verify the parent belongs to
+        // the caller's workspace via its stream. Without this, a caller could
+        // attach a foreign workspace's message id and the row would be
+        // accepted (and silently leak workspace boundaries at fire time).
+        const parentStream = await StreamRepository.findById(client, parent.streamId)
+        if (!parentStream || parentStream.workspaceId !== params.workspaceId) {
+          throw new HttpError("Parent message not found", {
+            status: 404,
+            code: "SCHEDULED_MESSAGE_PARENT_UNAVAILABLE",
+          })
+        }
       }
 
       const id = scheduledMessageId()
@@ -353,24 +365,47 @@ export class ScheduledMessagesService {
         })
       }
 
-      // Reschedule: cancel old queue row and enqueue a fresh one in the same
-      // tx. Worker's status guard catches any tick that lost the cancel race.
       const scheduledForChanged =
         params.scheduledFor !== undefined && params.scheduledFor.getTime() !== existing.scheduledFor.getTime()
 
+      const finalRow =
+        (await ScheduledMessagesRepository.findById(client, params.workspaceId, params.userId, params.id)) ?? updated
+
+      // Past-time save = atomic send (per the past-time editing UX). The
+      // editor still holds the lock at this point, so no worker tick can race
+      // us. We flip status to `sending` via the same CAS shape the worker
+      // uses, reusing the editor's lockToken as the CAS owner so the
+      // (`edit_lock_owner_id = ${ownerId}`) clause matches without a
+      // release-then-reclaim. We skip the reschedule enqueue (no point
+      // queueing a job we're about to short-circuit) and tombstone the
+      // existing queue row so a stale worker tick can't fire after commit.
+      if (finalRow.scheduledFor.getTime() <= Date.now()) {
+        const flipped = await ScheduledMessagesRepository.tryAcquireLock(client, {
+          workspaceId: params.workspaceId,
+          id: params.id,
+          ownerId: params.lockToken,
+          ttlSeconds: WORKER_LOCK_TTL_SECONDS,
+          setStatus: ScheduledMessageStatuses.SENDING,
+        })
+        if (!flipped) {
+          throw new HttpError("Scheduled message no longer pending", {
+            status: 409,
+            code: "SCHEDULED_MESSAGE_NOT_PENDING",
+          })
+        }
+        if (existing.queueMessageId) {
+          await QueueRepository.cancelById(client, existing.queueMessageId)
+        }
+        return await this.finalizeSendInTx(client, flipped)
+      }
+
+      // Reschedule: cancel old queue row and enqueue a fresh one in the same
+      // tx. Worker's status guard catches any tick that lost the cancel race.
       if (scheduledForChanged) {
         if (existing.queueMessageId) {
           await QueueRepository.cancelById(client, existing.queueMessageId)
         }
-        await this.enqueueSendJob(client, updated)
-      }
-
-      // Past-time save = atomic send (per the past-time editing UX).
-      const finalRow =
-        (await ScheduledMessagesRepository.findById(client, params.workspaceId, params.userId, params.id)) ?? updated
-
-      if (finalRow.scheduledFor.getTime() <= Date.now()) {
-        return await this.finalizeSendInTx(client, finalRow)
+        await this.enqueueSendJob(client, finalRow)
       }
 
       const view = toScheduledMessageView(finalRow)

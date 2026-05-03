@@ -281,6 +281,117 @@ describe("ScheduledMessagesService.cancel", () => {
   })
 })
 
+describe("ScheduledMessagesService.update", () => {
+  afterEach(() => mock.restore())
+
+  it("rejects when the lock token doesn't match the row owner (stale token)", async () => {
+    const service = setupService()
+    const row = fakeScheduled({
+      editLockOwnerId: "usr:usr_1:sess_real",
+      editLockExpiresAt: new Date(Date.now() + 60_000),
+    })
+    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(row)
+
+    await expect(
+      service.update({
+        workspaceId: WORKSPACE_ID,
+        userId: USER_ID,
+        id: SCHEDULED_ID,
+        lockToken: "usr:usr_1:sess_other",
+        contentMarkdown: "x",
+      })
+    ).rejects.toThrow(/lock/i)
+  })
+
+  it("rejects when the lock has expired even if the token is correct", async () => {
+    const service = setupService()
+    const row = fakeScheduled({
+      editLockOwnerId: "usr:usr_1:sess_real",
+      editLockExpiresAt: new Date(Date.now() - 1_000),
+    })
+    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(row)
+
+    await expect(
+      service.update({
+        workspaceId: WORKSPACE_ID,
+        userId: USER_ID,
+        id: SCHEDULED_ID,
+        lockToken: "usr:usr_1:sess_real",
+        contentMarkdown: "x",
+      })
+    ).rejects.toThrow(/lock/i)
+  })
+
+  it("flips status to sending and finalizes the send when scheduled_for is in the past", async () => {
+    // The save-when-past-time UX: PATCH performs the createMessage call
+    // atomically inside the same tx as the update + status flip. Without the
+    // flip-to-sending step, finalizeSendInTx throws because the row is still
+    // `pending` — that's the exact bug the review flagged.
+    const createMessage = mock(async () => ({
+      id: "msg_42",
+      streamId: STREAM_ID,
+      sequence: 1n,
+      authorId: USER_ID,
+      authorType: "user" as const,
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "hello",
+      replyCount: 0,
+      clientMessageId: null,
+      sentVia: null,
+      reactions: {},
+      metadata: {},
+      editedAt: null,
+      deletedAt: null,
+      createdAt: NOW,
+    }))
+    const service = setupService({ createMessage } as unknown as EventService)
+
+    const lockToken = "usr:usr_1:sess_x"
+    const past = new Date(Date.now() - 5_000)
+    const row = fakeScheduled({
+      editLockOwnerId: lockToken,
+      editLockExpiresAt: new Date(Date.now() + 60_000),
+      scheduledFor: past,
+    })
+
+    spyOn(ScheduledMessagesRepository, "findById")
+      .mockResolvedValueOnce(row)
+      .mockResolvedValueOnce({ ...row, contentMarkdown: "edited" })
+    spyOn(ScheduledMessagesRepository, "update").mockResolvedValue({ ...row, contentMarkdown: "edited" })
+    const tryAcquireLock = spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue({
+      ...row,
+      contentMarkdown: "edited",
+      status: ScheduledMessageStatuses.SENDING,
+    })
+    spyOn(ScheduledMessagesRepository, "markSent").mockResolvedValue({
+      ...row,
+      contentMarkdown: "edited",
+      status: ScheduledMessageStatuses.SENT,
+      sentMessageId: "msg_42",
+    })
+    spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const result = await service.update({
+      workspaceId: WORKSPACE_ID,
+      userId: USER_ID,
+      id: SCHEDULED_ID,
+      lockToken,
+      contentMarkdown: "edited",
+      scheduledFor: past,
+    })
+
+    expect(result.status).toBe(ScheduledMessageStatuses.SENT)
+    expect(createMessage).toHaveBeenCalledTimes(1)
+    // The CAS must use the editor's lockToken as ownerId so the
+    // (`edit_lock_owner_id = ${ownerId}`) clause matches without a
+    // release-then-reclaim mid-tx.
+    expect(tryAcquireLock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ownerId: lockToken, setStatus: ScheduledMessageStatuses.SENDING })
+    )
+  })
+})
+
 describe("ScheduledMessagesService.fire (worker entry)", () => {
   afterEach(() => mock.restore())
 

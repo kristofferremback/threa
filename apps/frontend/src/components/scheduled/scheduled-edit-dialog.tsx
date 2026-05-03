@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { useClaimScheduled, useReleaseScheduled, useUpdateScheduled, useHeartbeatScheduled } from "@/hooks"
 import { toast } from "sonner"
+import { parseMarkdown } from "@threa/prosemirror"
 
 interface ScheduledEditDialogProps {
   workspaceId: string
@@ -47,6 +48,22 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const acquiringRef = useRef(false)
 
   const open = scheduled !== null
+
+  // Reset local state when the row id changes — guards against the dialog
+  // being reused for a different scheduled message without an explicit close
+  // step. Without this, stale lockToken / content / scheduledFor from the
+  // previous row would persist into the next claim.
+  const previousIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const id = scheduled?.id ?? null
+    if (previousIdRef.current !== id) {
+      setLockToken(null)
+      setContent("")
+      setScheduledFor("")
+      setError(null)
+      previousIdRef.current = id
+    }
+  }, [scheduled?.id])
 
   // Claim on open. Releases happen on close (in `handleClose`) — never in
   // the cleanup of this effect because the dialog can re-render mid-claim
@@ -103,9 +120,15 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const handleSave = async () => {
     if (!scheduled || !lockToken) return
     try {
+      // Re-derive contentJson from the edited markdown so the canonical
+      // ProseMirror representation stays in sync (INV-58). Otherwise the row
+      // would carry stale contentJson at fire time and the live message would
+      // ship the pre-edit document.
+      const contentJson = parseMarkdown(content)
       await updateMutation.mutateAsync({
         id: scheduled.id,
         input: {
+          contentJson,
           contentMarkdown: content,
           scheduledFor: new Date(scheduledFor).toISOString(),
           lockToken,
