@@ -160,13 +160,14 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
           <>
             {/* Message preview */}
             <div className="px-4 pt-1 pb-3">
-              <div
+              <button
+                type="button"
                 className={cn(
-                  "group/preview relative rounded-xl bg-muted/60 px-3.5 py-2.5",
+                  "group/preview relative w-full text-left rounded-xl bg-muted/60 px-3.5 py-2.5 disabled:opacity-100 disabled:cursor-default",
                   context.onQuoteReplyWithSnippet && "active:bg-muted/80 transition-colors cursor-pointer"
                 )}
-                role={context.onQuoteReplyWithSnippet ? "button" : undefined}
                 onClick={context.onQuoteReplyWithSnippet ? () => setExpanded(true) : undefined}
+                disabled={!context.onQuoteReplyWithSnippet}
               >
                 <p className="text-[13px] font-medium text-muted-foreground mb-0.5">{authorName}</p>
                 <div className="text-sm text-foreground/80 line-clamp-2 leading-snug pr-6">
@@ -178,7 +179,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
                     className="absolute top-2.5 right-2.5 h-3.5 w-3.5 text-muted-foreground/40 group-active/preview:text-primary transition-colors"
                   />
                 )}
-              </div>
+              </button>
               {context.onQuoteReplyWithSnippet && (
                 <p className="text-[11px] text-muted-foreground/60 mt-1.5 px-1 flex items-center gap-1">
                   <span className="inline-block h-1 w-1 rounded-full bg-primary/60" />
@@ -318,7 +319,11 @@ function ExpandedQuoteView({
           </div>
 
           {/* Selectable message content */}
-          <div ref={contentRef} className="relative px-4 pb-6 select-text">
+          <div
+            ref={contentRef}
+            className="relative px-4 pb-6 select-text [-webkit-touch-callout:none] outline-none"
+            tabIndex={-1}
+          >
             <MarkdownContent content={contentMarkdown} className="text-sm leading-relaxed text-foreground" />
           </div>
         </div>
