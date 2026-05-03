@@ -176,9 +176,9 @@ Indexes:
 - `(workspace_id, user_id, status, scheduled_for)` — "to send" tab and worker queries.
 - `(workspace_id, user_id, status, status_changed_at DESC)` — "sent" tab pagination.
 - `(workspace_id, stream_id, status, scheduled_for)` — composer popover filter.
-- `(queue_message_id)` — cancel/reschedule paths.
+- `(workspace_id, queue_message_id)` — cancel/reschedule paths (workspace-scoped per INV-8).
 
-No FKs (INV-1). All product data workspace-scoped (INV-8). Append-only migrations (INV-17).
+No FKs (INV-1). All product data workspace-scoped (INV-8) — every repository method takes `workspaceId` and every query/update includes `WHERE workspace_id = $X`, including primary-key lookups. Append-only migrations (INV-17).
 
 ## API Surface (Zod-validated, INV-55)
 
@@ -203,20 +203,24 @@ Feature folder: `apps/backend/src/features/scheduled-messages/` (INV-51) — han
 - On reschedule: cancel old queue row + insert new one transactionally. Race covered by status check at fire time, like saved reminders.
 
 **Worker `ScheduledMessageSendWorker`:**
-1. Re-read row in tx; if `status != 'pending'` → no-op (idempotent).
-2. Attempt CAS:
+1. Read `workspaceId` and `scheduledId` from the queue payload.
+2. Re-read row in tx with `WHERE id = $1 AND workspace_id = $2`; if `status != 'pending'` → no-op (idempotent).
+3. Attempt CAS (workspace-scoped per INV-8):
    ```sql
    UPDATE scheduled_messages
    SET edit_lock_owner_id = $worker_id,
        edit_lock_expires_at = NOW() + INTERVAL '10 seconds',
        status = 'sending'
    WHERE id = $1
+     AND workspace_id = $2
      AND status = 'pending'
      AND (edit_lock_owner_id IS NULL OR edit_lock_expires_at < NOW())
    ```
-3. If 0 rows updated → editor holds lock; nudge queue tick by 2s and exit. Bounded retries (~30s past deadline) before marking `failed` with `last_error = 'lock_contention_timeout'`.
-4. If claimed → call `EventService.createMessage(...)` with stored payload (same code path as live send → outbox `message:created` flows automatically; INV-4, INV-7).
-5. Mark `status='sent'`, set `sent_message_id`, clear lock — same tx as `scheduled_message:sent` outbox event.
+4. If 0 rows updated → editor holds lock; nudge queue tick by 2s and exit. Bounded retries (~30s past deadline) before marking `failed` with `last_error = 'lock_contention_timeout'`.
+5. If claimed → call `EventService.createMessage(...)` with stored payload (same code path as live send → outbox `message:created` flows automatically; INV-4, INV-7).
+6. Mark `status='sent'`, set `sent_message_id`, clear lock — same tx as `scheduled_message:sent` outbox event.
+
+All worker writes use `WHERE id = $1 AND workspace_id = $2` per INV-8.
 
 Worker registered on `LIGHT` tier in `server.ts` (INV-34).
 
