@@ -223,6 +223,27 @@ describe("Push Notifications", () => {
       expect(updated.lastFocusedAt!.getTime()).toBe(session.lastFocusedAt!.getTime())
     })
 
+    test("upsert with interacted=true sets lastInteractionAt; preserved across non-interacting upserts", async () => {
+      const session = await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-interaction-1",
+        interacted: true,
+      })
+
+      expect(session.lastInteractionAt).toBeInstanceOf(Date)
+
+      const updated = await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-interaction-1",
+        interacted: false,
+      })
+
+      expect(updated.lastInteractionAt).toBeInstanceOf(Date)
+      expect(updated.lastInteractionAt!.getTime()).toBe(session.lastInteractionAt!.getTime())
+    })
+
     test("upsert updates lastActiveAt on conflict", async () => {
       const first = await UserSessionRepository.upsert(pool, {
         workspaceId: testWorkspaceId,
@@ -602,7 +623,7 @@ describe("Push Notifications", () => {
       })
     })
 
-    test("active + recently focused session → only pushes to active device", async () => {
+    test("focused device with recent interaction → only pushes to that device", async () => {
       const service = createServiceWithLookups()
 
       // Two subscriptions on different devices, both with recent sessions
@@ -623,13 +644,15 @@ describe("Push Notifications", () => {
         deviceKey: "device-2",
       })
 
-      // Both devices have recent sessions (not expired), but only device-1 is actively focused
+      // device-2 has a recent session but isn't currently active (background PWA)
       await createRecentInactiveSession(testWorkspaceId, testUserId, "device-2")
+      // device-1 is the device the user is on: focused and just interacted
       await UserSessionRepository.upsert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
         deviceKey: "device-1",
         focused: true,
+        interacted: true,
       })
 
       await service.deliverPushForActivity(makePayload())
@@ -641,10 +664,10 @@ describe("Push Notifications", () => {
       })
     })
 
-    test("active session on device without subscription → falls back to all active subscriptions", async () => {
+    test("focused but idle (no recent interaction) → fans out to all active devices", async () => {
       const service = createServiceWithLookups()
 
-      // Subscription on device-1, but active session only on device-2
+      // Two subscriptions on different devices
       await PushSubscriptionRepository.insert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
@@ -653,28 +676,45 @@ describe("Push Notifications", () => {
         auth: "a1",
         deviceKey: "device-1",
       })
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/device-2",
+        p256dh: "p2",
+        auth: "a2",
+        deviceKey: "device-2",
+      })
 
-      // device-1 has a recent (but not active) session so it's not expired
-      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-1")
-
-      // Active, recently focused session on device-2 (no subscription here)
+      // device-1 is focused but the user hasn't touched it recently
+      // (e.g. they walked away leaving Threa focused, or the PWA bug where
+      // hasFocus() reports true on a background window). Without an interaction
+      // signal we don't trust focus alone.
+      await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-1",
+        focused: true,
+      })
+      // device-2 is also live (heartbeat recent) but not focused
       await UserSessionRepository.upsert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
         deviceKey: "device-2",
-        focused: true,
       })
 
       await service.deliverPushForActivity(makePayload())
 
-      // Intersection is empty (device-2 has active session, device-1 has sub) → falls back to all active
-      expect(sendSpy).toHaveBeenCalledTimes(1)
-      expect(sendSpy.mock.calls[0][0]).toMatchObject({
-        endpoint: "https://push.example.com/sub/device-1",
-      })
+      // No device proves the user is on it → push everywhere so they see it
+      // on whichever device they pick up next.
+      expect(sendSpy).toHaveBeenCalledTimes(2)
+      const calledEndpoints = sendSpy.mock.calls.map((c) => c[0].endpoint).sort()
+      expect(calledEndpoints).toEqual([
+        "https://push.example.com/sub/device-1",
+        "https://push.example.com/sub/device-2",
+      ])
     })
 
-    test("active session but not focused for 10m+ → pushes to all active devices", async () => {
+    test("interaction goes stale (>2m) → fans out to all active devices", async () => {
       const service = createServiceWithLookups()
 
       await PushSubscriptionRepository.insert(pool, {
@@ -694,29 +734,68 @@ describe("Push Notifications", () => {
         deviceKey: "device-2",
       })
 
-      // Both devices have recent sessions (not expired)
-      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-2")
-
-      // device-1 has active session (heartbeat recent) but was focused 15m ago
+      // device-1 was focused and interacted with, but the interaction was 5m ago
+      // (user got up to use the toilet and left their laptop focused).
       const s1 = await UserSessionRepository.upsert(pool, {
         workspaceId: testWorkspaceId,
         userId: testUserId,
         deviceKey: "device-1",
         focused: true,
+        interacted: true,
       })
-      await pool.query(`UPDATE user_sessions SET last_focused_at = now() - interval '15 minutes' WHERE id = $1`, [
+      await pool.query(`UPDATE user_sessions SET last_interaction_at = now() - interval '5 minutes' WHERE id = $1`, [
         s1.id,
       ])
+      // device-2 is live (heartbeat fresh) but not focused
+      await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-2",
+      })
 
       await service.deliverPushForActivity(makePayload())
 
-      // User walked away → push to all devices
+      // Interaction stale → fanout so the user gets it on whichever device they pick up
       expect(sendSpy).toHaveBeenCalledTimes(2)
       const calledEndpoints = sendSpy.mock.calls.map((c) => c[0].endpoint).sort()
       expect(calledEndpoints).toEqual([
         "https://push.example.com/sub/device-1",
         "https://push.example.com/sub/device-2",
       ])
+    })
+
+    test("attended device has session but no push subscription → falls back to all active subscriptions", async () => {
+      const service = createServiceWithLookups()
+
+      // Subscription on device-1 only
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/device-1",
+        p256dh: "p1",
+        auth: "a1",
+        deviceKey: "device-1",
+      })
+
+      // device-1 has a recent (but not active) session so it's not expired
+      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-1")
+
+      // The attended device (device-2) has no push subscription registered
+      await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-2",
+        focused: true,
+        interacted: true,
+      })
+
+      await service.deliverPushForActivity(makePayload())
+
+      // Intersection is empty → falls back to all active subs (only device-1)
+      expect(sendSpy).toHaveBeenCalledTimes(1)
+      expect(sendSpy.mock.calls[0][0]).toMatchObject({
+        endpoint: "https://push.example.com/sub/device-1",
+      })
     })
 
     test("no active sessions but recent session exists → pushes to all devices (not session_expired)", async () => {

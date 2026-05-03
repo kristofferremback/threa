@@ -361,10 +361,14 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // =========================================================================
     let lastHeartbeatAt = 0
     const HEARTBEAT_MIN_INTERVAL_MS = 15_000 // Server-side throttle: ignore heartbeats faster than 15s
-    socket.on("heartbeat", (payload?: { focused?: boolean }) => {
+    // Interaction-driven heartbeats bypass the throttle: the client only emits
+    // them on the first interaction after a quiet stretch, and we want the
+    // backend to learn about renewed activity within seconds, not up to 30s.
+    socket.on("heartbeat", (payload?: { focused?: boolean; interacted?: boolean }) => {
       if (!pushService.isEnabled()) return
+      const interacted = payload?.interacted === true
       const now = Date.now()
-      if (now - lastHeartbeatAt < HEARTBEAT_MIN_INTERVAL_MS) return
+      if (!interacted && now - lastHeartbeatAt < HEARTBEAT_MIN_INTERVAL_MS) return
       lastHeartbeatAt = now
       const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
       const focused = payload?.focused === true
@@ -374,7 +378,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         deviceKey,
       }))
       if (entries.length === 0) return
-      pushService.upsertSessionsBatch(entries, focused).catch((err) => {
+      pushService.upsertSessionsBatch(entries, { focused, interacted }).catch((err) => {
         logger.warn({ err }, "Failed to upsert sessions on heartbeat")
       })
     })

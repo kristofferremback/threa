@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useRef, type ReactNode 
 import { io, Socket } from "socket.io-client"
 import { api } from "@/api/client"
 import { usePageActivity } from "@/hooks/use-page-activity"
+import { usePageInteraction } from "@/hooks/use-page-interaction"
 
 /**
  * Socket connection status.
@@ -41,6 +42,7 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
   const [status, setStatus] = useState<SocketStatus>("connecting")
   const [reconnectCount, setReconnectCount] = useState(0)
   const pageActivity = usePageActivity()
+  const pageInteraction = usePageInteraction()
 
   // Track if we've ever been connected (to distinguish initial connect from reconnect)
   const hasEverConnectedRef = useRef(false)
@@ -139,9 +141,12 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
     }
   }, [workspaceId])
 
-  // Heartbeat for push notification session tracking.
-  // Sends { focused } so the backend can distinguish "user is here" from "tab is open but idle."
+  // Heartbeat for push notification session tracking. Sends { focused, interacted }
+  // so the backend can pick the device the user is actually on (focused window
+  // with a recent interaction) and avoid pushing to background PWAs.
+  const lastFocusChangeHeartbeatRef = useRef(0)
   const lastInteractionHeartbeatRef = useRef(0)
+  const lastHeartbeatInteractionAtRef = useRef(0)
   const previousPageActivityRef = useRef(pageActivity)
   const pageFocusedRef = useRef(pageActivity.isFocused)
   pageFocusedRef.current = pageActivity.isFocused
@@ -149,16 +154,33 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
   useEffect(() => {
     if (!socket || status !== "connected") return
 
-    const emitHeartbeat = () => socket.emit("heartbeat", { focused: pageFocusedRef.current })
+    const emitHeartbeat = () => {
+      const lastInteractionAt = pageInteraction.getLastInteractionAt()
+      const interacted = lastInteractionAt > lastHeartbeatInteractionAtRef.current
+      if (interacted) lastHeartbeatInteractionAtRef.current = lastInteractionAt
+      socket.emit("heartbeat", { focused: pageFocusedRef.current, interacted })
+    }
 
     // Emit immediately so the backend knows this tab is active right away
     emitHeartbeat()
     const heartbeatInterval = setInterval(emitHeartbeat, 30_000)
 
+    // Fire an immediate heartbeat on the first interaction after a quiet
+    // stretch so the backend learns about renewed activity within seconds,
+    // not up to 30s. The 15s throttle matches the server-side floor in
+    // socket.ts; interaction-flagged heartbeats bypass that throttle there.
+    const unsubscribe = pageInteraction.subscribe(() => {
+      const now = Date.now()
+      if (now - lastInteractionHeartbeatRef.current < 15_000) return
+      lastInteractionHeartbeatRef.current = now
+      emitHeartbeat()
+    })
+
     return () => {
       clearInterval(heartbeatInterval)
+      unsubscribe()
     }
-  }, [socket, status])
+  }, [socket, status, pageInteraction])
 
   useEffect(() => {
     const previousPageActivity = previousPageActivityRef.current
@@ -178,9 +200,9 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
     // heartbeat (focused=false) from blocking the closely-following gainedFocus
     // heartbeat (focused=true) via the 10s throttle window.
     const now = Date.now()
-    if (gainedFocus || now - lastInteractionHeartbeatRef.current > 10_000) {
-      lastInteractionHeartbeatRef.current = now
-      socket.emit("heartbeat", { focused: pageActivity.isFocused })
+    if (gainedFocus || now - lastFocusChangeHeartbeatRef.current > 10_000) {
+      lastFocusChangeHeartbeatRef.current = now
+      socket.emit("heartbeat", { focused: pageActivity.isFocused, interacted: false })
     }
   }, [socket, status, pageActivity])
 
