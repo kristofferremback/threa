@@ -534,7 +534,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     }
     loadedScheduledEditRef.current = null
     scheduledEditVersionRef.current = null
-    setScheduledEditAt("")
+    setScheduledEditDate("")
+    setScheduledEditTime("")
     composer.setContent(EMPTY_DOC)
     composer.clearAttachments()
     clearScheduledEditParam()
@@ -543,7 +544,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
-  const [scheduledEditAt, setScheduledEditAt] = useState("")
+  const [scheduledEditDate, setScheduledEditDate] = useState("")
+  const [scheduledEditTime, setScheduledEditTime] = useState("")
   const messageSendMode = preferences?.messageSendMode ?? "enter"
   const isMobile = useIsMobile()
   const connectionState = useConnectionState()
@@ -582,7 +584,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       currentComposer.restoreAttachments(extractUploadedAttachments(scheduledEditItem.contentJson))
       loadedScheduledEditRef.current = scheduledEditId
       scheduledEditVersionRef.current = version
-      setScheduledEditAt(toDateTimeLocal(new Date(scheduledEditItem.scheduledAt)))
+      const scheduledAt = new Date(scheduledEditItem.scheduledAt)
+      setScheduledEditDate(toDateInput(scheduledAt))
+      setScheduledEditTime(toTimeInput(scheduledAt))
       composerFocusRef.current?.focus()
     }
 
@@ -592,6 +596,13 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         scheduledId: scheduledEditId,
         expectedVersion: scheduledEditItem.version,
       })
+
+    if (scheduledEditItem.status === ScheduledMessageStatuses.EDITING) {
+      enterEdit(scheduledEditItem.version)
+      return () => {
+        cancelled = true
+      }
+    }
 
     if (msUntilSend <= 30_000) {
       void lock()
@@ -607,7 +618,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
           loadedScheduledEditRef.current = null
           scheduledEditVersionRef.current = null
           scheduledEditSavingRef.current = false
-          setScheduledEditAt("")
+          setScheduledEditDate("")
+          setScheduledEditTime("")
           clearScheduledEditParam()
         })
       return () => {
@@ -771,8 +783,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
 
       try {
         if (scheduledEditItem) {
-          const scheduledAt = new Date(scheduledEditAt)
-          if (!scheduledEditAt || isNaN(scheduledAt.getTime())) {
+          const scheduledAt = buildLocalDateTime(scheduledEditDate, scheduledEditTime)
+          if (!scheduledEditDate || !scheduledEditTime || isNaN(scheduledAt.getTime())) {
             setError("Choose a valid scheduled time.")
             return
           }
@@ -839,7 +851,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       startDiscussWithAriadne,
       scheduledEditItem,
       updateScheduledMutation,
-      scheduledEditAt,
+      scheduledEditDate,
+      scheduledEditTime,
     ]
   )
 
@@ -1067,13 +1080,23 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
                 {scheduledEditItem.streamName ?? "Conversation"}
               </p>
             </div>
-            <input
-              type="datetime-local"
-              value={scheduledEditAt}
-              min={toDateTimeLocal(new Date())}
-              onChange={(event) => setScheduledEditAt(event.target.value)}
-              className="h-8 rounded border bg-background px-2 text-xs"
-            />
+            <div className="grid grid-cols-[1fr_92px] gap-2">
+              <input
+                type="date"
+                aria-label="Scheduled edit date"
+                value={scheduledEditDate}
+                min={toDateInput(new Date())}
+                onChange={(event) => setScheduledEditDate(event.target.value)}
+                className="h-8 rounded border bg-background px-2 text-xs"
+              />
+              <input
+                type="time"
+                aria-label="Scheduled edit time"
+                value={scheduledEditTime}
+                onChange={(event) => setScheduledEditTime(event.target.value)}
+                className="h-8 rounded border bg-background px-2 text-xs"
+              />
+            </div>
             <Button type="button" variant="ghost" size="sm" className="h-8" onClick={cancelScheduledEdit}>
               Cancel
             </Button>
@@ -1086,7 +1109,21 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   )
 }
 
-function toDateTimeLocal(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+function toDateInput(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function toTimeInput(date: Date): string {
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function buildLocalDateTime(date: string, time: string): Date {
+  const [year, month, day] = date.split("-").map(Number)
+  const [hour, minute] = time.split(":").map(Number)
+  if (!year || !month || !day || hour === undefined || minute === undefined) return new Date(Number.NaN)
+  return new Date(year, month - 1, day, hour, minute, 0, 0)
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0")
 }

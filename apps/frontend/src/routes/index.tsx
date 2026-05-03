@@ -56,7 +56,7 @@ export const router = createBrowserRouter([
         lazy: async () => ({ Component: (await import("@/pages/drafts")).DraftsPage }),
       },
       {
-        path: "scheduled",
+        path: "scheduled/:tab?",
         HydrateFallback: FallbackLoader,
         lazy: async () => ({ Component: (await import("@/pages/scheduled")).ScheduledPage }),
       },

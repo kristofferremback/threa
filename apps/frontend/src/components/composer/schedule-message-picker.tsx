@@ -1,4 +1,4 @@
-import { forwardRef, useMemo, useState } from "react"
+import { forwardRef, useEffect, useMemo, useState } from "react"
 import type { ComponentType, ReactNode } from "react"
 import {
   Calendar as CalendarIcon,
@@ -54,14 +54,26 @@ export function ScheduleMessagePicker({
 }: ScheduleMessagePickerProps) {
   const isMobile = useIsMobile()
   const [open, setOpen] = useState(false)
+  const [nowMs, setNowMs] = useState(() => Date.now())
   const controlsDisabled = disabled
   const triggerSizeClass = size === "fab" ? "h-[30px] w-[30px] rounded-md bg-background shadow-md" : "h-7 w-7"
   const triggerIconClass = size === "fab" ? "h-4 w-4" : "h-3.5 w-3.5"
   const visibleScheduledMessages = useMemo(
-    () => scheduledMessages.filter((item) => shouldShowInComposerPicker(item, Date.now())),
-    [scheduledMessages, open]
+    () => scheduledMessages.filter((item) => shouldShowInComposerPicker(item, nowMs)),
+    [scheduledMessages, nowMs]
   )
   const count = visibleScheduledMessages.length
+
+  useEffect(() => {
+    if (!open) {
+      setNowMs(Date.now())
+      return
+    }
+    const updateNow = () => setNowMs(Date.now())
+    updateNow()
+    const interval = window.setInterval(updateNow, 1000)
+    return () => window.clearInterval(interval)
+  }, [open])
 
   if (isMobile) {
     return (
