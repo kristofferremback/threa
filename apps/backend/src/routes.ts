@@ -12,6 +12,7 @@ import { createStreamHandlers } from "./features/streams"
 import { createMessageHandlers } from "./features/messaging"
 import { createAttachmentHandlers } from "./features/attachments"
 import { createSearchHandlers } from "./features/search"
+import { createAssetExplorerHandlers } from "./features/asset-explorer"
 import { createMemoHandlers } from "./features/memos"
 import { createEmojiHandlers } from "./features/emoji"
 import { createConversationHandlers } from "./features/conversations"
@@ -45,6 +46,7 @@ import type { StreamService } from "./features/streams"
 import type { EventService } from "./features/messaging"
 import type { AttachmentService } from "./features/attachments"
 import type { SearchService } from "./features/search"
+import type { AssetExplorerService } from "./features/asset-explorer"
 import type { MemoExplorerService } from "./features/memos"
 import type { ConversationService } from "./features/conversations"
 import type { InvitationService } from "./features/invitations"
@@ -73,6 +75,7 @@ interface Dependencies {
   eventService: EventService
   attachmentService: AttachmentService
   searchService: SearchService
+  assetExplorerService: AssetExplorerService
   memoExplorerService: MemoExplorerService
   conversationService: ConversationService
   userPreferencesService: UserPreferencesService
@@ -108,6 +111,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     eventService,
     attachmentService,
     searchService,
+    assetExplorerService,
     memoExplorerService,
     conversationService,
     userPreferencesService,
@@ -159,6 +163,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
   const attachment = createAttachmentHandlers({ attachmentService, streamService, storage, pool })
   const search = createSearchHandlers({ pool, searchService })
+  const assetExplorer = createAssetExplorerHandlers({ pool, assetExplorerService })
   const memo = createMemoHandlers({ pool, memoExplorerService })
   const emoji = createEmojiHandlers()
   const conversation = createConversationHandlers({ conversationService, streamService })
@@ -255,6 +260,10 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/search", ...authed, rateLimits.search, search.search)
   app.post("/api/workspaces/:workspaceId/memos/search", ...authed, rateLimits.search, memo.search)
   app.get("/api/workspaces/:workspaceId/memos/:memoId", ...authed, memo.getById)
+
+  // Asset explorer — browse + search attachments scoped to a stream (today)
+  // or workspace (future); the request body's `scope` discriminator decides.
+  app.post("/api/workspaces/:workspaceId/assets/search", ...authed, rateLimits.search, assetExplorer.search)
 
   app.post("/api/workspaces/:workspaceId/messages", ...authed, rateLimits.messageCreate, message.create)
   app.post(

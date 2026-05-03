@@ -34,6 +34,7 @@ import { EventService } from "./features/messaging"
 import { AttachmentService } from "./features/attachments"
 import { MessageFormatter } from "./lib/ai/message-formatter"
 import { SearchService } from "./features/search"
+import { AssetExplorerService } from "./features/asset-explorer"
 import {
   MemoService,
   MemoExplorerService,
@@ -236,6 +237,7 @@ export async function startServer(): Promise<ServerInstance> {
   // Search and embedding services
   const embeddingService = config.useStubAI ? new StubEmbeddingService() : new EmbeddingService({ ai })
   const searchService = new SearchService({ pool, embeddingService })
+  const assetExplorerService = new AssetExplorerService(pool)
   const memoExplorerService = new MemoExplorerService({ pool, embeddingService })
 
   // Job queue for durable background work (companion responses, etc.).
@@ -470,6 +472,7 @@ export async function startServer(): Promise<ServerInstance> {
     eventService,
     attachmentService,
     searchService,
+    assetExplorerService,
     memoExplorerService,
     conversationService,
     userPreferencesService,

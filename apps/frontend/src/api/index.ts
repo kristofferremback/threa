@@ -20,6 +20,12 @@ export {
   type ArchiveStatus,
 } from "./search"
 export {
+  searchAssets,
+  type AssetSearchRequest,
+  type AssetSearchResponse,
+  type AssetSearchResult,
+} from "./asset-explorer"
+export {
   searchMemos,
   getMemo,
   type MemoExplorerStreamRef,
