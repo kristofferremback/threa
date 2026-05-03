@@ -76,7 +76,6 @@ const MIN_FUTURE_OFFSET_SECONDS = 5
 
 /** Past-time grace window for the worker. Beyond this we mark the row failed. */
 const WORKER_MAX_LOCK_RETRIES = 6
-const WORKER_RETRY_DELAY_SECONDS = 5
 
 /**
  * Service for the scheduled-message lifecycle: schedule / update / claim /
@@ -124,12 +123,6 @@ export class ScheduledMessagesService {
             status: 404,
             code: "SCHEDULED_MESSAGE_PARENT_UNAVAILABLE",
           })
-        }
-        if (parent.streamId !== params.streamId) {
-          // Thread replies can target a different stream than the parent's; we
-          // intentionally accept the caller's `streamId` (the thread stream)
-          // and verify the parent exists, but don't tie the two together
-          // beyond that. Same pattern as message create.
         }
       }
 
@@ -559,15 +552,6 @@ export class ScheduledMessagesService {
         return { fired: false, reschedule: false }
       }
     })
-  }
-
-  /**
-   * Public helper exposed for the worker to compute its retry delay when the
-   * editor holds the lock. Linear backoff is fine — these contentions are
-   * rare and short-lived.
-   */
-  static workerRetryDelaySeconds(): number {
-    return WORKER_RETRY_DELAY_SECONDS
   }
 
   /**
