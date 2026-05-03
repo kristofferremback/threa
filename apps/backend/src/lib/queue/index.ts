@@ -32,6 +32,7 @@ export {
   type VideoTranscodeSubmitJobData,
   type VideoTranscodeCheckJobData,
   type SavedReminderFireJobData,
+  type ScheduledMessageSendJobData,
   type ContextBagPrecomputeJobData,
 } from "./job-queue"
 export { ScheduleManager, type ScheduleManagerConfig } from "./schedule-manager"

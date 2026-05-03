@@ -4,7 +4,14 @@
  * These types define the contracts between frontend and backend.
  */
 
-import type { StreamType, Visibility, CompanionMode, SavedStatus, AuthorType } from "./constants"
+import type {
+  StreamType,
+  Visibility,
+  CompanionMode,
+  SavedStatus,
+  AuthorType,
+  ScheduledMessageStatus,
+} from "./constants"
 import type { ContextBag, ContextIntent } from "./context-bag"
 import type { UserId } from "./ids"
 import type { JSONContent } from "./prosemirror"
@@ -736,4 +743,107 @@ export interface SavedReminderFiredPayload {
   messageId: string
   streamId: string
   saved: SavedMessageView
+}
+
+// ============================================================================
+// Scheduled Messages API
+// ============================================================================
+
+/**
+ * Wire shape for a scheduled-message row. Mirrors the table columns minus the
+ * lock fields the user doesn't care about; lock state is exposed only on the
+ * `/claim` response.
+ */
+export interface ScheduledMessageView {
+  id: string
+  workspaceId: string
+  userId: string
+  streamId: string
+  parentMessageId: string | null
+  contentJson: JSONContent
+  contentMarkdown: string
+  attachmentIds: string[]
+  metadata: Record<string, string> | null
+  scheduledFor: string
+  status: ScheduledMessageStatus
+  sentMessageId: string | null
+  lastError: string | null
+  /** Owner of any active lock — `usr_*` for an editor, `worker:<id>` for the worker. */
+  editLockOwnerId: string | null
+  /** ISO; null when the lock is free or expired. */
+  editLockExpiresAt: string | null
+  createdAt: string
+  updatedAt: string
+  statusChangedAt: string
+}
+
+export interface ScheduleMessageInput {
+  streamId: string
+  parentMessageId?: string | null
+  contentJson: JSONContent
+  contentMarkdown: string
+  attachmentIds?: string[]
+  metadata?: Record<string, string>
+  scheduledFor: string
+  /** Idempotency key for optimistic create retries (mirrors message create). */
+  clientMessageId?: string
+}
+
+/**
+ * One mutation kind per request — content, scheduledFor, or attachmentIds in
+ * isolation, or all three together when the user saves the edit modal. The
+ * server requires `lockToken` so we can't lose a race with the worker.
+ */
+export interface UpdateScheduledMessageInput {
+  contentJson?: JSONContent
+  contentMarkdown?: string
+  attachmentIds?: string[]
+  metadata?: Record<string, string> | null
+  scheduledFor?: string
+  /** Lock token returned by `/claim`. Required for any mutation. */
+  lockToken: string
+}
+
+export interface ClaimScheduledMessageResponse {
+  scheduled: ScheduledMessageView
+  /** Opaque token; pass to PATCH/release/heartbeat. */
+  lockToken: string
+  /** ISO of when the server-side TTL expires; client should heartbeat before then. */
+  lockExpiresAt: string
+  /**
+   * `true` when scheduled_for is within `SCHEDULED_MESSAGE_SYNC_LOCK_THRESHOLD_SECONDS`,
+   * indicating the client should UI-block (sync path). `false` lets the editor
+   * open optimistically (async path). Server-side hint only — correctness comes
+   * from the CAS, not the threshold.
+   */
+  sync: boolean
+}
+
+export interface ScheduledMessageListResponse {
+  scheduled: ScheduledMessageView[]
+  nextCursor: string | null
+}
+
+/** Wire payload broadcast on `scheduled_message:upserted` socket events. */
+export interface ScheduledMessageUpsertedPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+/** Wire payload broadcast on `scheduled_message:sent` socket events. */
+export interface ScheduledMessageSentPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduledId: string
+  sentMessageId: string
+  streamId: string
+  scheduled: ScheduledMessageView
+}
+
+/** Wire payload broadcast on `scheduled_message:cancelled` socket events. */
+export interface ScheduledMessageCancelledPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduledId: string
 }

@@ -124,6 +124,11 @@ export {
   SAVED_STATUSES,
   type SavedStatus,
   SavedStatuses,
+  // Scheduled messages
+  SCHEDULED_MESSAGE_STATUSES,
+  type ScheduledMessageStatus,
+  ScheduledMessageStatuses,
+  SCHEDULED_MESSAGE_SYNC_LOCK_THRESHOLD_SECONDS,
   // Text processing
   TEXT_FORMATS,
   type TextFormat,
@@ -292,6 +297,15 @@ export type {
   SavedUpsertedPayload,
   SavedDeletedPayload,
   SavedReminderFiredPayload,
+  // Scheduled messages
+  ScheduledMessageView,
+  ScheduleMessageInput,
+  UpdateScheduledMessageInput,
+  ClaimScheduledMessageResponse,
+  ScheduledMessageListResponse,
+  ScheduledMessageUpsertedPayload,
+  ScheduledMessageSentPayload,
+  ScheduledMessageCancelledPayload,
   // Emojis
   EmojiEntry,
   // Commands
