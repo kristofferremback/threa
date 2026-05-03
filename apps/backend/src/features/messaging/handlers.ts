@@ -107,7 +107,7 @@ export {
 
 /**
  * Normalize input to both JSON and markdown formats.
- * - If JSON provided: serialize to markdown
+ * - If JSON provided: serialize to markdown, then normalize the markdown projection
  * - If markdown provided: normalize emoji, parse to JSON
  * Emoji normalization converts raw emoji (👍) to shortcodes (:+1:).
  */
@@ -116,8 +116,10 @@ function normalizeContent(input: z.infer<typeof createMessageSchema> | z.infer<t
   contentMarkdown: string
 } {
   if ("contentJson" in input) {
-    // Rich client: JSON provided, trust it and derive markdown
-    const contentMarkdown = input.contentMarkdown ?? serializeToMarkdown(input.contentJson)
+    // Rich client: JSON provided, trust the structure but still normalize the
+    // markdown projection so editable raw emoji text becomes canonical shortcode
+    // content for storage, usage tracking, and external consumers.
+    const contentMarkdown = normalizeMessage(input.contentMarkdown ?? serializeToMarkdown(input.contentJson))
     return { contentJson: input.contentJson, contentMarkdown }
   } else {
     // AI/external: Markdown provided, normalize and parse to JSON

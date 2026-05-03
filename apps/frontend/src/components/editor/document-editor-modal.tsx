@@ -34,6 +34,7 @@ import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { LinkEditor } from "./link-editor"
 import {
   handleBeforeInputAtomDelete,
+  handleBeforeInputGraphemeDelete,
   handleBeforeInputKeyboardPaste,
   handleBeforeInputNewline,
   insertPastedText,
@@ -91,6 +92,7 @@ export function DocumentEditorModal({
   initContentRef.current = initialContent
   getMentionTypeRef.current = getMentionType
   toEmojiRef.current = toEmoji
+  const markdownParseOptions = useMemo(() => ({ emojiAsText: true }), [])
 
   // Ref for handleSubmit without re-creating extensions
   const handleSubmitRef = useRef(() => {})
@@ -131,7 +133,7 @@ export function DocumentEditorModal({
 
   const editor = useEditor({
     extensions,
-    content: parseMarkdown(initialContent, getMentionType, toEmoji),
+    content: parseMarkdown(initialContent, getMentionType, toEmoji, markdownParseOptions),
     editorProps: {
       attributes: {
         class: cn(
@@ -155,7 +157,13 @@ export function DocumentEditorModal({
           return false
         }
 
-        const handled = insertPastedText(editorRef.current, text, getMentionTypeRef.current, toEmojiRef.current)
+        const handled = insertPastedText(
+          editorRef.current,
+          text,
+          getMentionTypeRef.current,
+          toEmojiRef.current,
+          markdownParseOptions
+        )
         if (handled) {
           event.preventDefault()
         }
@@ -173,9 +181,21 @@ export function DocumentEditorModal({
             return true
           }
 
+          // Firefox Android can delete emoji text by code unit, leaving a
+          // broken half-grapheme. Delete the whole grapheme before native input.
+          if (handleBeforeInputGraphemeDelete(editor, event as InputEvent)) {
+            return true
+          }
+
           // Gboard / SwiftKey clipboard-bar paste arrives as insertText, not paste.
           if (
-            handleBeforeInputKeyboardPaste(editor, event as InputEvent, getMentionTypeRef.current, toEmojiRef.current)
+            handleBeforeInputKeyboardPaste(
+              editor,
+              event as InputEvent,
+              getMentionTypeRef.current,
+              toEmojiRef.current,
+              markdownParseOptions
+            )
           ) {
             return true
           }
@@ -227,7 +247,9 @@ export function DocumentEditorModal({
 
     if (isNewlyOpened && editor && !editor.isDestroyed) {
       isInternalUpdate.current = true
-      editor.commands.setContent(parseMarkdown(initContentRef.current, getMentionTypeRef.current, toEmojiRef.current))
+      editor.commands.setContent(
+        parseMarkdown(initContentRef.current, getMentionTypeRef.current, toEmojiRef.current, markdownParseOptions)
+      )
       isInternalUpdate.current = false
       editor.commands.focus("end")
     }

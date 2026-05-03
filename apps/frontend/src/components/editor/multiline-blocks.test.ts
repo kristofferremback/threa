@@ -7,6 +7,7 @@ import { NodeSelection } from "@tiptap/pm/state"
 import {
   deleteAdjacentInlineAtom,
   handleBeforeInputAtomDelete,
+  handleBeforeInputGraphemeDelete,
   handleBeforeInputKeyboardPaste,
   handleBeforeInputNewline,
   insertPastedText,
@@ -30,7 +31,7 @@ function createTestEditor(content: string | JSONContent) {
       items: () => [],
       render: () => ({ onStart: () => {}, onUpdate: () => {}, onExit: () => {}, onKeyDown: () => false }),
     },
-    toEmoji: () => null,
+    toEmoji: (code) => (code === "rocket" ? "🚀" : null),
   })
 
   return new Editor({
@@ -45,6 +46,22 @@ function createTestEditor(content: string | JSONContent) {
           )
         : content,
   })
+}
+
+function insertText(editor: Editor, text: string) {
+  let handled = false
+
+  editor.view.someProp("handleTextInput", (handleTextInput) => {
+    if (
+      handleTextInput(editor.view, editor.state.selection.from, editor.state.selection.to, text, () => editor.state.tr)
+    ) {
+      handled = true
+      return true
+    }
+    return false
+  })
+
+  return handled
 }
 
 function createBlockquote(lines: string[]): JSONContent {
@@ -621,6 +638,8 @@ describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
 
     expect(handled).toBe(true)
     expect(event.prevented).toBe(true)
+    expect(editor.getJSON().content?.[0]?.content?.[0]).toEqual({ type: "text", text: "🚀 launching" })
+    expect(serializeToMarkdown(editor.getJSON())).toBe("🚀 launching")
     editor.destroy()
   })
 
@@ -750,6 +769,23 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     editor.destroy()
   })
 
+  it("renders emoji atoms with text-like inline layout", () => {
+    const editor = createTestEditor(emojiDoc("", ""))
+    const emoji = editor.view.dom.querySelector<HTMLElement>('span[data-type="emoji"]')
+
+    expect(emoji?.className).toBe("inline")
+    editor.destroy()
+  })
+
+  it("converts typed shortcode emoji to editable text instead of a new atom", () => {
+    const editor = createTestEditor(":rocket")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    expect(insertText(editor, ":")).toBe(true)
+    expect(editor.getJSON().content?.[0]?.content?.[0]).toEqual({ type: "text", text: "🚀" })
+    editor.destroy()
+  })
+
   it("deletes the inline atom on deleteContentForward when caret sits right before it", () => {
     const editor = createTestEditor(emojiDoc("hi ", " end"))
     // Caret at end of "hi " — i.e. immediately before the emoji atom.
@@ -801,6 +837,22 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     editor.destroy()
   })
 
+  it("deletes a non-empty selection containing an inline atom", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    editor.commands.setTextSelection({
+      from: findTextPosition(editor, "hi "),
+      to: findTextPosition(editor, " end"),
+    })
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe(" end")
+    editor.destroy()
+  })
+
   it("ignores non-delete input types", () => {
     const editor = createTestEditor(emojiDoc("hi ", ""))
     editor.commands.setTextSelection(editor.state.doc.content.size)
@@ -840,6 +892,55 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     editor.destroy()
   })
 
+  it("keeps the direct keymap fallback inactive while composing", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+    ;(editor.view as unknown as { input: { composing: boolean } }).input.composing = true
+
+    const handled = deleteAdjacentInlineAtom(editor, "backward")
+
+    expect(handled).toBe(false)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi :rocket: end")
+    editor.destroy()
+  })
+
+  it("deletes the adjacent atom from beforeinput while composing", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+    ;(editor.view as unknown as { input: { composing: boolean } }).input.composing = true
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("flushes a pending DOM selection before checking the delete target", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    editor.commands.setTextSelection(findTextPosition(editor, "hi "))
+    const domObserver = (editor.view as unknown as { domObserver: { flush: () => void } }).domObserver
+    const originalFlush = domObserver.flush.bind(domObserver)
+    let flushed = false
+
+    domObserver.flush = () => {
+      flushed = true
+      editor.commands.setTextSelection(findTextPosition(editor, " end"))
+    }
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+    domObserver.flush = originalFlush
+
+    expect(flushed).toBe(true)
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
   it("ignores a NodeSelection on a non-atom (defensive)", () => {
     const editor = createTestEditor("plain")
     // No atoms in this doc, so NodeSelection branch shouldn't fire — fall through
@@ -849,6 +950,102 @@ describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
     const handled = deleteAdjacentInlineAtom(editor, "backward")
 
     expect(handled).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe("handleBeforeInputGraphemeDelete (mobile emoji text deletion)", () => {
+  it("deletes a text emoji as one grapheme on deleteContentBackward", () => {
+    const editor = createTestEditor("hi 🚀 end")
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("deletes a text emoji as one grapheme on deleteContentForward", () => {
+    const editor = createTestEditor("hi 🚀 end")
+    editor.commands.setTextSelection(findTextPosition(editor, "🚀"))
+
+    const event = makeBeforeInput("deleteContentForward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("deletes only one emoji when two text emoji are adjacent", () => {
+    const editor = createTestEditor("🚀🚀")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("🚀")
+    editor.destroy()
+  })
+
+  it("recovers when the native selection lands inside a surrogate pair", () => {
+    const editor = createTestEditor("hi 🚀 end")
+    const emojiStart = findTextPosition(editor, "🚀")
+    editor.commands.setTextSelection(emojiStart + 1)
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("expands a selection that ends inside a surrogate pair", () => {
+    const editor = createTestEditor("a🚀b")
+    const start = findTextPosition(editor, "a")
+    const emojiStart = findTextPosition(editor, "🚀")
+    editor.commands.setTextSelection({ from: start, to: emojiStart + 1 })
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("b")
+    editor.destroy()
+  })
+
+  it("deletes a zwj emoji sequence as one grapheme", () => {
+    const editor = createTestEditor("hi 👨‍👩‍👧‍👦 end")
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("falls through for ordinary single-code-unit text", () => {
+    const editor = createTestEditor("hello")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hello")
     editor.destroy()
   })
 })

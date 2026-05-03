@@ -15,6 +15,7 @@ import { EmojiPluginKey } from "./triggers/emoji-extension"
 import { shouldRemoveTriggerOnToggle, type SuggestionPluginState } from "./trigger-toggle"
 import {
   handleBeforeInputAtomDelete,
+  handleBeforeInputGraphemeDelete,
   handleBeforeInputKeyboardPaste,
   handleBeforeInputNewline,
   insertPastedText,
@@ -108,6 +109,27 @@ function isEditorCompletelyEmpty(editor: import("@tiptap/react").Editor | null |
   )
 }
 
+function emojiAtomToEditableText(node: JSONContent, toEmoji?: (shortcode: string) => string | null): JSONContent {
+  if (node.type === "emoji") {
+    const shortcode = typeof node.attrs?.shortcode === "string" ? node.attrs.shortcode : ""
+    const emoji = typeof node.attrs?.emoji === "string" ? node.attrs.emoji : toEmoji?.(shortcode)
+    return {
+      type: "text",
+      text: emoji ?? (shortcode ? `:${shortcode}:` : "\uFFFC"),
+      marks: node.marks,
+    }
+  }
+
+  if (!node.content) {
+    return node
+  }
+
+  return {
+    ...node,
+    content: node.content.map((child) => emojiAtomToEditableText(child, toEmoji)),
+  }
+}
+
 export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function RichEditor(
   {
     value,
@@ -199,8 +221,13 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       enableChannels,
       enableSlashCommands: enableCommands,
       enableEmoji,
+      emojiAsText: true,
     }),
     [enableMentions, enableChannels, enableCommands, enableEmoji]
+  )
+  const editableValue = useMemo(
+    () => emojiAtomToEditableText(value, enableEmoji ? toEmoji : undefined),
+    [value, enableEmoji, toEmoji]
   )
 
   // Ref to avoid stale closure for file upload callback
@@ -350,7 +377,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
 
   const editor = useEditor({
     extensions,
-    content: value,
+    content: editableValue,
     editable: !disabled,
     autofocus: autoFocus ? "end" : false,
     onUpdate: ({ editor }) => {
@@ -443,6 +470,12 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
           // Android atom deletion: keymap doesn't fire for Backspace, so delete
           // adjacent inline atoms here before the browser's two-step selection.
           if (handleBeforeInputAtomDelete(editor, event as InputEvent)) {
+            return true
+          }
+
+          // Firefox Android can delete emoji text by code unit, leaving a
+          // broken half-grapheme. Delete the whole grapheme before native input.
+          if (handleBeforeInputGraphemeDelete(editor, event as InputEvent)) {
             return true
           }
 
@@ -556,11 +589,11 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
 
     // Compare JSON content - use string comparison for simplicity
     const currentJson = JSON.stringify(editor.getJSON())
-    const newJson = JSON.stringify(value)
+    const newJson = JSON.stringify(editableValue)
     if (newJson !== currentJson) {
       const hadFocus = editor.isFocused
       isInternalUpdate.current = true
-      editor.commands.setContent(value)
+      editor.commands.setContent(editableValue)
       isInternalUpdate.current = false
       // Mobile browsers can drop focus when contenteditable content is replaced.
       // Restore it to keep the virtual keyboard open.
@@ -568,7 +601,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
         editor.commands.focus()
       }
     }
-  }, [value, editor])
+  }, [editableValue, editor])
 
   // Re-parse content when mentionables load or currentUser becomes known (for correct mention type colors)
   useEffect(() => {

@@ -130,6 +130,29 @@ describe("@threa/prosemirror markdown attachment metadata", () => {
   })
 })
 
+describe("@threa/prosemirror emoji parsing", () => {
+  it("can parse emoji shortcodes as editable text for composer surfaces", () => {
+    const parsed = parseMarkdown(":rocket: launch", undefined, (shortcode) => (shortcode === "rocket" ? "🚀" : null), {
+      emojiAsText: true,
+    })
+
+    expect(parsed.content?.[0]?.content).toEqual([
+      { type: "text", text: "🚀" },
+      { type: "text", text: " launch" },
+    ])
+    expect(serializeToMarkdown(parsed)).toBe("🚀 launch")
+  })
+
+  it("parses emoji shortcodes as atom nodes by default for wire-format round trips", () => {
+    const parsed = parseMarkdown(":rocket:", undefined, (shortcode) => (shortcode === "rocket" ? "🚀" : null))
+
+    expect(parsed.content?.[0]?.content?.[0]).toEqual({
+      type: "emoji",
+      attrs: { shortcode: "rocket", emoji: "🚀" },
+    })
+  })
+})
+
 describe("@threa/prosemirror quote reply round-trip", () => {
   it("serializes quoteReply to blockquote with attribution link", () => {
     const doc: JSONContent = {
