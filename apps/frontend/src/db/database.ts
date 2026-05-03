@@ -374,6 +374,44 @@ export interface CachedSavedMessage {
   _cachedAt: number
 }
 
+/**
+ * Scheduled-message row cached for offline-first rendering of the To send /
+ * Sent / Failed tabs and the per-stream composer popover. Keys mirror the
+ * server's wire shape (`ScheduledMessageView`); we don't denormalize a live
+ * message snapshot like saved-messages does because the scheduled row IS the
+ * draft — `contentJson` and `contentMarkdown` are canonical here until the
+ * worker fires.
+ *
+ * Numeric `_scheduledForMs` and `_statusChangedAtMs` mirror drive sort order
+ * since Dexie can't sort on ISO strings efficiently.
+ *
+ * `_cachedAt` is the watermark used by the persistence helpers so a slow list
+ * fetch can't clobber a fresher socket-driven write.
+ */
+export interface CachedScheduledMessage {
+  id: string
+  workspaceId: string
+  userId: string
+  streamId: string
+  parentMessageId: string | null
+  contentJson: unknown
+  contentMarkdown: string
+  attachmentIds: string[]
+  metadata: Record<string, string> | null
+  scheduledFor: string
+  status: string
+  sentMessageId: string | null
+  lastError: string | null
+  editLockOwnerId: string | null
+  editLockExpiresAt: string | null
+  createdAt: string
+  updatedAt: string
+  statusChangedAt: string
+  _scheduledForMs: number
+  _statusChangedAtMs: number
+  _cachedAt: number
+}
+
 export interface CachedWorkspaceMetadata {
   id: string // workspaceId
   workspaceId: string
@@ -415,6 +453,7 @@ class ThreaDatabase extends Dexie {
   markdownBlockCollapse!: EntityTable<CachedMarkdownBlockCollapse, "id">
   linkPreviewCollapse!: EntityTable<CachedLinkPreviewCollapse, "id">
   savedMessages!: EntityTable<CachedSavedMessage, "id">
+  scheduledMessages!: EntityTable<CachedScheduledMessage, "id">
 
   constructor() {
     super("threa")
@@ -650,6 +689,17 @@ class ThreaDatabase extends Dexie {
       stashedDrafts: "id, workspaceId, scope, [workspaceId+scope], createdAt",
     })
 
+    // v27: Scheduled messages cache — first-page offline rendering and
+    // optimistic UI for the To send / Sent / Failed tabs and the per-stream
+    // composer popover. Indexes:
+    //   [workspaceId+status+_scheduledForMs] — To send tab (ASC)
+    //   [workspaceId+status+_statusChangedAtMs] — Sent / Failed tabs (DESC)
+    //   [workspaceId+streamId+status+_scheduledForMs] — composer popover
+    this.version(27).stores({
+      scheduledMessages:
+        "id, workspaceId, streamId, status, [workspaceId+status+_scheduledForMs], [workspaceId+status+_statusChangedAtMs], [workspaceId+streamId+status+_scheduledForMs], _cachedAt",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -677,6 +727,7 @@ export async function clearAllCachedData(): Promise<void> {
       db.markdownBlockCollapse.clear(),
       db.linkPreviewCollapse.clear(),
       db.savedMessages.clear(),
+      db.scheduledMessages.clear(),
       db.stashedDrafts.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])

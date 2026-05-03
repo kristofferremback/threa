@@ -45,5 +45,6 @@ export {
 } from "./context-bag"
 export { activityApi, type ListActivityParams } from "./activity"
 export { savedApi, type ListSavedParams } from "./saved"
+export { scheduledApi, type ListScheduledParams } from "./scheduled"
 export { linkPreviewsApi, type LinkPreviewWithDismissed } from "./link-previews"
 export { integrationsApi, type GitHubIntegrationResponse } from "./integrations"
