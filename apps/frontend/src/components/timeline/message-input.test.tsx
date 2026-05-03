@@ -201,6 +201,14 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useComposerHeightPublish").mockImplementation(
     () => undefined as unknown as ReturnType<typeof hooksModule.useComposerHeightPublish>
   )
+  // The composer's schedule-send entry needs the scheduled service via
+  // ServicesProvider; tests run without that wrapper, so stub the hook to a
+  // no-op mutation. The schedule path itself is exercised by the page tests.
+  vi.spyOn(hooksModule, "useScheduleMessage").mockReturnValue({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    mutate: vi.fn(),
+    isPending: false,
+  } as unknown as ReturnType<typeof hooksModule.useScheduleMessage>)
 
   vi.spyOn(composerModule, "FloatingComposerShell").mockImplementation((({
     children,

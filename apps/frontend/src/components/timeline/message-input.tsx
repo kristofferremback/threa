@@ -16,6 +16,9 @@ import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
 import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
 import type { ComposerControlHandle } from "@/components/composer"
+import { SchedulePicker } from "@/components/scheduled/schedule-picker"
+import { useScheduleMessage } from "@/hooks"
+import { toast } from "sonner"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
 import { extractCommandNode } from "@/lib/commands"
@@ -190,6 +193,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const { preferences } = usePreferences()
   const { stream, sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
+  const scheduleMessageMutation = useScheduleMessage(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   // Resolve stream context for broadcast mention filtering.
@@ -561,6 +565,51 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     [composer, sendMessage, navigate, workspaceId, streamId, startDiscussWithAriadne]
   )
 
+  /**
+   * Schedule the current composer content for a future send. Mirrors the
+   * happy-path of handleSubmit (materialize attachment refs, capture
+   * attachments, clear the composer) but routes to the schedule API instead
+   * of the live send pipeline. The schedule row appears immediately in the
+   * Scheduled page via the upserted socket event.
+   */
+  const handleSchedule = useCallback(
+    async (when: Date) => {
+      if (!composer.canSend) return
+
+      composer.setIsSending(true)
+      setError(null)
+
+      const pendingAttachments = composer.getPendingAttachmentsSnapshot()
+      const liveContent = composer.content
+      const normalizedContent = materializePendingAttachmentReferences(liveContent, pendingAttachments)
+      const attachments = extractUploadedAttachments(normalizedContent)
+      const attachmentIds = attachments.map((a) => a.id)
+      const contentMarkdown = serializeToMarkdown(normalizedContent)
+
+      try {
+        composer.setContent(EMPTY_DOC)
+        setExpanded(false)
+        await scheduleMessageMutation.mutateAsync({
+          streamId,
+          contentJson: normalizedContent,
+          contentMarkdown,
+          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+          scheduledFor: when.toISOString(),
+        })
+        composer.clearDraft()
+        composer.clearAttachments()
+        toast.success("Scheduled")
+      } catch (err) {
+        composer.setContent(liveContent)
+        const message = err instanceof Error ? err.message : "Could not schedule message"
+        setError(message)
+      } finally {
+        composer.setIsSending(false)
+      }
+    },
+    [composer, scheduleMessageMutation, streamId]
+  )
+
   if (disabled && disabledReason) {
     return (
       <div className="border-t">
@@ -642,6 +691,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         size="fab"
       />
     ),
+    scheduleSendTrigger: <SchedulePicker disabled={!composer.canSend || composer.isSending} onPick={handleSchedule} />,
   } as const
 
   return (
