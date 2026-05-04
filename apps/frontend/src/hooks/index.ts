@@ -144,6 +144,10 @@ export { useEditLastMessageTrigger } from "./use-edit-last-message-trigger"
 
 export { useAppUpdate } from "./use-app-update"
 
+export { usePageResumeRefresh } from "./use-page-resume-refresh"
+
+export { useBackgroundBootstrapSync } from "./use-background-bootstrap-sync"
+
 export { useQueueDraftMessage } from "./use-queue-draft-message"
 
 export { useComposerHeightPublish } from "./use-composer-height-publish"
