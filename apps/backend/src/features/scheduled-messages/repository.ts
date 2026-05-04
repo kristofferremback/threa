@@ -225,6 +225,12 @@ export const ScheduledMessagesRepository = {
    * keeps the worker from racing the editor in this same path; the worker
    * holds `status = 'sending'` once it claims the row.
    *
+   * The CAS truncates `updated_at` to millisecond precision because PG's
+   * `NOW()` writes microseconds (`.789456`) but pg-node reads them into a
+   * JS `Date` which only carries milliseconds (`.789`). The wire/IDB ship
+   * ms ISO; when the client sends `expectedUpdatedAt` back, the comparison
+   * has to happen at ms precision or the *first* save 409s every time.
+   *
    * `scheduledFor`, `contentJson`, `contentMarkdown`, `attachmentIds`, and
    * `metadata` are all optional; passing `undefined` leaves the column
    * untouched. Passing `null` (where allowed) clears it.
@@ -257,12 +263,12 @@ export const ScheduledMessagesRepository = {
           ELSE ${params.metadata ? JSON.stringify(params.metadata) : null}::jsonb
         END,
         scheduled_for = COALESCE(${params.scheduledFor ?? null}, scheduled_for),
-        updated_at = NOW()
+        updated_at = date_trunc('milliseconds', NOW())
       WHERE id = ${params.id}
         AND workspace_id = ${params.workspaceId}
         AND user_id = ${params.userId}
         AND status = ${ScheduledMessageStatuses.PENDING}
-        AND updated_at = ${params.expectedUpdatedAt}
+        AND date_trunc('milliseconds', updated_at) = ${params.expectedUpdatedAt}
       RETURNING ${sql.raw(COLUMNS)}
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null

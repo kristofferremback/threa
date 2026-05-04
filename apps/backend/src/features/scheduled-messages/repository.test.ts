@@ -231,6 +231,29 @@ describe("ScheduledMessagesRepository.update", () => {
     expect(captured.text).toContain("updated_at =")
     expect(captured.values).toContain(expected)
   })
+
+  it("truncates updated_at to millisecond precision in the CAS so JS-Date vs PG-microsecond mismatch doesn't 409 every save", async () => {
+    // Regression: PG TIMESTAMPTZ NOW() stores microsecond precision (e.g.
+    // .789456). pg-node reads it into JS Date which only carries ms (.789),
+    // and the wire ships ms ISO. When the client sends `expectedUpdatedAt`
+    // back, the round-trip is `.789` — but the column still has `.789456`.
+    // A naive `updated_at = $expected` CAS fails on the very first save
+    // because the microseconds don't match. The fix: truncate the stored
+    // value to ms in the WHERE clause so the comparison happens at the
+    // precision the client can actually see.
+    const captured: Captured = { text: null, values: null }
+    const db = createQuerier(captured)
+
+    await ScheduledMessagesRepository.update(db, {
+      workspaceId: "ws_1",
+      userId: "usr_1",
+      id: "sched_01",
+      expectedUpdatedAt: new Date("2026-05-03T12:30:00.789Z"),
+      contentMarkdown: "updated",
+    })
+
+    expect(captured.text).toContain("date_trunc('milliseconds', updated_at)")
+  })
 })
 
 describe("ScheduledMessagesRepository.markSent", () => {
