@@ -196,24 +196,21 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     dispatchStartBatchSelect(panelId)
   }, [panelId])
 
-  const isDm = stream?.type === StreamTypes.DM
   const panelMenuActions: SidebarActionItem[] = []
-  if (!isDm) {
-    panelMenuActions.push({
-      id: "stream-settings",
-      label: "Settings",
-      icon: Settings,
-      onSelect: () => {
-        if (panelId) openStreamSettings(panelId)
-      },
-    })
-  }
+  panelMenuActions.push({
+    id: "stream-settings",
+    label: "Settings",
+    icon: Settings,
+    onSelect: () => {
+      if (panelId) openStreamSettings(panelId)
+    },
+  })
   panelMenuActions.push({
     id: "move-messages",
     label: "Move messages…",
     icon: CornerDownRight,
     onSelect: handleSelectMessages,
-    separatorBefore: !isDm,
+    separatorBefore: true,
   })
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
     draftPortalTargetRef.current = el
@@ -436,17 +433,15 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
-                {!isDm && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      if (panelId) openStreamSettings(panelId)
-                    }}
-                  >
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                )}
-                {!isDm && <DropdownMenuSeparator />}
+                <DropdownMenuItem
+                  onClick={() => {
+                    if (panelId) openStreamSettings(panelId)
+                  }}
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSelectMessages} disabled={!!stream.archivedAt}>
                   <CornerDownRight className="mr-2 h-4 w-4" />
                   Move messages…

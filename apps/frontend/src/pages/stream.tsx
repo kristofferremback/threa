@@ -174,21 +174,19 @@ export function StreamPage() {
   // end since the move endpoints reject the source stream.
   const isSystem = stream?.type === StreamTypes.SYSTEM
   const streamMenuActions: SidebarActionItem[] = []
-  if (!isDm) {
-    streamMenuActions.push({
-      id: "stream-settings",
-      label: "Settings",
-      icon: Settings,
-      onSelect: () => openStreamSettings(streamId),
-    })
-  }
+  streamMenuActions.push({
+    id: "stream-settings",
+    label: "Settings",
+    icon: Settings,
+    onSelect: () => openStreamSettings(streamId),
+  })
   if (!isArchived && !isSystem) {
     streamMenuActions.push({
       id: "move-messages",
       label: "Move messages…",
       icon: CornerDownRight,
       onSelect: handleSelectMessages,
-      separatorBefore: !isDm,
+      separatorBefore: true,
     })
   }
   if (isScratchpad) {
@@ -347,12 +345,10 @@ export function StreamPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
-                  {!isDm && (
-                    <DropdownMenuItem onClick={() => openStreamSettings(streamId)}>
-                      <Settings className="mr-2 h-4 w-4" />
-                      Settings
-                    </DropdownMenuItem>
-                  )}
+                  <DropdownMenuItem onClick={() => openStreamSettings(streamId)}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </DropdownMenuItem>
                   {/* Hide "Move messages…" entirely on archived/system streams
                     to match the mobile drawer (which builds via
                     `streamMenuActions` and skips the entry in both cases).
@@ -361,7 +357,7 @@ export function StreamPage() {
                     can never be a valid source. */}
                   {!isArchived && !isSystem && (
                     <>
-                      {!isDm && <DropdownMenuSeparator />}
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={handleSelectMessages}>
                         <CornerDownRight className="mr-2 h-4 w-4" />
                         Move messages…
