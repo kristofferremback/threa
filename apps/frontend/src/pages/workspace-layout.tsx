@@ -47,6 +47,8 @@ import {
   useAppUpdate,
   useMessageQueue,
   useUnreadTabIndicator,
+  usePageResumeRefresh,
+  useBackgroundBootstrapSync,
 } from "@/hooks"
 import { usePageResume } from "@/hooks/use-page-resume"
 import { useAuth } from "@/auth"
@@ -247,6 +249,12 @@ function AppUpdateChecker() {
   return null
 }
 
+function FreshnessWatchers() {
+  usePageResumeRefresh()
+  useBackgroundBootstrapSync()
+  return null
+}
+
 function TraceDialogContainer() {
   const { isOpen } = useTrace()
 
@@ -325,6 +333,7 @@ export function WorkspaceLayout() {
         <WorkspaceSyncHandler workspaceId={workspaceId} visibleStreamIds={streamIds}>
           <UnreadTabIndicator workspaceId={workspaceId} />
           <AppUpdateChecker />
+          <FreshnessWatchers />
           <MessageQueueHandler />
           <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
             <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
