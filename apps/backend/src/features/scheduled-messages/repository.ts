@@ -199,11 +199,11 @@ export const ScheduledMessagesRepository = {
           AND user_id = ${userId}
           AND status = ${opts.status}
           AND (${streamFilter}::text IS NULL OR stream_id = ${streamFilter})
-          AND (${!hasCursor} OR scheduled_for > (
-            SELECT scheduled_for FROM scheduled_messages
+          AND (${!hasCursor} OR (scheduled_for, id) > (
+            SELECT scheduled_for, id FROM scheduled_messages
             WHERE id = ${cursor} AND workspace_id = ${workspaceId} AND user_id = ${userId}
           ))
-        ORDER BY scheduled_for ASC
+        ORDER BY scheduled_for ASC, id ASC
         LIMIT ${limit}
       `)
       return result.rows.map(mapRow)
@@ -216,11 +216,11 @@ export const ScheduledMessagesRepository = {
         AND user_id = ${userId}
         AND status = ${opts.status}
         AND (${streamFilter}::text IS NULL OR stream_id = ${streamFilter})
-        AND (${!hasCursor} OR status_changed_at < (
-          SELECT status_changed_at FROM scheduled_messages
+        AND (${!hasCursor} OR (status_changed_at, id) < (
+          SELECT status_changed_at, id FROM scheduled_messages
           WHERE id = ${cursor} AND workspace_id = ${workspaceId} AND user_id = ${userId}
         ))
-      ORDER BY status_changed_at DESC
+      ORDER BY status_changed_at DESC, id DESC
       LIMIT ${limit}
     `)
     return result.rows.map(mapRow)
@@ -283,10 +283,17 @@ export const ScheduledMessagesRepository = {
    * `pending` and either has no lock or the lock has expired.
    *
    * Returns the updated row when the CAS succeeded, null when it failed
-   * (status not `pending`, or another owner holds an unexpired lock).
+   * (status not `pending`, another owner holds an unexpired lock, or — when
+   * `requireDueNow` is set — the row has been rescheduled to the future).
    *
    * `setStatus` is `null` for an editor claim (status stays `pending`) and
    * `'sending'` for the worker's claim (atomic flip).
+   *
+   * `requireDueNow` is the worker-only guard: a stale leased queue row that
+   * survives a reschedule cancel can still reach `fire()` after the editor
+   * commits a future `scheduled_for`. Without this clause the CAS would
+   * accept it and we'd deliver the message early. The editor's claim path
+   * leaves it false because users may want to edit a future row.
    */
   async tryAcquireLock(
     db: Querier,
@@ -296,8 +303,10 @@ export const ScheduledMessagesRepository = {
       ownerId: string
       ttlSeconds: number
       setStatus: ScheduledMessageStatus | null
+      requireDueNow?: boolean
     }
   ): Promise<ScheduledMessage | null> {
+    const requireDueNow = params.requireDueNow ?? false
     const result = await db.query<ScheduledMessageRow>(sql`
       UPDATE scheduled_messages SET
         edit_lock_owner_id = ${params.ownerId},
@@ -315,6 +324,7 @@ export const ScheduledMessagesRepository = {
         AND workspace_id = ${params.workspaceId}
         AND status = ${ScheduledMessageStatuses.PENDING}
         AND (edit_lock_owner_id IS NULL OR edit_lock_expires_at <= NOW() OR edit_lock_owner_id = ${params.ownerId})
+        AND (${!requireDueNow}::boolean OR scheduled_for <= NOW())
       RETURNING ${sql.raw(COLUMNS)}
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null

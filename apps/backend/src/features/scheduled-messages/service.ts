@@ -528,6 +528,18 @@ export class ScheduledMessagesService {
         logger.debug({ ...params, status: row.status }, "scheduled_message fire skipped — not pending")
         return { fired: false, reschedule: false }
       }
+      if (row.scheduledFor.getTime() > Date.now()) {
+        // Stale leased queue row that survived a reschedule cancel — the
+        // editor pushed scheduled_for forward and a fresh queue row is
+        // already enqueued for the new time. Drop this tick silently; the
+        // new queue row will fire when due. Marking the row failed here
+        // would tombstone a perfectly valid future-scheduled message.
+        logger.debug(
+          { ...params, scheduledFor: row.scheduledFor.toISOString() },
+          "scheduled_message fire skipped — rescheduled to future"
+        )
+        return { fired: false, reschedule: false }
+      }
 
       const claimed = await ScheduledMessagesRepository.tryAcquireLock(client, {
         workspaceId: params.workspaceId,
@@ -535,12 +547,18 @@ export class ScheduledMessagesService {
         ownerId,
         ttlSeconds: WORKER_LOCK_TTL_SECONDS,
         setStatus: ScheduledMessageStatuses.SENDING,
+        // The pre-read above checks scheduled_for, but a concurrent reschedule
+        // could push the row forward between that read and this CAS. Putting
+        // the due-time guard inside the CAS itself closes the gap so a
+        // late-arriving reschedule still shields the row from early delivery.
+        requireDueNow: true,
       })
 
       if (!claimed) {
-        // Editor holds the lock. Bounded retry — if we exceed the budget, the
-        // user has been editing for too long; mark failed so they see the row
-        // turn red instead of silently slipping further.
+        // Editor holds the lock (or a same-tx reschedule landed in the gap).
+        // Bounded retry — if we exceed the budget the user has been editing
+        // for too long; mark failed so they see the row turn red instead of
+        // silently slipping further.
         const retries = await ScheduledMessagesRepository.incrementRetryCount(
           client,
           params.workspaceId,

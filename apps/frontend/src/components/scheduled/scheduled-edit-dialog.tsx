@@ -80,7 +80,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
         setError(null)
       })
       .catch((err: Error) => {
-        setError(err.message ?? "Could not start editing")
+        setError(err.message || "Could not start editing")
       })
       .finally(() => {
         acquiringRef.current = false

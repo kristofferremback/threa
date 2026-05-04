@@ -103,6 +103,40 @@ describe("ScheduledMessagesRepository.findByIdScoped (worker entry)", () => {
   })
 })
 
+describe("ScheduledMessagesRepository.listByUser cursor pagination", () => {
+  afterEach(() => mock.restore())
+
+  it("uses tuple comparison and a secondary id sort so timestamp-tied rows aren't skipped", async () => {
+    // Without (timestamp, id) tuple comparison + secondary order key, page 2
+    // would skip every sibling sharing scheduled_for with the cursor anchor.
+    // CodeRabbit caught this: the cursor anchor row's siblings would silently
+    // disappear on the next page.
+    const captured: Captured = { text: null, values: null }
+    const db = createQuerier(captured)
+
+    await ScheduledMessagesRepository.listByUser(db, "ws_1", "usr_1", {
+      status: ScheduledMessageStatuses.PENDING,
+      cursor: "sched_anchor",
+    })
+
+    expect(captured.text).toContain("(scheduled_for, id) >")
+    expect(captured.text).toContain("ORDER BY scheduled_for ASC, id ASC")
+  })
+
+  it("orders sent rows by (status_changed_at, id) DESC tuple", async () => {
+    const captured: Captured = { text: null, values: null }
+    const db = createQuerier(captured)
+
+    await ScheduledMessagesRepository.listByUser(db, "ws_1", "usr_1", {
+      status: ScheduledMessageStatuses.SENT,
+      cursor: "sched_anchor",
+    })
+
+    expect(captured.text).toContain("(status_changed_at, id) <")
+    expect(captured.text).toContain("ORDER BY status_changed_at DESC, id DESC")
+  })
+})
+
 describe("ScheduledMessagesRepository.tryAcquireLock", () => {
   afterEach(() => mock.restore())
 
@@ -143,6 +177,47 @@ describe("ScheduledMessagesRepository.tryAcquireLock", () => {
     expect(captured.values).toContain(ScheduledMessageStatuses.SENDING)
     // CASE expression sits inside the UPDATE so status flip is atomic.
     expect(captured.text).toContain("CASE")
+  })
+
+  it("adds a scheduled_for <= NOW() guard to the CAS when requireDueNow is set", async () => {
+    // CodeRabbit caught: a stale leased queue row that survives a reschedule
+    // cancel can still reach the worker after the editor pushes
+    // scheduled_for forward. Putting the due-time guard inside the CAS itself
+    // closes the gap so a same-tx reschedule can't be raced into early
+    // delivery. The editor's claim path leaves it false because users may
+    // want to edit a future row.
+    const captured: Captured = { text: null, values: null }
+    const db = createQuerier(captured)
+
+    await ScheduledMessagesRepository.tryAcquireLock(db, {
+      workspaceId: "ws_1",
+      id: "sched_01",
+      ownerId: "worker:send:wkr_1",
+      ttlSeconds: 10,
+      setStatus: ScheduledMessageStatuses.SENDING,
+      requireDueNow: true,
+    })
+
+    expect(captured.text).toContain("scheduled_for <= NOW()")
+  })
+
+  it("omits the scheduled_for guard for editor claims so a future row can still be edited", async () => {
+    const captured: Captured = { text: null, values: null }
+    const db = createQuerier(captured)
+
+    await ScheduledMessagesRepository.tryAcquireLock(db, {
+      workspaceId: "ws_1",
+      id: "sched_01",
+      ownerId: "usr:usr_1:sess_1",
+      ttlSeconds: 60,
+      setStatus: null,
+      // requireDueNow omitted (defaults to false)
+    })
+
+    // The CAS still parameterizes the predicate (always present in SQL) but
+    // the boolean flag flips it to a no-op so editor claims can still succeed
+    // for future-scheduled rows.
+    expect(captured.values).toContain(true) // !requireDueNow = true → guard short-circuits
   })
 })
 

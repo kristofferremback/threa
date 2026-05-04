@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useId, useMemo, useState } from "react"
 import { CalendarClock } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
@@ -32,10 +32,25 @@ interface SchedulePickerProps {
  * open the system picker. Past selections clamp to a 30s offset so the
  * server's clamp doesn't surprise the user with an immediate fire.
  */
+/**
+ * datetime-local needs YYYY-MM-DDTHH:mm in the user's local zone. Built fresh
+ * each time the user enters custom mode — the composer is mounted for the
+ * lifetime of a session, so anything memoized at mount goes stale within
+ * minutes (a user opening the picker hours later would see a past datetime as
+ * the default and a stale `min` constraint).
+ */
+function buildLocalDatetimeOneHourAhead(): string {
+  const d = new Date(Date.now() + 60 * 60_000)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export function SchedulePicker({ trigger, disabled, onPick, side = "top" }: SchedulePickerProps) {
   const [open, setOpen] = useState(false)
   const [customMode, setCustomMode] = useState(false)
   const [customValue, setCustomValue] = useState<string>("")
+  const [customMin, setCustomMin] = useState<string>("")
+  const inputId = useId()
   const { preferences } = usePreferences()
 
   const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -67,17 +82,17 @@ export function SchedulePicker({ trigger, disabled, onPick, side = "top" }: Sche
     return formatFutureTime(d, new Date(), { timezone })
   }, [customValue, timezone])
 
-  // datetime-local needs YYYY-MM-DDTHH:mm in the user's local zone — feed it
-  // a string built from now + 1 hour so the default "Send in an hour" lines
-  // up with one of the presets.
-  const defaultDatetimeLocal = useMemo(() => {
-    const d = new Date(Date.now() + 60 * 60_000)
-    const pad = (n: number) => String(n).padStart(2, "0")
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }, [])
-
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      // Guard the open transition so a custom trigger that doesn't itself
+      // honor `disabled` can't bypass the disabled state. The default Button
+      // fallback already disables click — this covers caller-supplied nodes.
+      onOpenChange={(next) => {
+        if (disabled) return
+        setOpen(next)
+      }}
+    >
       <PopoverTrigger asChild>
         {trigger ?? (
           <Button
@@ -113,8 +128,10 @@ export function SchedulePicker({ trigger, disabled, onPick, side = "top" }: Sche
               <button
                 type="button"
                 onClick={() => {
+                  const dt = buildLocalDatetimeOneHourAhead()
+                  setCustomMin(dt)
+                  setCustomValue(dt)
                   setCustomMode(true)
-                  setCustomValue(defaultDatetimeLocal)
                 }}
                 className="rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
               >
@@ -124,12 +141,15 @@ export function SchedulePicker({ trigger, disabled, onPick, side = "top" }: Sche
           </>
         ) : (
           <div className="flex flex-col gap-2">
-            <label className="px-1 text-xs font-medium text-muted-foreground">Pick a time</label>
+            <label htmlFor={inputId} className="px-1 text-xs font-medium text-muted-foreground">
+              Pick a time
+            </label>
             <Input
+              id={inputId}
               type="datetime-local"
               value={customValue}
               onChange={(e) => setCustomValue(e.target.value)}
-              min={defaultDatetimeLocal}
+              min={customMin}
               autoFocus
             />
             {previewLabel && <div className="px-1 text-xs text-muted-foreground">Sends {previewLabel}</div>}

@@ -413,9 +413,50 @@ describe("ScheduledMessagesService.fire (worker entry)", () => {
     expect(result).toEqual({ fired: false, reschedule: false })
   })
 
+  it("drops a stale leased queue row when the row was rescheduled to the future", async () => {
+    // The reschedule cancel races with a worker that already leased the old
+    // queue row. If the worker tries to fire after the editor pushes
+    // scheduled_for forward, we must drop the tick — marking the row failed
+    // would tombstone a perfectly valid future-scheduled message. The fresh
+    // queue row enqueued by the editor will fire at the new time.
+    const service = setupService()
+    const future = new Date(Date.now() + 60 * 60_000)
+    spyOn(ScheduledMessagesRepository, "findByIdScoped").mockResolvedValue(fakeScheduled({ scheduledFor: future }))
+    const tryAcquireLock = spyOn(ScheduledMessagesRepository, "tryAcquireLock")
+    const markFailed = spyOn(ScheduledMessagesRepository, "markFailed")
+
+    const result = await service.fire({ workspaceId: WORKSPACE_ID, scheduledMessageId: SCHEDULED_ID })
+
+    expect(result).toEqual({ fired: false, reschedule: false })
+    expect(tryAcquireLock).not.toHaveBeenCalled()
+    expect(markFailed).not.toHaveBeenCalled()
+  })
+
+  it("passes requireDueNow to the worker CAS so a same-tx reschedule still shields the row", async () => {
+    const service = setupService()
+    spyOn(ScheduledMessagesRepository, "findByIdScoped").mockResolvedValue(
+      fakeScheduled({ scheduledFor: new Date(Date.now() - 1_000) })
+    )
+    const tryAcquireLock = spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue(null)
+    spyOn(ScheduledMessagesRepository, "incrementRetryCount").mockResolvedValue(1)
+
+    await service.fire({ workspaceId: WORKSPACE_ID, scheduledMessageId: SCHEDULED_ID })
+
+    expect(tryAcquireLock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        setStatus: ScheduledMessageStatuses.SENDING,
+        requireDueNow: true,
+      })
+    )
+  })
+
   it("requests a reschedule when the editor holds the lock and the retry budget isn't exhausted", async () => {
     const service = setupService()
-    spyOn(ScheduledMessagesRepository, "findByIdScoped").mockResolvedValue(fakeScheduled())
+    // Use a past scheduledFor so the worker reaches the CAS — we want to
+    // exercise the lock-contention path, not the "rescheduled to future" drop.
+    const due = new Date(Date.now() - 1_000)
+    spyOn(ScheduledMessagesRepository, "findByIdScoped").mockResolvedValue(fakeScheduled({ scheduledFor: due }))
     spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue(null)
     spyOn(ScheduledMessagesRepository, "incrementRetryCount").mockResolvedValue(1)
 
@@ -425,7 +466,8 @@ describe("ScheduledMessagesService.fire (worker entry)", () => {
 
   it("marks the row failed when retry budget is exhausted", async () => {
     const service = setupService()
-    const row = fakeScheduled()
+    const due = new Date(Date.now() - 1_000)
+    const row = fakeScheduled({ scheduledFor: due })
     spyOn(ScheduledMessagesRepository, "findByIdScoped")
       .mockResolvedValueOnce(row)
       .mockResolvedValueOnce({
@@ -466,7 +508,8 @@ describe("ScheduledMessagesService.fire (worker entry)", () => {
       createdAt: NOW,
     }))
     const service = setupService({ createMessage } as unknown as EventService)
-    const row = fakeScheduled()
+    const due = new Date(Date.now() - 1_000)
+    const row = fakeScheduled({ scheduledFor: due })
     spyOn(ScheduledMessagesRepository, "findByIdScoped").mockResolvedValue(row)
     spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue({
       ...row,
