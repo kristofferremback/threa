@@ -14,3 +14,6 @@ dev-dist/
 test-results/
 playwright-report/
 .playwright-mcp/
+
+# Agent tmp files
+.tmp/
