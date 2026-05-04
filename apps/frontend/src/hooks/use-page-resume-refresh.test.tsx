@@ -125,4 +125,25 @@ describe("usePageResumeRefresh", () => {
 
     expect(invalidateSpy).not.toHaveBeenCalled()
   })
+
+  it("invalidates panel stream bootstraps in addition to the route stream", () => {
+    const queryClient = new QueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+
+    renderHook(() => usePageResumeRefresh(), {
+      wrapper: makeWrapper(queryClient, "/w/ws_1/s/stream_1?panel=stream_2&panel=stream_3"),
+    })
+
+    act(() => {
+      setVisibility("hidden")
+      vi.advanceTimersByTime(6_000)
+      setVisibility("visible")
+    })
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: workspaceKeys.bootstrap("ws_1") })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: streamKeys.bootstrap("ws_1", "stream_1") })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: streamKeys.bootstrap("ws_1", "stream_2") })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: streamKeys.bootstrap("ws_1", "stream_3") })
+    expect(invalidateSpy).toHaveBeenCalledTimes(4)
+  })
 })

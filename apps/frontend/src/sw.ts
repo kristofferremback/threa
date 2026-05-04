@@ -191,8 +191,11 @@ async function prefetchStreamBootstrap(workspaceId: string, streamId: string): P
 
 /**
  * Pre-fetch the workspace bootstrap so the next workspace bootstrap fetch in the
- * page is served from the warm push cache by the interceptor above. Best-effort:
- * the page falls back to a normal network fetch if this didn't run or failed.
+ * page is served from the warm push cache by the interceptor above.
+ *
+ * Errors propagate so the `sync` event handler sees the rejection and the
+ * browser retries Background Sync. Inline callers (push handler, no-sync
+ * fallback) catch separately and treat failures as best-effort.
  *
  * Unlike stream bootstrap, we don't seed IDB here — the workspace bootstrap
  * apply pipeline is large and lives in workspace-sync; running it from the SW
@@ -200,15 +203,11 @@ async function prefetchStreamBootstrap(workspaceId: string, streamId: string): P
  * TanStack always issues a fresh GET on app load and that GET hits the cache.
  */
 async function prefetchWorkspaceBootstrap(workspaceId: string): Promise<void> {
-  try {
-    const url = `/api/workspaces/${workspaceId}/bootstrap`
-    const response = await fetch(url, { credentials: "include" })
-    if (!response.ok) return
-    const cache = await caches.open(PUSH_BOOTSTRAP_CACHE)
-    await cache.put(url, response)
-  } catch {
-    // Best-effort
-  }
+  const url = `/api/workspaces/${workspaceId}/bootstrap`
+  const response = await fetch(url, { credentials: "include" })
+  if (!response.ok) return
+  const cache = await caches.open(PUSH_BOOTSTRAP_CACHE)
+  await cache.put(url, response)
 }
 
 /**
@@ -295,13 +294,14 @@ self.addEventListener("sync", ((event: SyncEvent) => {
       const cache = await caches.open(PENDING_SYNC_CACHE)
       const cached = await cache.match(PENDING_SYNC_KEY)
       if (!cached) return
-      // Delete first: if the run throws, the browser re-fires `sync` and we'd
-      // double-fetch the same stale target. The page re-queues a fresh target
-      // on next focus loss anyway.
-      await cache.delete(PENDING_SYNC_KEY)
 
       const target = (await cached.json()) as BootstrapSyncTarget
+      // Run before delete: if the run throws, the entry stays so the browser's
+      // `sync` retry has a target to replay. A new `queueBootstrapSync` call
+      // (e.g. another tab hide) overwrites the entry with a fresher target,
+      // which is the desired behavior.
       await runBootstrapSync(target)
+      await cache.delete(PENDING_SYNC_KEY)
     })()
   )
 }) as EventListener)
