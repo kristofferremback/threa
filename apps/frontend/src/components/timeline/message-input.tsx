@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import {
@@ -6,11 +6,9 @@ import {
   getDraftMessageKey,
   useStreamOrDraft,
   useComposerHeightPublish,
-  useStreamBootstrap,
   useStashComposer,
+  useMentionStreamContext,
 } from "@/hooks"
-import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
-import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
@@ -31,8 +29,7 @@ import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
 import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
-import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
-import type { MentionStreamContext } from "@/hooks/use-mentionables"
+import { DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
 import type { PendingAttachment } from "@/hooks/use-attachments"
 
 interface MessageInputProps {
@@ -200,53 +197,10 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const scheduleMessageMutation = useScheduleMessage(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
-  // Resolve stream context for broadcast mention filtering.
-  // For threads, look up the root stream's type from IDB workspace streams.
-  const idbStreams = useWorkspaceStreams(workspaceId)
-
-  // Access is gated at the channel level: threads inherit their member list
-  // and bot grants from the root channel. For channels/DMs, read from self.
-  const rootStreamId = stream?.rootStreamId
-  const { data: currentBootstrap } = useStreamBootstrap(workspaceId, streamId, {
-    enabled: !!streamId && !rootStreamId,
-  })
-  const { data: rootBootstrap } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
-    enabled: !!rootStreamId,
-  })
-  const accessBootstrap = rootStreamId ? rootBootstrap : currentBootstrap
-
-  const currentUser = useUser()
-  const workspaceUsers = useWorkspaceUsers(workspaceId)
-  const currentUserRole = useMemo(
-    () => workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role,
-    [workspaceUsers, currentUser?.id]
-  )
-
-  const streamContext = useMemo<MentionStreamContext | undefined>(() => {
-    if (!stream) return undefined
-    const ctx: MentionStreamContext = { streamType: stream.type }
-
-    if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
-      const rootStream = idbStreams.find((s) => s.id === stream.rootStreamId)
-      if (rootStream) ctx.rootStreamType = rootStream.type
-    }
-
-    // Invite-mode exclusion: everyone who already has channel-level access —
-    // since threads inherit access from the root, inviting a root-member to a
-    // thread is a no-op (they can already see and @mention inside it).
-    if (accessBootstrap?.members) {
-      const ids = new Set(accessBootstrap.members.map((m) => m.memberId))
-      for (const botId of accessBootstrap.botMemberIds ?? []) ids.add(botId)
-      ctx.memberIds = ids
-    }
-
-    // Bot mention filter: the same channel-level grants determine mentionability.
-    if (accessBootstrap?.botMemberIds) ctx.botMemberIds = new Set(accessBootstrap.botMemberIds)
-
-    ctx.canInviteBots = currentUserRole === "admin" || currentUserRole === "owner"
-
-    return ctx
-  }, [stream, idbStreams, accessBootstrap, currentUserRole])
+  // Broadcast/mention filtering, member/bot allow-lists, and the admin gate
+  // for bot invites all live in `useMentionStreamContext`. Threads route
+  // through their root channel for access grants — handled inside the hook.
+  const streamContext = useMentionStreamContext(workspaceId, stream)
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()

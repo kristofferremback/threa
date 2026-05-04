@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
-import { formatFutureTime } from "@/lib/dates"
+import { formatFutureTime, formatSendCountdown, toDateTimeLocalValue } from "@/lib/dates"
 import { usePreferences } from "@/contexts"
 import { useScheduledList, useCancelScheduled, useSendScheduledNow } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -35,19 +35,6 @@ interface ScheduledMessagesPickerProps {
 }
 
 type Mode = "list" | "picking"
-
-/**
- * datetime-local needs YYYY-MM-DDTHH:mm in the user's local zone. Built fresh
- * each time the user enters picking mode — the composer is mounted for the
- * lifetime of a session, so anything memoized at mount goes stale within
- * minutes (a user opening the picker hours later would see a past datetime
- * as the default and a stale `min` constraint).
- */
-function buildLocalDatetimeOneHourAhead(): string {
-  const d = new Date(Date.now() + 60 * 60_000)
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 /**
  * Unified scheduled-messages picker for the composer toolbar (Journey 2 in
@@ -216,7 +203,9 @@ export function ScheduledMessagesPicker({
               onBack={resetToList}
               onPreset={handlePreset}
               onShowCustom={() => {
-                const dt = buildLocalDatetimeOneHourAhead()
+                // Built fresh each time — the composer is mounted for the
+                // lifetime of a session, so a memoized seed would go stale.
+                const dt = toDateTimeLocalValue(new Date(Date.now() + 60 * 60_000))
                 setCustomMin(dt)
                 setCustomValue(dt)
                 setShowCustom(true)
@@ -444,8 +433,7 @@ function ScheduledRow({ scheduled, now, timezone, onEdit, onRequestActions }: Sc
     [scheduled.contentMarkdown]
   )
   const scheduledFor = useMemo(() => new Date(scheduled.scheduledFor), [scheduled.scheduledFor])
-  const rawLabel = formatFutureTime(scheduledFor, now, { timezone })
-  const label = /^\d+m$/.test(rawLabel) && Number(rawLabel.replace("m", "")) <= 1 ? "Sending soon" : rawLabel
+  const label = formatSendCountdown(scheduledFor, now, { timezone })
   const attachmentCount = scheduled.attachmentIds.length
 
   return (

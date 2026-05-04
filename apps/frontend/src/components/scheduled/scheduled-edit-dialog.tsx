@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
 import type { Editor } from "@tiptap/react"
-import { StreamTypes, type JSONContent, type ScheduledMessageView } from "@threa/types"
+import { type JSONContent, type ScheduledMessageView } from "@threa/types"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -13,18 +13,13 @@ import { Button } from "@/components/ui/button"
 import { RichEditor, EditorActionBar, EditorToolbar } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
+import { DateTimeField } from "@/components/forms/date-time-field"
+import { parseLocalDateTime, toDateInputValue, toTimeInputValue } from "@/lib/dates"
 import { useIsMobile } from "@/hooks/use-mobile"
-import {
-  useClaimScheduled,
-  useReleaseScheduled,
-  useUpdateScheduled,
-  useHeartbeatScheduled,
-  useStreamBootstrap,
-} from "@/hooks"
+import { useClaimScheduled, useReleaseScheduled, useUpdateScheduled, useHeartbeatScheduled } from "@/hooks"
+import { useMentionStreamContext } from "@/hooks/use-mentionables"
 import { useAttachments } from "@/hooks/use-attachments"
-import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
-import { useUser } from "@/auth"
-import type { MentionStreamContext } from "@/hooks/use-mentionables"
+import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { materializePendingAttachmentReferences } from "@/components/timeline/message-input"
 import { toast } from "sonner"
 import { collectAttachmentReferenceIds, serializeToMarkdown } from "@threa/prosemirror"
@@ -86,7 +81,15 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const acquiringRef = useRef(false)
   const editorRef = useRef<RichEditorHandle | null>(null)
 
-  const streamContext = useDestinationStreamContext(workspaceId, scheduled?.streamId)
+  // Mention/broadcast filtering follows the destination stream's access — the
+  // hook handles thread→root bootstrap, member sets, and the bot-invite gate.
+  // Without this, @channel / @here would offer streams the user can't broadcast to.
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const destinationStream = useMemo(
+    () => (scheduled?.streamId ? idbStreams.find((s) => s.id === scheduled.streamId) : undefined),
+    [idbStreams, scheduled?.streamId]
+  )
+  const streamContext = useMentionStreamContext(workspaceId, destinationStream)
   const attachmentsHook = useAttachments(workspaceId)
 
   const open = scheduled !== null
@@ -120,8 +123,8 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
         const at = new Date(res.scheduled.scheduledFor)
         setLockToken(res.lockToken)
         setContentJson(res.scheduled.contentJson || EMPTY_DOC)
-        setSendDate(toDateInput(at))
-        setSendTime(toTimeInput(at))
+        setSendDate(toDateInputValue(at))
+        setSendTime(toTimeInputValue(at))
         setError(null)
       })
       .catch((err: Error) => {
@@ -155,11 +158,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     onClose()
   }, [scheduled, lockToken, releaseMutation, attachmentsHook, onClose])
 
-  const sendAtDate = useMemo(() => {
-    if (!sendDate || !sendTime) return null
-    const combined = new Date(`${sendDate}T${sendTime}`)
-    return Number.isNaN(combined.getTime()) ? null : combined
-  }, [sendDate, sendTime])
+  const sendAtDate = useMemo(() => parseLocalDateTime(sendDate, sendTime), [sendDate, sendTime])
 
   const isPast = useMemo(() => {
     if (!sendAtDate) return false
@@ -247,31 +246,14 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     }
     return (
       <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-3">
-          {/* Split inputs (date + time) instead of `datetime-local` so users
-              can change just the time without resetting the date — same shape
-              ReminderPickerSheet uses. Each half opens its own native picker. */}
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Date</span>
-            <input
-              type="date"
-              value={sendDate}
-              onChange={(e) => setSendDate(e.target.value)}
-              disabled={isSaving}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Time</span>
-            <input
-              type="time"
-              value={sendTime}
-              onChange={(e) => setSendTime(e.target.value)}
-              disabled={isSaving}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </label>
-        </div>
+        <DateTimeField
+          date={sendDate}
+          time={sendTime}
+          onDateChange={setSendDate}
+          onTimeChange={setSendTime}
+          disabled={isSaving}
+          density="compact"
+        />
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Message</span>
           <div className="rounded-md border bg-background [&_.tiptap]:min-h-[8rem] [&_.tiptap]:max-h-72 [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-2">
@@ -359,70 +341,4 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   )
-}
-
-/** YYYY-MM-DD in local time — the shape `<input type="date">` expects. */
-function toDateInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-
-/** HH:mm in local time — the shape `<input type="time">` expects. */
-function toTimeInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-/**
- * Compose a `MentionStreamContext` for the scheduled message's destination
- * stream — same shape `MessageInput` builds for the live composer. Without
- * this, broadcast mentions (@channel / @here) would surface for streams the
- * user can't broadcast to. Threads inherit access from their root stream.
- *
- * Returns `undefined` when the destination stream isn't known yet (dialog
- * still loading) so the editor falls back to no-broadcast-mentions rather
- * than wrong ones.
- */
-function useDestinationStreamContext(
-  workspaceId: string,
-  destinationStreamId: string | undefined
-): MentionStreamContext | undefined {
-  const idbStreams = useWorkspaceStreams(workspaceId)
-  const stream = useMemo(
-    () => (destinationStreamId ? idbStreams.find((s) => s.id === destinationStreamId) : undefined),
-    [idbStreams, destinationStreamId]
-  )
-  const rootStreamId = stream?.rootStreamId ?? null
-
-  const { data: currentBootstrap } = useStreamBootstrap(workspaceId, destinationStreamId ?? "", {
-    enabled: !!destinationStreamId && !rootStreamId,
-  })
-  const { data: rootBootstrap } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
-    enabled: !!rootStreamId,
-  })
-  const accessBootstrap = rootStreamId ? rootBootstrap : currentBootstrap
-
-  const currentUser = useUser()
-  const workspaceUsers = useWorkspaceUsers(workspaceId)
-  const currentUserRole = useMemo(
-    () => workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role,
-    [workspaceUsers, currentUser?.id]
-  )
-
-  return useMemo<MentionStreamContext | undefined>(() => {
-    if (!stream) return undefined
-    const ctx: MentionStreamContext = { streamType: stream.type }
-    if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
-      const rootStream = idbStreams.find((s) => s.id === stream.rootStreamId)
-      if (rootStream) ctx.rootStreamType = rootStream.type
-    }
-    if (accessBootstrap?.members) {
-      const ids = new Set(accessBootstrap.members.map((m) => m.memberId))
-      for (const botId of accessBootstrap.botMemberIds ?? []) ids.add(botId)
-      ctx.memberIds = ids
-    }
-    if (accessBootstrap?.botMemberIds) ctx.botMemberIds = new Set(accessBootstrap.botMemberIds)
-    ctx.canInviteBots = currentUserRole === "admin" || currentUserRole === "owner"
-    return ctx
-  }, [stream, idbStreams, accessBootstrap, currentUserRole])
 }

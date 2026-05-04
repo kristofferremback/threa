@@ -5,7 +5,7 @@ import type { ScheduledMessageView } from "@threa/types"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
-import { formatFutureTime } from "@/lib/dates"
+import { formatSendCountdown } from "@/lib/dates"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { usePreferences } from "@/contexts"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
@@ -52,11 +52,8 @@ export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSend
   )
 
   const scheduledFor = useMemo(() => new Date(scheduled.scheduledFor), [scheduled.scheduledFor])
-  const rawLabel = formatFutureTime(scheduledFor, new Date(), { timezone })
-  // Sub-1m falls through to "Sending soon" so we don't render a stressful 0m
-  // countdown. formatFutureTime returns "0m" / "1m" near zero; both surface
-  // as "Sending soon" until the worker actually fires.
-  const labelOrSoon = /^\d+m$/.test(rawLabel) && Number(rawLabel.replace("m", "")) <= 1 ? "Sending soon" : rawLabel
+  // Sub-1m collapses to "Sending soon" — see formatSendCountdown for rationale.
+  const labelOrSoon = formatSendCountdown(scheduledFor, new Date(), { timezone })
 
   const isPending = scheduled.status === "pending"
   const isFailed = scheduled.status === "failed"

@@ -1,8 +1,14 @@
 import { useMemo } from "react"
 import type { Mentionable } from "@/components/editor/triggers/types"
-import { useWorkspaceUsers, useWorkspacePersonas, useWorkspaceBots } from "@/stores/workspace-store"
+import {
+  useWorkspaceUsers,
+  useWorkspacePersonas,
+  useWorkspaceBots,
+  useWorkspaceStreams,
+} from "@/stores/workspace-store"
 import { useParams } from "react-router-dom"
 import { useUser } from "@/auth"
+import { useStreamBootstrap } from "./use-streams"
 import { useWorkspaceEmoji } from "./use-workspace-emoji"
 import { StreamTypes, type StreamType } from "@threa/types"
 
@@ -27,6 +33,68 @@ export interface MentionStreamContext {
   botMemberIds?: Set<string>
   /** Whether the current user can invite bots (admin/owner only). */
   canInviteBots?: boolean
+}
+
+interface MentionStreamSource {
+  id: string
+  type: StreamType
+  rootStreamId?: string | null
+}
+
+/**
+ * Build the `MentionStreamContext` for the editor — broadcast filtering
+ * (@channel, @here), invite-mode member exclusion, bot mentionability, and
+ * the admin/owner gate on bot invites. Threads inherit access from their
+ * root stream, so the bootstrap fetch follows the root when present.
+ *
+ * Both the live stream composer (`MessageInput`) and the scheduled message
+ * edit dialog use this — pass the destination stream from whichever local
+ * source you have (props, IDB lookup, draft store).
+ *
+ * Returns `undefined` while `stream` is unresolved so the editor falls back
+ * to no-broadcast-mentions instead of wrong ones.
+ */
+export function useMentionStreamContext(
+  workspaceId: string,
+  stream: MentionStreamSource | null | undefined
+): MentionStreamContext | undefined {
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const rootStreamId = stream?.rootStreamId ?? null
+  const streamId = stream?.id ?? ""
+
+  const { data: currentBootstrap } = useStreamBootstrap(workspaceId, streamId, {
+    enabled: !!streamId && !rootStreamId,
+  })
+  const { data: rootBootstrap } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
+    enabled: !!rootStreamId,
+  })
+  const accessBootstrap = rootStreamId ? rootBootstrap : currentBootstrap
+
+  const currentUser = useUser()
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const currentUserRole = useMemo(
+    () => workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role,
+    [workspaceUsers, currentUser?.id]
+  )
+
+  return useMemo<MentionStreamContext | undefined>(() => {
+    if (!stream) return undefined
+    const ctx: MentionStreamContext = { streamType: stream.type }
+    if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
+      const rootStream = idbStreams.find((s) => s.id === stream.rootStreamId)
+      if (rootStream) ctx.rootStreamType = rootStream.type
+    }
+    // Invite-mode exclusion uses channel-level access — threads inherit access
+    // from their root, so inviting a root member to a thread is a no-op.
+    if (accessBootstrap?.members) {
+      const ids = new Set(accessBootstrap.members.map((m) => m.memberId))
+      for (const botId of accessBootstrap.botMemberIds ?? []) ids.add(botId)
+      ctx.memberIds = ids
+    }
+    if (accessBootstrap?.botMemberIds) ctx.botMemberIds = new Set(accessBootstrap.botMemberIds)
+    ctx.canInviteBots = currentUserRole === "admin" || currentUserRole === "owner"
+    return ctx
+  }, [stream, idbStreams, accessBootstrap, currentUserRole])
 }
 
 /**

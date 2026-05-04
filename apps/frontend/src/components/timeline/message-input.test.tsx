@@ -135,6 +135,12 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useStreamBootstrap").mockReturnValue({
     data: undefined,
   } as unknown as ReturnType<typeof hooksModule.useStreamBootstrap>)
+  // useMentionStreamContext composes useStreamBootstrap + useUser + workspace
+  // user role lookups; tests only care that the editor receives *some* context,
+  // so stub to undefined which falls through to "no broadcast filter applied".
+  vi.spyOn(hooksModule, "useMentionStreamContext").mockReturnValue(
+    undefined as unknown as ReturnType<typeof hooksModule.useMentionStreamContext>
+  )
 
   vi.spyOn(quoteReplyModule, "useQuoteReply").mockReturnValue({
     triggerQuoteReply: vi.fn(),
