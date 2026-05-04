@@ -236,8 +236,9 @@ export async function runBootstrapSync(target: BootstrapSyncTarget): Promise<voi
  * prefetch survives flaky networks and SW termination.
  *
  * Browsers without Background Sync (Safari, Firefox) throw on register — we
- * fall through to running the prefetch immediately as a best-effort. The
- * persisted target is left in place so a later sync registration can replay it.
+ * fall through to running the prefetch immediately. Inline runs delete the
+ * persisted target after the run so a sync-capable browser that gains support
+ * later (or a leftover entry from a previous SW version) doesn't replay stale.
  */
 async function queueBootstrapSync(target: BootstrapSyncTarget): Promise<void> {
   const cache = await caches.open(PENDING_SYNC_CACHE)
@@ -258,12 +259,9 @@ async function queueBootstrapSync(target: BootstrapSyncTarget): Promise<void> {
     }
   }
 
-  // No Background Sync — run inline. We swallow errors so the push handler
-  // (the typical caller) never fails because of a freshness pass.
   try {
     await runBootstrapSync(target)
   } finally {
-    // Best-effort cleanup so a future sync-capable browser doesn't replay stale.
     void caches.open(PENDING_SYNC_CACHE).then((c) => c.delete(PENDING_SYNC_KEY))
   }
 }
