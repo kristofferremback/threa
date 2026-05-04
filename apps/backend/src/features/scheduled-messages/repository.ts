@@ -191,23 +191,12 @@ export const ScheduledMessagesRepository = {
     const usePending = opts.status === ScheduledMessageStatuses.PENDING
     const streamFilter = opts.streamId ?? null
 
-    if (usePending) {
-      const result = await db.query<ScheduledMessageRow>(sql`
-        SELECT ${sql.raw(COLUMNS)}
-        FROM scheduled_messages
-        WHERE workspace_id = ${workspaceId}
-          AND user_id = ${userId}
-          AND status = ${opts.status}
-          AND (${streamFilter}::text IS NULL OR stream_id = ${streamFilter})
-          AND (${!hasCursor} OR (scheduled_for, id) > (
-            SELECT scheduled_for, id FROM scheduled_messages
-            WHERE id = ${cursor} AND workspace_id = ${workspaceId} AND user_id = ${userId}
-          ))
-        ORDER BY scheduled_for ASC, id ASC
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRow)
-    }
+    // Pending tab counts forward toward the next send (oldest-first); every
+    // other tab is a history list (newest-first). Cursor uses tuple
+    // comparison so two rows that share the order column don't get skipped.
+    const orderColumn = usePending ? "scheduled_for" : "status_changed_at"
+    const direction = usePending ? "ASC" : "DESC"
+    const cursorOp = usePending ? ">" : "<"
 
     const result = await db.query<ScheduledMessageRow>(sql`
       SELECT ${sql.raw(COLUMNS)}
@@ -216,11 +205,11 @@ export const ScheduledMessagesRepository = {
         AND user_id = ${userId}
         AND status = ${opts.status}
         AND (${streamFilter}::text IS NULL OR stream_id = ${streamFilter})
-        AND (${!hasCursor} OR (status_changed_at, id) < (
-          SELECT status_changed_at, id FROM scheduled_messages
+        AND (${!hasCursor} OR (${sql.raw(orderColumn)}, id) ${sql.raw(cursorOp)} (
+          SELECT ${sql.raw(orderColumn)}, id FROM scheduled_messages
           WHERE id = ${cursor} AND workspace_id = ${workspaceId} AND user_id = ${userId}
         ))
-      ORDER BY status_changed_at DESC, id DESC
+      ORDER BY ${sql.raw(orderColumn)} ${sql.raw(direction)}, id ${sql.raw(direction)}
       LIMIT ${limit}
     `)
     return result.rows.map(mapRow)

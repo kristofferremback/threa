@@ -18,7 +18,7 @@ import { Visibilities } from "@threa/types"
 import { MessageRepository } from "../messaging"
 import { EventService } from "../messaging"
 import { scheduledMessageId, scheduledMessageQueueId, userSessionId, workerId } from "../../lib/id"
-import { JobQueues, QueueRepository, type ScheduledMessageSendJobData } from "../../lib/queue"
+import { JobQueues, QueueRepository, enqueueQueuedJob, type ScheduledMessageSendJobData } from "../../lib/queue"
 import { logger } from "../../lib/logger"
 import { ScheduledMessagesRepository, type ScheduledMessage } from "./repository"
 import { toScheduledMessageView } from "./view"
@@ -176,11 +176,7 @@ export class ScheduledMessagesService {
       }
 
       const view = toScheduledMessageView(updated)
-      await OutboxRepository.insert(client, "scheduled_message:upserted", {
-        workspaceId: params.workspaceId,
-        targetUserId: params.userId,
-        scheduled: view,
-      })
+      await this.publishUpsert(client, view, params.userId)
 
       return view
     })
@@ -219,23 +215,7 @@ export class ScheduledMessagesService {
    */
   async claim(params: { workspaceId: string; userId: string; id: string }): Promise<ClaimResult> {
     return withTransaction(this.pool, async (client) => {
-      const existing = await ScheduledMessagesRepository.findById(client, params.workspaceId, params.userId, params.id)
-      if (!existing) {
-        throw new HttpError("Scheduled message not found", {
-          status: 404,
-          code: "SCHEDULED_MESSAGE_NOT_FOUND",
-        })
-      }
-
-      if (existing.status !== ScheduledMessageStatuses.PENDING) {
-        throw new HttpError(`Scheduled message already ${existing.status}`, {
-          status: 409,
-          code:
-            existing.status === ScheduledMessageStatuses.SENDING
-              ? "SCHEDULED_MESSAGE_ALREADY_SENDING"
-              : "SCHEDULED_MESSAGE_NOT_PENDING",
-        })
-      }
+      await this.assertPendingOrThrow(client, params)
 
       const ownerId = `usr:${params.userId}:${userSessionId()}`
       const claimed = await ScheduledMessagesRepository.tryAcquireLock(client, {
@@ -258,11 +238,7 @@ export class ScheduledMessagesService {
 
       // Lock-state changes broadcast back so the user's other tabs/devices
       // can reflect "currently editing" state (Journey 12).
-      await OutboxRepository.insert(client, "scheduled_message:upserted", {
-        workspaceId: params.workspaceId,
-        targetUserId: params.userId,
-        scheduled: view,
-      })
+      await this.publishUpsert(client, view, params.userId)
 
       return {
         scheduled: view,
@@ -303,12 +279,7 @@ export class ScheduledMessagesService {
       })
       if (!row) return
 
-      const view = toScheduledMessageView(row)
-      await OutboxRepository.insert(client, "scheduled_message:upserted", {
-        workspaceId: params.workspaceId,
-        targetUserId: params.userId,
-        scheduled: view,
-      })
+      await this.publishUpsert(client, toScheduledMessageView(row), params.userId)
     })
   }
 
@@ -327,19 +298,7 @@ export class ScheduledMessagesService {
    */
   async update(params: UpdateScheduledParams): Promise<ScheduledMessageView> {
     return withTransaction(this.pool, async (client) => {
-      const existing = await ScheduledMessagesRepository.findById(client, params.workspaceId, params.userId, params.id)
-      if (!existing) {
-        throw new HttpError("Scheduled message not found", {
-          status: 404,
-          code: "SCHEDULED_MESSAGE_NOT_FOUND",
-        })
-      }
-      if (existing.status !== ScheduledMessageStatuses.PENDING) {
-        throw new HttpError(`Scheduled message ${existing.status}`, {
-          status: 409,
-          code: "SCHEDULED_MESSAGE_NOT_PENDING",
-        })
-      }
+      const existing = await this.assertPendingOrThrow(client, params)
       if (existing.editLockOwnerId !== params.lockToken || (existing.editLockExpiresAt?.getTime() ?? 0) <= Date.now()) {
         throw new HttpError("Lock expired or not held by caller", {
           status: 409,
@@ -409,11 +368,7 @@ export class ScheduledMessagesService {
       }
 
       const view = toScheduledMessageView(finalRow)
-      await OutboxRepository.insert(client, "scheduled_message:upserted", {
-        workspaceId: params.workspaceId,
-        targetUserId: params.userId,
-        scheduled: view,
-      })
+      await this.publishUpsert(client, view, params.userId)
 
       return view
     })
@@ -421,22 +376,7 @@ export class ScheduledMessagesService {
 
   async sendNow(params: { workspaceId: string; userId: string; id: string }): Promise<ScheduledMessageView> {
     return withTransaction(this.pool, async (client) => {
-      const existing = await ScheduledMessagesRepository.findById(client, params.workspaceId, params.userId, params.id)
-      if (!existing) {
-        throw new HttpError("Scheduled message not found", {
-          status: 404,
-          code: "SCHEDULED_MESSAGE_NOT_FOUND",
-        })
-      }
-      if (existing.status !== ScheduledMessageStatuses.PENDING) {
-        throw new HttpError(`Scheduled message already ${existing.status}`, {
-          status: 409,
-          code:
-            existing.status === ScheduledMessageStatuses.SENDING
-              ? "SCHEDULED_MESSAGE_ALREADY_SENDING"
-              : "SCHEDULED_MESSAGE_NOT_PENDING",
-        })
-      }
+      const existing = await this.assertPendingOrThrow(client, params)
 
       // Take the worker-style lock atomically (status flip → sending).
       const ownerId = `worker:send-now:${workerId()}`
@@ -464,22 +404,9 @@ export class ScheduledMessagesService {
 
   async cancel(params: { workspaceId: string; userId: string; id: string }): Promise<void> {
     await withTransaction(this.pool, async (client) => {
-      const existing = await ScheduledMessagesRepository.findById(client, params.workspaceId, params.userId, params.id)
-      if (!existing) {
-        throw new HttpError("Scheduled message not found", {
-          status: 404,
-          code: "SCHEDULED_MESSAGE_NOT_FOUND",
-        })
-      }
-      if (existing.status !== ScheduledMessageStatuses.PENDING) {
-        throw new HttpError(`Cannot cancel ${existing.status} scheduled message`, {
-          status: 409,
-          code:
-            existing.status === ScheduledMessageStatuses.SENDING
-              ? "SCHEDULED_MESSAGE_ALREADY_SENDING"
-              : "SCHEDULED_MESSAGE_NOT_PENDING",
-        })
-      }
+      const existing = await this.assertPendingOrThrow(client, params, {
+        notPendingMessage: (status) => `Cannot cancel ${status} scheduled message`,
+      })
 
       const cancelled = await ScheduledMessagesRepository.cancel(client, params.workspaceId, params.userId, params.id)
       if (!cancelled) {
@@ -571,13 +498,7 @@ export class ScheduledMessagesService {
             reason: "lock_contention_timeout",
           })
           const view = await this.refetchView(client, row)
-          if (view) {
-            await OutboxRepository.insert(client, "scheduled_message:upserted", {
-              workspaceId: params.workspaceId,
-              targetUserId: row.userId,
-              scheduled: view,
-            })
-          }
+          if (view) await this.publishUpsert(client, view, row.userId)
           return { fired: false, reschedule: false }
         }
         return { fired: false, reschedule: true }
@@ -595,13 +516,7 @@ export class ScheduledMessagesService {
           reason,
         })
         const view = await this.refetchView(client, row)
-        if (view) {
-          await OutboxRepository.insert(client, "scheduled_message:upserted", {
-            workspaceId: params.workspaceId,
-            targetUserId: row.userId,
-            scheduled: view,
-          })
-        }
+        if (view) await this.publishUpsert(client, view, row.userId)
         return { fired: false, reschedule: false }
       }
     })
@@ -667,10 +582,52 @@ export class ScheduledMessagesService {
   }
 
   /**
+   * Find a scheduled row scoped to (workspace, user) and assert it's still
+   * pending — the precondition for claim / update / sendNow / cancel. Throws
+   * 404 when the row is missing, 409 with a status-aware code otherwise.
+   * Use `notPendingMessage` to override the user-visible text per call site
+   * (e.g. cancel uses "Cannot cancel sending scheduled message").
+   */
+  private async assertPendingOrThrow(
+    client: PoolClient,
+    params: { workspaceId: string; userId: string; id: string },
+    options?: { notPendingMessage?: (status: string) => string }
+  ): Promise<ScheduledMessage> {
+    const existing = await ScheduledMessagesRepository.findById(client, params.workspaceId, params.userId, params.id)
+    if (!existing) {
+      throw new HttpError("Scheduled message not found", {
+        status: 404,
+        code: "SCHEDULED_MESSAGE_NOT_FOUND",
+      })
+    }
+    if (existing.status !== ScheduledMessageStatuses.PENDING) {
+      const buildMessage = options?.notPendingMessage ?? ((status: string) => `Scheduled message already ${status}`)
+      throw new HttpError(buildMessage(existing.status), {
+        status: 409,
+        code:
+          existing.status === ScheduledMessageStatuses.SENDING
+            ? "SCHEDULED_MESSAGE_ALREADY_SENDING"
+            : "SCHEDULED_MESSAGE_NOT_PENDING",
+      })
+    }
+    return existing
+  }
+
+  /** Write a `scheduled_message:upserted` outbox row scoped to the row's owner. */
+  private publishUpsert(client: PoolClient, view: ScheduledMessageView, userId: string): Promise<unknown> {
+    return OutboxRepository.insert(client, "scheduled_message:upserted", {
+      workspaceId: view.workspaceId,
+      targetUserId: userId,
+      scheduled: view,
+    })
+  }
+
+  /**
    * Insert a `scheduled_message.send` queue row with `process_after =
-   * scheduledFor` and pin the queue id back onto the scheduled row. Same shape
-   * as saved-messages reminder enqueue — small ULID retry loop in case of a
-   * cosmically improbable PK collision.
+   * scheduledFor` and pin the queue id back onto the scheduled row. The
+   * insert + retry-on-PK-collision loop is shared with saved-messages via
+   * `enqueueQueuedJob`; the queue id is then written back here since that
+   * step is table-specific.
    */
   private async enqueueSendJob(client: PoolClient, row: ScheduledMessage): Promise<string> {
     const payload: ScheduledMessageSendJobData = {
@@ -678,28 +635,15 @@ export class ScheduledMessagesService {
       userId: row.userId,
       scheduledMessageId: row.id,
     }
-
-    const now = new Date()
-    let queueId = scheduledMessageQueueId()
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      try {
-        await QueueRepository.insert(client, {
-          id: queueId,
-          queueName: JobQueues.SCHEDULED_MESSAGE_SEND,
-          workspaceId: row.workspaceId,
-          payload,
-          processAfter: row.scheduledFor,
-          insertedAt: now,
-        })
-        await ScheduledMessagesRepository.setQueueMessageId(client, row.workspaceId, row.id, queueId)
-        return queueId
-      } catch (err) {
-        if (!isUniqueViolation(err, "queue_messages_pkey")) throw err
-        logger.warn({ attempt, queueId }, "scheduled_message queue id collision; retrying")
-        queueId = scheduledMessageQueueId()
-      }
-    }
-    throw new Error("Failed to insert scheduled_message queue row after retries")
+    const queueId = await enqueueQueuedJob(client, {
+      queueName: JobQueues.SCHEDULED_MESSAGE_SEND,
+      workspaceId: row.workspaceId,
+      payload,
+      processAfter: row.scheduledFor,
+      generateId: scheduledMessageQueueId,
+    })
+    await ScheduledMessagesRepository.setQueueMessageId(client, row.workspaceId, row.id, queueId)
+    return queueId
   }
 
   /**

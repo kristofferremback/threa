@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { AlertCircle, Pencil, Send, Trash2 } from "lucide-react"
+import { AlertCircle } from "lucide-react"
 import type { ScheduledMessageView } from "@threa/types"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatSendCountdown } from "@/lib/dates"
@@ -13,6 +12,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
 import { RelativeTime } from "@/components/relative-time"
 import { ScheduledActionDrawer } from "./scheduled-action-drawer"
+import { ScheduledActions } from "./scheduled-actions"
 
 interface ScheduledItemProps {
   scheduled: ScheduledMessageView
@@ -154,9 +154,28 @@ export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSend
         )}
 
         {/* Desktop hover-reveal actions. Hidden on mobile — long-press handles
-            the drawer, no tiny tap targets. */}
+            the drawer, no tiny tap targets. The wrapper owns the
+            opacity/hover/popover-open visibility rules; ScheduledActions
+            renders only the icon buttons. */}
         {!isMobile && (
-          <ScheduledRowActions scheduled={scheduled} onEdit={onEdit} onCancel={onCancel} onSendNow={onSendNow} />
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-1 opacity-0 transition-opacity",
+              "group-hover:opacity-100 focus-within:opacity-100",
+              // Keep the cluster visible while any popover hosted by an action
+              // is open (matches SavedItem); without this, the trigger would
+              // disappear under the user's pointer the moment the popover mounts.
+              "has-[[data-state=open]]:opacity-100"
+            )}
+          >
+            <ScheduledActions
+              scheduled={scheduled}
+              variant="hover-cluster"
+              onEdit={onEdit}
+              onCancel={onCancel}
+              onSendNow={onSendNow}
+            />
+          </div>
         )}
       </div>
 
@@ -171,61 +190,5 @@ export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSend
         />
       )}
     </>
-  )
-}
-
-interface ScheduledRowActionsProps {
-  scheduled: ScheduledMessageView
-  onEdit?: (id: string) => void
-  onCancel?: (id: string) => void
-  onSendNow?: (id: string) => void
-}
-
-/** Desktop-only hover-reveal action cluster — mobile uses the drawer instead. */
-function ScheduledRowActions({ scheduled, onEdit, onCancel, onSendNow }: ScheduledRowActionsProps) {
-  if (scheduled.status !== "pending" && scheduled.status !== "failed") return null
-
-  const canEdit = scheduled.status === "pending" && !!onEdit
-  const canSendNow = scheduled.status === "pending" && !!onSendNow
-
-  return (
-    <div
-      className={cn(
-        "flex shrink-0 items-center gap-1 opacity-0 transition-opacity",
-        "group-hover:opacity-100 focus-within:opacity-100",
-        // Keep the cluster visible while any popover hosted by an action is open
-        // (matches SavedItem); without this, the trigger would disappear under
-        // the user's pointer the moment the popover mounts.
-        "has-[[data-state=open]]:opacity-100"
-      )}
-    >
-      {canSendNow && (
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={() => onSendNow!(scheduled.id)}
-          title="Send now"
-        >
-          <Send className="h-3.5 w-3.5" />
-        </Button>
-      )}
-      {canEdit && (
-        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onEdit!(scheduled.id)} title="Edit">
-          <Pencil className="h-3.5 w-3.5" />
-        </Button>
-      )}
-      {onCancel && (
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-          onClick={() => onCancel(scheduled.id)}
-          title={scheduled.status === "failed" ? "Remove" : "Cancel"}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      )}
-    </div>
   )
 }
