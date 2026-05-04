@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
+import type { Editor } from "@tiptap/react"
 import { StreamTypes, type JSONContent, type ScheduledMessageView } from "@threa/types"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { RichEditor } from "@/components/editor"
+import { RichEditor, EditorActionBar, EditorToolbar, DocumentEditorModal } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
+import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import { useIsMobile } from "@/hooks/use-mobile"
 import {
   useClaimScheduled,
@@ -26,8 +21,9 @@ import { useAttachments } from "@/hooks/use-attachments"
 import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
 import { useUser } from "@/auth"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
+import { materializePendingAttachmentReferences } from "@/components/timeline/message-input"
 import { toast } from "sonner"
-import { collectAttachmentReferenceIds, serializeToMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 
 interface ScheduledEditDialogProps {
@@ -39,19 +35,30 @@ interface ScheduledEditDialogProps {
 const HEARTBEAT_INTERVAL_MS = 30_000
 
 /**
- * Edit modal for the page surface (and the in-composer popover). Claims the
- * lock on open, heartbeats every 30s, releases on close. Past-time semantics:
- * when scheduled_for is already in the past, the primary action label flips
- * to "Send" and the server's PATCH atomically performs the send (Save = Send).
+ * Edit modal for the page surface (and the in-composer popover). Hosts the
+ * same editor primitives the live composer uses — `RichEditor` for the body,
+ * `EditorActionBar` for the chrome row (attach / format / mention / emoji,
+ * plus a desktop expand affordance that pops into `DocumentEditorModal`).
  *
- * Uses the same `RichEditor` primitive `MessageEditForm` uses so editing a
- * scheduled message gets the full chrome (formatting, mentions, slash
- * commands) — not a plain textarea. Attachment changes are out of scope for
- * v1; the create path supports them and the edit path keeps the existing
- * attachment_ids untouched.
+ * The lock/claim flow:
+ *   - claim on open, heartbeat every 30s, release on close
+ *   - past-time saves flip the action label to "Send" and the server PATCHes
+ *     atomically into a send (Save = Send semantics)
  *
- * Mobile uses a `<Drawer>` bottom sheet matching the live message-edit-form
- * pattern; desktop uses a centered `<Dialog>`.
+ * Attachments:
+ *   - existing attachment-reference nodes ride along inside `contentJson`
+ *     and render inline; users can delete them like any other node
+ *   - new files via the attach button or paste/drop go through the same
+ *     `useAttachments` pipeline as the live composer; on save we run
+ *     `materializePendingAttachmentReferences` to fold pending uploads into
+ *     the final JSON, then `collectAttachmentReferenceIds` to recompute the
+ *     attachment_ids array
+ *
+ * Mobile renders as a `<Drawer>` bottom sheet (matches `MessageEditForm`);
+ * desktop renders as a centered `<Dialog>`. Desktop also exposes
+ * `DocumentEditorModal` as the fullscreen-edit affordance — same component
+ * the live composer uses for its expand button, so the two share visual
+ * vocabulary.
  */
 export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: ScheduledEditDialogProps) {
   const isMobile = useIsMobile()
@@ -64,21 +71,15 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const [contentJson, setContentJson] = useState<JSONContent>(EMPTY_DOC)
   const [scheduledFor, setScheduledFor] = useState<string>("")
   const [error, setError] = useState<string | null>(null)
+  const [formatOpen, setFormatOpen] = useState(false)
+  const [mobileExpanded, setMobileExpanded] = useState(false)
+  const [docEditorOpen, setDocEditorOpen] = useState(false)
+  const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
+  const [toolbarEditor, setToolbarEditor] = useState<Editor | null>(null)
   const acquiringRef = useRef(false)
   const editorRef = useRef<RichEditorHandle | null>(null)
 
-  // Mention/channel/emoji context — RichEditor pulls workspace users, channels,
-  // and emojis from useParams + workspace store, but @channel/@here broadcast
-  // mentions need explicit `streamContext` keyed to the destination stream.
-  // Without this, the picker would surface broadcast mentions for streams the
-  // user can't actually broadcast to (server-side validation would still
-  // reject, but the UX is misleading).
   const streamContext = useDestinationStreamContext(workspaceId, scheduled?.streamId)
-
-  // Attachment uploads on paste/drop. Reuses the same uploader the live
-  // composer uses, scoped to this workspace. The editor handles per-node
-  // status (uploading → uploaded) via the attachment-reference node's attrs;
-  // we only need to pass `uploadFile` and the running image count.
   const attachmentsHook = useAttachments(workspaceId)
 
   const open = scheduled !== null
@@ -93,9 +94,13 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       setContentJson(EMPTY_DOC)
       setScheduledFor("")
       setError(null)
+      setFormatOpen(false)
+      setMobileExpanded(false)
+      setDocEditorOpen(false)
+      attachmentsHook.clear()
       previousIdRef.current = id
     }
-  }, [scheduled?.id])
+  }, [scheduled?.id, attachmentsHook])
 
   // Claim on open. Releases happen on close (in `handleClose`) — never in the
   // cleanup of this effect because the dialog can re-render mid-claim and we'd
@@ -136,8 +141,12 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     setContentJson(EMPTY_DOC)
     setScheduledFor("")
     setError(null)
+    setFormatOpen(false)
+    setMobileExpanded(false)
+    setDocEditorOpen(false)
+    attachmentsHook.clear()
     onClose()
-  }, [scheduled, lockToken, releaseMutation, onClose])
+  }, [scheduled, lockToken, releaseMutation, attachmentsHook, onClose])
 
   const isPast = useMemo(() => {
     if (!scheduledFor) return false
@@ -146,25 +155,29 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
 
   const setRichEditorHandle = useCallback((handle: RichEditorHandle | null) => {
     editorRef.current = handle
+    const next = handle?.getEditor() ?? null
+    setToolbarEditor((cur) => (cur === next ? cur : next))
   }, [])
 
   const handleSave = useCallback(async () => {
     if (!scheduled || !lockToken) return
     try {
-      // Snapshot the editor's live JSON. RichEditor flushes via onChange, but
-      // reading the handle gives the canonical state even mid-typing (matches
-      // how the live composer reads on submit).
+      // Snapshot the editor's live JSON, then fold any still-pending
+      // attachment uploads into the document so they ride along on save —
+      // mirrors the live composer's submit path. `collectAttachmentReferenceIds`
+      // then captures the union of (existing-untouched, newly-pasted,
+      // button-added) attachments for the row's array.
       const liveJson = (editorRef.current?.getEditor()?.getJSON() as JSONContent | undefined) ?? contentJson
-      const contentMarkdown = serializeToMarkdown(liveJson)
-      // Reconcile attachment_ids with whatever the editor currently shows.
-      // Existing chips that the user deleted disappear from the JSON; new
-      // paste/drop uploads land as attachment-reference nodes. The union of
-      // (existing-untouched, newly-pasted) is exactly what's in contentJson.
-      const attachmentIds = collectAttachmentReferenceIds(liveJson)
+      const materialized = materializePendingAttachmentReferences(
+        liveJson,
+        attachmentsHook.getPendingAttachmentsSnapshot()
+      )
+      const contentMarkdown = serializeToMarkdown(materialized)
+      const attachmentIds = collectAttachmentReferenceIds(materialized)
       await updateMutation.mutateAsync({
         id: scheduled.id,
         input: {
-          contentJson: liveJson,
+          contentJson: materialized,
           contentMarkdown,
           scheduledFor: new Date(scheduledFor).toISOString(),
           attachmentIds,
@@ -177,7 +190,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       const message = err instanceof Error ? err.message : "Could not save"
       setError(message)
     }
-  }, [scheduled, lockToken, contentJson, scheduledFor, isPast, updateMutation, handleClose])
+  }, [scheduled, lockToken, contentJson, scheduledFor, isPast, updateMutation, handleClose, attachmentsHook])
 
   const isLoadingClaim = open && !lockToken && !error
   const isSaving = updateMutation.isPending
@@ -192,7 +205,23 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     return null
   })()
 
-  const body = (() => {
+  const cancelLabel = isPast && lockToken ? "Send unchanged" : "Cancel"
+  const saveLabel = isPast ? "Send" : "Save"
+  const title = isPast ? "Send scheduled message" : "Edit scheduled message"
+
+  const trailingActions = (
+    <>
+      <Button type="button" variant="ghost" size="sm" onClick={handleClose} disabled={isSaving}>
+        {cancelLabel}
+      </Button>
+      <Button type="button" size="sm" onClick={handleSave} disabled={!lockToken || isSaving}>
+        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        {saveLabel}
+      </Button>
+    </>
+  )
+
+  const editorBody = (() => {
     if (isLoadingClaim) {
       return (
         <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
@@ -214,8 +243,8 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
             disabled={isSaving}
           />
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium">Message</label>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium">Message</label>
           <div className="rounded-md border bg-background [&_.tiptap]:min-h-[6rem] [&_.tiptap]:max-h-72 [&_.tiptap]:overflow-y-auto">
             <RichEditor
               ref={setRichEditorHandle}
@@ -232,16 +261,83 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
               blurOnEscape
               scopeId={scheduled?.id}
               streamContext={streamContext}
+              staticToolbarOpen={!isMobile && formatOpen}
+              belowToolbarContent={
+                attachmentsHook.pendingAttachments.length > 0 ? (
+                  <div className="pt-1 pb-2 border-b border-border/50 [&>div]:mb-0">
+                    <PendingAttachments
+                      attachments={attachmentsHook.pendingAttachments}
+                      onRemove={attachmentsHook.removeAttachment}
+                    />
+                  </div>
+                ) : null
+              }
             />
+            {/* Hidden file input — attach button below triggers it. */}
+            <input
+              ref={attachmentsHook.fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={attachmentsHook.handleFileSelect}
+              disabled={isSaving}
+            />
+            <div className="border-t px-2 py-1.5">
+              <EditorActionBar
+                editorHandle={editorRef.current}
+                disabled={isSaving}
+                formatOpen={formatOpen}
+                onFormatOpenChange={setFormatOpen}
+                mobileExpanded={mobileExpanded}
+                onMobileExpandedChange={setMobileExpanded}
+                showAttach
+                onAttachClick={() => attachmentsHook.fileInputRef.current?.click()}
+                showDesktopExpand={!isMobile}
+                onDesktopExpandClick={() => setDocEditorOpen(true)}
+                trailingContent={trailingActions}
+              />
+              {/* Mobile inline format toolbar — desktop uses the static toolbar
+                  baked into RichEditor when staticToolbarOpen is true. */}
+              {isMobile && formatOpen && (
+                <EditorToolbar
+                  editor={toolbarEditor}
+                  isVisible
+                  inline
+                  inlinePosition="below"
+                  linkPopoverOpen={linkPopoverOpen}
+                  onLinkPopoverOpenChange={setLinkPopoverOpen}
+                  showSpecialInputControls
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>
     )
   })()
 
-  const cancelLabel = isPast && lockToken ? "Send unchanged" : "Cancel"
-  const saveLabel = isPast ? "Send" : "Save"
-  const title = isPast ? "Send scheduled message" : "Edit scheduled message"
+  // Fullscreen "expand" pop-out — desktop only. Lets the user write in a
+  // distraction-free editor for long messages, syncing content back to the
+  // dialog on dismiss. Same pattern the live composer uses.
+  const fullscreenModal = !isMobile && (
+    <DocumentEditorModal
+      open={docEditorOpen}
+      onOpenChange={setDocEditorOpen}
+      initialContent={serializeToMarkdown(contentJson)}
+      streamName="scheduled message"
+      onSend={async (markdown) => {
+        const json = parseMarkdown(markdown)
+        setContentJson(json)
+        setDocEditorOpen(false)
+        // Defer save until the dialog reads the new state; the user clicked
+        // "send" inside the fullscreen, so finalize the dialog save too.
+        setTimeout(() => handleSave(), 0)
+      }}
+      onDismiss={(markdown) => {
+        setContentJson(parseMarkdown(markdown))
+      }}
+    />
+  )
 
   if (isMobile) {
     return (
@@ -251,23 +347,14 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
           if (!next) handleClose()
         }}
       >
-        <DrawerContent className="max-h-[92dvh]">
+        <DrawerContent className={mobileExpanded ? "!h-[100dvh] rounded-t-none" : "max-h-[92dvh]"}>
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
           <div className="flex flex-col gap-3 px-4 pb-[max(8px,env(safe-area-inset-bottom))] pt-1">
             <div>
               <p className="text-sm font-medium">{title}</p>
               {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
             </div>
-            {body}
-            <div className="flex justify-end gap-2 pt-1">
-              <Button type="button" variant="ghost" onClick={handleClose} disabled={isSaving}>
-                {cancelLabel}
-              </Button>
-              <Button type="button" onClick={handleSave} disabled={!lockToken || isSaving}>
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {saveLabel}
-              </Button>
-            </div>
+            {editorBody}
           </div>
         </DrawerContent>
       </Drawer>
@@ -275,26 +362,18 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          {description && <DialogDescription>{description}</DialogDescription>}
-        </DialogHeader>
-
-        {body}
-
-        <DialogFooter className="gap-2">
-          <Button type="button" variant="ghost" onClick={handleClose} disabled={isSaving}>
-            {cancelLabel}
-          </Button>
-          <Button type="button" onClick={handleSave} disabled={!lockToken || isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {saveLabel}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            {description && <DialogDescription>{description}</DialogDescription>}
+          </DialogHeader>
+          {editorBody}
+        </DialogContent>
+      </Dialog>
+      {fullscreenModal}
+    </>
   )
 }
 
@@ -325,9 +404,6 @@ function useDestinationStreamContext(
   )
   const rootStreamId = stream?.rootStreamId ?? null
 
-  // Bootstrap of the access stream (root for threads, self for everything
-  // else) carries the member list + bot grants the editor needs to filter
-  // user mentions. Same pattern as message-input.
   const { data: currentBootstrap } = useStreamBootstrap(workspaceId, destinationStreamId ?? "", {
     enabled: !!destinationStreamId && !rootStreamId,
   })
