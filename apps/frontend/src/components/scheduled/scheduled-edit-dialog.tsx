@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
-import type { JSONContent, ScheduledMessageView } from "@threa/types"
+import { StreamTypes, type JSONContent, type ScheduledMessageView } from "@threa/types"
 import {
   Dialog,
   DialogContent,
@@ -15,9 +15,19 @@ import { Input } from "@/components/ui/input"
 import { RichEditor } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useClaimScheduled, useReleaseScheduled, useUpdateScheduled, useHeartbeatScheduled } from "@/hooks"
+import {
+  useClaimScheduled,
+  useReleaseScheduled,
+  useUpdateScheduled,
+  useHeartbeatScheduled,
+  useStreamBootstrap,
+} from "@/hooks"
+import { useAttachments } from "@/hooks/use-attachments"
+import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
+import { useUser } from "@/auth"
+import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import { toast } from "sonner"
-import { serializeToMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, serializeToMarkdown } from "@threa/prosemirror"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 
 interface ScheduledEditDialogProps {
@@ -56,6 +66,20 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const [error, setError] = useState<string | null>(null)
   const acquiringRef = useRef(false)
   const editorRef = useRef<RichEditorHandle | null>(null)
+
+  // Mention/channel/emoji context — RichEditor pulls workspace users, channels,
+  // and emojis from useParams + workspace store, but @channel/@here broadcast
+  // mentions need explicit `streamContext` keyed to the destination stream.
+  // Without this, the picker would surface broadcast mentions for streams the
+  // user can't actually broadcast to (server-side validation would still
+  // reject, but the UX is misleading).
+  const streamContext = useDestinationStreamContext(workspaceId, scheduled?.streamId)
+
+  // Attachment uploads on paste/drop. Reuses the same uploader the live
+  // composer uses, scoped to this workspace. The editor handles per-node
+  // status (uploading → uploaded) via the attachment-reference node's attrs;
+  // we only need to pass `uploadFile` and the running image count.
+  const attachmentsHook = useAttachments(workspaceId)
 
   const open = scheduled !== null
 
@@ -127,17 +151,23 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const handleSave = useCallback(async () => {
     if (!scheduled || !lockToken) return
     try {
-      // Snapshot the editor's live JSON (RichEditor only flushes on blur via
-      // `onChange`; reading the editor handle gives us the current state even
-      // mid-typing, matching how the live composer flushes on submit).
+      // Snapshot the editor's live JSON. RichEditor flushes via onChange, but
+      // reading the handle gives the canonical state even mid-typing (matches
+      // how the live composer reads on submit).
       const liveJson = (editorRef.current?.getEditor()?.getJSON() as JSONContent | undefined) ?? contentJson
       const contentMarkdown = serializeToMarkdown(liveJson)
+      // Reconcile attachment_ids with whatever the editor currently shows.
+      // Existing chips that the user deleted disappear from the JSON; new
+      // paste/drop uploads land as attachment-reference nodes. The union of
+      // (existing-untouched, newly-pasted) is exactly what's in contentJson.
+      const attachmentIds = collectAttachmentReferenceIds(liveJson)
       await updateMutation.mutateAsync({
         id: scheduled.id,
         input: {
           contentJson: liveJson,
           contentMarkdown,
           scheduledFor: new Date(scheduledFor).toISOString(),
+          attachmentIds,
           lockToken,
         },
       })
@@ -192,12 +222,16 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
               value={contentJson}
               onChange={setContentJson}
               onSubmit={handleSave}
+              onFileUpload={attachmentsHook.uploadFile}
+              imageCount={attachmentsHook.imageCount}
               placeholder="Edit message…"
               ariaLabel="Edit scheduled message"
               messageSendMode="cmdEnter"
               disabled={isSaving}
               autoFocus
               blurOnEscape
+              scopeId={scheduled?.id}
+              streamContext={streamContext}
             />
           </div>
         </div>
@@ -268,4 +302,61 @@ function toDatetimeLocal(iso: string): string {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, "0")
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/**
+ * Compose a `MentionStreamContext` for the scheduled message's destination
+ * stream — same shape `MessageInput` builds for the live composer. Without
+ * this, broadcast mentions (@channel / @here) would surface for streams the
+ * user can't broadcast to. Threads inherit access from their root stream.
+ *
+ * Returns `undefined` when the destination stream isn't known yet (dialog
+ * still loading) so the editor falls back to no-broadcast-mentions rather
+ * than wrong ones.
+ */
+function useDestinationStreamContext(
+  workspaceId: string,
+  destinationStreamId: string | undefined
+): MentionStreamContext | undefined {
+  const idbStreams = useWorkspaceStreams(workspaceId)
+  const stream = useMemo(
+    () => (destinationStreamId ? idbStreams.find((s) => s.id === destinationStreamId) : undefined),
+    [idbStreams, destinationStreamId]
+  )
+  const rootStreamId = stream?.rootStreamId ?? null
+
+  // Bootstrap of the access stream (root for threads, self for everything
+  // else) carries the member list + bot grants the editor needs to filter
+  // user mentions. Same pattern as message-input.
+  const { data: currentBootstrap } = useStreamBootstrap(workspaceId, destinationStreamId ?? "", {
+    enabled: !!destinationStreamId && !rootStreamId,
+  })
+  const { data: rootBootstrap } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
+    enabled: !!rootStreamId,
+  })
+  const accessBootstrap = rootStreamId ? rootBootstrap : currentBootstrap
+
+  const currentUser = useUser()
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const currentUserRole = useMemo(
+    () => workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role,
+    [workspaceUsers, currentUser?.id]
+  )
+
+  return useMemo<MentionStreamContext | undefined>(() => {
+    if (!stream) return undefined
+    const ctx: MentionStreamContext = { streamType: stream.type }
+    if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
+      const rootStream = idbStreams.find((s) => s.id === stream.rootStreamId)
+      if (rootStream) ctx.rootStreamType = rootStream.type
+    }
+    if (accessBootstrap?.members) {
+      const ids = new Set(accessBootstrap.members.map((m) => m.memberId))
+      for (const botId of accessBootstrap.botMemberIds ?? []) ids.add(botId)
+      ctx.memberIds = ids
+    }
+    if (accessBootstrap?.botMemberIds) ctx.botMemberIds = new Set(accessBootstrap.botMemberIds)
+    ctx.canInviteBots = currentUserRole === "admin" || currentUserRole === "owner"
+    return ctx
+  }, [stream, idbStreams, accessBootstrap, currentUserRole])
 }
