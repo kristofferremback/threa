@@ -20,8 +20,23 @@ const MAX_SUBSCRIPTIONS_PER_USER = 10
 /** How recently a device must have sent a heartbeat to be considered "active" */
 const ACTIVE_SESSION_WINDOW_MS = 60_000
 
-/** How recently a device must have been focused to consider the user "at their computer" */
-const RECENTLY_FOCUSED_WINDOW_MS = 10 * 60 * 1_000 // 10 minutes
+/**
+ * How recently `last_focused_at` must have been bumped for us to treat the
+ * device as currently focused. Heartbeats fire every 30s while focused (and
+ * immediately on focus change), so a 60s window catches the focused state with
+ * at most one heartbeat of lag.
+ */
+const CURRENTLY_FOCUSED_WINDOW_MS = 60_000
+
+/**
+ * How recently the device must have seen a real user interaction
+ * (pointerdown/keydown/touchstart) to count as "the device the user is on".
+ * A focused-but-untouched window (e.g. PWA open in another desktop space)
+ * shouldn't claim the user's attention indefinitely — without interaction we
+ * fall through to fanout so the user gets notified on whichever device they
+ * pick up next.
+ */
+const RECENT_INTERACTION_WINDOW_MS = 2 * 60 * 1_000 // 2 minutes
 
 /**
  * Per-device session expiry window. If a specific device has not sent a heartbeat
@@ -188,15 +203,16 @@ export class PushService {
     userId: string
     deviceKey: string
     focused?: boolean
+    interacted?: boolean
   }): Promise<UserSession> {
     return UserSessionRepository.upsert(this.pool, params)
   }
 
   async upsertSessionsBatch(
     entries: Array<{ workspaceId: string; userId: string; deviceKey: string }>,
-    focused?: boolean
+    options?: { focused?: boolean; interacted?: boolean }
   ): Promise<void> {
-    return UserSessionRepository.upsertBatch(this.pool, entries, focused)
+    return UserSessionRepository.upsertBatch(this.pool, entries, options)
   }
 
   /**
@@ -464,11 +480,16 @@ export class PushService {
    * on devices with no session within SESSION_EXPIRY_WINDOW_MS — these get a
    * session-expired push and are cleaned up).
    *
-   * Four-tier strategy for active subscriptions (SW handles focus-based suppression):
-   * 1. Threa focused       → push to active device, SW suppresses (user sees nothing)
-   * 2. Threa open, unfocused (<10m) → push to active device, SW shows notification
-   * 3. Threa open, unfocused 10m+   → push to ALL active devices (user walked away)
-   * 4. Offline 60s+                  → push to ALL active devices
+   * Routing rule for active subscriptions:
+   *   - If any device is currently focused AND has had a real user interaction
+   *     in the last 2 minutes, push only to those device(s) — the SW on a
+   *     focused device suppresses display since the user can already see Threa,
+   *     and other devices stay quiet so the user doesn't get duplicate alerts
+   *     where they aren't looking.
+   *   - Otherwise (no focused-and-interacting device, or the user has put the
+   *     phone down / walked away), fan out to every device with a live
+   *     heartbeat so the user gets the notification on whichever device they
+   *     pick up next.
    */
   private async getTargetSubscriptions(
     workspaceId: string,
@@ -515,27 +536,38 @@ export class PushService {
 
     if (activeSubs.length === 0) return { active: [], expired: expiredSubs }
 
-    // Apply four-tier targeting to active subscriptions only
-    // Tier 4: No active sessions (within 60s) → user is offline → push to all active devices
+    // No live heartbeats anywhere → user is offline; fan out so they see the
+    // notification on whichever device they pick up next.
     if (activeSessions.length === 0) return { active: activeSubs, expired: expiredSubs }
 
-    // Check if any active session was focused recently (within 10m).
-    // If not, the user likely walked away from their computer with Threa open.
+    // Identify devices the user is actually on right now: focused window AND a
+    // real user interaction within the last 2m. A focused-but-idle window
+    // (PWA running in the background of another desktop space, tab the user
+    // tabbed to and then walked off) doesn't qualify.
     const now = Date.now()
-    const hasRecentlyFocused = activeSessions.some(
-      (s) => s.lastFocusedAt && now - s.lastFocusedAt.getTime() < RECENTLY_FOCUSED_WINDOW_MS
+    const attendedDeviceKeys = new Set(
+      activeSessions
+        .filter(
+          (s) =>
+            s.lastFocusedAt !== null &&
+            now - s.lastFocusedAt.getTime() < CURRENTLY_FOCUSED_WINDOW_MS &&
+            s.lastInteractionAt !== null &&
+            now - s.lastInteractionAt.getTime() < RECENT_INTERACTION_WINDOW_MS
+        )
+        .map((s) => s.deviceKey)
     )
 
-    // Tier 3: Active sessions but none focused recently → user walked away → push to all active
-    if (!hasRecentlyFocused) return { active: activeSubs, expired: expiredSubs }
+    if (attendedDeviceKeys.size === 0) {
+      // No device proves the user is on it — fan out to every active device.
+      return { active: activeSubs, expired: expiredSubs }
+    }
 
-    // Tiers 1 & 2: User is at their computer → push to devices with active sessions.
-    // The SW on each device decides whether to display (focused = suppress).
-    // Fall back to all active subscriptions if the intersection is empty — a session can
-    // exist on a device without a subscription (e.g. second browser, or subscription
-    // registered on a device that no longer has an active socket).
-    const activeDeviceKeys = new Set(activeSessions.map((s) => s.deviceKey))
-    const matched = activeSubs.filter((sub) => activeDeviceKeys.has(sub.deviceKey))
+    // Push only to the attended device(s). The SW on each device decides
+    // whether to display (focused window = suppress, since the user can
+    // already see Threa). If the intersection is empty (a session exists on
+    // a device without a registered push subscription), fall back to fanout
+    // so we still notify *something*.
+    const matched = activeSubs.filter((sub) => attendedDeviceKeys.has(sub.deviceKey))
     const active = matched.length > 0 ? matched : activeSubs
     return { active, expired: expiredSubs }
   }

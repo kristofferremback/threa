@@ -558,3 +558,11 @@ export const ShareErrorCodes = {
 
 // Inter-service authentication header (control-plane ↔ regional backend ↔ workspace-router)
 export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
+
+/**
+ * Floor for interaction-driven socket heartbeats. The frontend throttles
+ * interaction-flagged heartbeats to this interval; the backend ignores
+ * non-interaction heartbeats faster than this. Shared so the two sides
+ * cannot drift.
+ */
+export const HEARTBEAT_INTERACTION_THROTTLE_MS = 15_000
