@@ -351,13 +351,25 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
           if (!next) handleClose()
         }}
       >
-        <DrawerContent className={mobileExpanded ? "!h-[100dvh] rounded-t-none" : "max-h-[85dvh]"}>
+        <DrawerContent
+          className={
+            mobileExpanded
+              ? "!h-[100dvh] rounded-t-none"
+              : // min-h keeps the drawer comfortably tall even with a short
+                // message — short notes shouldn't render in a cramped 30%
+                // sliver. max-h leaves room for the OS status bar / drag.
+                "min-h-[75dvh] max-h-[85dvh]"
+          }
+        >
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
 
-          <div className="flex flex-col flex-1 min-h-0 px-4 pt-1 gap-3">
+          {/* Body: symmetric pt-3/px-4/gap-4 so the title doesn't crowd the
+              vaul drag handle (mt-4 + handle = ~24px above) and the editor
+              has even rhythm to the action bar below. */}
+          <div className="flex flex-col flex-1 min-h-0 px-4 pt-3 gap-4">
             <div>
               <p className="text-base font-semibold">{title}</p>
-              {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+              {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
             </div>
 
             <DateTimeField
@@ -382,8 +394,11 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
 
           {fileInput}
 
+          {/* Action bar: pt-3 separates it visually from the editor card; the
+              bottom uses max(20px, safe-area) so phones without an inset still
+              get thumb-comfortable padding rather than an 8px hairline. */}
           <div
-            className="px-4 pb-[max(8px,env(safe-area-inset-bottom))]"
+            className="px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom))]"
             tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}
           >
@@ -438,7 +453,11 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
           <div
             className={cn(
               "rounded-md border bg-background",
-              "[&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-2 [&_.tiptap]:min-h-[8rem] [&_.tiptap]:max-h-72"
+              // Wider min-h so a short scheduled note doesn't shrink the
+              // dialog down to a strip; max-h leaves room for the action bar
+              // + buttons before the dialog hits its sm:max-w-lg footprint.
+              "[&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-2",
+              "[&_.tiptap]:min-h-[14rem] [&_.tiptap]:max-h-[24rem]"
             )}
           >
             {editorBody}
