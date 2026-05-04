@@ -69,8 +69,7 @@ export interface ScheduledService {
   create: typeof scheduledApi.create
   update: typeof scheduledApi.update
   delete: typeof scheduledApi.delete
-  claim: typeof scheduledApi.claim
-  heartbeat: typeof scheduledApi.heartbeat
+  lockForEdit: typeof scheduledApi.lockForEdit
   sendNow: typeof scheduledApi.sendNow
 }
 

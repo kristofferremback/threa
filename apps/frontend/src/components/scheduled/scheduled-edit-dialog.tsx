@@ -11,7 +11,7 @@ import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import { DateTimeField } from "@/components/forms/date-time-field"
 import { parseLocalDateTime, toDateInputValue, toTimeInputValue } from "@/lib/dates"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useClaimScheduled, useUpdateScheduled, useHeartbeatScheduled, isLocalScheduledId } from "@/hooks"
+import { useUpdateScheduled, useLockScheduledForEdit, isLocalScheduledId } from "@/hooks"
 import { useMentionStreamContext } from "@/hooks/use-mentionables"
 import { useAttachments } from "@/hooks/use-attachments"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
@@ -19,7 +19,6 @@ import { materializePendingAttachmentReferences } from "@/components/timeline/me
 import { toast } from "sonner"
 import { collectAttachmentReferenceIds, serializeToMarkdown } from "@threa/prosemirror"
 import { EMPTY_DOC, ensureTrailingParagraph } from "@/lib/prosemirror-utils"
-import { cn } from "@/lib/utils"
 
 interface ScheduledEditDialogProps {
   workspaceId: string
@@ -27,37 +26,28 @@ interface ScheduledEditDialogProps {
   onClose: () => void
 }
 
-const HEARTBEAT_INTERVAL_MS = 30_000
-
 /**
  * Edit modal for scheduled messages.
  *
- * Concurrency model — first-save-wins via optimistic CAS on `updatedAt`.
- * There is no exclusive editor lock: opening the editor on device A doesn't
- * block device B; both can edit. The first save wins, and the second device's
- * Save surfaces a `STALE_VERSION` toast that prompts a refresh. While any
- * editor session is open, the worker fence (`editActiveUntil`) keeps the
- * row from firing — claim/heartbeat bumps it; stop heartbeating and the
- * fence expires, freeing the worker to fire when due.
- *
- * Mobile layout follows `MessageEditForm` verbatim — Drawer with content-
- * driven `max-h-[85dvh]` and an optional fullscreen toggle. The editor body
- * fills the drawer via `flex-1 min-h-0` so long messages get the full
- * viewport. Desktop renders a centered Dialog.
+ * Concurrency: optimistic CAS on `updatedAt` + worker pause-while-editing.
+ * The dialog opens immediately seeded from the row the caller already has
+ * (IDB or socket-fresh). On mount it fires `lockForEdit` once (no await,
+ * no heartbeat) which bumps `edit_active_until` for ~10 minutes — the
+ * worker checks this fence and defers firing while it's in the future, so
+ * we don't ship mid-edit content. On save the PATCH carries
+ * `expectedUpdatedAt = scheduled.updatedAt`; server CAS rejects with 409
+ * STALE_VERSION if the row moved on. First save wins, second save toasts
+ * and refreshes.
  *
  * Past-time saves transition `pending → sending → sent` atomically inside
  * the same PATCH on the backend (Save = Send semantics).
  */
 export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: ScheduledEditDialogProps) {
   const isMobile = useIsMobile()
-  const claimMutation = useClaimScheduled(workspaceId)
   const updateMutation = useUpdateScheduled(workspaceId)
-  const heartbeatMutation = useHeartbeatScheduled(workspaceId)
+  const lockMutation = useLockScheduledForEdit(workspaceId)
 
   const [contentJson, setContentJson] = useState<JSONContent>(EMPTY_DOC)
-  // Send-at split into date + time so users can change just the time without
-  // resetting the date — same shape ReminderPickerSheet uses for the saved-
-  // message reminder picker.
   const [sendDate, setSendDate] = useState<string>("")
   const [sendTime, setSendTime] = useState<string>("")
   const [error, setError] = useState<string | null>(null)
@@ -65,18 +55,8 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
   const [mobileExpanded, setMobileExpanded] = useState(false)
   const [toolbarEditor, setToolbarEditor] = useState<Editor | null>(null)
-  /**
-   * The `updatedAt` ISO the client claimed against. Sent on save as
-   * `expectedUpdatedAt` for the optimistic-CAS — first save wins, second
-   * save's PATCH 409s with STALE_VERSION.
-   */
-  const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string | null>(null)
-  const [isReady, setIsReady] = useState(false)
-  const acquiringRef = useRef(false)
   const editorRef = useRef<RichEditorHandle | null>(null)
 
-  // Mention/broadcast filtering follows the destination stream's access — the
-  // hook handles thread→root bootstrap, member sets, and the bot-invite gate.
   const idbStreams = useWorkspaceStreams(workspaceId)
   const destinationStream = useMemo(
     () => (scheduled?.streamId ? idbStreams.find((s) => s.id === scheduled.streamId) : undefined),
@@ -88,86 +68,54 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const open = scheduled !== null
   const isLocalRow = scheduled ? isLocalScheduledId(scheduled.id) : false
 
-  // Reset local state when the row id changes — guards against the dialog
-  // being reused for a different scheduled message without an explicit close.
+  // The `updatedAt` the editor opened against — sent on save as
+  // `expectedUpdatedAt` for the optimistic-CAS. Captured once when the dialog
+  // opens; if the row changes underneath us, the CAS rejects on save.
+  const expectedUpdatedAt = scheduled?.updatedAt ?? null
+
+  // Seed editor state when the row id changes. Re-seeding mid-edit is
+  // intentionally not done — that would clobber the user's in-progress edits
+  // every time a socket event arrived.
   const previousIdRef = useRef<string | null>(null)
   useEffect(() => {
     const id = scheduled?.id ?? null
-    if (previousIdRef.current !== id) {
+    if (previousIdRef.current === id) return
+    previousIdRef.current = id
+
+    if (!scheduled) {
       setContentJson(EMPTY_DOC)
       setSendDate("")
       setSendTime("")
       setError(null)
       setFormatOpen(false)
       setMobileExpanded(false)
-      setExpectedUpdatedAt(null)
-      setIsReady(false)
       attachmentsHook.clear()
-      previousIdRef.current = id
-    }
-  }, [scheduled?.id, attachmentsHook])
-
-  // Local-only rows haven't been persisted yet, so claim would 404. Seed the
-  // editor directly from the optimistic IDB row instead — the user can still
-  // tweak the message; on save the operation queue replays the schedule with
-  // the new content rather than the original.
-  useEffect(() => {
-    if (!open || !scheduled || isReady) return
-    if (isLocalRow) {
-      const at = new Date(scheduled.scheduledFor)
-      setContentJson(ensureTrailingParagraph(scheduled.contentJson || EMPTY_DOC))
-      setSendDate(toDateInputValue(at))
-      setSendTime(toTimeInputValue(at))
-      setExpectedUpdatedAt(scheduled.updatedAt)
-      setIsReady(true)
       return
     }
-    if (acquiringRef.current) return
-    acquiringRef.current = true
-    claimMutation
-      .mutateAsync(scheduled.id)
-      .then((res) => {
-        const at = new Date(res.scheduled.scheduledFor)
-        // Append a trailing paragraph if the doc ends in a block-level atom
-        // (quote-reply, shared-message). Without this, mobile users can't tap
-        // a position after the atom — the gap-cursor has no tap target.
-        setContentJson(ensureTrailingParagraph(res.scheduled.contentJson || EMPTY_DOC))
-        setSendDate(toDateInputValue(at))
-        setSendTime(toTimeInputValue(at))
-        setExpectedUpdatedAt(res.scheduled.updatedAt)
-        setError(null)
-        setIsReady(true)
-      })
-      .catch((err: Error) => {
-        setError(err.message || "Could not start editing")
-      })
-      .finally(() => {
-        acquiringRef.current = false
-      })
-  }, [open, scheduled, isReady, isLocalRow, claimMutation])
 
-  // Heartbeat the worker fence while the dialog is open. Anonymous — no lock
-  // token; any session bumping the fence keeps the worker out.
-  useEffect(() => {
-    if (!open || !scheduled || isLocalRow) return
-    const interval = setInterval(() => {
-      heartbeatMutation.mutate(scheduled.id)
-    }, HEARTBEAT_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [open, scheduled, isLocalRow, heartbeatMutation])
-
-  const handleClose = useCallback(() => {
-    setContentJson(EMPTY_DOC)
-    setSendDate("")
-    setSendTime("")
+    const at = new Date(scheduled.scheduledFor)
+    // Append a trailing paragraph if the doc ends in a block-level atom
+    // (quote-reply, shared-message). Without this, mobile users can't tap
+    // a position after the atom — the gap-cursor has no tap target.
+    setContentJson(ensureTrailingParagraph(scheduled.contentJson || EMPTY_DOC))
+    setSendDate(toDateInputValue(at))
+    setSendTime(toTimeInputValue(at))
     setError(null)
     setFormatOpen(false)
     setMobileExpanded(false)
-    setExpectedUpdatedAt(null)
-    setIsReady(false)
     attachmentsHook.clear()
+
+    // Fire-and-forget: pause the worker so it doesn't send mid-edit. Local
+    // placeholders haven't been persisted yet, so the lock would 404 — skip.
+    // No heartbeat; the TTL is generous and a save 409s cleanly if it lapses.
+    if (!isLocalScheduledId(scheduled.id)) {
+      lockMutation.mutate(scheduled.id)
+    }
+  }, [scheduled, attachmentsHook, lockMutation])
+
+  const handleClose = useCallback(() => {
     onClose()
-  }, [attachmentsHook, onClose])
+  }, [onClose])
 
   const sendAtDate = useMemo(() => parseLocalDateTime(sendDate, sendTime), [sendDate, sendTime])
 
@@ -185,19 +133,13 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const handleSave = useCallback(async () => {
     if (!scheduled || !sendAtDate || !expectedUpdatedAt) return
     if (isLocalRow) {
-      // Local-only rows can't be saved through the update API yet — the
-      // server doesn't know about them. Surface a benign hint and let the
-      // schedule-message op queue catch up. (Future: cancel the queued op
-      // and re-enqueue with the new content.)
+      // Local-only rows haven't been confirmed by the server yet, so the
+      // update API would 404. The schedule_message op will land shortly;
+      // until then, surface a benign hint and bail.
       toast.info("Scheduling… try again in a moment")
       return
     }
     try {
-      // Snapshot the editor's live JSON, then fold any still-pending
-      // attachment uploads into the document so they ride along on save —
-      // mirrors the live composer's submit path. `collectAttachmentReferenceIds`
-      // then captures the union of (existing-untouched, newly-pasted,
-      // button-added) attachments for the row's array.
       const liveJson = (editorRef.current?.getEditor()?.getJSON() as JSONContent | undefined) ?? contentJson
       const materialized = materializePendingAttachmentReferences(
         liveJson,
@@ -218,10 +160,6 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       toast.success(isPast ? "Sent" : "Updated")
       handleClose()
     } catch (err: unknown) {
-      // STALE_VERSION (HTTP 409 with code SCHEDULED_MESSAGE_STALE_VERSION) is
-      // surfaced as a toast that prompts a refresh — the row was edited
-      // elsewhere and the user's local view is behind. Other errors keep the
-      // dialog open so the user can retry.
       const isStaleVersion =
         err && typeof err === "object" && "code" in err && err.code === "SCHEDULED_MESSAGE_STALE_VERSION"
       if (isStaleVersion) {
@@ -244,7 +182,6 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     attachmentsHook,
   ])
 
-  const isLoadingClaim = open && !isReady && !error
   const isSaving = updateMutation.isPending
 
   const description = (() => {
@@ -257,52 +194,37 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const saveLabel = isPast ? "Send" : "Save"
   const title = isPast ? "Send scheduled message" : "Edit scheduled message"
 
-  const editorBody = (() => {
-    if (isLoadingClaim) {
-      return (
-        <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Opening…
-        </div>
-      )
-    }
-    if (error) {
-      return <div className="text-sm text-destructive">{error}</div>
-    }
-    return (
-      <RichEditor
-        ref={setRichEditorHandle}
-        value={contentJson}
-        onChange={setContentJson}
-        onSubmit={handleSave}
-        onFileUpload={attachmentsHook.uploadFile}
-        imageCount={attachmentsHook.imageCount}
-        placeholder="Edit message…"
-        ariaLabel="Edit scheduled message"
-        messageSendMode="cmdEnter"
-        disabled={isSaving}
-        autoFocus={!isMobile}
-        disableSelectionToolbar={isMobile}
-        blurOnEscape
-        scopeId={scheduled?.id}
-        streamContext={streamContext}
-        staticToolbarOpen={!isMobile && formatOpen}
-        belowToolbarContent={
-          attachmentsHook.pendingAttachments.length > 0 ? (
-            <div className="px-3 pt-1 pb-2 border-b border-border/50 [&>div]:mb-0">
-              <PendingAttachments
-                attachments={attachmentsHook.pendingAttachments}
-                onRemove={attachmentsHook.removeAttachment}
-              />
-            </div>
-          ) : null
-        }
-      />
-    )
-  })()
+  const editorElement = (
+    <RichEditor
+      ref={setRichEditorHandle}
+      value={contentJson}
+      onChange={setContentJson}
+      onSubmit={handleSave}
+      onFileUpload={attachmentsHook.uploadFile}
+      imageCount={attachmentsHook.imageCount}
+      placeholder="Edit message…"
+      ariaLabel="Edit scheduled message"
+      messageSendMode="cmdEnter"
+      disabled={isSaving}
+      autoFocus
+      disableSelectionToolbar={isMobile}
+      blurOnEscape
+      scopeId={scheduled?.id}
+      streamContext={streamContext}
+      staticToolbarOpen={!isMobile && formatOpen}
+      belowToolbarContent={
+        attachmentsHook.pendingAttachments.length > 0 ? (
+          <div className="px-3 pt-1 pb-2 border-b border-border/50 [&>div]:mb-0">
+            <PendingAttachments
+              attachments={attachmentsHook.pendingAttachments}
+              onRemove={attachmentsHook.removeAttachment}
+            />
+          </div>
+        ) : null
+      }
+    />
+  )
 
-  // Hidden file input — attach button below triggers it. Lives outside the
-  // editor body so its focus state doesn't interact with the editor's
-  // handle-passing.
   const fileInput = (
     <input
       ref={attachmentsHook.fileInputRef}
@@ -314,9 +236,9 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     />
   )
 
-  // Mobile: clone of MessageEditForm's drawer shape — content-driven
-  // `max-h-[85dvh]` (or `!h-[100dvh]` when expanded), editor fills via
-  // `flex-1 min-h-0`, action bar pinned at bottom inside the drawer.
+  // Mobile: Drawer with the editor filling its body. Padding lives INSIDE
+  // .tiptap so a tap anywhere on the visible editor area focuses it — no
+  // dead zone between the visual edge and the contenteditable.
   if (isMobile) {
     const mobileTrailingActions = (
       <>
@@ -337,7 +259,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
           className="h-8 px-3 text-xs shrink-0"
           onPointerDown={(e) => e.preventDefault()}
           onClick={handleSave}
-          disabled={!isReady || isSaving || isLocalRow}
+          disabled={isSaving || isLocalRow}
         >
           {isSaving ? "Saving…" : saveLabel}
         </Button>
@@ -351,22 +273,9 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
           if (!next) handleClose()
         }}
       >
-        <DrawerContent
-          className={
-            mobileExpanded
-              ? "!h-[100dvh] rounded-t-none"
-              : // min-h keeps the drawer comfortably tall even with a short
-                // message — short notes shouldn't render in a cramped 30%
-                // sliver. max-h leaves room for the OS status bar / drag.
-                "min-h-[75dvh] max-h-[85dvh]"
-          }
-        >
+        <DrawerContent className={mobileExpanded ? "!h-[100dvh] rounded-t-none" : "min-h-[75dvh] max-h-[85dvh]"}>
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
 
-          {/* Body: pt-5 visually balances pb-[max(20px,safe)] on the action
-              bar below — the vaul drag handle takes ~24px on its own but
-              reads as decorative, not as padding, so the title still needs
-              breathing room from it. */}
           <div className="flex flex-col flex-1 min-h-0 px-4 pt-5 gap-4">
             <div>
               <p className="text-base font-semibold">{title}</p>
@@ -378,26 +287,24 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
               time={sendTime}
               onDateChange={setSendDate}
               onTimeChange={setSendTime}
-              disabled={isSaving || !isReady}
+              disabled={isSaving}
               density="compact"
             />
 
-            {/* Editor fills the remaining drawer height — same shape as
-                MessageEditForm so long messages don't scroll inside a tiny
-                window inside a full-screen drawer. */}
+            {/* Editor wrapper — the .tiptap inside fills the wrapper via
+                min-h-full and carries the typing padding. No border, no bg,
+                no inner padding on the wrapper itself, so visual edges and
+                the tap target line up exactly. */}
             <div
               data-inline-edit
-              className="flex-1 min-h-0 overflow-y-auto rounded-md border bg-background [&_.tiptap]:!pt-0 [&_.tiptap_p]:!leading-relaxed [&_.tiptap]:max-h-none [&_.tiptap]:min-h-full [&_.tiptap]:px-3 [&_.tiptap]:py-2"
+              className="flex-1 min-h-0 overflow-y-auto [&_.tiptap]:!pt-0 [&_.tiptap]:!pb-0 [&_.tiptap_p]:!leading-relaxed [&_.tiptap]:max-h-none [&_.tiptap]:min-h-full [&_.tiptap]:px-3 [&_.tiptap]:py-3"
             >
-              {editorBody}
+              {error ? <div className="px-3 py-3 text-sm text-destructive">{error}</div> : editorElement}
             </div>
           </div>
 
           {fileInput}
 
-          {/* Action bar: pt-3 separates it visually from the editor card; the
-              bottom uses max(20px, safe-area) so phones without an inset still
-              get thumb-comfortable padding rather than an 8px hairline. */}
           <div
             className="px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom))]"
             tabIndex={-1}
@@ -432,7 +339,8 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     )
   }
 
-  // Desktop: centered Dialog with the same primitives.
+  // Desktop: centered Dialog. Editor area uses internal .tiptap padding so
+  // a click anywhere within the visible editor focuses it.
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="sm:max-w-lg">
@@ -447,21 +355,15 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
             time={sendTime}
             onDateChange={setSendDate}
             onTimeChange={setSendTime}
-            disabled={isSaving || !isReady}
+            disabled={isSaving}
             density="compact"
           />
 
           <div
-            className={cn(
-              "rounded-md border bg-background",
-              // Wider min-h so a short scheduled note doesn't shrink the
-              // dialog down to a strip; max-h leaves room for the action bar
-              // + buttons before the dialog hits its sm:max-w-lg footprint.
-              "[&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-2",
-              "[&_.tiptap]:min-h-[14rem] [&_.tiptap]:max-h-[24rem]"
-            )}
+            data-inline-edit
+            className="rounded-md border bg-background overflow-hidden [&_.tiptap]:!pt-0 [&_.tiptap]:!pb-0 [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-3 [&_.tiptap]:min-h-[14rem] [&_.tiptap]:max-h-[24rem]"
           >
-            {editorBody}
+            {error ? <div className="px-3 py-3 text-sm text-destructive">{error}</div> : editorElement}
             {fileInput}
             <div className="border-t px-3 py-2">
               <EditorActionBar
@@ -477,7 +379,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
                     <Button type="button" variant="ghost" size="sm" onClick={handleClose} disabled={isSaving}>
                       {cancelLabel}
                     </Button>
-                    <Button type="button" size="sm" onClick={handleSave} disabled={!isReady || isSaving || isLocalRow}>
+                    <Button type="button" size="sm" onClick={handleSave} disabled={isSaving || isLocalRow}>
                       {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       {saveLabel}
                     </Button>

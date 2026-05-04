@@ -814,13 +814,13 @@ export interface UpdateScheduledMessageInput {
   expectedUpdatedAt: string
 }
 
-export interface ClaimScheduledMessageResponse {
-  scheduled: ScheduledMessageView
-  /**
-   * ISO of when the worker fence will expire if no further heartbeat lands.
-   * Clients should heartbeat before then to keep the worker out while the
-   * editor is open.
-   */
+/**
+ * Response from `POST /scheduled/:id/lock`. The caller pauses the worker
+ * from sending while the user has the edit dialog open. Anonymous fence —
+ * no per-device owner, multiple devices/tabs can hold it concurrently.
+ */
+export interface LockScheduledMessageResponse {
+  /** ISO of when the worker fence expires. Generous TTL; no heartbeat. */
   editActiveUntil: string
 }
 

@@ -300,7 +300,7 @@ export type {
   ScheduledMessageView,
   ScheduleMessageInput,
   UpdateScheduledMessageInput,
-  ClaimScheduledMessageResponse,
+  LockScheduledMessageResponse,
   ScheduledMessageListResponse,
   ScheduledMessageUpsertedPayload,
   ScheduledMessageSentPayload,

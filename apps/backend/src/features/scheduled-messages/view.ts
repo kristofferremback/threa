@@ -4,8 +4,7 @@ import type { ScheduledMessage } from "./repository"
 /**
  * Wire shape for a scheduled-message row. `editActiveUntil` exposes the
  * worker fence so the frontend can render a "currently being edited"
- * affordance across devices and decide whether to skip its own heartbeat
- * when another session is already keeping the fence alive.
+ * affordance across devices.
  *
  * Unlike saved-messages we do NOT denormalize a live message snapshot —
  * `contentJson` and `contentMarkdown` are already canonical on the scheduled

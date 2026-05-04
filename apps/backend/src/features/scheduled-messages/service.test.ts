@@ -190,7 +190,7 @@ describe("ScheduledMessagesService.schedule", () => {
   })
 })
 
-describe("ScheduledMessagesService.claim (fence-only)", () => {
+describe("ScheduledMessagesService.lockForEdit (worker pause)", () => {
   afterEach(() => mock.restore())
 
   it("rejects when the row is already in flight (status != pending)", async () => {
@@ -199,41 +199,28 @@ describe("ScheduledMessagesService.claim (fence-only)", () => {
       fakeScheduled({ status: ScheduledMessageStatuses.SENDING })
     )
 
-    await expect(service.claim({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })).rejects.toThrow(
+    await expect(service.lockForEdit({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })).rejects.toThrow(
       /already/i
     )
   })
 
-  it("succeeds even when another editor session already bumped the fence (no exclusive lock)", async () => {
+  it("succeeds even when another device already pushed the fence forward (anonymous, no owner)", async () => {
+    // The fence is "is anyone editing right now?", not "did *this* device
+    // claim it". Two devices opening the same row both succeed; bumpEditFence
+    // GREATESTs the fence forward so neither pulls it backwards.
     const service = setupService()
     const fenceFromAnotherSession = new Date(Date.now() + 30_000)
     const row = fakeScheduled({ editActiveUntil: fenceFromAnotherSession })
     spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(row)
     const bumpEditFence = spyOn(ScheduledMessagesRepository, "bumpEditFence").mockResolvedValue({
       ...row,
-      editActiveUntil: new Date(Date.now() + 60_000),
+      editActiveUntil: new Date(Date.now() + 10 * 60_000),
     })
-    spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
 
-    const result = await service.claim({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })
+    const result = await service.lockForEdit({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })
 
-    expect(result.scheduled.id).toBe(SCHEDULED_ID)
+    expect(result.editActiveUntil.getTime()).toBeGreaterThan(Date.now())
     expect(bumpEditFence).toHaveBeenCalledTimes(1)
-  })
-
-  it("publishes scheduled_message:upserted so other tabs see the fence change", async () => {
-    const service = setupService()
-    const row = fakeScheduled()
-    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(row)
-    spyOn(ScheduledMessagesRepository, "bumpEditFence").mockResolvedValue({
-      ...row,
-      editActiveUntil: new Date(Date.now() + 60_000),
-    })
-    const outboxInsert = spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
-
-    await service.claim({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })
-
-    expect(outboxInsert).toHaveBeenCalledWith(expect.anything(), "scheduled_message:upserted", expect.any(Object))
   })
 })
 

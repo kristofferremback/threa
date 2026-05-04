@@ -42,9 +42,9 @@ export interface ScheduledMessage {
   queueMessageId: string | null
   /**
    * Worker fence — the worker won't fire while this is in the future. Bumped
-   * on `claim` and on heartbeat. Anonymous (no owner): multiple editors share
-   * the fence and any of them keeps the worker out. First save wins via
-   * `updated_at` CAS, not via this fence.
+   * by `lockForEdit` when a user opens the edit dialog. Anonymous (no owner):
+   * multiple editors share the fence and any of them keeps the worker out.
+   * First save wins via `updated_at` CAS, not via this fence.
    */
   editActiveUntil: Date | null
   clientMessageId: string | null

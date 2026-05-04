@@ -142,26 +142,12 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
       res.json({ scheduled })
     },
 
-    async claim(req: Request, res: Response) {
+    async lockForEdit(req: Request, res: Response) {
       const userId = req.user!.id
       const workspaceId = req.workspaceId!
       const id = req.params.id!
 
-      const result = await scheduledMessagesService.claim({ workspaceId, userId, id })
-
-      res.json({
-        scheduled: result.scheduled,
-        editActiveUntil: result.editActiveUntil.toISOString(),
-      })
-    },
-
-    async heartbeat(req: Request, res: Response) {
-      const userId = req.user!.id
-      const workspaceId = req.workspaceId!
-      const id = req.params.id!
-
-      const result = await scheduledMessagesService.heartbeat({ workspaceId, userId, id })
-
+      const result = await scheduledMessagesService.lockForEdit({ workspaceId, userId, id })
       res.json({ editActiveUntil: result.editActiveUntil.toISOString() })
     },
 

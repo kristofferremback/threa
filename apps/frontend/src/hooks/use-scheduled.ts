@@ -12,7 +12,6 @@ import type {
   ScheduledMessageStatus,
   ScheduleMessageInput,
   UpdateScheduledMessageInput,
-  ClaimScheduledMessageResponse,
   JSONContent,
 } from "@threa/types"
 
@@ -382,6 +381,20 @@ export function useCancelScheduled(workspaceId: string) {
 }
 
 /**
+ * Pause the worker from sending while the user has the edit dialog open.
+ * Fire-and-forget — the dialog calls this once on mount; the server bumps
+ * the worker fence with a generous TTL (~10 min). No heartbeat. If the user
+ * is still editing past the TTL, their save 409s cleanly via the
+ * `expectedUpdatedAt` CAS and the dialog refreshes.
+ */
+export function useLockScheduledForEdit(workspaceId: string) {
+  const scheduledService = useScheduledService()
+  return useMutation({
+    mutationFn: (id: string) => scheduledService.lockForEdit(workspaceId, id),
+  })
+}
+
+/**
  * Send a pending row immediately. Server takes the worker-style CAS and
  * fires through the same EventService.createMessage code path. On success the
  * row transitions sent and the live message appears in the stream timeline
@@ -411,31 +424,5 @@ export function useSendScheduledNow(workspaceId: string) {
         queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
       }
     },
-  })
-}
-
-/**
- * Open an editor session — bumps the worker fence so the row can't fire
- * mid-edit. Multiple devices/tabs can claim concurrently; first save wins
- * via the optimistic CAS in `useUpdateScheduled`.
- */
-export function useClaimScheduled(workspaceId: string) {
-  const scheduledService = useScheduledService()
-  return useMutation({
-    mutationFn: (id: string): Promise<ClaimScheduledMessageResponse> => scheduledService.claim(workspaceId, id),
-    onSuccess: (res) => {
-      void persistScheduledRows([res.scheduled])
-    },
-  })
-}
-
-/**
- * Refresh the worker fence. Anonymous — any caller's heartbeat keeps the
- * fence alive; the fence is "is anyone editing right now?", not per-device.
- */
-export function useHeartbeatScheduled(workspaceId: string) {
-  const scheduledService = useScheduledService()
-  return useMutation({
-    mutationFn: (id: string) => scheduledService.heartbeat(workspaceId, id),
   })
 }

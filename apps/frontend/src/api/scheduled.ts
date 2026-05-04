@@ -5,7 +5,7 @@ import type {
   ScheduledMessageStatus,
   ScheduleMessageInput,
   UpdateScheduledMessageInput,
-  ClaimScheduledMessageResponse,
+  LockScheduledMessageResponse,
 } from "@threa/types"
 
 export interface ListScheduledParams {
@@ -48,12 +48,8 @@ export const scheduledApi = {
     await api.delete<{ ok: true }>(`/api/workspaces/${workspaceId}/scheduled/${id}`)
   },
 
-  async claim(workspaceId: string, id: string): Promise<ClaimScheduledMessageResponse> {
-    return api.post<ClaimScheduledMessageResponse>(`/api/workspaces/${workspaceId}/scheduled/${id}/claim`, {})
-  },
-
-  async heartbeat(workspaceId: string, id: string): Promise<{ editActiveUntil: string }> {
-    return api.post<{ editActiveUntil: string }>(`/api/workspaces/${workspaceId}/scheduled/${id}/heartbeat`, {})
+  async lockForEdit(workspaceId: string, id: string): Promise<LockScheduledMessageResponse> {
+    return api.post<LockScheduledMessageResponse>(`/api/workspaces/${workspaceId}/scheduled/${id}/lock`, {})
   },
 
   async sendNow(workspaceId: string, id: string): Promise<ScheduledMessageView> {

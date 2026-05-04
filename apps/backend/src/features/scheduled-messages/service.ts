@@ -56,32 +56,25 @@ export interface ListScheduledParams {
   cursor?: string
 }
 
-export interface ClaimResult {
-  scheduled: ScheduledMessageView
-  /** ISO when the worker fence will expire if no further heartbeat lands. */
-  editActiveUntil: Date
-}
-
-const EDIT_FENCE_TTL_SECONDS = 60
 const WORKER_FENCE_TTL_SECONDS = 10
+const EDIT_LOCK_TTL_SECONDS = 10 * 60
 const MIN_FUTURE_OFFSET_SECONDS = 5
 
 /**
- * Service for the scheduled-message lifecycle: schedule / update / claim /
- * heartbeat / send-now / cancel / fire (worker entry).
+ * Service for the scheduled-message lifecycle: schedule / update / lockForEdit
+ * / send-now / cancel / fire (worker entry).
  *
- * Concurrency model — worker fence + first-save-wins:
- *  - Multiple editors (same user, different tabs/devices) can open the row
- *    simultaneously. There is no exclusive editor lock; `claim` is
- *    advisory and only bumps the worker fence so the worker doesn't fire
- *    while someone is editing.
+ * Concurrency model — worker pause + first-save-wins:
+ *  - Opening the edit dialog calls `lockForEdit` once: bumps a fence
+ *    (`edit_active_until`) for `EDIT_LOCK_TTL_SECONDS`. While the fence is
+ *    in the future, the worker defers firing — so we never send mid-edit
+ *    content. The fence is anonymous (no per-device owner), so multiple
+ *    devices/tabs can edit concurrently.
  *  - Saves carry the `updatedAt` the editor last saw. The repository CAS
- *    rejects with 409 STALE_VERSION when the row has moved on (someone else
- *    saved). First save wins; second save's client refreshes from the
- *    upserted socket event and reprompts.
- *  - The worker side keeps its CAS shape but adds the fence check so an
- *    active editor session keeps the row from firing. When all sessions
- *    stop heartbeating, the fence expires and the worker proceeds.
+ *    rejects with 409 STALE_VERSION when the row has moved on (another
+ *    save landed, or the worker won past an expired fence). First save wins.
+ *  - No heartbeat. The TTL is generous (~10 minutes); if the user is still
+ *    editing past that, their save will 409 cleanly and they refresh.
  */
 export class ScheduledMessagesService {
   private readonly pool: Pool
@@ -206,66 +199,35 @@ export class ScheduledMessagesService {
   }
 
   /**
-   * Open an editor session. There is no exclusive editor lock — multiple
-   * tabs/devices can claim the same row concurrently. Claim only bumps the
-   * worker fence so the row doesn't fire while editors are active. Returns
-   * the current row (so the editor seeds with fresh content) plus the fence
-   * expiry. The client should heartbeat before that expiry to keep the
-   * fence alive.
+   * Pause the worker from sending while a user has the edit dialog open.
+   * Bumps `edit_active_until` to `NOW() + EDIT_LOCK_TTL_SECONDS`. Anonymous
+   * — multiple devices/tabs can call this concurrently and only push the
+   * fence forward (`GREATEST` semantics in the repo). Idempotent: re-calling
+   * just refreshes the fence. No heartbeat; the TTL is generous.
    *
-   * 404 SCHEDULED_MESSAGE_NOT_FOUND when the row doesn't exist or doesn't
-   * belong to the caller; 409 SCHEDULED_MESSAGE_NOT_PENDING when the row
-   * has already moved on (sent/cancelled/failed). The latter signals the
-   * client to navigate to the live message instead of opening the editor.
+   * Returns `editActiveUntil` so the client can know when its protection
+   * runs out (informational; the dialog doesn't actually need to act on it).
+   * 404 SCHEDULED_MESSAGE_NOT_FOUND when missing; 409 with status-aware code
+   * when the row has already moved past `pending`.
    */
-  async claim(params: { workspaceId: string; userId: string; id: string }): Promise<ClaimResult> {
+  async lockForEdit(params: { workspaceId: string; userId: string; id: string }): Promise<{ editActiveUntil: Date }> {
     return withTransaction(this.pool, async (client) => {
       await this.assertPendingOrThrow(client, params)
       const bumped = await ScheduledMessagesRepository.bumpEditFence(client, {
         workspaceId: params.workspaceId,
         id: params.id,
-        ttlSeconds: EDIT_FENCE_TTL_SECONDS,
+        ttlSeconds: EDIT_LOCK_TTL_SECONDS,
       })
       if (!bumped || !bumped.editActiveUntil) {
         // Race: assertPending saw pending but the fence bump landed on a
-        // post-pending row (worker just won, send-now landed). Surface the
-        // same code so the client navigates to the live message.
+        // post-pending row (worker just won). Surface the same condition.
         throw new HttpError("Scheduled message no longer pending", {
           status: 409,
           code: "SCHEDULED_MESSAGE_NOT_PENDING",
         })
       }
-
-      const view = toScheduledMessageView(bumped)
-      // Broadcast the fence change so the user's other tabs see "currently
-      // editing" affordances if they want to render them.
-      await this.publishUpsert(client, view, params.userId)
-
-      return {
-        scheduled: view,
-        editActiveUntil: bumped.editActiveUntil,
-      }
+      return { editActiveUntil: bumped.editActiveUntil }
     })
-  }
-
-  /**
-   * Bump the worker fence. Anonymous — any caller can bump (no owner check)
-   * since the fence is a "someone is editing" signal, not a per-device lock.
-   * Returns the new expiry so the client can schedule the next heartbeat.
-   */
-  async heartbeat(params: { workspaceId: string; userId: string; id: string }): Promise<{ editActiveUntil: Date }> {
-    const row = await ScheduledMessagesRepository.bumpEditFence(this.pool, {
-      workspaceId: params.workspaceId,
-      id: params.id,
-      ttlSeconds: EDIT_FENCE_TTL_SECONDS,
-    })
-    if (!row || !row.editActiveUntil) {
-      throw new HttpError("Scheduled message no longer pending", {
-        status: 409,
-        code: "SCHEDULED_MESSAGE_NOT_PENDING",
-      })
-    }
-    return { editActiveUntil: row.editActiveUntil }
   }
 
   /**
@@ -322,9 +284,8 @@ export class ScheduledMessagesService {
           ttlSeconds: WORKER_FENCE_TTL_SECONDS,
         })
         if (!flipped) {
-          // Worker won between the update and the start-send CAS, or the
-          // fence was bumped by another editor. Either way, surface the
-          // condition so the client refreshes; the worker's path will
+          // Worker won between the update and the start-send CAS. Surface
+          // the condition so the client refreshes; the worker's path will
           // complete the send if it's currently in flight.
           throw new HttpError("Scheduled message no longer pending", {
             status: 409,
@@ -357,18 +318,16 @@ export class ScheduledMessagesService {
     return withTransaction(this.pool, async (client) => {
       const existing = await this.assertPendingOrThrow(client, params)
 
-      // Take the worker-style CAS atomically (status flip → sending). This
-      // bypasses the fence — the user explicitly requested "send now", so an
-      // active editor session shouldn't block themselves.
+      // Take the worker-style CAS atomically (status flip → sending).
       const claimed = await ScheduledMessagesRepository.tryStartSend(client, {
         workspaceId: params.workspaceId,
         id: params.id,
         ttlSeconds: WORKER_FENCE_TTL_SECONDS,
       })
       if (!claimed) {
-        // The fence is set, but `tryStartSend` requires `scheduled_for <=
-        // NOW()`. For a future-scheduled message, force the send by setting
-        // scheduled_for to now and retrying.
+        // `tryStartSend` requires `scheduled_for <= NOW()`. For a future-
+        // scheduled message, force the send by setting scheduled_for to now
+        // and retrying.
         const forcedNow = await ScheduledMessagesRepository.update(client, {
           workspaceId: params.workspaceId,
           userId: params.userId,
@@ -437,7 +396,7 @@ export class ScheduledMessagesService {
   /**
    * Worker entry. Re-reads scoped to (workspaceId, id) per INV-8, then attempts
    * the start-send CAS. Returns `{ fired }` so the worker can log + decide
-   * whether to defer-and-retry on fence contention. The status flip stays in
+   * whether to defer-and-retry on contention. The status flip stays in
    * place for `WORKER_FENCE_TTL_SECONDS` which is plenty for the EventService
    * send + outbox writes.
    */
@@ -471,12 +430,13 @@ export class ScheduledMessagesService {
         return { fired: false, reschedule: false }
       }
       if (row.editActiveUntil && row.editActiveUntil.getTime() > Date.now()) {
-        // An editor session is open. Defer — the queue will retry on its
-        // next tick; if the user closes the editor, the fence expires and
+        // The user has the edit dialog open — pause the send so we don't
+        // ship mid-edit content. The queue retries on its next tick; once
+        // the fence expires (or the dialog closes and the lock TTL drains),
         // the next tick fires the row.
         logger.debug(
           { ...params, editActiveUntil: row.editActiveUntil.toISOString() },
-          "scheduled_message fire deferred — editor session active"
+          "scheduled_message fire deferred — edit session active"
         )
         return { fired: false, reschedule: true }
       }
@@ -487,10 +447,9 @@ export class ScheduledMessagesService {
         ttlSeconds: WORKER_FENCE_TTL_SECONDS,
       })
       if (!claimed) {
-        // Fence was bumped between the pre-read and the CAS, or a competing
-        // sender won. The fence-bump path is benign — defer for retry. We
-        // don't track per-attempt retry counts here since the queue's own
-        // exponential backoff handles bounded retry; if the row stays
+        // The fence was bumped between the pre-read and the CAS, or a
+        // competing sender won. Defer for retry; the queue's own
+        // exponential backoff handles bounded retry. If the row stays
         // wedged, the queue eventually marks the job failed.
         return { fired: false, reschedule: true }
       }
