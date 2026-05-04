@@ -19,9 +19,9 @@ const scheduleSchema = z.object({
   clientMessageId: z.string().min(1).optional(),
 })
 
-// PATCH allows any subset of editable fields plus a required lockToken. The
-// lock token is the mutual-exclusion primitive against the worker; without
-// it, no edits are allowed.
+// PATCH allows any subset of editable fields plus a required
+// `expectedUpdatedAt` so the server can run the optimistic-CAS check that
+// makes "first save wins" possible without an exclusive editor lock.
 const updateSchema = z
   .object({
     contentJson: contentJsonSchema.optional(),
@@ -29,7 +29,7 @@ const updateSchema = z
     attachmentIds: z.array(z.string()).optional(),
     metadata: z.record(z.string(), z.string()).nullable().optional(),
     scheduledFor: z.string().datetime().optional(),
-    lockToken: z.string().min(1),
+    expectedUpdatedAt: z.string().datetime(),
   })
   .refine(
     (d) =>
@@ -47,8 +47,6 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   cursor: z.string().optional(),
 })
-
-const lockTokenSchema = z.object({ lockToken: z.string().min(1) })
 
 interface Dependencies {
   scheduledMessagesService: ScheduledMessagesService
@@ -133,7 +131,7 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
         workspaceId,
         userId,
         id,
-        lockToken: parsed.data.lockToken,
+        expectedUpdatedAt: new Date(parsed.data.expectedUpdatedAt),
         contentJson: parsed.data.contentJson,
         contentMarkdown: parsed.data.contentMarkdown,
         attachmentIds: parsed.data.attachmentIds,
@@ -153,9 +151,7 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
 
       res.json({
         scheduled: result.scheduled,
-        lockToken: result.lockToken,
-        lockExpiresAt: result.lockExpiresAt.toISOString(),
-        sync: result.sync,
+        editActiveUntil: result.editActiveUntil.toISOString(),
       })
     },
 
@@ -164,39 +160,9 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
       const workspaceId = req.workspaceId!
       const id = req.params.id!
 
-      const parsed = lockTokenSchema.safeParse(req.body)
-      if (!parsed.success) {
-        throw new HttpError("Invalid heartbeat request", { status: 400, code: "VALIDATION_ERROR" })
-      }
+      const result = await scheduledMessagesService.heartbeat({ workspaceId, userId, id })
 
-      const result = await scheduledMessagesService.heartbeat({
-        workspaceId,
-        userId,
-        id,
-        lockToken: parsed.data.lockToken,
-      })
-
-      res.json({ lockExpiresAt: result.lockExpiresAt.toISOString() })
-    },
-
-    async release(req: Request, res: Response) {
-      const userId = req.user!.id
-      const workspaceId = req.workspaceId!
-      const id = req.params.id!
-
-      const parsed = lockTokenSchema.safeParse(req.body)
-      if (!parsed.success) {
-        throw new HttpError("Invalid release request", { status: 400, code: "VALIDATION_ERROR" })
-      }
-
-      await scheduledMessagesService.release({
-        workspaceId,
-        userId,
-        id,
-        lockToken: parsed.data.lockToken,
-      })
-
-      res.json({ ok: true })
+      res.json({ editActiveUntil: result.editActiveUntil.toISOString() })
     },
 
     async sendNow(req: Request, res: Response) {

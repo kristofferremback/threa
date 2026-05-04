@@ -137,15 +137,6 @@ export const ScheduledMessageStatuses = {
   FAILED: "failed",
 } as const satisfies Record<string, ScheduledMessageStatus>
 
-/**
- * Threshold (in seconds) below which a scheduled-message `/claim` resolves
- * synchronously: the client UI-blocks for up to ~300ms while the CAS
- * round-trip lands. Above the threshold the editor opens optimistically and
- * the claim resolves in the background. Server-side hint only — correctness
- * comes from the CAS, not the threshold.
- */
-export const SCHEDULED_MESSAGE_SYNC_LOCK_THRESHOLD_SECONDS = 30
-
 // Invitation statuses
 export const INVITATION_STATUSES = ["pending", "accepted", "expired", "revoked"] as const
 export type InvitationStatus = (typeof INVITATION_STATUSES)[number]

@@ -26,6 +26,7 @@ import {
   useWorkspaceService,
   useStreamService,
   useMessageService,
+  useScheduledService,
   PanelProvider,
   QuickSwitcherProvider,
   PreferencesProvider,
@@ -132,6 +133,7 @@ function WorkspaceSyncHandler({
   const workspaceService = useWorkspaceService()
   const streamService = useStreamService()
   const messageService = useMessageService()
+  const scheduledService = useScheduledService()
   const syncStatusStore = useContext(SyncStatusContext)
   const { user } = useAuth()
   const isOnline = useOnlineStatus()
@@ -158,6 +160,11 @@ function WorkspaceSyncHandler({
       reactionService: {
         add: (wid: string, mid: string, emoji: string) => messagesApi.addReaction(wid, mid, emoji),
         remove: (wid: string, mid: string, emoji: string) => messagesApi.removeReaction(wid, mid, emoji),
+      },
+      scheduledService: {
+        create: scheduledService.create,
+        delete: scheduledService.delete,
+        sendNow: scheduledService.sendNow,
       },
     })
   }

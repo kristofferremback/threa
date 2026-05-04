@@ -1,11 +1,5 @@
 import type { Pool, PoolClient } from "pg"
-import {
-  AuthorTypes,
-  ScheduledMessageStatuses,
-  SCHEDULED_MESSAGE_SYNC_LOCK_THRESHOLD_SECONDS,
-  type ScheduledMessageView,
-  type JSONContent,
-} from "@threa/types"
+import { AuthorTypes, ScheduledMessageStatuses, type ScheduledMessageView, type JSONContent } from "@threa/types"
 import { withTransaction } from "../../db"
 import { HttpError, isUniqueViolation } from "../../lib/errors"
 // Side-effect import: matches the load-order workaround used by other features
@@ -17,7 +11,7 @@ import { StreamRepository, StreamMemberRepository, type Stream } from "../stream
 import { Visibilities } from "@threa/types"
 import { MessageRepository } from "../messaging"
 import { EventService } from "../messaging"
-import { scheduledMessageId, scheduledMessageQueueId, userSessionId, workerId } from "../../lib/id"
+import { scheduledMessageId, scheduledMessageQueueId } from "../../lib/id"
 import { JobQueues, QueueRepository, enqueueQueuedJob, type ScheduledMessageSendJobData } from "../../lib/queue"
 import { logger } from "../../lib/logger"
 import { ScheduledMessagesRepository, type ScheduledMessage } from "./repository"
@@ -45,7 +39,7 @@ export interface UpdateScheduledParams {
   workspaceId: string
   userId: string
   id: string
-  lockToken: string
+  expectedUpdatedAt: Date
   contentJson?: JSONContent
   contentMarkdown?: string
   attachmentIds?: string[]
@@ -64,22 +58,30 @@ export interface ListScheduledParams {
 
 export interface ClaimResult {
   scheduled: ScheduledMessageView
-  lockToken: string
-  lockExpiresAt: Date
-  /** Server hint — true when scheduled_for is within the sync threshold. */
-  sync: boolean
+  /** ISO when the worker fence will expire if no further heartbeat lands. */
+  editActiveUntil: Date
 }
 
-const EDITOR_LOCK_TTL_SECONDS = 60
-const WORKER_LOCK_TTL_SECONDS = 10
+const EDIT_FENCE_TTL_SECONDS = 60
+const WORKER_FENCE_TTL_SECONDS = 10
 const MIN_FUTURE_OFFSET_SECONDS = 5
-
-/** Past-time grace window for the worker. Beyond this we mark the row failed. */
-const WORKER_MAX_LOCK_RETRIES = 6
 
 /**
  * Service for the scheduled-message lifecycle: schedule / update / claim /
- * release / send-now / cancel / fire (worker entry).
+ * heartbeat / send-now / cancel / fire (worker entry).
+ *
+ * Concurrency model — worker fence + first-save-wins:
+ *  - Multiple editors (same user, different tabs/devices) can open the row
+ *    simultaneously. There is no exclusive editor lock; `claim` is
+ *    advisory and only bumps the worker fence so the worker doesn't fire
+ *    while someone is editing.
+ *  - Saves carry the `updatedAt` the editor last saw. The repository CAS
+ *    rejects with 409 STALE_VERSION when the row has moved on (someone else
+ *    saved). First save wins; second save's client refreshes from the
+ *    upserted socket event and reprompts.
+ *  - The worker side keeps its CAS shape but adds the fence check so an
+ *    active editor session keeps the row from firing. When all sessions
+ *    stop heartbeating, the fence expires and the worker proceeds.
  */
 export class ScheduledMessagesService {
   private readonly pool: Pool
@@ -204,113 +206,92 @@ export class ScheduledMessagesService {
   }
 
   /**
-   * Acquire the editor lock. The CAS in the repository takes the row out of
-   * worker rotation atomically — if it succeeds, the worker can't fire while
-   * we hold the lock. If the row is already `sending`/`sent`/`cancelled`/
-   * `failed`, the CAS fails and we surface a 409 with a code the client uses
-   * to fall back to "live message" navigation.
+   * Open an editor session. There is no exclusive editor lock — multiple
+   * tabs/devices can claim the same row concurrently. Claim only bumps the
+   * worker fence so the row doesn't fire while editors are active. Returns
+   * the current row (so the editor seeds with fresh content) plus the fence
+   * expiry. The client should heartbeat before that expiry to keep the
+   * fence alive.
    *
-   * The lock-token is the user session id — distinct from the user id so two
-   * tabs can't accidentally extend each other's locks.
+   * 404 SCHEDULED_MESSAGE_NOT_FOUND when the row doesn't exist or doesn't
+   * belong to the caller; 409 SCHEDULED_MESSAGE_NOT_PENDING when the row
+   * has already moved on (sent/cancelled/failed). The latter signals the
+   * client to navigate to the live message instead of opening the editor.
    */
   async claim(params: { workspaceId: string; userId: string; id: string }): Promise<ClaimResult> {
     return withTransaction(this.pool, async (client) => {
       await this.assertPendingOrThrow(client, params)
-
-      const ownerId = `usr:${params.userId}:${userSessionId()}`
-      const claimed = await ScheduledMessagesRepository.tryAcquireLock(client, {
+      const bumped = await ScheduledMessagesRepository.bumpEditFence(client, {
         workspaceId: params.workspaceId,
         id: params.id,
-        ownerId,
-        ttlSeconds: EDITOR_LOCK_TTL_SECONDS,
-        setStatus: null,
+        ttlSeconds: EDIT_FENCE_TTL_SECONDS,
       })
-
-      if (!claimed) {
-        throw new HttpError("Lock held by another editor", {
+      if (!bumped || !bumped.editActiveUntil) {
+        // Race: assertPending saw pending but the fence bump landed on a
+        // post-pending row (worker just won, send-now landed). Surface the
+        // same code so the client navigates to the live message.
+        throw new HttpError("Scheduled message no longer pending", {
           status: 409,
-          code: "SCHEDULED_MESSAGE_LOCK_HELD",
+          code: "SCHEDULED_MESSAGE_NOT_PENDING",
         })
       }
 
-      const view = toScheduledMessageView(claimed)
-      const sync = claimed.scheduledFor.getTime() - Date.now() < SCHEDULED_MESSAGE_SYNC_LOCK_THRESHOLD_SECONDS * 1000
-
-      // Lock-state changes broadcast back so the user's other tabs/devices
-      // can reflect "currently editing" state (Journey 12).
+      const view = toScheduledMessageView(bumped)
+      // Broadcast the fence change so the user's other tabs see "currently
+      // editing" affordances if they want to render them.
       await this.publishUpsert(client, view, params.userId)
 
       return {
         scheduled: view,
-        lockToken: ownerId,
-        lockExpiresAt: claimed.editLockExpiresAt!,
-        sync,
+        editActiveUntil: bumped.editActiveUntil,
       }
-    })
-  }
-
-  async heartbeat(params: {
-    workspaceId: string
-    userId: string
-    id: string
-    lockToken: string
-  }): Promise<{ lockExpiresAt: Date }> {
-    const row = await ScheduledMessagesRepository.heartbeatLock(this.pool, {
-      workspaceId: params.workspaceId,
-      id: params.id,
-      ownerId: params.lockToken,
-      ttlSeconds: EDITOR_LOCK_TTL_SECONDS,
-    })
-    if (!row || !row.editLockExpiresAt) {
-      throw new HttpError("Lock expired or released", {
-        status: 409,
-        code: "SCHEDULED_MESSAGE_LOCK_EXPIRED",
-      })
-    }
-    return { lockExpiresAt: row.editLockExpiresAt }
-  }
-
-  async release(params: { workspaceId: string; userId: string; id: string; lockToken: string }): Promise<void> {
-    await withTransaction(this.pool, async (client) => {
-      const row = await ScheduledMessagesRepository.releaseLock(client, {
-        workspaceId: params.workspaceId,
-        id: params.id,
-        ownerId: params.lockToken,
-      })
-      if (!row) return
-
-      await this.publishUpsert(client, toScheduledMessageView(row), params.userId)
     })
   }
 
   /**
-   * Update a pending scheduled message. The lock token is required and the
-   * repo's `update()` re-asserts the lock owner under the same UPDATE so a
-   * stale token never lands a write.
+   * Bump the worker fence. Anonymous — any caller can bump (no owner check)
+   * since the fence is a "someone is editing" signal, not a per-device lock.
+   * Returns the new expiry so the client can schedule the next heartbeat.
+   */
+  async heartbeat(params: { workspaceId: string; userId: string; id: string }): Promise<{ editActiveUntil: Date }> {
+    const row = await ScheduledMessagesRepository.bumpEditFence(this.pool, {
+      workspaceId: params.workspaceId,
+      id: params.id,
+      ttlSeconds: EDIT_FENCE_TTL_SECONDS,
+    })
+    if (!row || !row.editActiveUntil) {
+      throw new HttpError("Scheduled message no longer pending", {
+        status: 409,
+        code: "SCHEDULED_MESSAGE_NOT_PENDING",
+      })
+    }
+    return { editActiveUntil: row.editActiveUntil }
+  }
+
+  /**
+   * Update a pending scheduled message with optimistic concurrency. The
+   * client sends `expectedUpdatedAt` — the `updated_at` it last claimed
+   * against. The CAS rejects with 409 STALE_VERSION when the row has moved
+   * on (someone else saved since); first save wins.
    *
    * If `scheduledFor` shifts, we cancel the prior queue row and enqueue a
    * fresh one inside the same transaction.
    *
-   * If the new `scheduledFor` is in the past, this method calls `EventService.
-   * createMessage` atomically and transitions to `sent` — the "Save = Send"
-   * semantics from the past-time edit UX. The lock guarantees the worker
-   * isn't doing the same thing concurrently.
+   * If the new `scheduledFor` is in the past, this method calls
+   * `EventService.createMessage` atomically and transitions to `sent` — the
+   * "Save = Send" semantics from the past-time edit UX. Two competing
+   * past-time saves are kept consistent by the `markSent` `status='sending'`
+   * guard plus the `clientMessageId: scheduled:<id>` idempotency key.
    */
   async update(params: UpdateScheduledParams): Promise<ScheduledMessageView> {
     return withTransaction(this.pool, async (client) => {
       const existing = await this.assertPendingOrThrow(client, params)
-      if (existing.editLockOwnerId !== params.lockToken || (existing.editLockExpiresAt?.getTime() ?? 0) <= Date.now()) {
-        throw new HttpError("Lock expired or not held by caller", {
-          status: 409,
-          code: "SCHEDULED_MESSAGE_LOCK_EXPIRED",
-        })
-      }
 
       const updated = await ScheduledMessagesRepository.update(client, {
         workspaceId: params.workspaceId,
         userId: params.userId,
         id: params.id,
-        lockOwnerId: params.lockToken,
+        expectedUpdatedAt: params.expectedUpdatedAt,
         contentJson: params.contentJson,
         contentMarkdown: params.contentMarkdown,
         attachmentIds: params.attachmentIds,
@@ -318,9 +299,10 @@ export class ScheduledMessagesService {
         scheduledFor: params.scheduledFor,
       })
       if (!updated) {
-        throw new HttpError("Lock expired or not held by caller", {
+        // expectedUpdatedAt didn't match — another save landed first.
+        throw new HttpError("Scheduled message was edited elsewhere", {
           status: 409,
-          code: "SCHEDULED_MESSAGE_LOCK_EXPIRED",
+          code: "SCHEDULED_MESSAGE_STALE_VERSION",
         })
       }
 
@@ -331,22 +313,19 @@ export class ScheduledMessagesService {
         (await ScheduledMessagesRepository.findById(client, params.workspaceId, params.userId, params.id)) ?? updated
 
       // Past-time save = atomic send (per the past-time editing UX). The
-      // editor still holds the lock at this point, so no worker tick can race
-      // us. We flip status to `sending` via the same CAS shape the worker
-      // uses, reusing the editor's lockToken as the CAS owner so the
-      // (`edit_lock_owner_id = ${ownerId}`) clause matches without a
-      // release-then-reclaim. We skip the reschedule enqueue (no point
-      // queueing a job we're about to short-circuit) and tombstone the
-      // existing queue row so a stale worker tick can't fire after commit.
+      // worker's CAS will see status='sending' and skip; the editor's CAS
+      // already won the optimistic update so we own this transition.
       if (finalRow.scheduledFor.getTime() <= Date.now()) {
-        const flipped = await ScheduledMessagesRepository.tryAcquireLock(client, {
+        const flipped = await ScheduledMessagesRepository.tryStartSend(client, {
           workspaceId: params.workspaceId,
           id: params.id,
-          ownerId: params.lockToken,
-          ttlSeconds: WORKER_LOCK_TTL_SECONDS,
-          setStatus: ScheduledMessageStatuses.SENDING,
+          ttlSeconds: WORKER_FENCE_TTL_SECONDS,
         })
         if (!flipped) {
+          // Worker won between the update and the start-send CAS, or the
+          // fence was bumped by another editor. Either way, surface the
+          // condition so the client refreshes; the worker's path will
+          // complete the send if it's currently in flight.
           throw new HttpError("Scheduled message no longer pending", {
             status: 409,
             code: "SCHEDULED_MESSAGE_NOT_PENDING",
@@ -378,20 +357,46 @@ export class ScheduledMessagesService {
     return withTransaction(this.pool, async (client) => {
       const existing = await this.assertPendingOrThrow(client, params)
 
-      // Take the worker-style lock atomically (status flip → sending).
-      const ownerId = `worker:send-now:${workerId()}`
-      const claimed = await ScheduledMessagesRepository.tryAcquireLock(client, {
+      // Take the worker-style CAS atomically (status flip → sending). This
+      // bypasses the fence — the user explicitly requested "send now", so an
+      // active editor session shouldn't block themselves.
+      const claimed = await ScheduledMessagesRepository.tryStartSend(client, {
         workspaceId: params.workspaceId,
         id: params.id,
-        ownerId,
-        ttlSeconds: WORKER_LOCK_TTL_SECONDS,
-        setStatus: ScheduledMessageStatuses.SENDING,
+        ttlSeconds: WORKER_FENCE_TTL_SECONDS,
       })
       if (!claimed) {
-        throw new HttpError("Lock held by another actor", {
-          status: 409,
-          code: "SCHEDULED_MESSAGE_LOCK_HELD",
+        // The fence is set, but `tryStartSend` requires `scheduled_for <=
+        // NOW()`. For a future-scheduled message, force the send by setting
+        // scheduled_for to now and retrying.
+        const forcedNow = await ScheduledMessagesRepository.update(client, {
+          workspaceId: params.workspaceId,
+          userId: params.userId,
+          id: params.id,
+          expectedUpdatedAt: existing.updatedAt,
+          scheduledFor: new Date(),
         })
+        if (!forcedNow) {
+          throw new HttpError("Scheduled message was edited elsewhere", {
+            status: 409,
+            code: "SCHEDULED_MESSAGE_STALE_VERSION",
+          })
+        }
+        const reclaimed = await ScheduledMessagesRepository.tryStartSend(client, {
+          workspaceId: params.workspaceId,
+          id: params.id,
+          ttlSeconds: WORKER_FENCE_TTL_SECONDS,
+        })
+        if (!reclaimed) {
+          throw new HttpError("Scheduled message no longer pending", {
+            status: 409,
+            code: "SCHEDULED_MESSAGE_NOT_PENDING",
+          })
+        }
+        if (existing.queueMessageId) {
+          await QueueRepository.cancelById(client, existing.queueMessageId)
+        }
+        return await this.finalizeSendInTx(client, reclaimed)
       }
 
       if (existing.queueMessageId) {
@@ -431,16 +436,15 @@ export class ScheduledMessagesService {
 
   /**
    * Worker entry. Re-reads scoped to (workspaceId, id) per INV-8, then attempts
-   * the CAS. Returns `{ fired }` so the worker can log + decide whether to
-   * reschedule on lock contention. The lock is held for `WORKER_LOCK_TTL_SECONDS`
-   * which is plenty for the EventService send + outbox writes.
+   * the start-send CAS. Returns `{ fired }` so the worker can log + decide
+   * whether to defer-and-retry on fence contention. The status flip stays in
+   * place for `WORKER_FENCE_TTL_SECONDS` which is plenty for the EventService
+   * send + outbox writes.
    */
   async fire(params: {
     workspaceId: string
     scheduledMessageId: string
   }): Promise<{ fired: boolean; reschedule: boolean }> {
-    const ownerId = `worker:send:${workerId()}`
-
     return withTransaction(this.pool, async (client) => {
       const row = await ScheduledMessagesRepository.findByIdScoped(
         client,
@@ -459,48 +463,35 @@ export class ScheduledMessagesService {
         // Stale leased queue row that survived a reschedule cancel — the
         // editor pushed scheduled_for forward and a fresh queue row is
         // already enqueued for the new time. Drop this tick silently; the
-        // new queue row will fire when due. Marking the row failed here
-        // would tombstone a perfectly valid future-scheduled message.
+        // new queue row will fire when due.
         logger.debug(
           { ...params, scheduledFor: row.scheduledFor.toISOString() },
           "scheduled_message fire skipped — rescheduled to future"
         )
         return { fired: false, reschedule: false }
       }
+      if (row.editActiveUntil && row.editActiveUntil.getTime() > Date.now()) {
+        // An editor session is open. Defer — the queue will retry on its
+        // next tick; if the user closes the editor, the fence expires and
+        // the next tick fires the row.
+        logger.debug(
+          { ...params, editActiveUntil: row.editActiveUntil.toISOString() },
+          "scheduled_message fire deferred — editor session active"
+        )
+        return { fired: false, reschedule: true }
+      }
 
-      const claimed = await ScheduledMessagesRepository.tryAcquireLock(client, {
+      const claimed = await ScheduledMessagesRepository.tryStartSend(client, {
         workspaceId: params.workspaceId,
         id: params.scheduledMessageId,
-        ownerId,
-        ttlSeconds: WORKER_LOCK_TTL_SECONDS,
-        setStatus: ScheduledMessageStatuses.SENDING,
-        // The pre-read above checks scheduled_for, but a concurrent reschedule
-        // could push the row forward between that read and this CAS. Putting
-        // the due-time guard inside the CAS itself closes the gap so a
-        // late-arriving reschedule still shields the row from early delivery.
-        requireDueNow: true,
+        ttlSeconds: WORKER_FENCE_TTL_SECONDS,
       })
-
       if (!claimed) {
-        // Editor holds the lock (or a same-tx reschedule landed in the gap).
-        // Bounded retry — if we exceed the budget the user has been editing
-        // for too long; mark failed so they see the row turn red instead of
-        // silently slipping further.
-        const retries = await ScheduledMessagesRepository.incrementRetryCount(
-          client,
-          params.workspaceId,
-          params.scheduledMessageId
-        )
-        if (retries > WORKER_MAX_LOCK_RETRIES) {
-          await ScheduledMessagesRepository.markFailed(client, {
-            workspaceId: params.workspaceId,
-            id: params.scheduledMessageId,
-            reason: "lock_contention_timeout",
-          })
-          const view = await this.refetchView(client, row)
-          if (view) await this.publishUpsert(client, view, row.userId)
-          return { fired: false, reschedule: false }
-        }
+        // Fence was bumped between the pre-read and the CAS, or a competing
+        // sender won. The fence-bump path is benign — defer for retry. We
+        // don't track per-attempt retry counts here since the queue's own
+        // exponential backoff handles bounded retry; if the row stays
+        // wedged, the queue eventually marks the job failed.
         return { fired: false, reschedule: true }
       }
 
@@ -526,11 +517,11 @@ export class ScheduledMessagesService {
    * Shared finalizer used by:
    *   - the worker fire path (after CAS to `sending`),
    *   - send-now (after CAS to `sending`),
-   *   - PATCH-when-past-time (after CAS to `sending` via the lock).
+   *   - PATCH-when-past-time (after CAS to `sending`).
    *
-   * Caller is expected to have already taken the lock and flipped status to
-   * `sending`. We assert that here as a safety net (idempotent — if status is
-   * already `sent` we no-op).
+   * Caller is expected to have already flipped status to `sending`. We assert
+   * that here as a safety net (idempotent — if status is already `sent` we
+   * no-op).
    */
   private async finalizeSendInTx(client: PoolClient, row: ScheduledMessage): Promise<ScheduledMessageView> {
     if (row.status === ScheduledMessageStatuses.SENT) {

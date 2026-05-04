@@ -17,8 +17,7 @@ interface ScheduledMessageRow {
   sent_message_id: string | null
   last_error: string | null
   queue_message_id: string | null
-  edit_lock_owner_id: string | null
-  edit_lock_expires_at: Date | null
+  edit_active_until: Date | null
   client_message_id: string | null
   retry_count: number
   created_at: Date
@@ -41,8 +40,13 @@ export interface ScheduledMessage {
   sentMessageId: string | null
   lastError: string | null
   queueMessageId: string | null
-  editLockOwnerId: string | null
-  editLockExpiresAt: Date | null
+  /**
+   * Worker fence — the worker won't fire while this is in the future. Bumped
+   * on `claim` and on heartbeat. Anonymous (no owner): multiple editors share
+   * the fence and any of them keeps the worker out. First save wins via
+   * `updated_at` CAS, not via this fence.
+   */
+  editActiveUntil: Date | null
   clientMessageId: string | null
   retryCount: number
   createdAt: Date
@@ -72,7 +76,7 @@ export interface ListScheduledOpts {
 }
 
 const COLUMNS =
-  "id, workspace_id, user_id, stream_id, parent_message_id, content_json, content_markdown, attachment_ids, metadata, scheduled_for, status, sent_message_id, last_error, queue_message_id, edit_lock_owner_id, edit_lock_expires_at, client_message_id, retry_count, created_at, updated_at, status_changed_at"
+  "id, workspace_id, user_id, stream_id, parent_message_id, content_json, content_markdown, attachment_ids, metadata, scheduled_for, status, sent_message_id, last_error, queue_message_id, edit_active_until, client_message_id, retry_count, created_at, updated_at, status_changed_at"
 
 function mapRow(row: ScheduledMessageRow): ScheduledMessage {
   return {
@@ -90,8 +94,7 @@ function mapRow(row: ScheduledMessageRow): ScheduledMessage {
     sentMessageId: row.sent_message_id,
     lastError: row.last_error,
     queueMessageId: row.queue_message_id,
-    editLockOwnerId: row.edit_lock_owner_id,
-    editLockExpiresAt: row.edit_lock_expires_at,
+    editActiveUntil: row.edit_active_until,
     clientMessageId: row.client_message_id,
     retryCount: row.retry_count,
     createdAt: row.created_at,
@@ -175,9 +178,8 @@ export const ScheduledMessagesRepository = {
 
   /**
    * List rows for a user filtered by status. `pending` orders by scheduled_for
-   * ASC; everything else by status_changed_at DESC. Cursor uses the row id
-   * with a workspace_id+user_id-scoped subquery so we can never read a row
-   * outside the caller's workspace.
+   * ASC; everything else by status_changed_at DESC. Cursor uses tuple
+   * comparison so two rows that share the order column don't get skipped.
    */
   async listByUser(
     db: Querier,
@@ -191,9 +193,6 @@ export const ScheduledMessagesRepository = {
     const usePending = opts.status === ScheduledMessageStatuses.PENDING
     const streamFilter = opts.streamId ?? null
 
-    // Pending tab counts forward toward the next send (oldest-first); every
-    // other tab is a history list (newest-first). Cursor uses tuple
-    // comparison so two rows that share the order column don't get skipped.
     const orderColumn = usePending ? "scheduled_for" : "status_changed_at"
     const direction = usePending ? "ASC" : "DESC"
     const cursorOp = usePending ? ">" : "<"
@@ -216,11 +215,15 @@ export const ScheduledMessagesRepository = {
   },
 
   /**
-   * Update content/scheduledFor/attachments/metadata. Returns the updated row
-   * or null when no row matched. Caller has already verified the lock token
-   * in the service layer; this query also re-asserts the lock owner so a
-   * tab-close release between check and update can't slip an unauthorized
-   * write through.
+   * Optimistic concurrency update. Caller passes the `updated_at` it last
+   * saw; the CAS rejects when the timestamp has moved (someone else saved
+   * since). On rejection the caller surfaces a 409 STALE_VERSION so the
+   * client can refresh and prompt the user.
+   *
+   * Multiple editors are supported — only the first save lands; the second
+   * gets STALE_VERSION instead of an exclusive-lock 409. The status guard
+   * keeps the worker from racing the editor in this same path; the worker
+   * holds `status = 'sending'` once it claims the row.
    *
    * `scheduledFor`, `contentJson`, `contentMarkdown`, `attachmentIds`, and
    * `metadata` are all optional; passing `undefined` leaves the column
@@ -232,7 +235,7 @@ export const ScheduledMessagesRepository = {
       workspaceId: string
       userId: string
       id: string
-      lockOwnerId: string
+      expectedUpdatedAt: Date
       contentJson?: JSONContent
       contentMarkdown?: string
       attachmentIds?: string[]
@@ -259,104 +262,65 @@ export const ScheduledMessagesRepository = {
         AND workspace_id = ${params.workspaceId}
         AND user_id = ${params.userId}
         AND status = ${ScheduledMessageStatuses.PENDING}
-        AND edit_lock_owner_id = ${params.lockOwnerId}
-        AND edit_lock_expires_at > NOW()
+        AND updated_at = ${params.expectedUpdatedAt}
       RETURNING ${sql.raw(COLUMNS)}
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
   /**
-   * Race-safe lock CAS (INV-20). Used by both the editor `/claim` endpoint
-   * and the worker's pre-send check. Acquires the lock when the row is
-   * `pending` and either has no lock or the lock has expired.
-   *
-   * Returns the updated row when the CAS succeeded, null when it failed
-   * (status not `pending`, another owner holds an unexpired lock, or — when
-   * `requireDueNow` is set — the row has been rescheduled to the future).
-   *
-   * `setStatus` is `null` for an editor claim (status stays `pending`) and
-   * `'sending'` for the worker's claim (atomic flip).
-   *
-   * `requireDueNow` is the worker-only guard: a stale leased queue row that
-   * survives a reschedule cancel can still reach `fire()` after the editor
-   * commits a future `scheduled_for`. Without this clause the CAS would
-   * accept it and we'd deliver the message early. The editor's claim path
-   * leaves it false because users may want to edit a future row.
+   * Bump the worker fence so an editor session keeps the worker out for the
+   * next `ttlSeconds`. Anonymous — any caller (any device, any tab) can bump
+   * it; the fence is purely "is anyone editing right now?" not "who owns the
+   * row?". Returns the row when the bump landed, null when the row was no
+   * longer pending (worker won, user cancelled).
    */
-  async tryAcquireLock(
+  async bumpEditFence(
     db: Querier,
-    params: {
-      workspaceId: string
-      id: string
-      ownerId: string
-      ttlSeconds: number
-      setStatus: ScheduledMessageStatus | null
-      requireDueNow?: boolean
-    }
+    params: { workspaceId: string; id: string; ttlSeconds: number }
   ): Promise<ScheduledMessage | null> {
-    const requireDueNow = params.requireDueNow ?? false
     const result = await db.query<ScheduledMessageRow>(sql`
       UPDATE scheduled_messages SET
-        edit_lock_owner_id = ${params.ownerId},
-        edit_lock_expires_at = NOW() + (${params.ttlSeconds} || ' seconds')::interval,
-        status = CASE
-          WHEN ${params.setStatus}::text IS NULL THEN status
-          ELSE ${params.setStatus}::text
-        END,
-        status_changed_at = CASE
-          WHEN ${params.setStatus}::text IS NULL OR ${params.setStatus}::text = status THEN status_changed_at
-          ELSE NOW()
-        END,
+        edit_active_until = GREATEST(
+          edit_active_until,
+          NOW() + (${params.ttlSeconds} || ' seconds')::interval
+        ),
         updated_at = NOW()
       WHERE id = ${params.id}
         AND workspace_id = ${params.workspaceId}
         AND status = ${ScheduledMessageStatuses.PENDING}
-        AND (edit_lock_owner_id IS NULL OR edit_lock_expires_at <= NOW() OR edit_lock_owner_id = ${params.ownerId})
-        AND (${!requireDueNow}::boolean OR scheduled_for <= NOW())
       RETURNING ${sql.raw(COLUMNS)}
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
   /**
-   * Refresh the lock TTL. Caller-asserted owner ensures we can't extend
-   * someone else's lock. Returns the updated row on success, null when the
-   * lock has been released or expired.
+   * Race-safe worker CAS (INV-20). Flips status to `sending` when the row is
+   * still pending, due now, and no editor session is currently active (the
+   * fence has expired). The worker uses this; there is no editor counterpart
+   * — editors don't claim the row, they save with optimistic CAS instead.
+   *
+   * Returns null on:
+   *  - status not pending (cancelled, already sending/sent, failed)
+   *  - scheduled_for in the future (stale leased queue row that survived a
+   *    reschedule cancel — see service.fire's pre-check comment)
+   *  - edit_active_until in the future (an editor is heartbeating; defer)
    */
-  async heartbeatLock(
+  async tryStartSend(
     db: Querier,
-    params: { workspaceId: string; id: string; ownerId: string; ttlSeconds: number }
+    params: { workspaceId: string; id: string; ttlSeconds: number }
   ): Promise<ScheduledMessage | null> {
     const result = await db.query<ScheduledMessageRow>(sql`
       UPDATE scheduled_messages SET
-        edit_lock_expires_at = NOW() + (${params.ttlSeconds} || ' seconds')::interval,
+        status = ${ScheduledMessageStatuses.SENDING},
+        status_changed_at = NOW(),
+        edit_active_until = NOW() + (${params.ttlSeconds} || ' seconds')::interval,
         updated_at = NOW()
       WHERE id = ${params.id}
         AND workspace_id = ${params.workspaceId}
-        AND edit_lock_owner_id = ${params.ownerId}
-        AND edit_lock_expires_at > NOW()
-      RETURNING ${sql.raw(COLUMNS)}
-    `)
-    return result.rows[0] ? mapRow(result.rows[0]) : null
-  },
-
-  /**
-   * Release the lock. Owner-scoped to prevent racing tabs from clobbering
-   * each other's locks.
-   */
-  async releaseLock(
-    db: Querier,
-    params: { workspaceId: string; id: string; ownerId: string }
-  ): Promise<ScheduledMessage | null> {
-    const result = await db.query<ScheduledMessageRow>(sql`
-      UPDATE scheduled_messages SET
-        edit_lock_owner_id = NULL,
-        edit_lock_expires_at = NULL,
-        updated_at = NOW()
-      WHERE id = ${params.id}
-        AND workspace_id = ${params.workspaceId}
-        AND edit_lock_owner_id = ${params.ownerId}
+        AND status = ${ScheduledMessageStatuses.PENDING}
+        AND scheduled_for <= NOW()
+        AND (edit_active_until IS NULL OR edit_active_until <= NOW())
       RETURNING ${sql.raw(COLUMNS)}
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null
@@ -375,8 +339,7 @@ export const ScheduledMessagesRepository = {
       UPDATE scheduled_messages SET
         status = ${ScheduledMessageStatuses.SENT},
         sent_message_id = ${params.sentMessageId},
-        edit_lock_owner_id = NULL,
-        edit_lock_expires_at = NULL,
+        edit_active_until = NULL,
         last_error = NULL,
         status_changed_at = NOW(),
         updated_at = NOW()
@@ -396,8 +359,7 @@ export const ScheduledMessagesRepository = {
       UPDATE scheduled_messages SET
         status = ${ScheduledMessageStatuses.FAILED},
         last_error = ${params.reason},
-        edit_lock_owner_id = NULL,
-        edit_lock_expires_at = NULL,
+        edit_active_until = NULL,
         status_changed_at = NOW(),
         updated_at = NOW()
       WHERE id = ${params.id}
@@ -432,8 +394,7 @@ export const ScheduledMessagesRepository = {
     const result = await db.query<ScheduledMessageRow>(sql`
       UPDATE scheduled_messages SET
         status = ${ScheduledMessageStatuses.CANCELLED},
-        edit_lock_owner_id = NULL,
-        edit_lock_expires_at = NULL,
+        edit_active_until = NULL,
         status_changed_at = NOW(),
         updated_at = NOW()
       WHERE id = ${id}

@@ -217,7 +217,18 @@ export interface PendingMessage {
 export interface PendingOperation {
   id: string // ULID
   workspaceId: string
-  type: "edit_message" | "delete_message" | "add_reaction" | "remove_reaction"
+  type:
+    | "edit_message"
+    | "delete_message"
+    | "add_reaction"
+    | "remove_reaction"
+    // Scheduled-message ops follow the offline-first pattern (mirrors
+    // sendMessage's pendingMessages queue): the UI writes to IDB
+    // immediately and the operation queue replays the API call when online.
+    | "schedule_message"
+    | "update_scheduled_message"
+    | "cancel_scheduled_message"
+    | "send_scheduled_now"
   payload: Record<string, unknown>
   createdAt: number
   retryCount: number
@@ -402,11 +413,20 @@ export interface CachedScheduledMessage {
   status: string
   sentMessageId: string | null
   lastError: string | null
-  editLockOwnerId: string | null
-  editLockExpiresAt: string | null
+  /** Worker fence — present (and in the future) while any editor session is open. */
+  editActiveUntil: string | null
+  clientMessageId: string | null
   createdAt: string
   updatedAt: string
   statusChangedAt: string
+  /**
+   * `true` for rows written optimistically before the schedule POST landed.
+   * The id starts with `sched_local_`; once the server-issued row arrives we
+   * delete the local placeholder and persist the real one. UI can hide
+   * destructive controls (edit, send-now) on placeholder rows since the
+   * server doesn't know about them yet.
+   */
+  _localOnly?: boolean
   _scheduledForMs: number
   _statusChangedAtMs: number
   _cachedAt: number

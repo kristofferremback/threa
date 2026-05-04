@@ -176,10 +176,11 @@ export {
   useCancelScheduled,
   useSendScheduledNow,
   useClaimScheduled,
-  useReleaseScheduled,
   useHeartbeatScheduled,
   persistScheduledRows,
   removeScheduledRow,
   replaceScheduledPage,
+  replaceLocalScheduledRow,
+  isLocalScheduledId,
   scheduledKeys,
 } from "./use-scheduled"

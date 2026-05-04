@@ -4,7 +4,6 @@ import { CompanionModes, ScheduledMessageStatuses, StreamTypes, Visibilities } f
 import { ScheduledMessagesService } from "./service"
 import { ScheduledMessagesRepository, type ScheduledMessage } from "./repository"
 import { StreamRepository, StreamMemberRepository } from "../streams"
-import { MessageRepository } from "../messaging"
 import type { EventService } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { QueueRepository } from "../../lib/queue"
@@ -57,8 +56,7 @@ function fakeScheduled(overrides: Partial<ScheduledMessage> = {}): ScheduledMess
     sentMessageId: null,
     lastError: null,
     queueMessageId: null,
-    editLockOwnerId: null,
-    editLockExpiresAt: null,
+    editActiveUntil: null,
     clientMessageId: null,
     retryCount: 0,
     createdAt: NOW,
@@ -192,7 +190,7 @@ describe("ScheduledMessagesService.schedule", () => {
   })
 })
 
-describe("ScheduledMessagesService.claim", () => {
+describe("ScheduledMessagesService.claim (fence-only)", () => {
   afterEach(() => mock.restore())
 
   it("rejects when the row is already in flight (status != pending)", async () => {
@@ -206,46 +204,36 @@ describe("ScheduledMessagesService.claim", () => {
     )
   })
 
-  it("returns sync=true when scheduled_for is within the threshold (server-side hint)", async () => {
+  it("succeeds even when another editor session already bumped the fence (no exclusive lock)", async () => {
     const service = setupService()
-    const soon = new Date(Date.now() + 5_000) // 5s out → sync threshold = 30s
-    const row = fakeScheduled({ scheduledFor: soon })
+    const fenceFromAnotherSession = new Date(Date.now() + 30_000)
+    const row = fakeScheduled({ editActiveUntil: fenceFromAnotherSession })
     spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(row)
-    spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue({
+    const bumpEditFence = spyOn(ScheduledMessagesRepository, "bumpEditFence").mockResolvedValue({
       ...row,
-      editLockOwnerId: "usr:usr_1:sess_1",
-      editLockExpiresAt: new Date(Date.now() + 60_000),
+      editActiveUntil: new Date(Date.now() + 60_000),
     })
     spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
 
     const result = await service.claim({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })
-    expect(result.sync).toBe(true)
+
+    expect(result.scheduled.id).toBe(SCHEDULED_ID)
+    expect(bumpEditFence).toHaveBeenCalledTimes(1)
   })
 
-  it("returns sync=false when scheduled_for is beyond the threshold (async path)", async () => {
+  it("publishes scheduled_message:upserted so other tabs see the fence change", async () => {
     const service = setupService()
-    const farFuture = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes out
-    const row = fakeScheduled({ scheduledFor: farFuture })
+    const row = fakeScheduled()
     spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(row)
-    spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue({
+    spyOn(ScheduledMessagesRepository, "bumpEditFence").mockResolvedValue({
       ...row,
-      editLockOwnerId: "usr:usr_1:sess_1",
-      editLockExpiresAt: new Date(Date.now() + 60_000),
+      editActiveUntil: new Date(Date.now() + 60_000),
     })
-    spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+    const outboxInsert = spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
 
-    const result = await service.claim({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })
-    expect(result.sync).toBe(false)
-  })
+    await service.claim({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })
 
-  it("throws SCHEDULED_MESSAGE_LOCK_HELD when the CAS returns null (another tab holds the lock)", async () => {
-    const service = setupService()
-    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(fakeScheduled())
-    spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue(null)
-
-    await expect(service.claim({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })).rejects.toThrow(
-      /lock/i
-    )
+    expect(outboxInsert).toHaveBeenCalledWith(expect.anything(), "scheduled_message:upserted", expect.any(Object))
   })
 })
 
@@ -281,52 +269,29 @@ describe("ScheduledMessagesService.cancel", () => {
   })
 })
 
-describe("ScheduledMessagesService.update", () => {
+describe("ScheduledMessagesService.update (optimistic CAS)", () => {
   afterEach(() => mock.restore())
 
-  it("rejects when the lock token doesn't match the row owner (stale token)", async () => {
+  it("rejects with STALE_VERSION when expectedUpdatedAt no longer matches (first save wins)", async () => {
     const service = setupService()
-    const row = fakeScheduled({
-      editLockOwnerId: "usr:usr_1:sess_real",
-      editLockExpiresAt: new Date(Date.now() + 60_000),
-    })
-    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(row)
+    const lastSaw = new Date(Date.now() - 30_000)
+    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(fakeScheduled({ updatedAt: new Date() }))
+    spyOn(ScheduledMessagesRepository, "update").mockResolvedValue(null)
 
     await expect(
       service.update({
         workspaceId: WORKSPACE_ID,
         userId: USER_ID,
         id: SCHEDULED_ID,
-        lockToken: "usr:usr_1:sess_other",
+        expectedUpdatedAt: lastSaw,
         contentMarkdown: "x",
       })
-    ).rejects.toThrow(/lock/i)
-  })
-
-  it("rejects when the lock has expired even if the token is correct", async () => {
-    const service = setupService()
-    const row = fakeScheduled({
-      editLockOwnerId: "usr:usr_1:sess_real",
-      editLockExpiresAt: new Date(Date.now() - 1_000),
-    })
-    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(row)
-
-    await expect(
-      service.update({
-        workspaceId: WORKSPACE_ID,
-        userId: USER_ID,
-        id: SCHEDULED_ID,
-        lockToken: "usr:usr_1:sess_real",
-        contentMarkdown: "x",
-      })
-    ).rejects.toThrow(/lock/i)
+    ).rejects.toThrow(/edited elsewhere/i)
   })
 
   it("flips status to sending and finalizes the send when scheduled_for is in the past", async () => {
     // The save-when-past-time UX: PATCH performs the createMessage call
-    // atomically inside the same tx as the update + status flip. Without the
-    // flip-to-sending step, finalizeSendInTx throws because the row is still
-    // `pending` — that's the exact bug the review flagged.
+    // atomically inside the same tx as the update + tryStartSend CAS.
     const createMessage = mock(async () => ({
       id: "msg_42",
       streamId: STREAM_ID,
@@ -346,19 +311,15 @@ describe("ScheduledMessagesService.update", () => {
     }))
     const service = setupService({ createMessage } as unknown as EventService)
 
-    const lockToken = "usr:usr_1:sess_x"
+    const expected = new Date(Date.now() - 60_000)
     const past = new Date(Date.now() - 5_000)
-    const row = fakeScheduled({
-      editLockOwnerId: lockToken,
-      editLockExpiresAt: new Date(Date.now() + 60_000),
-      scheduledFor: past,
-    })
+    const row = fakeScheduled({ updatedAt: expected, scheduledFor: past })
 
     spyOn(ScheduledMessagesRepository, "findById")
       .mockResolvedValueOnce(row)
       .mockResolvedValueOnce({ ...row, contentMarkdown: "edited" })
     spyOn(ScheduledMessagesRepository, "update").mockResolvedValue({ ...row, contentMarkdown: "edited" })
-    const tryAcquireLock = spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue({
+    const tryStartSend = spyOn(ScheduledMessagesRepository, "tryStartSend").mockResolvedValue({
       ...row,
       contentMarkdown: "edited",
       status: ScheduledMessageStatuses.SENDING,
@@ -375,20 +336,14 @@ describe("ScheduledMessagesService.update", () => {
       workspaceId: WORKSPACE_ID,
       userId: USER_ID,
       id: SCHEDULED_ID,
-      lockToken,
+      expectedUpdatedAt: expected,
       contentMarkdown: "edited",
       scheduledFor: past,
     })
 
     expect(result.status).toBe(ScheduledMessageStatuses.SENT)
     expect(createMessage).toHaveBeenCalledTimes(1)
-    // The CAS must use the editor's lockToken as ownerId so the
-    // (`edit_lock_owner_id = ${ownerId}`) clause matches without a
-    // release-then-reclaim mid-tx.
-    expect(tryAcquireLock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ ownerId: lockToken, setStatus: ScheduledMessageStatuses.SENDING })
-    )
+    expect(tryStartSend).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -422,71 +377,42 @@ describe("ScheduledMessagesService.fire (worker entry)", () => {
     const service = setupService()
     const future = new Date(Date.now() + 60 * 60_000)
     spyOn(ScheduledMessagesRepository, "findByIdScoped").mockResolvedValue(fakeScheduled({ scheduledFor: future }))
-    const tryAcquireLock = spyOn(ScheduledMessagesRepository, "tryAcquireLock")
+    const tryStartSend = spyOn(ScheduledMessagesRepository, "tryStartSend")
     const markFailed = spyOn(ScheduledMessagesRepository, "markFailed")
 
     const result = await service.fire({ workspaceId: WORKSPACE_ID, scheduledMessageId: SCHEDULED_ID })
 
     expect(result).toEqual({ fired: false, reschedule: false })
-    expect(tryAcquireLock).not.toHaveBeenCalled()
+    expect(tryStartSend).not.toHaveBeenCalled()
     expect(markFailed).not.toHaveBeenCalled()
   })
 
-  it("passes requireDueNow to the worker CAS so a same-tx reschedule still shields the row", async () => {
+  it("defers when an editor session has bumped the fence (worker fence)", async () => {
+    // A live editor session keeps the fence in the future. The worker must
+    // defer rather than firing — the editor's first save is the canonical
+    // version of the row, not whatever's still on disk.
     const service = setupService()
+    const due = new Date(Date.now() - 1_000)
+    const futureFence = new Date(Date.now() + 30_000)
     spyOn(ScheduledMessagesRepository, "findByIdScoped").mockResolvedValue(
-      fakeScheduled({ scheduledFor: new Date(Date.now() - 1_000) })
+      fakeScheduled({ scheduledFor: due, editActiveUntil: futureFence })
     )
-    const tryAcquireLock = spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue(null)
-    spyOn(ScheduledMessagesRepository, "incrementRetryCount").mockResolvedValue(1)
+    const tryStartSend = spyOn(ScheduledMessagesRepository, "tryStartSend")
 
-    await service.fire({ workspaceId: WORKSPACE_ID, scheduledMessageId: SCHEDULED_ID })
+    const result = await service.fire({ workspaceId: WORKSPACE_ID, scheduledMessageId: SCHEDULED_ID })
 
-    expect(tryAcquireLock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        setStatus: ScheduledMessageStatuses.SENDING,
-        requireDueNow: true,
-      })
-    )
+    expect(result).toEqual({ fired: false, reschedule: true })
+    expect(tryStartSend).not.toHaveBeenCalled()
   })
 
-  it("requests a reschedule when the editor holds the lock and the retry budget isn't exhausted", async () => {
+  it("requests a reschedule when the start-send CAS returns null (fence race)", async () => {
     const service = setupService()
-    // Use a past scheduledFor so the worker reaches the CAS — we want to
-    // exercise the lock-contention path, not the "rescheduled to future" drop.
     const due = new Date(Date.now() - 1_000)
     spyOn(ScheduledMessagesRepository, "findByIdScoped").mockResolvedValue(fakeScheduled({ scheduledFor: due }))
-    spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue(null)
-    spyOn(ScheduledMessagesRepository, "incrementRetryCount").mockResolvedValue(1)
+    spyOn(ScheduledMessagesRepository, "tryStartSend").mockResolvedValue(null)
 
     const result = await service.fire({ workspaceId: WORKSPACE_ID, scheduledMessageId: SCHEDULED_ID })
     expect(result).toEqual({ fired: false, reschedule: true })
-  })
-
-  it("marks the row failed when retry budget is exhausted", async () => {
-    const service = setupService()
-    const due = new Date(Date.now() - 1_000)
-    const row = fakeScheduled({ scheduledFor: due })
-    spyOn(ScheduledMessagesRepository, "findByIdScoped")
-      .mockResolvedValueOnce(row)
-      .mockResolvedValueOnce({
-        ...row,
-        status: ScheduledMessageStatuses.FAILED,
-        lastError: "lock_contention_timeout",
-      })
-    spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue(null)
-    spyOn(ScheduledMessagesRepository, "incrementRetryCount").mockResolvedValue(99)
-    const markFailed = spyOn(ScheduledMessagesRepository, "markFailed").mockResolvedValue({
-      ...row,
-      status: ScheduledMessageStatuses.FAILED,
-      lastError: "lock_contention_timeout",
-    })
-    spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
-
-    const result = await service.fire({ workspaceId: WORKSPACE_ID, scheduledMessageId: SCHEDULED_ID })
-    expect(result).toEqual({ fired: false, reschedule: false })
-    expect(markFailed).toHaveBeenCalled()
   })
 
   it("calls EventService.createMessage and marks sent on a successful CAS (full happy path)", async () => {
@@ -511,7 +437,7 @@ describe("ScheduledMessagesService.fire (worker entry)", () => {
     const due = new Date(Date.now() - 1_000)
     const row = fakeScheduled({ scheduledFor: due })
     spyOn(ScheduledMessagesRepository, "findByIdScoped").mockResolvedValue(row)
-    spyOn(ScheduledMessagesRepository, "tryAcquireLock").mockResolvedValue({
+    spyOn(ScheduledMessagesRepository, "tryStartSend").mockResolvedValue({
       ...row,
       status: ScheduledMessageStatuses.SENDING,
     })

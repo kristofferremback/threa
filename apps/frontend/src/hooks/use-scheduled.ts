@@ -2,7 +2,11 @@ import { useMemo } from "react"
 import { useLiveQuery } from "dexie-react-hooks"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useScheduledService } from "@/contexts"
+import { useSyncEngine } from "@/sync/sync-engine"
+import { useUser } from "@/auth"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { db, type CachedScheduledMessage } from "@/db"
+import { enqueueOperation } from "@/sync/operation-queue"
 import type {
   ScheduledMessageView,
   ScheduledMessageStatus,
@@ -20,7 +24,26 @@ export const scheduledKeys = {
       : (["scheduled", workspaceId, status] as const),
 }
 
-function toCached(view: ScheduledMessageView): CachedScheduledMessage {
+const LOCAL_ID_PREFIX = "sched_local_"
+
+function generateLocalScheduledId(): string {
+  const timestamp = Date.now().toString(36)
+  const random = Math.random().toString(36).substring(2, 10)
+  return `${LOCAL_ID_PREFIX}${timestamp}${random}`
+}
+
+function generateClientMessageId(): string {
+  const timestamp = Date.now().toString(36)
+  const random = Math.random().toString(36).substring(2, 10)
+  return `cli_sched_${timestamp}${random}`
+}
+
+/** True for rows written optimistically that haven't yet been confirmed by the server. */
+export function isLocalScheduledId(id: string): boolean {
+  return id.startsWith(LOCAL_ID_PREFIX)
+}
+
+function toCached(view: ScheduledMessageView, opts?: { localOnly?: boolean }): CachedScheduledMessage {
   return {
     id: view.id,
     workspaceId: view.workspaceId,
@@ -35,11 +58,12 @@ function toCached(view: ScheduledMessageView): CachedScheduledMessage {
     status: view.status,
     sentMessageId: view.sentMessageId,
     lastError: view.lastError,
-    editLockOwnerId: view.editLockOwnerId,
-    editLockExpiresAt: view.editLockExpiresAt,
+    editActiveUntil: view.editActiveUntil,
+    clientMessageId: view.clientMessageId,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt,
     statusChangedAt: view.statusChangedAt,
+    _localOnly: opts?.localOnly ? true : undefined,
     _scheduledForMs: Date.parse(view.scheduledFor),
     _statusChangedAtMs: Date.parse(view.statusChangedAt),
     _cachedAt: Date.now(),
@@ -63,8 +87,8 @@ function fromCached(row: CachedScheduledMessage): ScheduledMessageView {
     status: row.status as ScheduledMessageStatus,
     sentMessageId: row.sentMessageId,
     lastError: row.lastError,
-    editLockOwnerId: row.editLockOwnerId,
-    editLockExpiresAt: row.editLockExpiresAt,
+    editActiveUntil: row.editActiveUntil,
+    clientMessageId: row.clientMessageId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     statusChangedAt: row.statusChangedAt,
@@ -78,7 +102,7 @@ function fromCached(row: CachedScheduledMessage): ScheduledMessageView {
  */
 export async function persistScheduledRows(rows: ScheduledMessageView[]): Promise<void> {
   if (rows.length === 0) return
-  await db.scheduledMessages.bulkPut(rows.map(toCached))
+  await db.scheduledMessages.bulkPut(rows.map((row) => toCached(row)))
 }
 
 export async function removeScheduledRow(id: string): Promise<void> {
@@ -86,11 +110,27 @@ export async function removeScheduledRow(id: string): Promise<void> {
 }
 
 /**
+ * Replace a local placeholder row with the server-issued row after the
+ * `schedule_message` op completes. Done in one transaction so the live Dexie
+ * query never observes a frame with neither row present.
+ */
+export async function replaceLocalScheduledRow(
+  placeholderId: string,
+  authoritative: ScheduledMessageView
+): Promise<void> {
+  await db.transaction("rw", db.scheduledMessages, async () => {
+    await db.scheduledMessages.delete(placeholderId)
+    await db.scheduledMessages.put(toCached(authoritative))
+  })
+}
+
+/**
  * Reconcile a (workspace, status[, streamId]) page with the server's
  * authoritative response. Same shape as `replaceSavedPage` — rows in IDB
  * for this slice that are missing from the response and were cached before
  * `fetchStartedAt` get pruned. `hasMore` skips reconciliation entirely so
- * page-2+ rows aren't wiped.
+ * page-2+ rows aren't wiped. Local-only rows survive reconciliation since
+ * the server doesn't know about them yet.
  */
 export async function replaceScheduledPage(
   workspaceId: string,
@@ -122,12 +162,14 @@ export async function replaceScheduledPage(
               .between([workspaceId, status, -Infinity], [workspaceId, status, Infinity], true, true)
         const existing = await collection.toArray()
         const serverIds = new Set(rows.map((row) => row.id))
-        return existing.filter((row) => !serverIds.has(row.id) && row._cachedAt < fetchStartedAt).map((row) => row.id)
+        return existing
+          .filter((row) => !serverIds.has(row.id) && row._cachedAt < fetchStartedAt && !row._localOnly)
+          .map((row) => row.id)
       })()
 
   await db.transaction("rw", db.scheduledMessages, async () => {
     if (toDelete.length > 0) await db.scheduledMessages.bulkDelete(toDelete)
-    if (rows.length > 0) await db.scheduledMessages.bulkPut(rows.map(toCached))
+    if (rows.length > 0) await db.scheduledMessages.bulkPut(rows.map((row) => toCached(row)))
   })
 }
 
@@ -210,25 +252,78 @@ export function useLiveScheduledCount(workspaceId: string): number {
 }
 
 /**
- * Schedule a new message. Optimistic IDB write happens in `onMutate` with a
- * `sched_local_<ulid>` placeholder id; on success we delete the placeholder
- * and write the server-issued row. On failure we roll the placeholder back.
- * Lock-bearing edits and offline schedule queueing are handled separately
- * (operation-queue + executeOperation).
+ * Schedule a new message — offline-first. Mirrors the `sendMessage` pattern:
+ *  1. Synthesize an optimistic `ScheduledMessageView` with `_localOnly: true`
+ *     and a `sched_local_<ulid>` placeholder id, write it to IDB so the live
+ *     query renders the row immediately.
+ *  2. Enqueue a `schedule_message` operation with the input + the
+ *     placeholder id so the operation queue executor knows what to swap.
+ *  3. Kick the operation queue and return immediately. The composer unblocks
+ *     the same instant; the network round-trip happens in the background and
+ *     replaces the placeholder when it lands (success) or surfaces a toast
+ *     (terminal error after retry budget is exhausted).
  */
 export function useScheduleMessage(workspaceId: string) {
-  const scheduledService = useScheduledService()
   const queryClient = useQueryClient()
+  const user = useUser()
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const syncEngine = useSyncEngine()
 
   return useMutation({
-    mutationFn: (input: ScheduleMessageInput) => scheduledService.create(workspaceId, input),
-    onSuccess: (scheduled) => {
-      void persistScheduledRows([scheduled])
+    mutationFn: async (input: ScheduleMessageInput) => {
+      const currentUserId = workspaceUsers.find((u) => u.workosUserId === user?.id)?.id
+      if (!currentUserId) {
+        throw new Error("Cannot schedule message: user identity not resolved yet")
+      }
+      const placeholderId = generateLocalScheduledId()
+      const clientMessageId = input.clientMessageId ?? generateClientMessageId()
+      const nowIso = new Date().toISOString()
+
+      const optimistic: ScheduledMessageView = {
+        id: placeholderId,
+        workspaceId,
+        userId: currentUserId,
+        streamId: input.streamId,
+        parentMessageId: input.parentMessageId ?? null,
+        contentJson: input.contentJson,
+        contentMarkdown: input.contentMarkdown,
+        attachmentIds: input.attachmentIds ?? [],
+        metadata: input.metadata ?? null,
+        scheduledFor: input.scheduledFor,
+        status: "pending",
+        sentMessageId: null,
+        lastError: null,
+        editActiveUntil: null,
+        clientMessageId,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        statusChangedAt: nowIso,
+      }
+
+      await db.scheduledMessages.put(toCached(optimistic, { localOnly: true }))
+      await enqueueOperation(workspaceId, "schedule_message", {
+        placeholderId,
+        clientMessageId,
+        input: { ...input, clientMessageId },
+      })
+      syncEngine.kickOperationQueue()
+
+      // Invalidate queries so any TanStack-driven count/list refreshes pick
+      // up the optimistic row alongside the live IDB query.
       queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
+
+      return optimistic
     },
   })
 }
 
+/**
+ * Save a scheduled message via optimistic concurrency. The client sends the
+ * `expectedUpdatedAt` it last claimed/saw; the server CAS rejects with
+ * `SCHEDULED_MESSAGE_STALE_VERSION` (409) when another save landed first.
+ * Caller surfaces the stale error to the user as "edited elsewhere — refresh"
+ * and the next list refresh pulls the latest content.
+ */
 export function useUpdateScheduled(workspaceId: string) {
   const scheduledService = useScheduledService()
   const queryClient = useQueryClient()
@@ -243,12 +338,30 @@ export function useUpdateScheduled(workspaceId: string) {
   })
 }
 
+/**
+ * Cancel a pending scheduled message. Optimistic: row removed from IDB
+ * immediately; the network call enqueues for retry on failure so a user who
+ * cancels offline doesn't lose the intent.
+ */
 export function useCancelScheduled(workspaceId: string) {
   const scheduledService = useScheduledService()
   const queryClient = useQueryClient()
+  const syncEngine = useSyncEngine()
 
   return useMutation({
-    mutationFn: (id: string) => scheduledService.delete(workspaceId, id),
+    mutationFn: async (id: string) => {
+      try {
+        await scheduledService.delete(workspaceId, id)
+      } catch {
+        // Local placeholder rows have no server-side counterpart — just
+        // dropping the placeholder is enough; the schedule op may still be
+        // queued and will be a no-op for a row the user already cancelled.
+        if (!isLocalScheduledId(id)) {
+          await enqueueOperation(workspaceId, "cancel_scheduled_message", { id })
+          syncEngine.kickOperationQueue()
+        }
+      }
+    },
     onMutate: async (id) => {
       // Optimistic removal: the user expects the row to vanish immediately on
       // click. Worst case (server returns 409 because the worker won) we
@@ -269,30 +382,42 @@ export function useCancelScheduled(workspaceId: string) {
 }
 
 /**
- * Send a pending row immediately. Server takes the worker-style lock and
+ * Send a pending row immediately. Server takes the worker-style CAS and
  * fires through the same EventService.createMessage code path. On success the
  * row transitions sent and the live message appears in the stream timeline
- * via the standard message:created broadcast.
+ * via the standard message:created broadcast. On network failure, enqueues
+ * for retry so the intent isn't lost offline.
  */
 export function useSendScheduledNow(workspaceId: string) {
   const scheduledService = useScheduledService()
   const queryClient = useQueryClient()
+  const syncEngine = useSyncEngine()
 
   return useMutation({
-    mutationFn: (id: string) => scheduledService.sendNow(workspaceId, id),
+    mutationFn: async (id: string) => {
+      try {
+        return await scheduledService.sendNow(workspaceId, id)
+      } catch (err) {
+        if (!isLocalScheduledId(id)) {
+          await enqueueOperation(workspaceId, "send_scheduled_now", { id })
+          syncEngine.kickOperationQueue()
+        }
+        throw err
+      }
+    },
     onSuccess: (scheduled) => {
-      void persistScheduledRows([scheduled])
-      queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
+      if (scheduled) {
+        void persistScheduledRows([scheduled])
+        queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
+      }
     },
   })
 }
 
 /**
- * Acquire the editor lock. Resolves with `{ scheduled, lockToken,
- * lockExpiresAt, sync }` — the caller decides whether to UI-block based on
- * `sync` (server-side hint, true when within the sync threshold). Lock
- * heartbeats and explicit release are separate hooks because they have
- * different lifetimes.
+ * Open an editor session — bumps the worker fence so the row can't fire
+ * mid-edit. Multiple devices/tabs can claim concurrently; first save wins
+ * via the optimistic CAS in `useUpdateScheduled`.
  */
 export function useClaimScheduled(workspaceId: string) {
   const scheduledService = useScheduledService()
@@ -304,18 +429,13 @@ export function useClaimScheduled(workspaceId: string) {
   })
 }
 
-export function useReleaseScheduled(workspaceId: string) {
-  const scheduledService = useScheduledService()
-  return useMutation({
-    mutationFn: ({ id, lockToken }: { id: string; lockToken: string }) =>
-      scheduledService.release(workspaceId, id, lockToken),
-  })
-}
-
+/**
+ * Refresh the worker fence. Anonymous — any caller's heartbeat keeps the
+ * fence alive; the fence is "is anyone editing right now?", not per-device.
+ */
 export function useHeartbeatScheduled(workspaceId: string) {
   const scheduledService = useScheduledService()
   return useMutation({
-    mutationFn: ({ id, lockToken }: { id: string; lockToken: string }) =>
-      scheduledService.heartbeat(workspaceId, id, lockToken),
+    mutationFn: (id: string) => scheduledService.heartbeat(workspaceId, id),
   })
 }

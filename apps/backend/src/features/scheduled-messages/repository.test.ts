@@ -22,8 +22,7 @@ const SCHEDULED_ROW = {
   sent_message_id: null,
   last_error: null,
   queue_message_id: null,
-  edit_lock_owner_id: null,
-  edit_lock_expires_at: null,
+  edit_active_until: null,
   client_message_id: null,
   retry_count: 0,
   created_at: NOW,
@@ -137,118 +136,89 @@ describe("ScheduledMessagesRepository.listByUser cursor pagination", () => {
   })
 })
 
-describe("ScheduledMessagesRepository.tryAcquireLock", () => {
+describe("ScheduledMessagesRepository.bumpEditFence", () => {
   afterEach(() => mock.restore())
 
-  it("performs a single CAS UPDATE that requires status='pending' and a free or expired lock (INV-20)", async () => {
+  it("bumps edit_active_until via GREATEST so concurrent editors can't race the fence backwards", async () => {
     const captured: Captured = { text: null, values: null }
     const db = createQuerier(captured)
 
-    await ScheduledMessagesRepository.tryAcquireLock(db, {
+    await ScheduledMessagesRepository.bumpEditFence(db, {
       workspaceId: "ws_1",
       id: "sched_01",
-      ownerId: "usr:usr_1:sess_1",
       ttlSeconds: 60,
-      setStatus: null,
     })
 
     expect(captured.text).toContain("UPDATE scheduled_messages")
-    expect(captured.text).toContain("edit_lock_owner_id =")
-    expect(captured.text).toContain("edit_lock_expires_at = NOW()")
+    expect(captured.text).toContain("edit_active_until = GREATEST")
     expect(captured.text).toContain("workspace_id =")
     expect(captured.text).toContain("status =")
-    expect(captured.text).toContain(
-      "(edit_lock_owner_id IS NULL OR edit_lock_expires_at <= NOW() OR edit_lock_owner_id ="
-    )
   })
 
-  it("flips status to the supplied state inside the same UPDATE so the worker takes the row out of pending atomically", async () => {
+  it("only bumps pending rows so a sending/sent/cancelled row doesn't accidentally hide from the worker", async () => {
     const captured: Captured = { text: null, values: null }
     const db = createQuerier(captured)
 
-    await ScheduledMessagesRepository.tryAcquireLock(db, {
+    await ScheduledMessagesRepository.bumpEditFence(db, {
       workspaceId: "ws_1",
       id: "sched_01",
-      ownerId: "worker:send:wkr_1",
-      ttlSeconds: 10,
-      setStatus: ScheduledMessageStatuses.SENDING,
-    })
-
-    expect(captured.values).toContain(ScheduledMessageStatuses.SENDING)
-    // CASE expression sits inside the UPDATE so status flip is atomic.
-    expect(captured.text).toContain("CASE")
-  })
-
-  it("adds a scheduled_for <= NOW() guard to the CAS when requireDueNow is set", async () => {
-    // CodeRabbit caught: a stale leased queue row that survives a reschedule
-    // cancel can still reach the worker after the editor pushes
-    // scheduled_for forward. Putting the due-time guard inside the CAS itself
-    // closes the gap so a same-tx reschedule can't be raced into early
-    // delivery. The editor's claim path leaves it false because users may
-    // want to edit a future row.
-    const captured: Captured = { text: null, values: null }
-    const db = createQuerier(captured)
-
-    await ScheduledMessagesRepository.tryAcquireLock(db, {
-      workspaceId: "ws_1",
-      id: "sched_01",
-      ownerId: "worker:send:wkr_1",
-      ttlSeconds: 10,
-      setStatus: ScheduledMessageStatuses.SENDING,
-      requireDueNow: true,
-    })
-
-    expect(captured.text).toContain("scheduled_for <= NOW()")
-  })
-
-  it("omits the scheduled_for guard for editor claims so a future row can still be edited", async () => {
-    const captured: Captured = { text: null, values: null }
-    const db = createQuerier(captured)
-
-    await ScheduledMessagesRepository.tryAcquireLock(db, {
-      workspaceId: "ws_1",
-      id: "sched_01",
-      ownerId: "usr:usr_1:sess_1",
       ttlSeconds: 60,
-      setStatus: null,
-      // requireDueNow omitted (defaults to false)
     })
 
-    // The CAS still parameterizes the predicate (always present in SQL) but
-    // the boolean flag flips it to a no-op so editor claims can still succeed
-    // for future-scheduled rows.
-    expect(captured.values).toContain(true) // !requireDueNow = true → guard short-circuits
+    expect(captured.values).toContain(ScheduledMessageStatuses.PENDING)
+  })
+})
+
+describe("ScheduledMessagesRepository.tryStartSend (worker CAS)", () => {
+  afterEach(() => mock.restore())
+
+  it("flips status to sending only when pending, due now, and no editor session active", async () => {
+    const captured: Captured = { text: null, values: null }
+    const db = createQuerier(captured)
+
+    await ScheduledMessagesRepository.tryStartSend(db, {
+      workspaceId: "ws_1",
+      id: "sched_01",
+      ttlSeconds: 10,
+    })
+
+    expect(captured.text).toContain("UPDATE scheduled_messages")
+    expect(captured.text).toContain("status =")
+    expect(captured.text).toContain("scheduled_for <= NOW()")
+    expect(captured.text).toContain("(edit_active_until IS NULL OR edit_active_until <= NOW())")
+    expect(captured.values).toContain(ScheduledMessageStatuses.SENDING)
   })
 })
 
 describe("ScheduledMessagesRepository.update", () => {
   afterEach(() => mock.restore())
 
-  it("re-asserts the lock owner under the same UPDATE so a stale token can never land a write", async () => {
+  it("CASes on updated_at = expectedUpdatedAt so concurrent saves don't trample each other (first write wins)", async () => {
     const captured: Captured = { text: null, values: null }
     const db = createQuerier(captured)
 
+    const expected = new Date("2026-05-03T12:30:00.000Z")
     await ScheduledMessagesRepository.update(db, {
       workspaceId: "ws_1",
       userId: "usr_1",
       id: "sched_01",
-      lockOwnerId: "usr:usr_1:sess_1",
+      expectedUpdatedAt: expected,
       contentMarkdown: "updated",
     })
 
     expect(captured.text).toContain("UPDATE scheduled_messages")
     expect(captured.text).toContain("workspace_id =")
     expect(captured.text).toContain("user_id =")
-    expect(captured.text).toContain("edit_lock_owner_id =")
-    expect(captured.text).toContain("edit_lock_expires_at > NOW()")
     expect(captured.text).toContain("status =")
+    expect(captured.text).toContain("updated_at =")
+    expect(captured.values).toContain(expected)
   })
 })
 
 describe("ScheduledMessagesRepository.markSent", () => {
   afterEach(() => mock.restore())
 
-  it("transitions sending → sent atomically and clears the lock", async () => {
+  it("transitions sending → sent atomically and clears the fence", async () => {
     const captured: Captured = { text: null, values: null }
     const db = createQuerier(captured)
 
@@ -260,7 +230,7 @@ describe("ScheduledMessagesRepository.markSent", () => {
 
     expect(captured.text).toContain("UPDATE scheduled_messages")
     expect(captured.text).toContain("sent_message_id =")
-    expect(captured.text).toContain("edit_lock_owner_id = NULL")
+    expect(captured.text).toContain("edit_active_until = NULL")
     expect(captured.text).toContain("workspace_id =")
     // The status guard on the WHERE clause makes the transition idempotent —
     // a second call to markSent for an already-sent row no-ops.

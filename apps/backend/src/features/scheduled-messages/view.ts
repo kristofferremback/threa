@@ -2,8 +2,10 @@ import type { ScheduledMessageView } from "@threa/types"
 import type { ScheduledMessage } from "./repository"
 
 /**
- * Wire shape for a scheduled-message row. Lock fields are exposed because the
- * frontend needs to reflect "currently being edited" state across devices.
+ * Wire shape for a scheduled-message row. `editActiveUntil` exposes the
+ * worker fence so the frontend can render a "currently being edited"
+ * affordance across devices and decide whether to skip its own heartbeat
+ * when another session is already keeping the fence alive.
  *
  * Unlike saved-messages we do NOT denormalize a live message snapshot —
  * `contentJson` and `contentMarkdown` are already canonical on the scheduled
@@ -24,8 +26,8 @@ export function toScheduledMessageView(row: ScheduledMessage): ScheduledMessageV
     status: row.status,
     sentMessageId: row.sentMessageId,
     lastError: row.lastError,
-    editLockOwnerId: row.editLockOwnerId,
-    editLockExpiresAt: row.editLockExpiresAt?.toISOString() ?? null,
+    editActiveUntil: row.editActiveUntil?.toISOString() ?? null,
+    clientMessageId: row.clientMessageId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     statusChangedAt: row.statusChangedAt.toISOString(),

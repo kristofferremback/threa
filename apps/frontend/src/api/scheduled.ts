@@ -52,14 +52,8 @@ export const scheduledApi = {
     return api.post<ClaimScheduledMessageResponse>(`/api/workspaces/${workspaceId}/scheduled/${id}/claim`, {})
   },
 
-  async heartbeat(workspaceId: string, id: string, lockToken: string): Promise<{ lockExpiresAt: string }> {
-    return api.post<{ lockExpiresAt: string }>(`/api/workspaces/${workspaceId}/scheduled/${id}/heartbeat`, {
-      lockToken,
-    })
-  },
-
-  async release(workspaceId: string, id: string, lockToken: string): Promise<void> {
-    await api.post<{ ok: true }>(`/api/workspaces/${workspaceId}/scheduled/${id}/release`, { lockToken })
+  async heartbeat(workspaceId: string, id: string): Promise<{ editActiveUntil: string }> {
+    return api.post<{ editActiveUntil: string }>(`/api/workspaces/${workspaceId}/scheduled/${id}/heartbeat`, {})
   },
 
   async sendNow(workspaceId: string, id: string): Promise<ScheduledMessageView> {

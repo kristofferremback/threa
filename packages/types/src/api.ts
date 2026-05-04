@@ -768,10 +768,19 @@ export interface ScheduledMessageView {
   status: ScheduledMessageStatus
   sentMessageId: string | null
   lastError: string | null
-  /** Owner of any active lock — `usr_*` for an editor, `worker:<id>` for the worker. */
-  editLockOwnerId: string | null
-  /** ISO; null when the lock is free or expired. */
-  editLockExpiresAt: string | null
+  /**
+   * Worker fence — the worker won't fire while this is in the future. Bumped
+   * by `claim` / heartbeat. Anonymous: any editor session keeps the worker
+   * out; first save still wins via the `updatedAt` optimistic CAS, not via
+   * this fence. ISO string; null when no editor session is active.
+   */
+  editActiveUntil: string | null
+  /**
+   * Idempotency key the original `POST /scheduled` carried. Echoed back so
+   * the frontend can match a server-issued row against an optimistic
+   * placeholder waiting in IDB and swap them in one transaction.
+   */
+  clientMessageId: string | null
   createdAt: string
   updatedAt: string
   statusChangedAt: string
@@ -790,9 +799,10 @@ export interface ScheduleMessageInput {
 }
 
 /**
- * One mutation kind per request — content, scheduledFor, or attachmentIds in
- * isolation, or all three together when the user saves the edit modal. The
- * server requires `lockToken` so we can't lose a race with the worker.
+ * Optimistic-concurrency update payload. The client sends `expectedUpdatedAt`
+ * — the `updatedAt` value it last saw — and the server CAS rejects with 409
+ * STALE_VERSION when the row has moved on (someone else saved). Any number of
+ * editors can coexist; first save wins.
  */
 export interface UpdateScheduledMessageInput {
   contentJson?: JSONContent
@@ -800,23 +810,18 @@ export interface UpdateScheduledMessageInput {
   attachmentIds?: string[]
   metadata?: Record<string, string> | null
   scheduledFor?: string
-  /** Lock token returned by `/claim`. Required for any mutation. */
-  lockToken: string
+  /** ISO of `updatedAt` from the row the editor last claimed/saw. */
+  expectedUpdatedAt: string
 }
 
 export interface ClaimScheduledMessageResponse {
   scheduled: ScheduledMessageView
-  /** Opaque token; pass to PATCH/release/heartbeat. */
-  lockToken: string
-  /** ISO of when the server-side TTL expires; client should heartbeat before then. */
-  lockExpiresAt: string
   /**
-   * `true` when scheduled_for is within `SCHEDULED_MESSAGE_SYNC_LOCK_THRESHOLD_SECONDS`,
-   * indicating the client should UI-block (sync path). `false` lets the editor
-   * open optimistically (async path). Server-side hint only — correctness comes
-   * from the CAS, not the threshold.
+   * ISO of when the worker fence will expire if no further heartbeat lands.
+   * Clients should heartbeat before then to keep the worker out while the
+   * editor is open.
    */
-  sync: boolean
+  editActiveUntil: string
 }
 
 export interface ScheduledMessageListResponse {

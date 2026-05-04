@@ -128,7 +128,6 @@ export {
   SCHEDULED_MESSAGE_STATUSES,
   type ScheduledMessageStatus,
   ScheduledMessageStatuses,
-  SCHEDULED_MESSAGE_SYNC_LOCK_THRESHOLD_SECONDS,
   // Text processing
   TEXT_FORMATS,
   type TextFormat,

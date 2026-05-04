@@ -1311,8 +1311,25 @@ export function registerWorkspaceSocketHandlers(
   // cross-tab and cross-device state without a refresh.
   const handleScheduledUpserted = (payload: ScheduledMessageUpsertedPayload) => {
     if (payload.workspaceId !== workspaceId) return
-    void persistScheduledRows([payload.scheduled])
-    queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
+    void (async () => {
+      // If the row carries a clientMessageId, sweep any optimistic placeholder
+      // sharing that key — the operation queue's `replaceLocalScheduledRow`
+      // already does this when the POST returns, but a socket event can race
+      // ahead of the executor and we don't want both rows visible briefly.
+      const cmid = payload.scheduled.clientMessageId
+      if (cmid) {
+        const stale = await db.scheduledMessages
+          .where("workspaceId")
+          .equals(workspaceId)
+          .filter((row) => row._localOnly === true && row.id !== payload.scheduled.id && row.clientMessageId === cmid)
+          .toArray()
+        if (stale.length > 0) {
+          await db.scheduledMessages.bulkDelete(stale.map((row) => row.id))
+        }
+      }
+      await persistScheduledRows([payload.scheduled])
+      queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
+    })()
   }
 
   const handleScheduledSent = (payload: ScheduledMessageSentPayload) => {
