@@ -319,10 +319,11 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
                 onMobileExpandedChange={setMobileExpanded}
                 showAttach
                 onAttachClick={() => attachmentsHook.fileInputRef.current?.click()}
-                // No desktop fullscreen pop-out — this dialog/drawer is
-                // already the dominant surface and shouldn't nest another
-                // fullscreen modal on top. (`showExpand` defaults true on
-                // mobile so the drawer grow/shrink toggle stays.)
+                // The drawer/dialog is already the dominant surface. Drop both
+                // the mobile expand-the-drawer toggle and the desktop
+                // fullscreen-modal trigger — neither makes sense when we're
+                // already taking the screen.
+                showExpand={false}
                 trailingContent={trailingActions}
               />
               {/* Mobile inline format toolbar — desktop uses the static toolbar

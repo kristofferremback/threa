@@ -80,6 +80,12 @@ export function ScheduledMessagesPicker({
   const [customMin, setCustomMin] = useState<string>("")
   const [showCustom, setShowCustom] = useState(false)
   const [editing, setEditing] = useState<ScheduledMessageView | null>(null)
+  // Lifted out of the row so the drawer stacks above the popover. Local
+  // state inside `ScheduledRow` only worked when the popover stayed open,
+  // which produced an obvious z-index fight (popover painting over the
+  // bottom sheet). We instead close the popover when long-press fires and
+  // render the drawer at the picker's top level, outside the popover tree.
+  const [actionTarget, setActionTarget] = useState<ScheduledMessageView | null>(null)
   const inputId = useId()
 
   const { items } = useScheduledList(workspaceId, "pending", streamId)
@@ -147,6 +153,14 @@ export function ScheduledMessagesPicker({
     setOpen(false)
   }
 
+  const handleRequestActions = (scheduled: ScheduledMessageView) => {
+    // Long-press on a row routes here. Close the popover first so its
+    // backdrop doesn't paint over the bottom sheet, then surface the drawer
+    // (rendered at the top level below, outside the popover tree).
+    setOpen(false)
+    setActionTarget(scheduled)
+  }
+
   return (
     <>
       <Popover open={open} onOpenChange={handleOpenChange}>
@@ -189,8 +203,7 @@ export function ScheduledMessagesPicker({
               onClose={() => handleOpenChange(false)}
               onSchedulePress={enterPickingMode}
               onEdit={handleEdit}
-              onSendNow={(id) => sendNowMutation.mutate(id)}
-              onCancel={(id) => cancelMutation.mutate(id)}
+              onRequestActions={handleRequestActions}
             />
           ) : (
             <PickingMode
@@ -215,6 +228,21 @@ export function ScheduledMessagesPicker({
         </PopoverContent>
       </Popover>
       <ScheduledEditDialog workspaceId={workspaceId} scheduled={editing} onClose={() => setEditing(null)} />
+      {actionTarget && (
+        <ScheduledActionDrawer
+          open
+          onOpenChange={(next) => {
+            if (!next) setActionTarget(null)
+          }}
+          scheduled={actionTarget}
+          onEdit={() => {
+            setEditing(actionTarget)
+            setActionTarget(null)
+          }}
+          onSendNow={(id) => sendNowMutation.mutate(id)}
+          onCancel={(id) => cancelMutation.mutate(id)}
+        />
+      )}
     </>
   )
 }
@@ -229,8 +257,7 @@ interface ListModeProps {
   onClose: () => void
   onSchedulePress: () => void
   onEdit: (scheduled: ScheduledMessageView) => void
-  onSendNow: (id: string) => void
-  onCancel: (id: string) => void
+  onRequestActions: (scheduled: ScheduledMessageView) => void
 }
 
 function ListMode({
@@ -243,8 +270,7 @@ function ListMode({
   onClose,
   onSchedulePress,
   onEdit,
-  onSendNow,
-  onCancel,
+  onRequestActions,
 }: ListModeProps) {
   return (
     <>
@@ -283,8 +309,7 @@ function ListMode({
                 now={now}
                 timezone={timezone}
                 onEdit={onEdit}
-                onSendNow={onSendNow}
-                onCancel={onCancel}
+                onRequestActions={onRequestActions}
               />
             ))}
           </ul>
@@ -392,22 +417,26 @@ interface ScheduledRowProps {
   now: Date
   timezone: string
   onEdit: (scheduled: ScheduledMessageView) => void
-  onSendNow: (id: string) => void
-  onCancel: (id: string) => void
+  /**
+   * Mobile long-press handler — the picker hosts the action drawer at its
+   * top level (above the popover) so we just bubble the request up; the
+   * picker closes the popover and opens the drawer in one shot. Keeping
+   * the drawer state out of the row is what fixes the popover-paints-over-
+   * drawer z-index fight.
+   */
+  onRequestActions: (scheduled: ScheduledMessageView) => void
 }
 
 /**
  * Row inside the composer popover. Tap opens the edit dialog; long-press on
- * mobile opens the same `ScheduledActionDrawer` the page uses, so destructive
- * actions (cancel, send-now) are never an accidental tap away. No inline
- * trash icon — that pattern was easy to misfire on mobile.
+ * mobile bubbles a request up to the picker, which closes the popover and
+ * opens the shared `ScheduledActionDrawer`.
  */
-function ScheduledRow({ scheduled, now, timezone, onEdit, onSendNow, onCancel }: ScheduledRowProps) {
+function ScheduledRow({ scheduled, now, timezone, onEdit, onRequestActions }: ScheduledRowProps) {
   const isMobile = useIsMobile()
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const longPress = useLongPress({
     enabled: isMobile,
-    onLongPress: () => setDrawerOpen(true),
+    onLongPress: () => onRequestActions(scheduled),
   })
 
   const preview = useMemo(
@@ -420,40 +449,26 @@ function ScheduledRow({ scheduled, now, timezone, onEdit, onSendNow, onCancel }:
   const attachmentCount = scheduled.attachmentIds.length
 
   return (
-    <>
-      <li>
-        <button
-          type="button"
-          onClick={() => onEdit(scheduled)}
-          className={cn(
-            "block w-full text-left focus:outline-none px-3 py-2 hover:bg-muted/60 focus-visible:bg-muted/60",
-            longPress.isPressed && "bg-muted/60"
-          )}
-          title="Edit scheduled message"
-          onTouchStart={longPress.handlers.onTouchStart}
-          onTouchEnd={longPress.handlers.onTouchEnd}
-          onTouchMove={longPress.handlers.onTouchMove}
-          onContextMenu={longPress.handlers.onContextMenu}
-        >
-          <p className="text-sm line-clamp-2 break-words">{preview}</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            {label}
-            {attachmentCount > 0 && <span className="ml-1.5">· {attachmentCount} 📎</span>}
-          </p>
-        </button>
-      </li>
-      {isMobile && (
-        <ScheduledActionDrawer
-          open={drawerOpen}
-          onOpenChange={setDrawerOpen}
-          scheduled={scheduled}
-          // The drawer passes `scheduled.id`; we already have the full row
-          // so we can route directly into the edit dialog.
-          onEdit={() => onEdit(scheduled)}
-          onSendNow={onSendNow}
-          onCancel={onCancel}
-        />
-      )}
-    </>
+    <li>
+      <button
+        type="button"
+        onClick={() => onEdit(scheduled)}
+        className={cn(
+          "block w-full text-left focus:outline-none px-3 py-2 hover:bg-muted/60 focus-visible:bg-muted/60",
+          longPress.isPressed && "bg-muted/60"
+        )}
+        title="Edit scheduled message"
+        onTouchStart={longPress.handlers.onTouchStart}
+        onTouchEnd={longPress.handlers.onTouchEnd}
+        onTouchMove={longPress.handlers.onTouchMove}
+        onContextMenu={longPress.handlers.onContextMenu}
+      >
+        <p className="text-sm line-clamp-2 break-words">{preview}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          {label}
+          {attachmentCount > 0 && <span className="ml-1.5">· {attachmentCount} 📎</span>}
+        </p>
+      </button>
+    </li>
   )
 }

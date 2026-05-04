@@ -10,6 +10,7 @@ import { usePreferences } from "@/contexts"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
+import { RelativeTime } from "@/components/relative-time"
 import { ScheduledActionDrawer } from "./scheduled-action-drawer"
 
 interface ScheduledItemProps {
@@ -66,15 +67,11 @@ export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSend
   if (isSent) verbPrefix = "Sent to"
   else if (isCancelled) verbPrefix = "Cancelled for"
 
-  let timeLabel: string | null = null
-  if (isPending) {
-    timeLabel = labelOrSoon
-  } else if (isSent) {
-    timeLabel = `Sent ${formatFutureTime(new Date(scheduled.statusChangedAt), new Date(), { timezone })}`.replace(
-      "Sent in ",
-      "Sent "
-    )
-  }
+  // Pending uses the future-time formatter ("5m", "Tomorrow 9:00") with sub-1m
+  // collapsed to "Sending soon". Sent rows render via the same `<RelativeTime>`
+  // component the stream timeline uses so we get "5m ago" / "yesterday 14:30"
+  // instead of `formatFutureTime`'s 0m clamp on past instants.
+  const pendingLabel = isPending ? labelOrSoon : null
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   // Long-press only on mobile, only for actionable rows. Sent/cancelled rows
@@ -103,7 +100,13 @@ export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSend
       </p>
 
       <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground/60">
-        {timeLabel && <span className="tabular-nums">{timeLabel}</span>}
+        {pendingLabel && <span className="tabular-nums">{pendingLabel}</span>}
+        {isSent && (
+          <span className="inline-flex items-center gap-1">
+            <span>Sent</span>
+            <RelativeTime date={scheduled.statusChangedAt} terse />
+          </span>
+        )}
         {scheduled.attachmentIds.length > 0 && (
           <span>
             {scheduled.attachmentIds.length} attachment{scheduled.attachmentIds.length === 1 ? "" : "s"}
