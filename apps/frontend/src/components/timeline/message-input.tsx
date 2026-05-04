@@ -21,7 +21,6 @@ import {
   StashedDraftsPicker,
 } from "@/components/composer"
 import type { ComposerControlHandle } from "@/components/composer"
-import { SchedulePicker } from "@/components/scheduled/schedule-picker"
 import { useScheduleMessage } from "@/hooks"
 import { toast } from "sonner"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
@@ -696,9 +695,14 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         size="fab"
       />
     ),
-    scheduleSendTrigger: <SchedulePicker disabled={!composer.canSend || composer.isSending} onPick={handleSchedule} />,
     scheduledMessagesTrigger: (
-      <ScheduledMessagesPicker workspaceId={workspaceId} streamId={streamId} controlsDisabled={composer.isSending} />
+      <ScheduledMessagesPicker
+        workspaceId={workspaceId}
+        streamId={streamId}
+        canSchedule={composer.canSend}
+        onSchedule={handleSchedule}
+        controlsDisabled={composer.isSending}
+      />
     ),
   } as const
 

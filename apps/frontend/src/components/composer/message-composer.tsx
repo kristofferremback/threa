@@ -199,19 +199,10 @@ export interface MessageComposerProps {
   stashedDraftsTriggerFab?: ReactNode
 
   /**
-   * Slot for the schedule-send picker shown next to the send button. Omit to
-   * hide the affordance (used by edit forms and any composer that isn't
-   * sending a fresh message). The slot owner is responsible for capturing
-   * the composer's current content/attachments at click time and calling
-   * the schedule mutation.
-   */
-  scheduleSendTrigger?: ReactNode
-
-  /**
-   * Slot for the "scheduled messages for this stream" peek popover, shown
-   * alongside the stashed-drafts trigger. Read-only at this entry point
-   * (cancel + view-all are the only actions); full edit lives on the
-   * /scheduled page. Omit to hide the affordance entirely.
+   * Slot for the unified scheduled-messages picker — both the "schedule this
+   * draft" entry point and the "what's queued for this stream?" peek live
+   * behind a single trigger. Omit to hide the affordance entirely (used by
+   * edit forms and any composer that isn't sending a fresh message).
    */
   scheduledMessagesTrigger?: ReactNode
 }
@@ -249,7 +240,6 @@ export function MessageComposer({
   onStashDraft,
   stashedDraftsTrigger,
   stashedDraftsTriggerFab,
-  scheduleSendTrigger,
   scheduledMessagesTrigger,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
@@ -810,11 +800,10 @@ export function MessageComposer({
                     showAttach
                     onAttachClick={handleAttachClick}
                     trailingContent={
-                      stashedDraftsTrigger || scheduledMessagesTrigger || scheduleSendTrigger ? (
+                      stashedDraftsTrigger || scheduledMessagesTrigger ? (
                         <div className="flex items-center gap-1">
                           {stashedDraftsTrigger}
                           {scheduledMessagesTrigger}
-                          {scheduleSendTrigger}
                           {sendButton}
                         </div>
                       ) : (
@@ -940,7 +929,6 @@ export function MessageComposer({
                     </Tooltip>
                     {stashedDraftsTrigger}
                     {scheduledMessagesTrigger}
-                    {scheduleSendTrigger}
                     {sendButton}
                   </div>
                 )}
