@@ -23,7 +23,7 @@ import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { materializePendingAttachmentReferences } from "@/components/timeline/message-input"
 import { toast } from "sonner"
 import { collectAttachmentReferenceIds, serializeToMarkdown } from "@threa/prosemirror"
-import { EMPTY_DOC } from "@/lib/prosemirror-utils"
+import { EMPTY_DOC, ensureTrailingParagraph } from "@/lib/prosemirror-utils"
 
 interface ScheduledEditDialogProps {
   workspaceId: string
@@ -122,7 +122,10 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       .then((res) => {
         const at = new Date(res.scheduled.scheduledFor)
         setLockToken(res.lockToken)
-        setContentJson(res.scheduled.contentJson || EMPTY_DOC)
+        // Append a trailing paragraph if the doc ends in a block-level atom
+        // (quote-reply, shared-message). Without this, mobile users can't tap
+        // a position after the atom — the gap-cursor has no tap target.
+        setContentJson(ensureTrailingParagraph(res.scheduled.contentJson || EMPTY_DOC))
         setSendDate(toDateInputValue(at))
         setSendTime(toTimeInputValue(at))
         setError(null)
@@ -221,7 +224,11 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const saveLabel = isPast ? "Send" : "Save"
   const title = isPast ? "Send scheduled message" : "Edit scheduled message"
 
-  const trailingActions = (
+  // Desktop renders Save / Cancel inside the action bar's trailing slot to keep
+  // the dialog compact. Mobile gets a dedicated row below the editor — the
+  // action bar is already wide on a 360px phone, and stacking two text buttons
+  // into the trailing slot caused them to truncate.
+  const desktopTrailingActions = !isMobile ? (
     <>
       <Button type="button" variant="ghost" size="sm" onClick={handleClose} disabled={isSaving}>
         {cancelLabel}
@@ -231,7 +238,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
         {saveLabel}
       </Button>
     </>
-  )
+  ) : undefined
 
   const editorBody = (() => {
     if (isLoadingClaim) {
@@ -245,7 +252,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       return <div className="text-sm text-destructive">{error}</div>
     }
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-1 min-h-0 flex-col gap-4">
         <DateTimeField
           date={sendDate}
           time={sendTime}
@@ -254,9 +261,12 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
           disabled={isSaving}
           density="compact"
         />
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-1 min-h-0 flex-col gap-1.5">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Message</span>
-          <div className="rounded-md border bg-background [&_.tiptap]:min-h-[8rem] [&_.tiptap]:max-h-72 [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-2">
+          {/* Editor card. Mobile lets the editor body fill the drawer (capped
+              at 60dvh as a guard); desktop keeps the original 18rem cap so the
+              centered Dialog stays compact. */}
+          <div className="flex flex-1 min-h-0 flex-col rounded-md border bg-background [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-2 [&_.tiptap]:min-h-[8rem] [&_.tiptap]:max-h-[60dvh] sm:[&_.tiptap]:max-h-72">
             <RichEditor
               ref={setRichEditorHandle}
               value={contentJson}
@@ -268,7 +278,12 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
               ariaLabel="Edit scheduled message"
               messageSendMode="cmdEnter"
               disabled={isSaving}
-              autoFocus
+              // Auto-focus only on desktop; on mobile the keyboard would cover
+              // the date/time field before the user could review it.
+              autoFocus={!isMobile}
+              // The selection-driven floating toolbar conflicts with the OS
+              // native selection popup on mobile — same call MessageInput makes.
+              disableSelectionToolbar={isMobile}
               blurOnEscape
               scopeId={scheduled?.id}
               streamContext={streamContext}
@@ -301,11 +316,10 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
                 onFormatOpenChange={setFormatOpen}
                 showAttach
                 onAttachClick={() => attachmentsHook.fileInputRef.current?.click()}
-                // The drawer/dialog is already the dominant surface; on mobile
-                // vaul snap points handle resize via gesture, so the action
-                // bar's expand toggle is redundant here.
+                // Drawer/dialog is the dominant surface; the action bar's
+                // expand toggle is redundant here.
                 showExpand={false}
-                trailingContent={trailingActions}
+                trailingContent={desktopTrailingActions}
               />
               {/* Mobile inline format toolbar — desktop uses the static toolbar
                   baked into RichEditor when staticToolbarOpen is true. */}
@@ -323,21 +337,52 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
             </div>
           </div>
         </div>
+        {isMobile && (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="lg"
+              className="flex-1 h-11"
+              onClick={handleClose}
+              disabled={isSaving}
+            >
+              {cancelLabel}
+            </Button>
+            <Button
+              type="button"
+              size="lg"
+              className="flex-1 h-11"
+              onClick={handleSave}
+              disabled={!lockToken || isSaving}
+            >
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {saveLabel}
+            </Button>
+          </div>
+        )}
       </div>
     )
   })()
 
   return (
-    <ResponsiveDialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <ResponsiveDialogContent desktopClassName="sm:max-w-lg">
+    // disableSnapPoints: skip vaul's 80%-snap default so the action row + safe
+    // area stay above the fold (matches MessageEditForm's content-driven
+    // drawer shape). Cap at 92dvh so a long message scrolls inside the editor
+    // rather than pushing the action row off-screen.
+    <ResponsiveDialog open={open} onOpenChange={(o) => !o && handleClose()} disableSnapPoints>
+      <ResponsiveDialogContent desktopClassName="sm:max-w-lg" drawerClassName="max-h-[92dvh]">
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>{title}</ResponsiveDialogTitle>
           {description && <ResponsiveDialogDescription>{description}</ResponsiveDialogDescription>}
         </ResponsiveDialogHeader>
-        {/* Body padding mirrors ResponsiveDialogHeader's mobile px-4 so the
-            form aligns with the title; desktop falls through to DialogContent's
-            built-in padding via the `gap-4` defaults inside editorBody. */}
-        <div className="px-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:p-0 sm:pb-0">{editorBody}</div>
+        {/* Body wrapper. Mobile takes flex-1 so the editor can grow; desktop
+            falls through to DialogContent's built-in padding. Bottom padding
+            applies safe-area inset on iOS so the trailing action row sits above
+            the home indicator. */}
+        <div className="flex flex-1 min-h-0 flex-col px-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:p-0 sm:pb-0">
+          {editorBody}
+        </div>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   )

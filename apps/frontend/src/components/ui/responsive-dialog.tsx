@@ -28,17 +28,29 @@ import { cn } from "@/lib/utils"
 const DEFAULT_SNAP_POINTS = [0.8, 1] as const
 const DEFAULT_ACTIVE_SNAP = 0.8
 
+// Shares the `disableSnapPoints` flag with `ResponsiveDialogContent` so the
+// content can drop the vaul `h-[100dvh]` requirement when there are no
+// snap points to anchor to.
+const DisableSnapPointsContext = React.createContext(false)
+
 // ── Root ────────────────────────────────────────────────────────────────
 
 interface ResponsiveDialogProps {
   children: React.ReactNode
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  /** Override snap points for mobile drawer. Set to `undefined` to disable snap points. */
+  /** Override snap points for mobile drawer. Set to `undefined` to use defaults. */
   snapPoints?: (number | string)[]
+  /**
+   * Skip vaul snap points entirely on mobile and render a content-driven
+   * drawer (matches `MessageEditForm`'s pattern). Use this when the dialog
+   * is designed to take the whole viewport on mobile and the partial-snap
+   * UX would obscure the action bar / trailing buttons.
+   */
+  disableSnapPoints?: boolean
 }
 
-function ResponsiveDialog({ children, snapPoints, ...props }: ResponsiveDialogProps) {
+function ResponsiveDialog({ children, snapPoints, disableSnapPoints, ...props }: ResponsiveDialogProps) {
   const isMobile = useIsMobile()
   const resolvedSnaps = React.useMemo(() => snapPoints ?? [...DEFAULT_SNAP_POINTS], [snapPoints])
   const [activeSnap, setActiveSnap] = React.useState<number | string | null>(DEFAULT_ACTIVE_SNAP)
@@ -53,6 +65,15 @@ function ResponsiveDialog({ children, snapPoints, ...props }: ResponsiveDialogPr
   )
 
   if (isMobile) {
+    if (disableSnapPoints) {
+      return (
+        <DisableSnapPointsContext.Provider value={true}>
+          <Drawer open={props.open} onOpenChange={props.onOpenChange}>
+            {children}
+          </Drawer>
+        </DisableSnapPointsContext.Provider>
+      )
+    }
     return (
       <Drawer
         open={props.open}
@@ -105,15 +126,20 @@ interface ResponsiveDialogContentProps extends React.ComponentPropsWithoutRef<ty
 const ResponsiveDialogContent = React.forwardRef<HTMLDivElement, ResponsiveDialogContentProps>(
   ({ className, desktopClassName, drawerClassName, children, hideCloseButton, ...props }, ref) => {
     const isMobile = useIsMobile()
+    const noSnapPoints = React.useContext(DisableSnapPointsContext)
 
     if (isMobile) {
-      // DrawerContent already renders its own Portal + Overlay internally.
-      // h-[100dvh] is required so vaul's transform-based snap point positioning
-      // works correctly — the drawer must be full viewport height so that
-      // translate3d(0, offset, 0) controls the visible portion (e.g. 80% at 0.8 snap).
-      // Without it, h-auto makes the drawer content-dependent and shorter than expected.
+      // With snap points: vaul's transform-based positioning needs the drawer
+      // to be full viewport height so `translate3d(0, offset, 0)` controls the
+      // visible portion (e.g. 80% at 0.8 snap). Without snap points: content-
+      // driven height is what callers want (matches `MessageEditForm` shape),
+      // so we skip the h-[100dvh] override and let `drawerClassName` decide.
       return (
-        <DrawerContent ref={ref} className={cn("h-[100dvh]", drawerClassName, className)} {...props}>
+        <DrawerContent
+          ref={ref}
+          className={cn(noSnapPoints ? null : "h-[100dvh]", drawerClassName, className)}
+          {...props}
+        >
           {children}
         </DrawerContent>
       )
