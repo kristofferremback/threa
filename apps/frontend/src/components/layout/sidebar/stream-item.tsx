@@ -221,7 +221,7 @@ export function StreamItem({
 
   const actions = useMemo<SidebarActionItem[]>(
     () =>
-      isVirtualDraft || stream.type === StreamTypes.DM
+      isVirtualDraft
         ? []
         : [
             {
@@ -231,7 +231,7 @@ export function StreamItem({
               onSelect: () => openStreamSettings(stream.id),
             },
           ],
-    [isVirtualDraft, openStreamSettings, stream.id, stream.type]
+    [isVirtualDraft, openStreamSettings, stream.id]
   )
 
   let drawerPreview: SidebarActionPreview | null = null

@@ -14,8 +14,14 @@ import { GeneralTab } from "./general-tab"
 import { CompanionTab } from "./companion-tab"
 import { MembersTab } from "./members-tab"
 import { streamKeys } from "@/hooks"
-import { useWorkspaceStreams, useWorkspaceStreamMemberships } from "@/stores/workspace-store"
+import {
+  useWorkspaceStreams,
+  useWorkspaceStreamMemberships,
+  useWorkspaceUsers,
+  useWorkspaceDmPeers,
+} from "@/stores/workspace-store"
 import { StreamTypes, type Stream, type StreamBootstrap, type NotificationLevel } from "@threa/types"
+import { resolveDmDisplayName } from "@/lib/streams"
 
 const TAB_CONFIG: Record<StreamSettingsTab, { label: string; description: string }> = {
   general: { label: "General", description: "Notifications and stream details" },
@@ -55,16 +61,29 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
   const currentUserId = currentMembership?.memberId ?? null
   const currentNotificationLevel: NotificationLevel | null = currentMembership?.notificationLevel ?? null
 
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const dmPeers = useWorkspaceDmPeers(workspaceId)
+
+  const dmDisplayName = useMemo(() => {
+    if (!resolvedStream || resolvedStream.type !== StreamTypes.DM || !streamId) return null
+    return resolveDmDisplayName(streamId, workspaceUsers, dmPeers) ?? resolvedStream.displayName ?? null
+  }, [resolvedStream, streamId, workspaceUsers, dmPeers])
+
+  const rootStream = useMemo(() => {
+    if (!resolvedStream || resolvedStream.type !== StreamTypes.THREAD || !resolvedStream.rootStreamId) return null
+    return idbStreams.find((s) => s.id === resolvedStream.rootStreamId) ?? null
+  }, [resolvedStream, idbStreams])
+
   // Determine available tabs based on stream type
   const availableTabs: readonly StreamSettingsTab[] = useMemo(() => {
     if (!resolvedStream) return STREAM_SETTINGS_TABS
     switch (resolvedStream.type) {
       case StreamTypes.CHANNEL:
-        return ["general", "companion", "members"]
       case StreamTypes.SCRATCHPAD:
-        return ["general", "companion", "members"]
       case StreamTypes.DM:
-        return ["members"]
+      case StreamTypes.THREAD:
+        return ["general", "companion", "members"]
+      case StreamTypes.SYSTEM:
       default:
         return ["general"]
     }
@@ -114,6 +133,8 @@ export function StreamSettingsDialog({ workspaceId }: StreamSettingsDialogProps)
                     stream={resolvedStream}
                     currentUserId={currentUserId}
                     notificationLevel={currentNotificationLevel}
+                    dmDisplayName={dmDisplayName}
+                    rootStream={rootStream}
                   />
                 </TabsContent>
                 <TabsContent value="companion" className="mt-0">

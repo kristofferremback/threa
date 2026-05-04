@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, Search, CornerDownRight } from "lucide-react"
+import {
+  MoreHorizontal,
+  Pencil,
+  Archive,
+  MessageCircle,
+  X,
+  ArchiveX,
+  Search,
+  CornerDownRight,
+  Settings,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -17,6 +27,7 @@ import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId, useTypeT
 import { useWorkspaceDmPeers } from "@/stores/workspace-store"
 import { usePanel, useSidebar } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
+import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ThreadPanelSlot, SidebarToggle } from "@/components/layout"
@@ -83,6 +94,7 @@ export function StreamPage() {
   }
 
   const { openUserProfile } = useUserProfile()
+  const { openStreamSettings } = useStreamSettings()
   const dmPeers = useWorkspaceDmPeers(workspaceId ?? "")
   const workspaceUsers = useWorkspaceUsers(workspaceId)
 
@@ -162,12 +174,19 @@ export function StreamPage() {
   // end since the move endpoints reject the source stream.
   const isSystem = stream?.type === StreamTypes.SYSTEM
   const streamMenuActions: SidebarActionItem[] = []
+  streamMenuActions.push({
+    id: "stream-settings",
+    label: "Settings",
+    icon: Settings,
+    onSelect: () => openStreamSettings(streamId),
+  })
   if (!isArchived && !isSystem) {
     streamMenuActions.push({
       id: "move-messages",
       label: "Move messages…",
       icon: CornerDownRight,
       onSelect: handleSelectMessages,
+      separatorBefore: true,
     })
   }
   if (isScratchpad) {
@@ -326,6 +345,10 @@ export function StreamPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem onClick={() => openStreamSettings(streamId)}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </DropdownMenuItem>
                   {/* Hide "Move messages…" entirely on archived/system streams
                     to match the mobile drawer (which builds via
                     `streamMenuActions` and skips the entry in both cases).
@@ -333,14 +356,17 @@ export function StreamPage() {
                     to enable it without unarchiving first, and system streams
                     can never be a valid source. */}
                   {!isArchived && !isSystem && (
-                    <DropdownMenuItem onClick={handleSelectMessages}>
-                      <CornerDownRight className="mr-2 h-4 w-4" />
-                      Move messages…
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleSelectMessages}>
+                        <CornerDownRight className="mr-2 h-4 w-4" />
+                        Move messages…
+                      </DropdownMenuItem>
+                    </>
                   )}
                   {isScratchpad && (
                     <>
-                      {!isArchived && <DropdownMenuSeparator />}
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={handleStartRename}>
                         <Pencil className="mr-2 h-4 w-4" />
                         Rename

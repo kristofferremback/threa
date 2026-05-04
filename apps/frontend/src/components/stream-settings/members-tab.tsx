@@ -52,10 +52,15 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
   const workspaceUsers = useWorkspaceUsers(workspaceId)
 
   const streamType = bootstrap?.stream?.type
-  const canAddMembers = streamType === StreamTypes.CHANNEL || streamType === StreamTypes.THREAD
+  const canAddUserMembers = streamType === StreamTypes.CHANNEL
   const streamMembers = bootstrap?.members ?? []
   const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentUserId)
   const canManageMembers = currentWorkspaceUser?.role === "owner" || currentWorkspaceUser?.role === "admin"
+
+  // Bots can be managed on all stream types that have a members tab.
+  // Threads inherit bot access from their root, so the UI is read-only.
+  const canManageBots = canManageMembers && streamType !== undefined
+  const botsReadOnly = streamType === StreamTypes.THREAD
 
   const streamMemberIds = useMemo(() => new Set(streamMembers.map((m) => m.memberId)), [streamMembers])
 
@@ -174,7 +179,7 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
         </div>
       </div>
 
-      {canAddMembers && (
+      {canAddUserMembers && (
         <div className="space-y-3">
           <Label className="text-sm font-medium">Add member</Label>
           <SearchableList
@@ -190,10 +195,10 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
         </div>
       )}
 
-      {canManageMembers && streamType === StreamTypes.CHANNEL && (
+      {canManageBots && (
         <>
           <Separator />
-          <StreamBotsSection workspaceId={workspaceId} streamId={streamId} />
+          <StreamBotsSection workspaceId={workspaceId} streamId={streamId} readOnly={botsReadOnly} />
         </>
       )}
 
@@ -217,7 +222,15 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
 
 // ─── Stream Bots Section ────────────────────────────────────────────────────
 
-function StreamBotsSection({ workspaceId, streamId }: { workspaceId: string; streamId: string }) {
+function StreamBotsSection({
+  workspaceId,
+  streamId,
+  readOnly,
+}: {
+  workspaceId: string
+  streamId: string
+  readOnly?: boolean
+}) {
   const queryClient = useQueryClient()
   const [botSearch, setBotSearch] = useState("")
   const allBots = useWorkspaceBots(workspaceId)
@@ -276,29 +289,31 @@ function StreamBotsSection({ workspaceId, streamId }: { workspaceId: string; str
                   {bot.slug && <span className="text-xs text-muted-foreground">@{bot.slug}</span>}
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0"
-                onClick={() => revokeMutation.mutate(bot.id)}
-                disabled={revokeMutation.isPending}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0"
+                  onClick={() => revokeMutation.mutate(bot.id)}
+                  disabled={revokeMutation.isPending}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
           ))}
         </div>
       )}
 
       {botsWithAccess.length === 0 && allBots.length > 0 && (
-        <p className="text-xs text-muted-foreground">No bots have been added to this channel.</p>
+        <p className="text-xs text-muted-foreground">No bots have been added to this stream.</p>
       )}
 
       {allBots.length === 0 && (
         <p className="text-xs text-muted-foreground">No bots in this workspace. Create one in workspace settings.</p>
       )}
 
-      {allBots.length > 0 && (
+      {!readOnly && allBots.length > 0 && (
         <div className="space-y-1.5">
           <Input
             placeholder="Search bots to add..."

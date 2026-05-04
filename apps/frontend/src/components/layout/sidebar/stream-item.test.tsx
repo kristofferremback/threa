@@ -181,7 +181,7 @@ describe("StreamItem", () => {
     expect(preview).not.toHaveClass("group-hover:flex")
   })
 
-  it("opens a preview-only drawer for DMs on mobile", async () => {
+  it("opens the action drawer for DMs on mobile", async () => {
     const stream = createStream({
       id: "stream_dm_1",
       type: StreamTypes.DM,
@@ -213,8 +213,10 @@ describe("StreamItem", () => {
 
     expect(screen.getAllByText("Taylor")).toHaveLength(2)
     expect(screen.getByText("Latest update from the stream")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Settings" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Stream actions" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }))
+    expect(openStreamSettings).toHaveBeenCalledWith("stream_dm_1")
   })
 
   it("shows a no-messages fallback preview for DMs without a last message", async () => {
@@ -250,10 +252,10 @@ describe("StreamItem", () => {
 
     expect(screen.getByText("No messages yet")).toBeInTheDocument()
     expect(screen.queryByText("Ariadne")).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Settings" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument()
   })
 
-  it("does not render a desktop context-menu trigger for DMs", () => {
+  it("renders a desktop context-menu trigger for DMs", () => {
     mobileState.isMobileValue = false
 
     const stream = createStream({
@@ -275,6 +277,6 @@ describe("StreamItem", () => {
       />
     )
 
-    expect(screen.queryByRole("button", { name: "Stream actions" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Stream actions" })).toBeInTheDocument()
   })
 })
