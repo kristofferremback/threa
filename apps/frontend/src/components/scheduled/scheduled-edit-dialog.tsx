@@ -363,10 +363,11 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
         >
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
 
-          {/* Body: symmetric pt-3/px-4/gap-4 so the title doesn't crowd the
-              vaul drag handle (mt-4 + handle = ~24px above) and the editor
-              has even rhythm to the action bar below. */}
-          <div className="flex flex-col flex-1 min-h-0 px-4 pt-3 gap-4">
+          {/* Body: pt-5 visually balances pb-[max(20px,safe)] on the action
+              bar below — the vaul drag handle takes ~24px on its own but
+              reads as decorative, not as padding, so the title still needs
+              breathing room from it. */}
+          <div className="flex flex-col flex-1 min-h-0 px-4 pt-5 gap-4">
             <div>
               <p className="text-base font-semibold">{title}</p>
               {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}

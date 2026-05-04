@@ -132,12 +132,13 @@ export function ScheduledMessagesPicker({
   }, [customValue, timezone])
 
   const handleEdit = (scheduled: ScheduledMessageView) => {
-    // Close the popover so the dialog isn't fighting it for focus, then open
-    // the edit dialog. Same dialog used by the /scheduled page; it portals
-    // out of this tree so it lands above the popover even though it's
-    // rendered as a child here.
-    setEditing(scheduled)
+    // Close the popover first, then defer mounting the dialog to the next
+    // tick. Same pointerdown that triggered the row click would otherwise
+    // bubble to vaul's outside-click detection on the brand-new drawer
+    // overlay and dismiss it immediately. Same defer pattern is used by
+    // the action drawer below.
     setOpen(false)
+    setTimeout(() => setEditing(scheduled), 0)
   }
 
   const handleRequestActions = (scheduled: ScheduledMessageView) => {
@@ -145,7 +146,7 @@ export function ScheduledMessagesPicker({
     // backdrop doesn't paint over the bottom sheet, then surface the drawer
     // (rendered at the top level below, outside the popover tree).
     setOpen(false)
-    setActionTarget(scheduled)
+    setTimeout(() => setActionTarget(scheduled), 0)
   }
 
   return (
@@ -225,8 +226,11 @@ export function ScheduledMessagesPicker({
           }}
           scheduled={actionTarget}
           onEdit={() => {
-            setEditing(actionTarget)
+            // Close the action drawer first, defer the edit-dialog mount to
+            // the next tick — same reason as `handleEdit` above (vaul outside-
+            // click detection vs. the click that triggered this transition).
             setActionTarget(null)
+            setTimeout(() => setEditing(actionTarget), 0)
           }}
           onSendNow={(id) => sendNowMutation.mutate(id)}
           onCancel={(id) => cancelMutation.mutate(id)}

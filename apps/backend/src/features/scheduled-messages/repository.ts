@@ -274,6 +274,12 @@ export const ScheduledMessagesRepository = {
    * it; the fence is purely "is anyone editing right now?" not "who owns the
    * row?". Returns the row when the bump landed, null when the row was no
    * longer pending (worker won, user cancelled).
+   *
+   * Critically does NOT touch `updated_at` — that timestamp is the version
+   * for the optimistic CAS in `update()`. If the fence bump moved it,
+   * heartbeats from any device would invalidate the editor's
+   * `expectedUpdatedAt` and the next save would 409 STALE_VERSION even
+   * though no content actually changed.
    */
   async bumpEditFence(
     db: Querier,
@@ -284,8 +290,7 @@ export const ScheduledMessagesRepository = {
         edit_active_until = GREATEST(
           edit_active_until,
           NOW() + (${params.ttlSeconds} || ' seconds')::interval
-        ),
-        updated_at = NOW()
+        )
       WHERE id = ${params.id}
         AND workspace_id = ${params.workspaceId}
         AND status = ${ScheduledMessageStatuses.PENDING}

@@ -155,6 +155,24 @@ describe("ScheduledMessagesRepository.bumpEditFence", () => {
     expect(captured.text).toContain("status =")
   })
 
+  it("does NOT touch updated_at (heartbeats can't invalidate the editor's optimistic CAS expectation)", async () => {
+    // Regression: an earlier version bumped updated_at = NOW() inside the
+    // fence UPDATE. Each 30s heartbeat from any device then advanced the
+    // version timestamp the editor was holding as `expectedUpdatedAt`,
+    // and the next save would 409 STALE_VERSION even though no content
+    // had changed. The fence is metadata, not a version-bumping mutation.
+    const captured: Captured = { text: null, values: null }
+    const db = createQuerier(captured)
+
+    await ScheduledMessagesRepository.bumpEditFence(db, {
+      workspaceId: "ws_1",
+      id: "sched_01",
+      ttlSeconds: 60,
+    })
+
+    expect(captured.text).not.toContain("updated_at = NOW()")
+  })
+
   it("only bumps pending rows so a sending/sent/cancelled row doesn't accidentally hide from the worker", async () => {
     const captured: Captured = { text: null, values: null }
     const db = createQuerier(captured)
