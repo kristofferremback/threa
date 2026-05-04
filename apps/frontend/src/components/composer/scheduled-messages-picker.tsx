@@ -1,6 +1,6 @@
 import { useId, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { ArrowLeft, CalendarClock, ChevronRight, Trash2 } from "lucide-react"
+import { ArrowLeft, CalendarClock, ChevronRight } from "lucide-react"
 import type { ScheduledMessageView } from "@threa/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,9 +10,12 @@ import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatFutureTime } from "@/lib/dates"
 import { usePreferences } from "@/contexts"
-import { useScheduledList, useCancelScheduled } from "@/hooks"
+import { useScheduledList, useCancelScheduled, useSendScheduledNow } from "@/hooks"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { useLongPress } from "@/hooks/use-long-press"
 import { REMINDER_PRESETS, computeRemindAt, type ReminderPreset } from "@/lib/reminder-presets"
 import { ScheduledEditDialog } from "@/components/scheduled/scheduled-edit-dialog"
+import { ScheduledActionDrawer } from "@/components/scheduled/scheduled-action-drawer"
 
 interface ScheduledMessagesPickerProps {
   workspaceId: string
@@ -81,6 +84,7 @@ export function ScheduledMessagesPicker({
 
   const { items } = useScheduledList(workspaceId, "pending", streamId)
   const cancelMutation = useCancelScheduled(workspaceId)
+  const sendNowMutation = useSendScheduledNow(workspaceId)
   const { preferences } = usePreferences()
   const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -185,6 +189,7 @@ export function ScheduledMessagesPicker({
               onClose={() => handleOpenChange(false)}
               onSchedulePress={enterPickingMode}
               onEdit={handleEdit}
+              onSendNow={(id) => sendNowMutation.mutate(id)}
               onCancel={(id) => cancelMutation.mutate(id)}
             />
           ) : (
@@ -224,6 +229,7 @@ interface ListModeProps {
   onClose: () => void
   onSchedulePress: () => void
   onEdit: (scheduled: ScheduledMessageView) => void
+  onSendNow: (id: string) => void
   onCancel: (id: string) => void
 }
 
@@ -237,6 +243,7 @@ function ListMode({
   onClose,
   onSchedulePress,
   onEdit,
+  onSendNow,
   onCancel,
 }: ListModeProps) {
   return (
@@ -276,6 +283,7 @@ function ListMode({
                 now={now}
                 timezone={timezone}
                 onEdit={onEdit}
+                onSendNow={onSendNow}
                 onCancel={onCancel}
               />
             ))}
@@ -384,10 +392,24 @@ interface ScheduledRowProps {
   now: Date
   timezone: string
   onEdit: (scheduled: ScheduledMessageView) => void
+  onSendNow: (id: string) => void
   onCancel: (id: string) => void
 }
 
-function ScheduledRow({ scheduled, now, timezone, onEdit, onCancel }: ScheduledRowProps) {
+/**
+ * Row inside the composer popover. Tap opens the edit dialog; long-press on
+ * mobile opens the same `ScheduledActionDrawer` the page uses, so destructive
+ * actions (cancel, send-now) are never an accidental tap away. No inline
+ * trash icon — that pattern was easy to misfire on mobile.
+ */
+function ScheduledRow({ scheduled, now, timezone, onEdit, onSendNow, onCancel }: ScheduledRowProps) {
+  const isMobile = useIsMobile()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const longPress = useLongPress({
+    enabled: isMobile,
+    onLongPress: () => setDrawerOpen(true),
+  })
+
   const preview = useMemo(
     () => stripMarkdownToInline(scheduled.contentMarkdown).trim() || "(empty)",
     [scheduled.contentMarkdown]
@@ -398,13 +420,20 @@ function ScheduledRow({ scheduled, now, timezone, onEdit, onCancel }: ScheduledR
   const attachmentCount = scheduled.attachmentIds.length
 
   return (
-    <li className="group/row">
-      <div className="flex items-start gap-2 px-3 py-2 hover:bg-muted/60 focus-within:bg-muted/60">
+    <>
+      <li>
         <button
           type="button"
           onClick={() => onEdit(scheduled)}
-          className="flex-1 min-w-0 text-left focus:outline-none"
+          className={cn(
+            "block w-full text-left focus:outline-none px-3 py-2 hover:bg-muted/60 focus-visible:bg-muted/60",
+            longPress.isPressed && "bg-muted/60"
+          )}
           title="Edit scheduled message"
+          onTouchStart={longPress.handlers.onTouchStart}
+          onTouchEnd={longPress.handlers.onTouchEnd}
+          onTouchMove={longPress.handlers.onTouchMove}
+          onContextMenu={longPress.handlers.onContextMenu}
         >
           <p className="text-sm line-clamp-2 break-words">{preview}</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -412,21 +441,19 @@ function ScheduledRow({ scheduled, now, timezone, onEdit, onCancel }: ScheduledR
             {attachmentCount > 0 && <span className="ml-1.5">· {attachmentCount} 📎</span>}
           </p>
         </button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Cancel scheduled message"
-          className="h-7 w-7 shrink-0 opacity-0 group-hover/row:opacity-100 focus:opacity-100 max-sm:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation()
-            e.preventDefault()
-            onCancel(scheduled.id)
-          }}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </li>
+      </li>
+      {isMobile && (
+        <ScheduledActionDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          scheduled={scheduled}
+          // The drawer passes `scheduled.id`; we already have the full row
+          // so we can route directly into the edit dialog.
+          onEdit={() => onEdit(scheduled)}
+          onSendNow={onSendNow}
+          onCancel={onCancel}
+        />
+      )}
+    </>
   )
 }

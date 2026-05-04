@@ -5,8 +5,7 @@ import { StreamTypes, type JSONContent, type ScheduledMessageView } from "@threa
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { RichEditor, EditorActionBar, EditorToolbar, DocumentEditorModal } from "@/components/editor"
+import { RichEditor, EditorActionBar, EditorToolbar } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -23,7 +22,7 @@ import { useUser } from "@/auth"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import { materializePendingAttachmentReferences } from "@/components/timeline/message-input"
 import { toast } from "sonner"
-import { collectAttachmentReferenceIds, parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, serializeToMarkdown } from "@threa/prosemirror"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 
 interface ScheduledEditDialogProps {
@@ -37,8 +36,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000
 /**
  * Edit modal for the page surface (and the in-composer popover). Hosts the
  * same editor primitives the live composer uses — `RichEditor` for the body,
- * `EditorActionBar` for the chrome row (attach / format / mention / emoji,
- * plus a desktop expand affordance that pops into `DocumentEditorModal`).
+ * `EditorActionBar` for the chrome row (attach / format / mention / emoji).
  *
  * The lock/claim flow:
  *   - claim on open, heartbeat every 30s, release on close
@@ -54,11 +52,13 @@ const HEARTBEAT_INTERVAL_MS = 30_000
  *     the final JSON, then `collectAttachmentReferenceIds` to recompute the
  *     attachment_ids array
  *
+ * Send-at uses split `<input type="date">` + `<input type="time">` (same
+ * primitive the reminder picker sheet uses) instead of `datetime-local`, so
+ * users can change just the time without resetting the date.
+ *
  * Mobile renders as a `<Drawer>` bottom sheet (matches `MessageEditForm`);
- * desktop renders as a centered `<Dialog>`. Desktop also exposes
- * `DocumentEditorModal` as the fullscreen-edit affordance — same component
- * the live composer uses for its expand button, so the two share visual
- * vocabulary.
+ * desktop renders as a centered `<Dialog>`. No fullscreen-expand affordance
+ * — the dialog/drawer is already the dominant surface.
  */
 export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: ScheduledEditDialogProps) {
   const isMobile = useIsMobile()
@@ -69,11 +69,14 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
 
   const [lockToken, setLockToken] = useState<string | null>(null)
   const [contentJson, setContentJson] = useState<JSONContent>(EMPTY_DOC)
-  const [scheduledFor, setScheduledFor] = useState<string>("")
+  // Send-at split into date + time so users can change just the time without
+  // resetting the date — same shape ReminderPickerSheet uses for the saved-
+  // message reminder picker.
+  const [sendDate, setSendDate] = useState<string>("")
+  const [sendTime, setSendTime] = useState<string>("")
   const [error, setError] = useState<string | null>(null)
   const [formatOpen, setFormatOpen] = useState(false)
   const [mobileExpanded, setMobileExpanded] = useState(false)
-  const [docEditorOpen, setDocEditorOpen] = useState(false)
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
   const [toolbarEditor, setToolbarEditor] = useState<Editor | null>(null)
   const acquiringRef = useRef(false)
@@ -92,11 +95,11 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     if (previousIdRef.current !== id) {
       setLockToken(null)
       setContentJson(EMPTY_DOC)
-      setScheduledFor("")
+      setSendDate("")
+      setSendTime("")
       setError(null)
       setFormatOpen(false)
       setMobileExpanded(false)
-      setDocEditorOpen(false)
       attachmentsHook.clear()
       previousIdRef.current = id
     }
@@ -111,9 +114,11 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     claimMutation
       .mutateAsync(scheduled.id)
       .then((res) => {
+        const at = new Date(res.scheduled.scheduledFor)
         setLockToken(res.lockToken)
         setContentJson(res.scheduled.contentJson || EMPTY_DOC)
-        setScheduledFor(toDatetimeLocal(res.scheduled.scheduledFor))
+        setSendDate(toDateInput(at))
+        setSendTime(toTimeInput(at))
         setError(null)
       })
       .catch((err: Error) => {
@@ -139,19 +144,25 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     }
     setLockToken(null)
     setContentJson(EMPTY_DOC)
-    setScheduledFor("")
+    setSendDate("")
+    setSendTime("")
     setError(null)
     setFormatOpen(false)
     setMobileExpanded(false)
-    setDocEditorOpen(false)
     attachmentsHook.clear()
     onClose()
   }, [scheduled, lockToken, releaseMutation, attachmentsHook, onClose])
 
+  const sendAtDate = useMemo(() => {
+    if (!sendDate || !sendTime) return null
+    const combined = new Date(`${sendDate}T${sendTime}`)
+    return Number.isNaN(combined.getTime()) ? null : combined
+  }, [sendDate, sendTime])
+
   const isPast = useMemo(() => {
-    if (!scheduledFor) return false
-    return new Date(scheduledFor).getTime() <= Date.now()
-  }, [scheduledFor])
+    if (!sendAtDate) return false
+    return sendAtDate.getTime() <= Date.now()
+  }, [sendAtDate])
 
   const setRichEditorHandle = useCallback((handle: RichEditorHandle | null) => {
     editorRef.current = handle
@@ -160,7 +171,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   }, [])
 
   const handleSave = useCallback(async () => {
-    if (!scheduled || !lockToken) return
+    if (!scheduled || !lockToken || !sendAtDate) return
     try {
       // Snapshot the editor's live JSON, then fold any still-pending
       // attachment uploads into the document so they ride along on save —
@@ -179,7 +190,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
         input: {
           contentJson: materialized,
           contentMarkdown,
-          scheduledFor: new Date(scheduledFor).toISOString(),
+          scheduledFor: sendAtDate.toISOString(),
           attachmentIds,
           lockToken,
         },
@@ -190,7 +201,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       const message = err instanceof Error ? err.message : "Could not save"
       setError(message)
     }
-  }, [scheduled, lockToken, contentJson, scheduledFor, isPast, updateMutation, handleClose, attachmentsHook])
+  }, [scheduled, lockToken, contentJson, sendAtDate, isPast, updateMutation, handleClose, attachmentsHook])
 
   const isLoadingClaim = open && !lockToken && !error
   const isSaving = updateMutation.isPending
@@ -233,19 +244,35 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       return <div className="text-sm text-destructive">{error}</div>
     }
     return (
-      <div className="flex flex-col gap-3">
-        <div>
-          <label className="mb-1 block text-xs font-medium">Send at</label>
-          <Input
-            type="datetime-local"
-            value={scheduledFor}
-            onChange={(e) => setScheduledFor(e.target.value)}
-            disabled={isSaving}
-          />
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3">
+          {/* Split inputs (date + time) instead of `datetime-local` so users
+              can change just the time without resetting the date — same shape
+              ReminderPickerSheet uses. Each half opens its own native picker. */}
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Date</span>
+            <input
+              type="date"
+              value={sendDate}
+              onChange={(e) => setSendDate(e.target.value)}
+              disabled={isSaving}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Time</span>
+            <input
+              type="time"
+              value={sendTime}
+              onChange={(e) => setSendTime(e.target.value)}
+              disabled={isSaving}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </label>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium">Message</label>
-          <div className="rounded-md border bg-background [&_.tiptap]:min-h-[6rem] [&_.tiptap]:max-h-72 [&_.tiptap]:overflow-y-auto">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Message</span>
+          <div className="rounded-md border bg-background [&_.tiptap]:min-h-[8rem] [&_.tiptap]:max-h-72 [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-2">
             <RichEditor
               ref={setRichEditorHandle}
               value={contentJson}
@@ -264,7 +291,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
               staticToolbarOpen={!isMobile && formatOpen}
               belowToolbarContent={
                 attachmentsHook.pendingAttachments.length > 0 ? (
-                  <div className="pt-1 pb-2 border-b border-border/50 [&>div]:mb-0">
+                  <div className="px-3 pt-1 pb-2 border-b border-border/50 [&>div]:mb-0">
                     <PendingAttachments
                       attachments={attachmentsHook.pendingAttachments}
                       onRemove={attachmentsHook.removeAttachment}
@@ -282,7 +309,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
               onChange={attachmentsHook.handleFileSelect}
               disabled={isSaving}
             />
-            <div className="border-t px-2 py-1.5">
+            <div className="border-t px-3 py-2">
               <EditorActionBar
                 editorHandle={editorRef.current}
                 disabled={isSaving}
@@ -292,8 +319,10 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
                 onMobileExpandedChange={setMobileExpanded}
                 showAttach
                 onAttachClick={() => attachmentsHook.fileInputRef.current?.click()}
-                showDesktopExpand={!isMobile}
-                onDesktopExpandClick={() => setDocEditorOpen(true)}
+                // No desktop fullscreen pop-out — this dialog/drawer is
+                // already the dominant surface and shouldn't nest another
+                // fullscreen modal on top. (`showExpand` defaults true on
+                // mobile so the drawer grow/shrink toggle stays.)
                 trailingContent={trailingActions}
               />
               {/* Mobile inline format toolbar — desktop uses the static toolbar
@@ -316,29 +345,6 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     )
   })()
 
-  // Fullscreen "expand" pop-out — desktop only. Lets the user write in a
-  // distraction-free editor for long messages, syncing content back to the
-  // dialog on dismiss. Same pattern the live composer uses.
-  const fullscreenModal = !isMobile && (
-    <DocumentEditorModal
-      open={docEditorOpen}
-      onOpenChange={setDocEditorOpen}
-      initialContent={serializeToMarkdown(contentJson)}
-      streamName="scheduled message"
-      onSend={async (markdown) => {
-        const json = parseMarkdown(markdown)
-        setContentJson(json)
-        setDocEditorOpen(false)
-        // Defer save until the dialog reads the new state; the user clicked
-        // "send" inside the fullscreen, so finalize the dialog save too.
-        setTimeout(() => handleSave(), 0)
-      }}
-      onDismiss={(markdown) => {
-        setContentJson(parseMarkdown(markdown))
-      }}
-    />
-  )
-
   if (isMobile) {
     return (
       <Drawer
@@ -349,10 +355,10 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       >
         <DrawerContent className={mobileExpanded ? "!h-[100dvh] rounded-t-none" : "max-h-[92dvh]"}>
           <DrawerTitle className="sr-only">{title}</DrawerTitle>
-          <div className="flex flex-col gap-3 px-4 pb-[max(8px,env(safe-area-inset-bottom))] pt-1">
+          <div className="flex flex-col gap-4 px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
             <div>
-              <p className="text-sm font-medium">{title}</p>
-              {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+              <p className="text-base font-semibold">{title}</p>
+              {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
             </div>
             {editorBody}
           </div>
@@ -362,25 +368,28 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   }
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            {description && <DialogDescription>{description}</DialogDescription>}
-          </DialogHeader>
-          {editorBody}
-        </DialogContent>
-      </Dialog>
-      {fullscreenModal}
-    </>
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description && <DialogDescription>{description}</DialogDescription>}
+        </DialogHeader>
+        {editorBody}
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function toDatetimeLocal(iso: string): string {
-  const d = new Date(iso)
+/** YYYY-MM-DD in local time — the shape `<input type="date">` expects. */
+function toDateInput(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/** HH:mm in local time — the shape `<input type="time">` expects. */
+function toTimeInput(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 /**
