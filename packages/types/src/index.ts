@@ -157,6 +157,8 @@ export {
   ShareErrorCodes,
   // Inter-service authentication
   INTERNAL_API_KEY_HEADER,
+  // Socket heartbeat
+  HEARTBEAT_INTERACTION_THROTTLE_MS,
 } from "./constants"
 
 // Domain entities (wire format)

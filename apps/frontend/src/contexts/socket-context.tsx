@@ -1,8 +1,15 @@
 import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from "react"
 import { io, Socket } from "socket.io-client"
+import { HEARTBEAT_INTERACTION_THROTTLE_MS } from "@threa/types"
 import { api } from "@/api/client"
 import { usePageActivity } from "@/hooks/use-page-activity"
 import { usePageInteraction } from "@/hooks/use-page-interaction"
+
+/** Periodic heartbeat tick for session liveness — must be < ACTIVE_SESSION_WINDOW_MS on the backend (60s). */
+const PERIODIC_HEARTBEAT_INTERVAL_MS = 30_000
+
+/** Throttle for focus-change-driven heartbeats so a flicker of blur/focus events doesn't flood the socket. */
+const FOCUS_CHANGE_HEARTBEAT_THROTTLE_MS = 10_000
 
 /**
  * Socket connection status.
@@ -144,9 +151,9 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
   // Heartbeat for push notification session tracking. Sends { focused, interacted }
   // so the backend can pick the device the user is actually on (focused window
   // with a recent interaction) and avoid pushing to background PWAs.
-  const lastFocusChangeHeartbeatRef = useRef(0)
-  const lastInteractionHeartbeatRef = useRef(0)
-  const lastHeartbeatInteractionAtRef = useRef(0)
+  const focusChangeThrottleRef = useRef(0)
+  const interactionThrottleRef = useRef(0)
+  const lastSentInteractionAtRef = useRef(0)
   const previousPageActivityRef = useRef(pageActivity)
   const pageFocusedRef = useRef(pageActivity.isFocused)
   pageFocusedRef.current = pageActivity.isFocused
@@ -156,23 +163,22 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
 
     const emitHeartbeat = () => {
       const lastInteractionAt = pageInteraction.getLastInteractionAt()
-      const interacted = lastInteractionAt > lastHeartbeatInteractionAtRef.current
-      if (interacted) lastHeartbeatInteractionAtRef.current = lastInteractionAt
+      const interacted = lastInteractionAt > lastSentInteractionAtRef.current
+      if (interacted) lastSentInteractionAtRef.current = lastInteractionAt
       socket.emit("heartbeat", { focused: pageFocusedRef.current, interacted })
     }
 
     // Emit immediately so the backend knows this tab is active right away
     emitHeartbeat()
-    const heartbeatInterval = setInterval(emitHeartbeat, 30_000)
+    const heartbeatInterval = setInterval(emitHeartbeat, PERIODIC_HEARTBEAT_INTERVAL_MS)
 
     // Fire an immediate heartbeat on the first interaction after a quiet
     // stretch so the backend learns about renewed activity within seconds,
-    // not up to 30s. The 15s throttle matches the server-side floor in
-    // socket.ts; interaction-flagged heartbeats bypass that throttle there.
+    // not up to 30s.
     const unsubscribe = pageInteraction.subscribe(() => {
       const now = Date.now()
-      if (now - lastInteractionHeartbeatRef.current < 15_000) return
-      lastInteractionHeartbeatRef.current = now
+      if (now - interactionThrottleRef.current < HEARTBEAT_INTERACTION_THROTTLE_MS) return
+      interactionThrottleRef.current = now
       emitHeartbeat()
     })
 
@@ -196,12 +202,11 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
 
     if (!gainedFocus && !becameVisible) return
 
-    // Focus gains always emit — bypassing the throttle prevents a becameVisible
-    // heartbeat (focused=false) from blocking the closely-following gainedFocus
-    // heartbeat (focused=true) via the 10s throttle window.
+    // Focus gains bypass the throttle so a becameVisible heartbeat
+    // (focused=false) doesn't block the closely-following gainedFocus heartbeat.
     const now = Date.now()
-    if (gainedFocus || now - lastFocusChangeHeartbeatRef.current > 10_000) {
-      lastFocusChangeHeartbeatRef.current = now
+    if (gainedFocus || now - focusChangeThrottleRef.current > FOCUS_CHANGE_HEARTBEAT_THROTTLE_MS) {
+      focusChangeThrottleRef.current = now
       socket.emit("heartbeat", { focused: pageActivity.isFocused, interacted: false })
     }
   }, [socket, status, pageActivity])

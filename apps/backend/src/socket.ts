@@ -2,7 +2,7 @@ import type { Server, Socket } from "socket.io"
 import crypto from "crypto"
 import { parseCookies, SESSION_COOKIE_NAME } from "@threa/backend-common"
 import type { AuthService } from "@threa/backend-common"
-import { DEVICE_KEY_LENGTH } from "@threa/types"
+import { DEVICE_KEY_LENGTH, HEARTBEAT_INTERACTION_THROTTLE_MS } from "@threa/types"
 import type { StreamService } from "./features/streams"
 import type { PushService } from "./features/push"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
@@ -360,7 +360,6 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // Heartbeat for push notification session tracking
     // =========================================================================
     let lastHeartbeatAt = 0
-    const HEARTBEAT_MIN_INTERVAL_MS = 15_000 // Server-side throttle: ignore heartbeats faster than 15s
     // Interaction-driven heartbeats bypass the throttle: the client only emits
     // them on the first interaction after a quiet stretch, and we want the
     // backend to learn about renewed activity within seconds, not up to 30s.
@@ -368,7 +367,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       if (!pushService.isEnabled()) return
       const interacted = payload?.interacted === true
       const now = Date.now()
-      if (!interacted && now - lastHeartbeatAt < HEARTBEAT_MIN_INTERVAL_MS) return
+      if (!interacted && now - lastHeartbeatAt < HEARTBEAT_INTERACTION_THROTTLE_MS) return
       lastHeartbeatAt = now
       const deviceKey = deriveDeviceKey(socket.handshake.headers["user-agent"])
       const focused = payload?.focused === true
