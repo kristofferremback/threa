@@ -25,6 +25,7 @@ const SCHEDULED_ROW = {
   edit_active_until: null,
   client_message_id: null,
   retry_count: 0,
+  version: 1,
   created_at: NOW,
   updated_at: NOW,
   status_changed_at: NOW,
@@ -155,12 +156,12 @@ describe("ScheduledMessagesRepository.bumpEditFence", () => {
     expect(captured.text).toContain("status =")
   })
 
-  it("does NOT touch updated_at (heartbeats can't invalidate the editor's optimistic CAS expectation)", async () => {
-    // Regression: an earlier version bumped updated_at = NOW() inside the
-    // fence UPDATE. Each 30s heartbeat from any device then advanced the
-    // version timestamp the editor was holding as `expectedUpdatedAt`,
-    // and the next save would 409 STALE_VERSION even though no content
-    // had changed. The fence is metadata, not a version-bumping mutation.
+  it("does NOT bump version or updated_at (fence is metadata; bumping either invalidates the editor's expectedVersion)", async () => {
+    // The fence is "is anyone editing right now?" — pure metadata. If the
+    // bump touched `version`, every concurrent device's open dialog would
+    // see its `expectedVersion` invalidated and the next save would 409
+    // STALE_VERSION even though no content changed. Same hazard for
+    // `updated_at` if anything client-side ever read it as a version.
     const captured: Captured = { text: null, values: null }
     const db = createQuerier(captured)
 
@@ -171,6 +172,7 @@ describe("ScheduledMessagesRepository.bumpEditFence", () => {
     })
 
     expect(captured.text).not.toContain("updated_at = NOW()")
+    expect(captured.text).not.toContain("version = version + 1")
   })
 
   it("only bumps pending rows so a sending/sent/cancelled row doesn't accidentally hide from the worker", async () => {
@@ -211,16 +213,21 @@ describe("ScheduledMessagesRepository.tryStartSend (worker CAS)", () => {
 describe("ScheduledMessagesRepository.update", () => {
   afterEach(() => mock.restore())
 
-  it("CASes on updated_at = expectedUpdatedAt so concurrent saves don't trample each other (first write wins)", async () => {
+  it("CASes on version = expectedVersion and increments version atomically so concurrent saves don't trample each other (first write wins)", async () => {
+    // Why an integer version and not updated_at: PG TIMESTAMPTZ stores
+    // microseconds (.789456) but pg-node truncates to JS Date ms (.789), so
+    // the wire/IDB never see the same value the column holds. A timestamp-
+    // based CAS would 409 the very first save every time (no race for the
+    // user to point at). An integer version round-trips losslessly through
+    // every layer.
     const captured: Captured = { text: null, values: null }
     const db = createQuerier(captured)
 
-    const expected = new Date("2026-05-03T12:30:00.000Z")
     await ScheduledMessagesRepository.update(db, {
       workspaceId: "ws_1",
       userId: "usr_1",
       id: "sched_01",
-      expectedUpdatedAt: expected,
+      expectedVersion: 7,
       contentMarkdown: "updated",
     })
 
@@ -228,31 +235,9 @@ describe("ScheduledMessagesRepository.update", () => {
     expect(captured.text).toContain("workspace_id =")
     expect(captured.text).toContain("user_id =")
     expect(captured.text).toContain("status =")
-    expect(captured.text).toContain("updated_at =")
-    expect(captured.values).toContain(expected)
-  })
-
-  it("truncates updated_at to millisecond precision in the CAS so JS-Date vs PG-microsecond mismatch doesn't 409 every save", async () => {
-    // Regression: PG TIMESTAMPTZ NOW() stores microsecond precision (e.g.
-    // .789456). pg-node reads it into JS Date which only carries ms (.789),
-    // and the wire ships ms ISO. When the client sends `expectedUpdatedAt`
-    // back, the round-trip is `.789` — but the column still has `.789456`.
-    // A naive `updated_at = $expected` CAS fails on the very first save
-    // because the microseconds don't match. The fix: truncate the stored
-    // value to ms in the WHERE clause so the comparison happens at the
-    // precision the client can actually see.
-    const captured: Captured = { text: null, values: null }
-    const db = createQuerier(captured)
-
-    await ScheduledMessagesRepository.update(db, {
-      workspaceId: "ws_1",
-      userId: "usr_1",
-      id: "sched_01",
-      expectedUpdatedAt: new Date("2026-05-03T12:30:00.789Z"),
-      contentMarkdown: "updated",
-    })
-
-    expect(captured.text).toContain("date_trunc('milliseconds', updated_at)")
+    expect(captured.text).toContain("AND version =")
+    expect(captured.text).toContain("version = version + 1")
+    expect(captured.values).toContain(7)
   })
 })
 

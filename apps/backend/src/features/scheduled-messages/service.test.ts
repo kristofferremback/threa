@@ -59,6 +59,7 @@ function fakeScheduled(overrides: Partial<ScheduledMessage> = {}): ScheduledMess
     editActiveUntil: null,
     clientMessageId: null,
     retryCount: 0,
+    version: 1,
     createdAt: NOW,
     updatedAt: NOW,
     statusChangedAt: NOW,
@@ -259,10 +260,9 @@ describe("ScheduledMessagesService.cancel", () => {
 describe("ScheduledMessagesService.update (optimistic CAS)", () => {
   afterEach(() => mock.restore())
 
-  it("rejects with STALE_VERSION when expectedUpdatedAt no longer matches (first save wins)", async () => {
+  it("rejects with STALE_VERSION when expectedVersion no longer matches (first save wins)", async () => {
     const service = setupService()
-    const lastSaw = new Date(Date.now() - 30_000)
-    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(fakeScheduled({ updatedAt: new Date() }))
+    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(fakeScheduled({ version: 5 }))
     spyOn(ScheduledMessagesRepository, "update").mockResolvedValue(null)
 
     await expect(
@@ -270,7 +270,7 @@ describe("ScheduledMessagesService.update (optimistic CAS)", () => {
         workspaceId: WORKSPACE_ID,
         userId: USER_ID,
         id: SCHEDULED_ID,
-        expectedUpdatedAt: lastSaw,
+        expectedVersion: 3,
         contentMarkdown: "x",
       })
     ).rejects.toThrow(/edited elsewhere/i)
@@ -298,9 +298,8 @@ describe("ScheduledMessagesService.update (optimistic CAS)", () => {
     }))
     const service = setupService({ createMessage } as unknown as EventService)
 
-    const expected = new Date(Date.now() - 60_000)
     const past = new Date(Date.now() - 5_000)
-    const row = fakeScheduled({ updatedAt: expected, scheduledFor: past })
+    const row = fakeScheduled({ version: 4, scheduledFor: past })
 
     spyOn(ScheduledMessagesRepository, "findById")
       .mockResolvedValueOnce(row)
@@ -323,7 +322,7 @@ describe("ScheduledMessagesService.update (optimistic CAS)", () => {
       workspaceId: WORKSPACE_ID,
       userId: USER_ID,
       id: SCHEDULED_ID,
-      expectedUpdatedAt: expected,
+      expectedVersion: 4,
       contentMarkdown: "edited",
       scheduledFor: past,
     })

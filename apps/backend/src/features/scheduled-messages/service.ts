@@ -39,7 +39,7 @@ export interface UpdateScheduledParams {
   workspaceId: string
   userId: string
   id: string
-  expectedUpdatedAt: Date
+  expectedVersion: number
   contentJson?: JSONContent
   contentMarkdown?: string
   attachmentIds?: string[]
@@ -232,9 +232,9 @@ export class ScheduledMessagesService {
 
   /**
    * Update a pending scheduled message with optimistic concurrency. The
-   * client sends `expectedUpdatedAt` — the `updated_at` it last claimed
-   * against. The CAS rejects with 409 STALE_VERSION when the row has moved
-   * on (someone else saved since); first save wins.
+   * client sends `expectedVersion` — the row's `version` integer it last
+   * saw. The CAS rejects with 409 STALE_VERSION when the row has moved on
+   * (someone else saved since); first save wins.
    *
    * If `scheduledFor` shifts, we cancel the prior queue row and enqueue a
    * fresh one inside the same transaction.
@@ -253,7 +253,7 @@ export class ScheduledMessagesService {
         workspaceId: params.workspaceId,
         userId: params.userId,
         id: params.id,
-        expectedUpdatedAt: params.expectedUpdatedAt,
+        expectedVersion: params.expectedVersion,
         contentJson: params.contentJson,
         contentMarkdown: params.contentMarkdown,
         attachmentIds: params.attachmentIds,
@@ -261,7 +261,7 @@ export class ScheduledMessagesService {
         scheduledFor: params.scheduledFor,
       })
       if (!updated) {
-        // expectedUpdatedAt didn't match — another save landed first.
+        // expectedVersion didn't match — another save landed first.
         throw new HttpError("Scheduled message was edited elsewhere", {
           status: 409,
           code: "SCHEDULED_MESSAGE_STALE_VERSION",
@@ -332,7 +332,7 @@ export class ScheduledMessagesService {
           workspaceId: params.workspaceId,
           userId: params.userId,
           id: params.id,
-          expectedUpdatedAt: existing.updatedAt,
+          expectedVersion: existing.version,
           scheduledFor: new Date(),
         })
         if (!forcedNow) {

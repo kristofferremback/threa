@@ -20,6 +20,7 @@ interface ScheduledMessageRow {
   edit_active_until: Date | null
   client_message_id: string | null
   retry_count: number
+  version: number
   created_at: Date
   updated_at: Date
   status_changed_at: Date
@@ -44,11 +45,20 @@ export interface ScheduledMessage {
    * Worker fence — the worker won't fire while this is in the future. Bumped
    * by `lockForEdit` when a user opens the edit dialog. Anonymous (no owner):
    * multiple editors share the fence and any of them keeps the worker out.
-   * First save wins via `updated_at` CAS, not via this fence.
+   * First save wins via `version` CAS, not via this fence.
    */
   editActiveUntil: Date | null
   clientMessageId: string | null
   retryCount: number
+  /**
+   * Optimistic-concurrency version. Starts at 1; every UPDATE that represents
+   * a logical state change increments it. The `update` CAS rejects when the
+   * caller's `expectedVersion` doesn't match the stored value — first save
+   * wins, second save 409s STALE_VERSION. Fence bumps (`edit_active_until`)
+   * deliberately do NOT touch this so heartbeats can't invalidate an open
+   * editor's expected version.
+   */
+  version: number
   createdAt: Date
   updatedAt: Date
   statusChangedAt: Date
@@ -76,7 +86,7 @@ export interface ListScheduledOpts {
 }
 
 const COLUMNS =
-  "id, workspace_id, user_id, stream_id, parent_message_id, content_json, content_markdown, attachment_ids, metadata, scheduled_for, status, sent_message_id, last_error, queue_message_id, edit_active_until, client_message_id, retry_count, created_at, updated_at, status_changed_at"
+  "id, workspace_id, user_id, stream_id, parent_message_id, content_json, content_markdown, attachment_ids, metadata, scheduled_for, status, sent_message_id, last_error, queue_message_id, edit_active_until, client_message_id, retry_count, version, created_at, updated_at, status_changed_at"
 
 function mapRow(row: ScheduledMessageRow): ScheduledMessage {
   return {
@@ -97,6 +107,7 @@ function mapRow(row: ScheduledMessageRow): ScheduledMessage {
     editActiveUntil: row.edit_active_until,
     clientMessageId: row.client_message_id,
     retryCount: row.retry_count,
+    version: row.version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     statusChangedAt: row.status_changed_at,
@@ -215,21 +226,15 @@ export const ScheduledMessagesRepository = {
   },
 
   /**
-   * Optimistic concurrency update. Caller passes the `updated_at` it last
-   * saw; the CAS rejects when the timestamp has moved (someone else saved
-   * since). On rejection the caller surfaces a 409 STALE_VERSION so the
-   * client can refresh and prompt the user.
+   * Optimistic concurrency update. Caller passes the `version` it last saw;
+   * the CAS rejects when the row has moved on (another save / worker fire /
+   * cancel landed). On rejection the caller surfaces a 409 STALE_VERSION so
+   * the client can refresh and prompt the user.
    *
    * Multiple editors are supported — only the first save lands; the second
    * gets STALE_VERSION instead of an exclusive-lock 409. The status guard
    * keeps the worker from racing the editor in this same path; the worker
    * holds `status = 'sending'` once it claims the row.
-   *
-   * The CAS truncates `updated_at` to millisecond precision because PG's
-   * `NOW()` writes microseconds (`.789456`) but pg-node reads them into a
-   * JS `Date` which only carries milliseconds (`.789`). The wire/IDB ship
-   * ms ISO; when the client sends `expectedUpdatedAt` back, the comparison
-   * has to happen at ms precision or the *first* save 409s every time.
    *
    * `scheduledFor`, `contentJson`, `contentMarkdown`, `attachmentIds`, and
    * `metadata` are all optional; passing `undefined` leaves the column
@@ -241,7 +246,7 @@ export const ScheduledMessagesRepository = {
       workspaceId: string
       userId: string
       id: string
-      expectedUpdatedAt: Date
+      expectedVersion: number
       contentJson?: JSONContent
       contentMarkdown?: string
       attachmentIds?: string[]
@@ -263,12 +268,13 @@ export const ScheduledMessagesRepository = {
           ELSE ${params.metadata ? JSON.stringify(params.metadata) : null}::jsonb
         END,
         scheduled_for = COALESCE(${params.scheduledFor ?? null}, scheduled_for),
-        updated_at = date_trunc('milliseconds', NOW())
+        updated_at = NOW(),
+        version = version + 1
       WHERE id = ${params.id}
         AND workspace_id = ${params.workspaceId}
         AND user_id = ${params.userId}
         AND status = ${ScheduledMessageStatuses.PENDING}
-        AND date_trunc('milliseconds', updated_at) = ${params.expectedUpdatedAt}
+        AND version = ${params.expectedVersion}
       RETURNING ${sql.raw(COLUMNS)}
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null
@@ -326,7 +332,8 @@ export const ScheduledMessagesRepository = {
         status = ${ScheduledMessageStatuses.SENDING},
         status_changed_at = NOW(),
         edit_active_until = NOW() + (${params.ttlSeconds} || ' seconds')::interval,
-        updated_at = NOW()
+        updated_at = NOW(),
+        version = version + 1
       WHERE id = ${params.id}
         AND workspace_id = ${params.workspaceId}
         AND status = ${ScheduledMessageStatuses.PENDING}
@@ -353,7 +360,8 @@ export const ScheduledMessagesRepository = {
         edit_active_until = NULL,
         last_error = NULL,
         status_changed_at = NOW(),
-        updated_at = NOW()
+        updated_at = NOW(),
+        version = version + 1
       WHERE id = ${params.id}
         AND workspace_id = ${params.workspaceId}
         AND status = ${ScheduledMessageStatuses.SENDING}
@@ -372,7 +380,8 @@ export const ScheduledMessagesRepository = {
         last_error = ${params.reason},
         edit_active_until = NULL,
         status_changed_at = NOW(),
-        updated_at = NOW()
+        updated_at = NOW(),
+        version = version + 1
       WHERE id = ${params.id}
         AND workspace_id = ${params.workspaceId}
         AND status IN (${ScheduledMessageStatuses.PENDING}, ${ScheduledMessageStatuses.SENDING})
@@ -385,7 +394,8 @@ export const ScheduledMessagesRepository = {
     const result = await db.query<{ retry_count: number }>(sql`
       UPDATE scheduled_messages SET
         retry_count = retry_count + 1,
-        updated_at = NOW()
+        updated_at = NOW(),
+        version = version + 1
       WHERE id = ${id} AND workspace_id = ${workspaceId}
       RETURNING retry_count
     `)
@@ -396,7 +406,8 @@ export const ScheduledMessagesRepository = {
     await db.query(sql`
       UPDATE scheduled_messages SET
         queue_message_id = ${queueMessageId},
-        updated_at = NOW()
+        updated_at = NOW(),
+        version = version + 1
       WHERE id = ${id} AND workspace_id = ${workspaceId}
     `)
   },
@@ -407,7 +418,8 @@ export const ScheduledMessagesRepository = {
         status = ${ScheduledMessageStatuses.CANCELLED},
         edit_active_until = NULL,
         status_changed_at = NOW(),
-        updated_at = NOW()
+        updated_at = NOW(),
+        version = version + 1
       WHERE id = ${id}
         AND workspace_id = ${workspaceId}
         AND user_id = ${userId}

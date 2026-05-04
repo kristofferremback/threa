@@ -29,13 +29,13 @@ interface ScheduledEditDialogProps {
 /**
  * Edit modal for scheduled messages.
  *
- * Concurrency: optimistic CAS on `updatedAt` + worker pause-while-editing.
+ * Concurrency: optimistic CAS on `version` + worker pause-while-editing.
  * The dialog opens immediately seeded from the row the caller already has
  * (IDB or socket-fresh). On mount it fires `lockForEdit` once (no await,
  * no heartbeat) which bumps `edit_active_until` for ~10 minutes — the
  * worker checks this fence and defers firing while it's in the future, so
  * we don't ship mid-edit content. On save the PATCH carries
- * `expectedUpdatedAt = scheduled.updatedAt`; server CAS rejects with 409
+ * `expectedVersion = scheduled.version`; server CAS rejects with 409
  * STALE_VERSION if the row moved on. First save wins, second save toasts
  * and refreshes.
  *
@@ -68,10 +68,10 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const open = scheduled !== null
   const isLocalRow = scheduled ? isLocalScheduledId(scheduled.id) : false
 
-  // The `updatedAt` the editor opened against — sent on save as
-  // `expectedUpdatedAt` for the optimistic-CAS. Captured once when the dialog
-  // opens; if the row changes underneath us, the CAS rejects on save.
-  const expectedUpdatedAt = scheduled?.updatedAt ?? null
+  // The `version` the editor opened against — sent on save as
+  // `expectedVersion` for the optimistic-CAS. Captured from the row prop;
+  // if the row changes underneath us, the CAS rejects on save.
+  const expectedVersion = scheduled?.version ?? null
 
   // Seed editor state when the row id changes. Re-seeding mid-edit is
   // intentionally not done — that would clobber the user's in-progress edits
@@ -131,7 +131,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   }, [])
 
   const handleSave = useCallback(async () => {
-    if (!scheduled || !sendAtDate || !expectedUpdatedAt) return
+    if (!scheduled || !sendAtDate || expectedVersion === null) return
     if (isLocalRow) {
       // Local-only rows haven't been confirmed by the server yet, so the
       // update API would 404. The schedule_message op will land shortly;
@@ -154,7 +154,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
           contentMarkdown,
           scheduledFor: sendAtDate.toISOString(),
           attachmentIds,
-          expectedUpdatedAt,
+          expectedVersion,
         },
       })
       toast.success(isPast ? "Sent" : "Updated")
@@ -174,7 +174,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     scheduled,
     contentJson,
     sendAtDate,
-    expectedUpdatedAt,
+    expectedVersion,
     isLocalRow,
     isPast,
     updateMutation,

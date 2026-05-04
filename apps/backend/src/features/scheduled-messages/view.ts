@@ -27,6 +27,7 @@ export function toScheduledMessageView(row: ScheduledMessage): ScheduledMessageV
     lastError: row.lastError,
     editActiveUntil: row.editActiveUntil?.toISOString() ?? null,
     clientMessageId: row.clientMessageId,
+    version: row.version,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     statusChangedAt: row.statusChangedAt.toISOString(),

@@ -416,6 +416,8 @@ export interface CachedScheduledMessage {
   /** Worker fence — present (and in the future) while any editor session is open. */
   editActiveUntil: string | null
   clientMessageId: string | null
+  /** Optimistic-concurrency version. Sent back as `expectedVersion` on save. */
+  version: number
   createdAt: string
   updatedAt: string
   statusChangedAt: string

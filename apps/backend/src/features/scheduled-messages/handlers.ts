@@ -20,7 +20,7 @@ const scheduleSchema = z.object({
 })
 
 // PATCH allows any subset of editable fields plus a required
-// `expectedUpdatedAt` so the server can run the optimistic-CAS check that
+// `expectedVersion` so the server can run the optimistic-CAS check that
 // makes "first save wins" possible without an exclusive editor lock.
 const updateSchema = z
   .object({
@@ -29,7 +29,7 @@ const updateSchema = z
     attachmentIds: z.array(z.string()).optional(),
     metadata: z.record(z.string(), z.string()).nullable().optional(),
     scheduledFor: z.string().datetime().optional(),
-    expectedUpdatedAt: z.string().datetime(),
+    expectedVersion: z.number().int().min(1),
   })
   .refine(
     (d) =>
@@ -131,7 +131,7 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
         workspaceId,
         userId,
         id,
-        expectedUpdatedAt: new Date(parsed.data.expectedUpdatedAt),
+        expectedVersion: parsed.data.expectedVersion,
         contentJson: parsed.data.contentJson,
         contentMarkdown: parsed.data.contentMarkdown,
         attachmentIds: parsed.data.attachmentIds,

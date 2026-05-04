@@ -781,6 +781,12 @@ export interface ScheduledMessageView {
    * placeholder waiting in IDB and swap them in one transaction.
    */
   clientMessageId: string | null
+  /**
+   * Optimistic-concurrency version. Starts at 1; every state-changing
+   * server-side UPDATE increments it. The client sends this back as
+   * `expectedVersion` on PATCH; mismatch → 409 STALE_VERSION.
+   */
+  version: number
   createdAt: string
   updatedAt: string
   statusChangedAt: string
@@ -799,10 +805,10 @@ export interface ScheduleMessageInput {
 }
 
 /**
- * Optimistic-concurrency update payload. The client sends `expectedUpdatedAt`
- * — the `updatedAt` value it last saw — and the server CAS rejects with 409
- * STALE_VERSION when the row has moved on (someone else saved). Any number of
- * editors can coexist; first save wins.
+ * Optimistic-concurrency update payload. The client sends `expectedVersion`
+ * — the `version` integer it last saw on the row — and the server CAS rejects
+ * with 409 STALE_VERSION when the row has moved on (someone else saved, the
+ * worker fired, etc). Any number of editors can coexist; first save wins.
  */
 export interface UpdateScheduledMessageInput {
   contentJson?: JSONContent
@@ -810,8 +816,8 @@ export interface UpdateScheduledMessageInput {
   attachmentIds?: string[]
   metadata?: Record<string, string> | null
   scheduledFor?: string
-  /** ISO of `updatedAt` from the row the editor last claimed/saw. */
-  expectedUpdatedAt: string
+  /** Row's `version` integer at the time the editor opened. */
+  expectedVersion: number
 }
 
 /**

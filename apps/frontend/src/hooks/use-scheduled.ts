@@ -59,6 +59,7 @@ function toCached(view: ScheduledMessageView, opts?: { localOnly?: boolean }): C
     lastError: view.lastError,
     editActiveUntil: view.editActiveUntil,
     clientMessageId: view.clientMessageId,
+    version: view.version,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt,
     statusChangedAt: view.statusChangedAt,
@@ -88,6 +89,7 @@ function fromCached(row: CachedScheduledMessage): ScheduledMessageView {
     lastError: row.lastError,
     editActiveUntil: row.editActiveUntil,
     clientMessageId: row.clientMessageId,
+    version: row.version,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     statusChangedAt: row.statusChangedAt,
@@ -294,6 +296,7 @@ export function useScheduleMessage(workspaceId: string) {
         lastError: null,
         editActiveUntil: null,
         clientMessageId,
+        version: 1,
         createdAt: nowIso,
         updatedAt: nowIso,
         statusChangedAt: nowIso,
@@ -318,7 +321,7 @@ export function useScheduleMessage(workspaceId: string) {
 
 /**
  * Save a scheduled message via optimistic concurrency. The client sends the
- * `expectedUpdatedAt` it last claimed/saw; the server CAS rejects with
+ * `expectedVersion` it last saw on the row; the server CAS rejects with
  * `SCHEDULED_MESSAGE_STALE_VERSION` (409) when another save landed first.
  * Caller surfaces the stale error to the user as "edited elsewhere — refresh"
  * and the next list refresh pulls the latest content.
@@ -385,7 +388,7 @@ export function useCancelScheduled(workspaceId: string) {
  * Fire-and-forget — the dialog calls this once on mount; the server bumps
  * the worker fence with a generous TTL (~10 min). No heartbeat. If the user
  * is still editing past the TTL, their save 409s cleanly via the
- * `expectedUpdatedAt` CAS and the dialog refreshes.
+ * `expectedVersion` CAS and the dialog refreshes.
  */
 export function useLockScheduledForEdit(workspaceId: string) {
   const scheduledService = useScheduledService()
