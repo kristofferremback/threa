@@ -7,6 +7,7 @@ import {
   SW_MSG_SUBSCRIPTION_CHANGED,
   SW_MSG_CLEAR_NOTIFICATIONS,
   SW_MSG_QUEUE_BOOTSTRAP_SYNC,
+  SW_MSG_SHOW_VIBRATION_TEST,
   SHARE_TARGET_CACHE,
 } from "./lib/sw-messages"
 
@@ -16,6 +17,8 @@ declare const self: ServiceWorkerGlobalScope
 interface ExtendedNotificationOptions extends NotificationOptions {
   /** Re-alert the user (vibrate/sound) when replacing an existing notification with the same tag. */
   renotify?: boolean
+  /** Vibration pattern: alternating vibrate/pause durations in ms. Honored on Android Chromium PWAs. */
+  vibrate?: number[]
 }
 
 // Activate new service worker immediately so users get fresh code
@@ -607,6 +610,33 @@ self.addEventListener("message", (event) => {
       for (const n of [...streamNotifs, ...mentionNotifs]) n.close()
     })
   )
+})
+
+// ============================================================================
+// Vibration lab — show a notification with a custom vibrate pattern on demand
+// ============================================================================
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== SW_MSG_SHOW_VIBRATION_TEST) return
+
+  const title = typeof event.data.title === "string" ? event.data.title : "Threa vibration test"
+  const body = typeof event.data.body === "string" ? event.data.body : ""
+  const vibrate = Array.isArray(event.data.vibrate)
+    ? (event.data.vibrate as unknown[]).filter((n): n is number => typeof n === "number" && n >= 0)
+    : undefined
+
+  // Stable tag with renotify so each Send re-alerts (vibrate fires) instead of stacking notifications.
+  const options: ExtendedNotificationOptions = {
+    body,
+    icon: "/threa-logo-192.png",
+    badge: "/threa-logo-192.png",
+    tag: "threa-vibration-lab",
+    renotify: true,
+    vibrate,
+    data: { kind: "vibration-test" },
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options))
 })
 
 // ============================================================================

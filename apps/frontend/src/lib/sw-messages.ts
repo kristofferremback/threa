@@ -20,3 +20,9 @@ export const SW_MSG_QUEUE_BOOTSTRAP_SYNC = "QUEUE_BOOTSTRAP_SYNC"
 
 /** Cache name used by the SW to stash share-target POST data (files + text) for the app to read. */
 export const SHARE_TARGET_CACHE = "share-target"
+
+/**
+ * Posted from the app to the SW to display a notification with a custom vibration pattern.
+ * Used by the /vibration-lab diagnostic page to feel candidate patterns on a device.
+ */
+export const SW_MSG_SHOW_VIBRATION_TEST = "SHOW_VIBRATION_TEST"
