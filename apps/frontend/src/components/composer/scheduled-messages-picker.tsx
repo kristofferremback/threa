@@ -12,6 +12,7 @@ import { formatFutureTime } from "@/lib/dates"
 import { usePreferences } from "@/contexts"
 import { useScheduledList, useCancelScheduled } from "@/hooks"
 import { REMINDER_PRESETS, computeRemindAt, type ReminderPreset } from "@/lib/reminder-presets"
+import { ScheduledEditDialog } from "@/components/scheduled/scheduled-edit-dialog"
 
 interface ScheduledMessagesPickerProps {
   workspaceId: string
@@ -75,6 +76,7 @@ export function ScheduledMessagesPicker({
   const [customValue, setCustomValue] = useState<string>("")
   const [customMin, setCustomMin] = useState<string>("")
   const [showCustom, setShowCustom] = useState(false)
+  const [editing, setEditing] = useState<ScheduledMessageView | null>(null)
   const inputId = useId()
 
   const { items } = useScheduledList(workspaceId, "pending", streamId)
@@ -132,70 +134,83 @@ export function ScheduledMessagesPicker({
     return formatFutureTime(d, new Date(), { timezone })
   }, [customValue, timezone])
 
-  return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant={size === "fab" ? "outline" : "ghost"}
-              size="icon"
-              aria-label={count > 0 ? `Scheduled (${count} pending)` : "Scheduled"}
-              className={cn("relative shrink-0 p-0", triggerSizeClass)}
-              disabled={controlsDisabled}
-              onPointerDown={size === "fab" ? (e) => e.preventDefault() : undefined}
-            >
-              <CalendarClock className={triggerIconClass} />
-              {count > 0 && (
-                <span
-                  className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/60 pointer-events-none"
-                  aria-hidden
-                />
-              )}
-            </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          Scheduled
-        </TooltipContent>
-      </Tooltip>
+  const handleEdit = (scheduled: ScheduledMessageView) => {
+    // Close the popover so the dialog isn't fighting it for focus, then open
+    // the edit dialog. Same dialog used by the /scheduled page; it portals
+    // out of this tree so it lands above the popover even though it's
+    // rendered as a child here.
+    setEditing(scheduled)
+    setOpen(false)
+  }
 
-      <PopoverContent align="end" side="top" className="w-80 p-0">
-        {mode === "list" ? (
-          <ListMode
-            workspaceId={workspaceId}
-            items={items}
-            count={count}
-            now={now}
-            timezone={timezone}
-            canSchedule={canSchedule}
-            onClose={() => handleOpenChange(false)}
-            onSchedulePress={enterPickingMode}
-            onCancel={(id) => cancelMutation.mutate(id)}
-          />
-        ) : (
-          <PickingMode
-            timezone={timezone}
-            inputId={inputId}
-            showCustom={showCustom}
-            customValue={customValue}
-            customMin={customMin}
-            previewLabel={previewLabel}
-            onBack={resetToList}
-            onPreset={handlePreset}
-            onShowCustom={() => {
-              const dt = buildLocalDatetimeOneHourAhead()
-              setCustomMin(dt)
-              setCustomValue(dt)
-              setShowCustom(true)
-            }}
-            onCustomChange={setCustomValue}
-            onCustomSubmit={handleCustomSubmit}
-          />
-        )}
-      </PopoverContent>
-    </Popover>
+  return (
+    <>
+      <Popover open={open} onOpenChange={handleOpenChange}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant={size === "fab" ? "outline" : "ghost"}
+                size="icon"
+                aria-label={count > 0 ? `Scheduled (${count} pending)` : "Scheduled"}
+                className={cn("relative shrink-0 p-0", triggerSizeClass)}
+                disabled={controlsDisabled}
+                onPointerDown={size === "fab" ? (e) => e.preventDefault() : undefined}
+              >
+                <CalendarClock className={triggerIconClass} />
+                {count > 0 && (
+                  <span
+                    className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/60 pointer-events-none"
+                    aria-hidden
+                  />
+                )}
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Scheduled
+          </TooltipContent>
+        </Tooltip>
+
+        <PopoverContent align="end" side="top" className="w-80 p-0">
+          {mode === "list" ? (
+            <ListMode
+              workspaceId={workspaceId}
+              items={items}
+              count={count}
+              now={now}
+              timezone={timezone}
+              canSchedule={canSchedule}
+              onClose={() => handleOpenChange(false)}
+              onSchedulePress={enterPickingMode}
+              onEdit={handleEdit}
+              onCancel={(id) => cancelMutation.mutate(id)}
+            />
+          ) : (
+            <PickingMode
+              timezone={timezone}
+              inputId={inputId}
+              showCustom={showCustom}
+              customValue={customValue}
+              customMin={customMin}
+              previewLabel={previewLabel}
+              onBack={resetToList}
+              onPreset={handlePreset}
+              onShowCustom={() => {
+                const dt = buildLocalDatetimeOneHourAhead()
+                setCustomMin(dt)
+                setCustomValue(dt)
+                setShowCustom(true)
+              }}
+              onCustomChange={setCustomValue}
+              onCustomSubmit={handleCustomSubmit}
+            />
+          )}
+        </PopoverContent>
+      </Popover>
+      <ScheduledEditDialog workspaceId={workspaceId} scheduled={editing} onClose={() => setEditing(null)} />
+    </>
   )
 }
 
@@ -208,6 +223,7 @@ interface ListModeProps {
   canSchedule: boolean
   onClose: () => void
   onSchedulePress: () => void
+  onEdit: (scheduled: ScheduledMessageView) => void
   onCancel: (id: string) => void
 }
 
@@ -220,6 +236,7 @@ function ListMode({
   canSchedule,
   onClose,
   onSchedulePress,
+  onEdit,
   onCancel,
 }: ListModeProps) {
   return (
@@ -256,10 +273,9 @@ function ListMode({
               <ScheduledRow
                 key={scheduled.id}
                 scheduled={scheduled}
-                workspaceId={workspaceId}
                 now={now}
                 timezone={timezone}
-                onClose={onClose}
+                onEdit={onEdit}
                 onCancel={onCancel}
               />
             ))}
@@ -365,14 +381,13 @@ function PickingMode({
 
 interface ScheduledRowProps {
   scheduled: ScheduledMessageView
-  workspaceId: string
   now: Date
   timezone: string
-  onClose: () => void
+  onEdit: (scheduled: ScheduledMessageView) => void
   onCancel: (id: string) => void
 }
 
-function ScheduledRow({ scheduled, workspaceId, now, timezone, onClose, onCancel }: ScheduledRowProps) {
+function ScheduledRow({ scheduled, now, timezone, onEdit, onCancel }: ScheduledRowProps) {
   const preview = useMemo(
     () => stripMarkdownToInline(scheduled.contentMarkdown).trim() || "(empty)",
     [scheduled.contentMarkdown]
@@ -385,17 +400,18 @@ function ScheduledRow({ scheduled, workspaceId, now, timezone, onClose, onCancel
   return (
     <li className="group/row">
       <div className="flex items-start gap-2 px-3 py-2 hover:bg-muted/60 focus-within:bg-muted/60">
-        <Link
-          to={`/w/${workspaceId}/scheduled`}
-          onClick={onClose}
+        <button
+          type="button"
+          onClick={() => onEdit(scheduled)}
           className="flex-1 min-w-0 text-left focus:outline-none"
+          title="Edit scheduled message"
         >
           <p className="text-sm line-clamp-2 break-words">{preview}</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             {label}
             {attachmentCount > 0 && <span className="ml-1.5">· {attachmentCount} 📎</span>}
           </p>
-        </Link>
+        </button>
         <Button
           type="button"
           variant="ghost"

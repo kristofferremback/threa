@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { AlertCircle, Pencil, Send, Trash2 } from "lucide-react"
 import type { ScheduledMessageView } from "@threa/types"
@@ -8,6 +8,9 @@ import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatFutureTime } from "@/lib/dates"
 import { usePreferences } from "@/contexts"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { useLongPress } from "@/hooks/use-long-press"
+import { ScheduledActionDrawer } from "./scheduled-action-drawer"
 
 interface ScheduledItemProps {
   scheduled: ScheduledMessageView
@@ -20,14 +23,16 @@ interface ScheduledItemProps {
 /**
  * List row for the /scheduled page. Mirrors the SavedItem 3-line layout —
  * stream chip header, message preview, time-until footer — and the
- * hover-reveal action cluster on desktop / always-visible on mobile so the
- * page reads consistently with /saved and /drafts.
+ * hover-reveal action cluster on desktop. On mobile we replace the tiny
+ * action icons with a long-press → bottom-sheet drawer (the convention used
+ * by the timeline's MessageActionDrawer): tap navigates / opens edit, hold
+ * to reveal Send-now / Edit / Cancel.
  *
  * Sent rows behave as links to the live message in its stream; pending and
- * failed rows expose Edit / Send now / Cancel as siblings (not nested under
- * the link) so action clicks don't bubble into navigation.
+ * failed rows route the body click into the edit dialog (via onEdit).
  */
 export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSendNow }: ScheduledItemProps) {
+  const isMobile = useIsMobile()
   const { preferences } = usePreferences()
   const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -71,6 +76,15 @@ export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSend
     )
   }
 
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  // Long-press only on mobile, only for actionable rows. Sent/cancelled rows
+  // have no actions so we don't trap their tap on a deferred timer.
+  const longPressEnabled = isMobile && (isPending || isFailed)
+  const longPress = useLongPress({
+    enabled: longPressEnabled,
+    onLongPress: () => setDrawerOpen(true),
+  })
+
   const Content = (
     <>
       <div className="flex items-baseline gap-1.5 text-sm">
@@ -99,23 +113,61 @@ export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSend
     </>
   )
 
-  return (
-    <div
-      className={cn(
-        "group flex items-start gap-3 border-b border-border/50 px-4 py-3 hover:bg-muted/40",
-        isFailed && "border-l-4 border-l-destructive"
-      )}
-    >
-      {sentLink ? (
-        <Link to={sentLink} className="min-w-0 flex-1">
-          {Content}
-        </Link>
-      ) : (
-        <div className="min-w-0 flex-1">{Content}</div>
-      )}
+  // Tap behavior:
+  //   sent  → link to live message
+  //   pending/failed → edit dialog (onEdit handler)
+  //   cancelled → no-op (read-only row)
+  const handleTap = () => {
+    if (sentLink || isCancelled) return
+    if (onEdit && (isPending || isFailed)) onEdit(scheduled.id)
+  }
 
-      <ScheduledRowActions scheduled={scheduled} onEdit={onEdit} onCancel={onCancel} onSendNow={onSendNow} />
-    </div>
+  return (
+    <>
+      <div
+        className={cn(
+          "group flex items-start gap-3 border-b border-border/50 px-4 py-3 hover:bg-muted/40",
+          isFailed && "border-l-4 border-l-destructive",
+          longPress.isPressed && "bg-muted/40"
+        )}
+        onTouchStart={longPress.handlers.onTouchStart}
+        onTouchEnd={longPress.handlers.onTouchEnd}
+        onTouchMove={longPress.handlers.onTouchMove}
+        onContextMenu={longPress.handlers.onContextMenu}
+      >
+        {sentLink ? (
+          <Link to={sentLink} className="min-w-0 flex-1">
+            {Content}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={handleTap}
+            className="min-w-0 flex-1 text-left focus:outline-none disabled:cursor-default"
+            disabled={isCancelled || (!isPending && !isFailed)}
+          >
+            {Content}
+          </button>
+        )}
+
+        {/* Desktop hover-reveal actions. Hidden on mobile — long-press handles
+            the drawer, no tiny tap targets. */}
+        {!isMobile && (
+          <ScheduledRowActions scheduled={scheduled} onEdit={onEdit} onCancel={onCancel} onSendNow={onSendNow} />
+        )}
+      </div>
+
+      {isMobile && (
+        <ScheduledActionDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          scheduled={scheduled}
+          onEdit={onEdit}
+          onSendNow={onSendNow}
+          onCancel={onCancel}
+        />
+      )}
+    </>
   )
 }
 
@@ -126,11 +178,7 @@ interface ScheduledRowActionsProps {
   onSendNow?: (id: string) => void
 }
 
-/**
- * Hover-reveal on desktop, always-visible on mobile — same affordance shape as
- * SavedItem so the row reads consistently across pages. Only `pending` rows
- * expose the action cluster; sent/cancelled rows are link-only.
- */
+/** Desktop-only hover-reveal action cluster — mobile uses the drawer instead. */
 function ScheduledRowActions({ scheduled, onEdit, onCancel, onSendNow }: ScheduledRowActionsProps) {
   if (scheduled.status !== "pending" && scheduled.status !== "failed") return null
 
@@ -138,12 +186,7 @@ function ScheduledRowActions({ scheduled, onEdit, onCancel, onSendNow }: Schedul
   const canSendNow = scheduled.status === "pending" && !!onSendNow
 
   return (
-    <div
-      className={cn(
-        "flex shrink-0 items-center gap-1",
-        "sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus-within:opacity-100"
-      )}
-    >
+    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
       {canSendNow && (
         <Button
           size="icon"
