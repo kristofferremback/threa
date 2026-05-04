@@ -1,7 +1,7 @@
 import { useSearchParams, useParams } from "react-router-dom"
 import { useMemo, useCallback, useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
-import { MessageSquare, ChevronLeft, MoreHorizontal, CornerDownRight } from "lucide-react"
+import { MessageSquare, ChevronLeft, MoreHorizontal, CornerDownRight, Settings } from "lucide-react"
 import {
   SidePanel,
   SidePanelHeader,
@@ -10,7 +10,13 @@ import {
   SidePanelContent,
 } from "@/components/ui/side-panel"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { SidebarActionDrawer, type SidebarActionItem } from "@/components/layout/sidebar/sidebar-actions"
 import {
   useStreamBootstrap,
@@ -27,6 +33,7 @@ import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { onDraftPromoted } from "@/lib/draft-promotions"
 import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
+import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
 import { StreamLoadingIndicator } from "@/components/loading"
 import {
   StreamContent,
@@ -60,6 +67,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const { panelId, openPanel, getPanelUrl, closePanel } = usePanel()
   const user = useUser()
   const { queueDraftMessage, currentUserId } = useQueueDraftMessage(workspaceId)
+  const { openStreamSettings } = useStreamSettings()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
 
   const isMainViewStream = (streamId: string) => {
@@ -188,14 +196,25 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     dispatchStartBatchSelect(panelId)
   }, [panelId])
 
-  const panelMenuActions: SidebarActionItem[] = [
-    {
-      id: "move-messages",
-      label: "Move messages…",
-      icon: CornerDownRight,
-      onSelect: handleSelectMessages,
-    },
-  ]
+  const isDm = stream?.type === StreamTypes.DM
+  const panelMenuActions: SidebarActionItem[] = []
+  if (!isDm) {
+    panelMenuActions.push({
+      id: "stream-settings",
+      label: "Settings",
+      icon: Settings,
+      onSelect: () => {
+        if (panelId) openStreamSettings(panelId)
+      },
+    })
+  }
+  panelMenuActions.push({
+    id: "move-messages",
+    label: "Move messages…",
+    icon: CornerDownRight,
+    onSelect: handleSelectMessages,
+    separatorBefore: !isDm,
+  })
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
     draftPortalTargetRef.current = el
   }, [])
@@ -417,6 +436,17 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
+                {!isDm && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      if (panelId) openStreamSettings(panelId)
+                    }}
+                  >
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </DropdownMenuItem>
+                )}
+                {!isDm && <DropdownMenuSeparator />}
                 <DropdownMenuItem onClick={handleSelectMessages} disabled={!!stream.archivedAt}>
                   <CornerDownRight className="mr-2 h-4 w-4" />
                   Move messages…
