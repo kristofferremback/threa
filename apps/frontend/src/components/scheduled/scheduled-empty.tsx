@@ -1,4 +1,5 @@
 import { CalendarClock } from "lucide-react"
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 
 interface ScheduledEmptyProps {
   status: "pending" | "sent" | "failed" | "cancelled"
@@ -25,10 +26,14 @@ export function ScheduledEmpty({ status }: ScheduledEmptyProps) {
   }[status]
 
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center text-muted-foreground">
-      <CalendarClock className="h-8 w-8 opacity-50" />
-      <div className="text-sm font-medium">{copy.title}</div>
-      <p className="max-w-sm text-xs">{copy.hint}</p>
-    </div>
+    <Empty className="border-0">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <CalendarClock />
+        </EmptyMedia>
+        <EmptyTitle>{copy.title}</EmptyTitle>
+        <EmptyDescription>{copy.hint}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }

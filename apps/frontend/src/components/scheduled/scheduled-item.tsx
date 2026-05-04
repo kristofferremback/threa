@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatFutureTime } from "@/lib/dates"
+import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 import { usePreferences } from "@/contexts"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -37,11 +38,13 @@ export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSend
   const { preferences } = usePreferences()
   const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
 
-  // Stream name comes from the workspace store. Fallback covers streams the
-  // user is no longer a member of — the scheduled row may briefly outlive
-  // the membership before the failure path catches it.
+  // Stream name resolution must go through the canonical helpers so #channels
+  // pick up their slug prefix and untitled streams get a context-appropriate
+  // fallback. The row may briefly outlive a membership the user no longer has;
+  // the empty-find branch covers that until the failure path catches it.
   const streams = useWorkspaceStreams(workspaceId)
-  const streamName = streams.find((s) => s.id === scheduled.streamId)?.displayName ?? "stream"
+  const stream = streams.find((s) => s.id === scheduled.streamId)
+  const streamName = stream ? (getStreamName(stream) ?? streamFallbackLabel(stream.type, "generic")) : "stream"
 
   const preview = useMemo(
     () => stripMarkdownToInline(scheduled.contentMarkdown).trim() || "(empty)",
@@ -86,7 +89,7 @@ export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSend
     <>
       <div className="flex items-baseline gap-1.5 text-sm">
         <span className="text-muted-foreground">{verbPrefix}</span>
-        <span className="truncate font-medium">#{streamName}</span>
+        <span className="truncate font-medium">{streamName}</span>
         {isFailed && (
           <span className="ml-1 inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-destructive">
             <AlertCircle className="h-3 w-3" />
@@ -189,7 +192,16 @@ function ScheduledRowActions({ scheduled, onEdit, onCancel, onSendNow }: Schedul
   const canSendNow = scheduled.status === "pending" && !!onSendNow
 
   return (
-    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+    <div
+      className={cn(
+        "flex shrink-0 items-center gap-1 opacity-0 transition-opacity",
+        "group-hover:opacity-100 focus-within:opacity-100",
+        // Keep the cluster visible while any popover hosted by an action is open
+        // (matches SavedItem); without this, the trigger would disappear under
+        // the user's pointer the moment the popover mounts.
+        "has-[[data-state=open]]:opacity-100"
+      )}
+    >
       {canSendNow && (
         <Button
           size="icon"

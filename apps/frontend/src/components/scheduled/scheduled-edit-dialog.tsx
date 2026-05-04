@@ -2,8 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
 import type { Editor } from "@tiptap/react"
 import { StreamTypes, type JSONContent, type ScheduledMessageView } from "@threa/types"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog"
 import { Button } from "@/components/ui/button"
 import { RichEditor, EditorActionBar, EditorToolbar } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
@@ -76,7 +81,6 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const [sendTime, setSendTime] = useState<string>("")
   const [error, setError] = useState<string | null>(null)
   const [formatOpen, setFormatOpen] = useState(false)
-  const [mobileExpanded, setMobileExpanded] = useState(false)
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
   const [toolbarEditor, setToolbarEditor] = useState<Editor | null>(null)
   const acquiringRef = useRef(false)
@@ -99,7 +103,6 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       setSendTime("")
       setError(null)
       setFormatOpen(false)
-      setMobileExpanded(false)
       attachmentsHook.clear()
       previousIdRef.current = id
     }
@@ -148,7 +151,6 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     setSendTime("")
     setError(null)
     setFormatOpen(false)
-    setMobileExpanded(false)
     attachmentsHook.clear()
     onClose()
   }, [scheduled, lockToken, releaseMutation, attachmentsHook, onClose])
@@ -315,14 +317,11 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
                 disabled={isSaving}
                 formatOpen={formatOpen}
                 onFormatOpenChange={setFormatOpen}
-                mobileExpanded={mobileExpanded}
-                onMobileExpandedChange={setMobileExpanded}
                 showAttach
                 onAttachClick={() => attachmentsHook.fileInputRef.current?.click()}
-                // The drawer/dialog is already the dominant surface. Drop both
-                // the mobile expand-the-drawer toggle and the desktop
-                // fullscreen-modal trigger — neither makes sense when we're
-                // already taking the screen.
+                // The drawer/dialog is already the dominant surface; on mobile
+                // vaul snap points handle resize via gesture, so the action
+                // bar's expand toggle is redundant here.
                 showExpand={false}
                 trailingContent={trailingActions}
               />
@@ -346,38 +345,19 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     )
   })()
 
-  if (isMobile) {
-    return (
-      <Drawer
-        open={open}
-        onOpenChange={(next) => {
-          if (!next) handleClose()
-        }}
-      >
-        <DrawerContent className={mobileExpanded ? "!h-[100dvh] rounded-t-none" : "max-h-[92dvh]"}>
-          <DrawerTitle className="sr-only">{title}</DrawerTitle>
-          <div className="flex flex-col gap-4 px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
-            <div>
-              <p className="text-base font-semibold">{title}</p>
-              {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
-            </div>
-            {editorBody}
-          </div>
-        </DrawerContent>
-      </Drawer>
-    )
-  }
-
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          {description && <DialogDescription>{description}</DialogDescription>}
-        </DialogHeader>
-        {editorBody}
-      </DialogContent>
-    </Dialog>
+    <ResponsiveDialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <ResponsiveDialogContent desktopClassName="sm:max-w-lg">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>{title}</ResponsiveDialogTitle>
+          {description && <ResponsiveDialogDescription>{description}</ResponsiveDialogDescription>}
+        </ResponsiveDialogHeader>
+        {/* Body padding mirrors ResponsiveDialogHeader's mobile px-4 so the
+            form aligns with the title; desktop falls through to DialogContent's
+            built-in padding via the `gap-4` defaults inside editorBody. */}
+        <div className="px-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:p-0 sm:pb-0">{editorBody}</div>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   )
 }
 
