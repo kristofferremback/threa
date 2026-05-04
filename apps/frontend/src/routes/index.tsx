@@ -33,13 +33,6 @@ export const router = createBrowserRouter([
     errorElement: <ErrorBoundary />,
   },
   {
-    // Temporary diagnostic page for tuning notification vibration patterns.
-    path: "/vibration-lab",
-    HydrateFallback: FallbackLoader,
-    lazy: async () => ({ Component: (await import("@/pages/vibration-lab")).VibrationLabPage }),
-    errorElement: <ErrorBoundary />,
-  },
-  {
     // Setup page lives outside WorkspaceLayout — it's a lightweight form that
     // doesn't need the full workspace bootstrap (socket, sidebar, etc.)
     path: "/w/:workspaceId/setup",

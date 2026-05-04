@@ -7,7 +7,6 @@ import {
   SW_MSG_SUBSCRIPTION_CHANGED,
   SW_MSG_CLEAR_NOTIFICATIONS,
   SW_MSG_QUEUE_BOOTSTRAP_SYNC,
-  SW_MSG_SHOW_VIBRATION_TEST,
   SHARE_TARGET_CACHE,
 } from "./lib/sw-messages"
 
@@ -20,6 +19,11 @@ interface ExtendedNotificationOptions extends NotificationOptions {
   /** Vibration pattern: alternating vibrate/pause durations in ms. Honored on Android Chromium PWAs. */
   vibrate?: number[]
 }
+
+// Distinct "d-dt" vibration (short tap, brief pause, longer tap) so Threa notifications
+// feel different from the OS default dzzt-dzzt. Honored on Android Chromium PWAs; iOS
+// and most desktop browsers ignore it and fall back to the OS default.
+const THREA_VIBRATION_PATTERN = [30, 10, 100]
 
 // Activate new service worker immediately so users get fresh code
 // without needing to close all tabs.
@@ -480,6 +484,7 @@ self.addEventListener("push", (event) => {
         badge: "/threa-logo-192.png",
         tag: "threa-test",
         renotify: true,
+        vibrate: THREA_VIBRATION_PATTERN,
         data: { ...data, kind: "test" },
       } as ExtendedNotificationOptions)
     )
@@ -495,6 +500,7 @@ self.addEventListener("push", (event) => {
         icon: "/threa-logo-192.png",
         badge: "/threa-logo-192.png",
         tag: "session-expired",
+        vibrate: THREA_VIBRATION_PATTERN,
         data: { ...data, action: "session_expired" },
       } as ExtendedNotificationOptions)
     )
@@ -533,6 +539,7 @@ self.addEventListener("push", (event) => {
           data: { ...data, messages },
           tag,
           renotify: true, // Re-alert (vibrate/sound) even when replacing an existing notification
+          vibrate: THREA_VIBRATION_PATTERN,
         }
 
         await self.registration.showNotification(title, options)
@@ -610,33 +617,6 @@ self.addEventListener("message", (event) => {
       for (const n of [...streamNotifs, ...mentionNotifs]) n.close()
     })
   )
-})
-
-// ============================================================================
-// Vibration lab — show a notification with a custom vibrate pattern on demand
-// ============================================================================
-
-self.addEventListener("message", (event) => {
-  if (event.data?.type !== SW_MSG_SHOW_VIBRATION_TEST) return
-
-  const title = typeof event.data.title === "string" ? event.data.title : "Threa vibration test"
-  const body = typeof event.data.body === "string" ? event.data.body : ""
-  const vibrate = Array.isArray(event.data.vibrate)
-    ? (event.data.vibrate as unknown[]).filter((n): n is number => typeof n === "number" && n >= 0)
-    : undefined
-
-  // Stable tag with renotify so each Send re-alerts (vibrate fires) instead of stacking notifications.
-  const options: ExtendedNotificationOptions = {
-    body,
-    icon: "/threa-logo-192.png",
-    badge: "/threa-logo-192.png",
-    tag: "threa-vibration-lab",
-    renotify: true,
-    vibrate,
-    data: { kind: "vibration-test" },
-  }
-
-  event.waitUntil(self.registration.showNotification(title, options))
 })
 
 // ============================================================================
