@@ -14,7 +14,12 @@ import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
+import {
+  FloatingComposerShell,
+  MessageComposer,
+  ScheduledMessagesPicker,
+  StashedDraftsPicker,
+} from "@/components/composer"
 import type { ComposerControlHandle } from "@/components/composer"
 import { SchedulePicker } from "@/components/scheduled/schedule-picker"
 import { useScheduleMessage } from "@/hooks"
@@ -692,6 +697,9 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
       />
     ),
     scheduleSendTrigger: <SchedulePicker disabled={!composer.canSend || composer.isSending} onPick={handleSchedule} />,
+    scheduledMessagesTrigger: (
+      <ScheduledMessagesPicker workspaceId={workspaceId} streamId={streamId} controlsDisabled={composer.isSending} />
+    ),
   } as const
 
   return (

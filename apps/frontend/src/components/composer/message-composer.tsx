@@ -206,6 +206,14 @@ export interface MessageComposerProps {
    * the schedule mutation.
    */
   scheduleSendTrigger?: ReactNode
+
+  /**
+   * Slot for the "scheduled messages for this stream" peek popover, shown
+   * alongside the stashed-drafts trigger. Read-only at this entry point
+   * (cancel + view-all are the only actions); full edit lives on the
+   * /scheduled page. Omit to hide the affordance entirely.
+   */
+  scheduledMessagesTrigger?: ReactNode
 }
 
 export function MessageComposer({
@@ -242,6 +250,7 @@ export function MessageComposer({
   stashedDraftsTrigger,
   stashedDraftsTriggerFab,
   scheduleSendTrigger,
+  scheduledMessagesTrigger,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -801,9 +810,10 @@ export function MessageComposer({
                     showAttach
                     onAttachClick={handleAttachClick}
                     trailingContent={
-                      stashedDraftsTrigger || scheduleSendTrigger ? (
+                      stashedDraftsTrigger || scheduledMessagesTrigger || scheduleSendTrigger ? (
                         <div className="flex items-center gap-1">
                           {stashedDraftsTrigger}
+                          {scheduledMessagesTrigger}
                           {scheduleSendTrigger}
                           {sendButton}
                         </div>
@@ -929,6 +939,7 @@ export function MessageComposer({
                       </TooltipContent>
                     </Tooltip>
                     {stashedDraftsTrigger}
+                    {scheduledMessagesTrigger}
                     {scheduleSendTrigger}
                     {sendButton}
                   </div>
