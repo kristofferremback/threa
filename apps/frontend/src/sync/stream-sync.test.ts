@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { db } from "@/db"
-import { applyStreamBootstrap, getLatestPersistedSequence, toCachedStreamBootstrap } from "./stream-sync"
+import {
+  applyStreamBootstrap,
+  getLatestPersistedSequence,
+  toCachedStreamBootstrap,
+  updateMessageEvent,
+} from "./stream-sync"
 import type { StreamBootstrap, StreamEvent } from "@threa/types"
 
 // With fake-indexeddb loaded in test setup, Dexie works against a real
@@ -274,6 +279,65 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
     ])
 
     expect(await getLatestPersistedSequence(streamId)).toBe("200")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// updateMessageEvent — atomic payload updates
+// ---------------------------------------------------------------------------
+
+describe("updateMessageEvent", () => {
+  beforeEach(async () => {
+    await db.events.clear()
+  })
+
+  it("updates a message payload in place", async () => {
+    const streamId = "stream_update"
+    const messageId = "msg_1"
+    await db.events.put({
+      ...makeEvent({ id: "evt_1", streamId, sequence: "100", payload: { messageId, contentMarkdown: "hello" } }),
+      workspaceId: "ws_1",
+      _sequenceNum: 100,
+      _cachedAt: Date.now(),
+    })
+
+    await updateMessageEvent(streamId, messageId, (p) => ({ ...p, replyCount: 5 }))
+
+    const event = await db.events.get("evt_1")
+    expect((event?.payload as Record<string, unknown>).replyCount).toBe(5)
+  })
+
+  it("does not lose fields when multiple concurrent updates target the same message", async () => {
+    const streamId = "stream_race_update"
+    const messageId = "msg_race"
+    await db.events.put({
+      ...makeEvent({ id: "evt_race", streamId, sequence: "100", payload: { messageId, contentMarkdown: "hello" } }),
+      workspaceId: "ws_1",
+      _sequenceNum: 100,
+      _cachedAt: Date.now(),
+    })
+
+    // Simulate the race that happens when messages:moved, stream:created and
+    // message:updated socket handlers all update the same parent message
+    // concurrently. With the old read-then-update implementation the last
+    // write would overwrite earlier ones and lose fields.
+    await Promise.all([
+      updateMessageEvent(streamId, messageId, (p) => ({
+        ...p,
+        replyCount: 3,
+        threadSummary: { lastReplyContentMarkdown: "hi", participantIds: ["u1"] },
+      })),
+      updateMessageEvent(streamId, messageId, (p) => ({
+        ...p,
+        threadId: "thread_123",
+      })),
+    ])
+
+    const event = await db.events.get("evt_race")
+    const payload = event?.payload as Record<string, unknown>
+    expect(payload.threadId).toBe("thread_123")
+    expect(payload.replyCount).toBe(3)
+    expect(payload.threadSummary).toEqual({ lastReplyContentMarkdown: "hi", participantIds: ["u1"] })
   })
 })
 
