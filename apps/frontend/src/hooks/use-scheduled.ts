@@ -398,6 +398,20 @@ export function useLockScheduledForEdit(workspaceId: string) {
 }
 
 /**
+ * Release the worker fence on dialog close. Fire-and-forget; if the call
+ * fails (offline, transient), the fence still expires on its own TTL —
+ * the user just waits up to 10 minutes for the row to fire instead of the
+ * worker firing immediately at scheduled_for. Without this, cancelling
+ * out of the dialog leaves the row stranded behind the lock.
+ */
+export function useReleaseScheduledEditLock(workspaceId: string) {
+  const scheduledService = useScheduledService()
+  return useMutation({
+    mutationFn: (id: string) => scheduledService.releaseEditLock(workspaceId, id),
+  })
+}
+
+/**
  * Send a pending row immediately. Server takes the worker-style CAS and
  * fires through the same EventService.createMessage code path. On success the
  * row transitions sent and the live message appears in the stream timeline

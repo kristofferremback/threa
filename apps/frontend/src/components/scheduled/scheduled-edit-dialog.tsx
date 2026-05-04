@@ -11,7 +11,7 @@ import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import { DateTimeField } from "@/components/forms/date-time-field"
 import { parseLocalDateTime, toDateInputValue, toTimeInputValue } from "@/lib/dates"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useUpdateScheduled, useLockScheduledForEdit, isLocalScheduledId } from "@/hooks"
+import { useUpdateScheduled, useLockScheduledForEdit, useReleaseScheduledEditLock, isLocalScheduledId } from "@/hooks"
 import { useMentionStreamContext } from "@/hooks/use-mentionables"
 import { useAttachments } from "@/hooks/use-attachments"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
@@ -46,6 +46,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const isMobile = useIsMobile()
   const updateMutation = useUpdateScheduled(workspaceId)
   const lockMutation = useLockScheduledForEdit(workspaceId)
+  const releaseLockMutation = useReleaseScheduledEditLock(workspaceId)
 
   const [contentJson, setContentJson] = useState<JSONContent>(EMPTY_DOC)
   const [sendDate, setSendDate] = useState<string>("")
@@ -114,8 +115,16 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   }, [scheduled, attachmentsHook, lockMutation])
 
   const handleClose = useCallback(() => {
+    // Fire-and-forget: drop the worker fence so the row can fire as soon
+    // as its scheduled time arrives. Without this, cancelling out of the
+    // dialog strands the row behind the 10-minute lock TTL — the worker
+    // defers and the message lands up to 10 minutes late. Skip for local
+    // rows (server doesn't know about them) and for terminal-state rows.
+    if (scheduled && !isLocalScheduledId(scheduled.id) && scheduled.status === "pending") {
+      releaseLockMutation.mutate(scheduled.id)
+    }
     onClose()
-  }, [onClose])
+  }, [scheduled, releaseLockMutation, onClose])
 
   const sendAtDate = useMemo(() => parseLocalDateTime(sendDate, sendTime), [sendDate, sendTime])
 

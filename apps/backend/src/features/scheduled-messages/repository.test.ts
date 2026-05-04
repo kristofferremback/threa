@@ -205,8 +205,50 @@ describe("ScheduledMessagesRepository.tryStartSend (worker CAS)", () => {
     expect(captured.text).toContain("UPDATE scheduled_messages")
     expect(captured.text).toContain("status =")
     expect(captured.text).toContain("scheduled_for <= NOW()")
-    expect(captured.text).toContain("(edit_active_until IS NULL OR edit_active_until <= NOW())")
+    expect(captured.text).toContain("edit_active_until IS NULL")
+    expect(captured.text).toContain("edit_active_until <= NOW()")
     expect(captured.values).toContain(ScheduledMessageStatuses.SENDING)
+  })
+
+  it("bypasses the fence check when bypassFence=true so a user-initiated save/sendNow isn't blocked by their own dialog lock", async () => {
+    // The deadlock this prevents: user opens edit dialog (lockForEdit
+    // sets the fence for 10 min), wire time passes, user hits Save with
+    // past `scheduled_for` → past-time save path calls tryStartSend,
+    // which would normally see edit_active_until in the future and
+    // refuse — leaving the row stuck in pending while the worker also
+    // defers because of the same fence. The fence's job is to keep the
+    // *worker* out while the *user* is editing; user-initiated writes
+    // bypass it.
+    const captured: Captured = { text: null, values: null }
+    const db = createQuerier(captured)
+
+    await ScheduledMessagesRepository.tryStartSend(db, {
+      workspaceId: "ws_1",
+      id: "sched_01",
+      ttlSeconds: 10,
+      bypassFence: true,
+    })
+
+    expect(captured.values).toContain(true)
+  })
+})
+
+describe("ScheduledMessagesRepository.releaseEditFence", () => {
+  afterEach(() => mock.restore())
+
+  it("clears edit_active_until on dialog close so the worker isn't stranded behind a 10-minute lock", async () => {
+    const captured: Captured = { text: null, values: null }
+    const db = createQuerier(captured)
+
+    await ScheduledMessagesRepository.releaseEditFence(db, "ws_1", "sched_01")
+
+    expect(captured.text).toContain("UPDATE scheduled_messages")
+    expect(captured.text).toContain("edit_active_until = NULL")
+    expect(captured.text).toContain("workspace_id =")
+    expect(captured.text).toContain("status =")
+    // No version bump — the fence is metadata. Bumping it would
+    // invalidate any concurrent device's expectedVersion.
+    expect(captured.text).not.toContain("version = version + 1")
   })
 })
 

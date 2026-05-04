@@ -231,6 +231,17 @@ export class ScheduledMessagesService {
   }
 
   /**
+   * Clear the worker fence so a row stranded mid-edit can fire as soon as
+   * its scheduled time arrives. The dialog calls this on close (cancel,
+   * navigate-away, save-and-close) so closing doesn't leave the worker
+   * fenced for the full 10-minute lock TTL. Idempotent and tolerant of
+   * post-pending rows — never raises (best-effort fire-and-forget).
+   */
+  async releaseEditLock(params: { workspaceId: string; userId: string; id: string }): Promise<void> {
+    await ScheduledMessagesRepository.releaseEditFence(this.pool, params.workspaceId, params.id)
+  }
+
+  /**
    * Update a pending scheduled message with optimistic concurrency. The
    * client sends `expectedVersion` — the row's `version` integer it last
    * saw. The CAS rejects with 409 STALE_VERSION when the row has moved on
@@ -276,12 +287,15 @@ export class ScheduledMessagesService {
 
       // Past-time save = atomic send (per the past-time editing UX). The
       // worker's CAS will see status='sending' and skip; the editor's CAS
-      // already won the optimistic update so we own this transition.
+      // already won the optimistic update so we own this transition. Bypass
+      // the fence — the *user's own* `lockForEdit` set it; if we honored it
+      // here, the row would deadlock (worker fenced out, user 409s).
       if (finalRow.scheduledFor.getTime() <= Date.now()) {
         const flipped = await ScheduledMessagesRepository.tryStartSend(client, {
           workspaceId: params.workspaceId,
           id: params.id,
           ttlSeconds: WORKER_FENCE_TTL_SECONDS,
+          bypassFence: true,
         })
         if (!flipped) {
           // Worker won between the update and the start-send CAS. Surface
@@ -318,11 +332,14 @@ export class ScheduledMessagesService {
     return withTransaction(this.pool, async (client) => {
       const existing = await this.assertPendingOrThrow(client, params)
 
-      // Take the worker-style CAS atomically (status flip → sending).
+      // Take the worker-style CAS atomically (status flip → sending). Bypass
+      // the fence — the user explicitly asked to send right now; their own
+      // (or a sibling tab's) `lockForEdit` shouldn't block them.
       const claimed = await ScheduledMessagesRepository.tryStartSend(client, {
         workspaceId: params.workspaceId,
         id: params.id,
         ttlSeconds: WORKER_FENCE_TTL_SECONDS,
+        bypassFence: true,
       })
       if (!claimed) {
         // `tryStartSend` requires `scheduled_for <= NOW()`. For a future-
@@ -345,6 +362,7 @@ export class ScheduledMessagesService {
           workspaceId: params.workspaceId,
           id: params.id,
           ttlSeconds: WORKER_FENCE_TTL_SECONDS,
+          bypassFence: true,
         })
         if (!reclaimed) {
           throw new HttpError("Scheduled message no longer pending", {

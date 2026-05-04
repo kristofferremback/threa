@@ -330,6 +330,66 @@ describe("ScheduledMessagesService.update (optimistic CAS)", () => {
     expect(result.status).toBe(ScheduledMessageStatuses.SENT)
     expect(createMessage).toHaveBeenCalledTimes(1)
     expect(tryStartSend).toHaveBeenCalledTimes(1)
+    // The user owns the dialog lock; we must bypass it on their save or the
+    // fence the user themselves set would block the user's own send.
+    expect(tryStartSend).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ bypassFence: true }))
+  })
+
+  it("past-time save bypasses the user's own edit fence (deadlock regression)", async () => {
+    // Bug we're guarding against: user opens dialog (sets edit_active_until
+    // ~10 min from now via lockForEdit), wire passes while typing, user
+    // hits Save → past-time path → tryStartSend honored the fence and 409'd
+    // because the *user themselves* set it. Worker also fenced. Stuck.
+    const createMessage = mock(async () => ({
+      id: "msg_99",
+      streamId: STREAM_ID,
+      sequence: 1n,
+      authorId: USER_ID,
+      authorType: "user" as const,
+      contentJson: { type: "doc", content: [] },
+      contentMarkdown: "edited",
+      replyCount: 0,
+      clientMessageId: null,
+      sentVia: null,
+      reactions: {},
+      metadata: {},
+      editedAt: null,
+      deletedAt: null,
+      createdAt: NOW,
+    }))
+    const service = setupService({ createMessage } as unknown as EventService)
+
+    const past = new Date(Date.now() - 5_000)
+    const fenceActive = new Date(Date.now() + 10 * 60_000)
+    const row = fakeScheduled({ version: 4, scheduledFor: past, editActiveUntil: fenceActive })
+
+    spyOn(ScheduledMessagesRepository, "findById")
+      .mockResolvedValueOnce(row)
+      .mockResolvedValueOnce({ ...row, contentMarkdown: "edited" })
+    spyOn(ScheduledMessagesRepository, "update").mockResolvedValue({ ...row, contentMarkdown: "edited" })
+    spyOn(ScheduledMessagesRepository, "tryStartSend").mockResolvedValue({
+      ...row,
+      contentMarkdown: "edited",
+      status: ScheduledMessageStatuses.SENDING,
+    })
+    spyOn(ScheduledMessagesRepository, "markSent").mockResolvedValue({
+      ...row,
+      contentMarkdown: "edited",
+      status: ScheduledMessageStatuses.SENT,
+      sentMessageId: "msg_99",
+    })
+    spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+    const result = await service.update({
+      workspaceId: WORKSPACE_ID,
+      userId: USER_ID,
+      id: SCHEDULED_ID,
+      expectedVersion: 4,
+      contentMarkdown: "edited",
+      scheduledFor: past,
+    })
+
+    expect(result.status).toBe(ScheduledMessageStatuses.SENT)
   })
 })
 

@@ -176,6 +176,7 @@ export {
   useCancelScheduled,
   useSendScheduledNow,
   useLockScheduledForEdit,
+  useReleaseScheduledEditLock,
   persistScheduledRows,
   removeScheduledRow,
   replaceScheduledPage,

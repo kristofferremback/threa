@@ -70,6 +70,7 @@ export interface ScheduledService {
   update: typeof scheduledApi.update
   delete: typeof scheduledApi.delete
   lockForEdit: typeof scheduledApi.lockForEdit
+  releaseEditLock: typeof scheduledApi.releaseEditLock
   sendNow: typeof scheduledApi.sendNow
 }
 

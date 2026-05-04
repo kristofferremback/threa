@@ -312,21 +312,48 @@ export const ScheduledMessagesRepository = {
   },
 
   /**
+   * Clear the worker fence so the worker can fire immediately. Called by
+   * the dialog's close handler so cancelling out doesn't strand the row
+   * behind a 10-minute fence the user no longer cares about. Idempotent
+   * and tolerant of post-pending rows (it's a no-op if the row is no
+   * longer pending). Like `bumpEditFence`, does NOT touch `version` —
+   * the fence is metadata.
+   */
+  async releaseEditFence(db: Querier, workspaceId: string, id: string): Promise<void> {
+    await db.query(sql`
+      UPDATE scheduled_messages SET
+        edit_active_until = NULL
+      WHERE id = ${id}
+        AND workspace_id = ${workspaceId}
+        AND status = ${ScheduledMessageStatuses.PENDING}
+    `)
+  },
+
+  /**
    * Race-safe worker CAS (INV-20). Flips status to `sending` when the row is
    * still pending, due now, and no editor session is currently active (the
-   * fence has expired). The worker uses this; there is no editor counterpart
-   * — editors don't claim the row, they save with optimistic CAS instead.
+   * fence has expired).
+   *
+   * The fence (`edit_active_until`) blocks the WORKER from firing while a
+   * user has the edit dialog open — that's the only thing it's for.
+   * User-initiated transitions (a save with past `scheduled_for`, or a
+   * `sendNow`) pass `bypassFence: true` so the user's own dialog lock
+   * doesn't block their own send. Without that, the row gets stuck: the
+   * worker defers because of the fence, and the user's PATCH 409s with
+   * NOT_PENDING because of the same fence.
    *
    * Returns null on:
    *  - status not pending (cancelled, already sending/sent, failed)
    *  - scheduled_for in the future (stale leased queue row that survived a
    *    reschedule cancel — see service.fire's pre-check comment)
-   *  - edit_active_until in the future (an editor is heartbeating; defer)
+   *  - edit_active_until in the future AND `bypassFence` is false (worker
+   *    path only; an editor is active, defer)
    */
   async tryStartSend(
     db: Querier,
-    params: { workspaceId: string; id: string; ttlSeconds: number }
+    params: { workspaceId: string; id: string; ttlSeconds: number; bypassFence?: boolean }
   ): Promise<ScheduledMessage | null> {
+    const bypassFence = params.bypassFence ?? false
     const result = await db.query<ScheduledMessageRow>(sql`
       UPDATE scheduled_messages SET
         status = ${ScheduledMessageStatuses.SENDING},
@@ -338,7 +365,11 @@ export const ScheduledMessagesRepository = {
         AND workspace_id = ${params.workspaceId}
         AND status = ${ScheduledMessageStatuses.PENDING}
         AND scheduled_for <= NOW()
-        AND (edit_active_until IS NULL OR edit_active_until <= NOW())
+        AND (
+          ${bypassFence}::boolean
+          OR edit_active_until IS NULL
+          OR edit_active_until <= NOW()
+        )
       RETURNING ${sql.raw(COLUMNS)}
     `)
     return result.rows[0] ? mapRow(result.rows[0]) : null
