@@ -644,8 +644,13 @@ describe("Push Notifications", () => {
         deviceKey: "device-2",
       })
 
-      // device-2 has a recent session but isn't currently active (background PWA)
-      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-2")
+      // device-2 is live (heartbeat fresh) but unattended — proves attended
+      // routing wins over a live-but-idle peer, not just over a stale session.
+      await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-2",
+      })
       // device-1 is the device the user is on: focused and just interacted
       await UserSessionRepository.upsert(pool, {
         workspaceId: testWorkspaceId,
@@ -777,8 +782,13 @@ describe("Push Notifications", () => {
         deviceKey: "device-1",
       })
 
-      // device-1 has a recent (but not active) session so it's not expired
-      await createRecentInactiveSession(testWorkspaceId, testUserId, "device-1")
+      // device-1 is live (heartbeat fresh) but unattended — confirms the
+      // fallback target is a real online device, not a stale-but-non-expired one.
+      await UserSessionRepository.upsert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        deviceKey: "device-1",
+      })
 
       // The attended device (device-2) has no push subscription registered
       await UserSessionRepository.upsert(pool, {
