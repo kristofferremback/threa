@@ -145,4 +145,98 @@ describe("ScheduledMessagesRepository (integration)", () => {
       })
     })
   })
+
+  /**
+   * The bumpEditFence guarantee only matters if the worker's claim CAS
+   * actually honors the fence it sets. These tests pin both halves of the
+   * contract end-to-end: lock → bump → worker blocked → fence cleared →
+   * worker proceeds. If a future refactor decouples them (e.g. moving the
+   * fence check into application code where it could race the SQL), this
+   * test will fail before the regression ships.
+   */
+  describe("bumpEditFence + tryStartSend interaction", () => {
+    async function insertDuePendingRow(client: Parameters<Parameters<typeof withTestTransaction>[1]>[0], id: string) {
+      // scheduled_for in the past so tryStartSend's `scheduled_for <= NOW()`
+      // guard passes — otherwise the worker CAS would no-op for an unrelated
+      // reason and we'd miss the fence-blocking signal we're trying to test.
+      const row = await ScheduledMessagesRepository.insert(client, {
+        id,
+        workspaceId: WORKSPACE_ID,
+        userId: USER_ID,
+        streamId: STREAM_ID,
+        parentMessageId: null,
+        contentJson: { type: "doc", content: [] },
+        contentMarkdown: "hi",
+        attachmentIds: [],
+        metadata: null,
+        scheduledFor: new Date(Date.now() - 1_000),
+        clientMessageId: null,
+      })
+      return row
+    }
+
+    test("worker tryStartSend is blocked while the editor's fence is active, succeeds after the fence clears", async () => {
+      await withTestTransaction(pool, async (client) => {
+        const inserted = await insertDuePendingRow(client, "sched_smrepo_worker_blocked")
+        expect(inserted.editActiveUntil).toBeNull()
+
+        // Editor opens the dialog → fence pushed ~600s into the future.
+        const bumped = await ScheduledMessagesRepository.bumpEditFence(client, {
+          workspaceId: WORKSPACE_ID,
+          id: inserted.id,
+          ttlSeconds: 600,
+        })
+        expect(bumped!.editActiveUntil).not.toBeNull()
+        expect(bumped!.editActiveUntil!.getTime()).toBeGreaterThan(Date.now())
+
+        // Worker tick: tryStartSend without bypassFence sees fence > NOW()
+        // and refuses to claim. This is the actual "pause worker while
+        // editing" guarantee the fence is supposed to provide.
+        const blockedClaim = await ScheduledMessagesRepository.tryStartSend(client, {
+          workspaceId: WORKSPACE_ID,
+          id: inserted.id,
+          ttlSeconds: 10,
+        })
+        expect(blockedClaim).toBeNull()
+
+        // Editor closes → fence cleared. tryStartSend now sees
+        // edit_active_until IS NULL and proceeds.
+        await ScheduledMessagesRepository.releaseEditFence(client, WORKSPACE_ID, inserted.id)
+        const afterRelease = await ScheduledMessagesRepository.findById(client, WORKSPACE_ID, USER_ID, inserted.id)
+        expect(afterRelease!.editActiveUntil).toBeNull()
+
+        const claim = await ScheduledMessagesRepository.tryStartSend(client, {
+          workspaceId: WORKSPACE_ID,
+          id: inserted.id,
+          ttlSeconds: 10,
+        })
+        expect(claim).not.toBeNull()
+        expect(claim!.status).toBe(ScheduledMessageStatuses.SENDING)
+      })
+    })
+
+    test("user-initiated send (bypassFence=true) ignores the fence", async () => {
+      await withTestTransaction(pool, async (client) => {
+        const inserted = await insertDuePendingRow(client, "sched_smrepo_bypass")
+
+        // Same editor session that holds the fence is the one calling
+        // sendNow / past-time PATCH. Without bypassFence, the user's own
+        // dialog lock would deadlock their own send.
+        await ScheduledMessagesRepository.bumpEditFence(client, {
+          workspaceId: WORKSPACE_ID,
+          id: inserted.id,
+          ttlSeconds: 600,
+        })
+
+        const claim = await ScheduledMessagesRepository.tryStartSend(client, {
+          workspaceId: WORKSPACE_ID,
+          id: inserted.id,
+          ttlSeconds: 10,
+          bypassFence: true,
+        })
+        expect(claim).not.toBeNull()
+        expect(claim!.status).toBe(ScheduledMessageStatuses.SENDING)
+      })
+    })
+  })
 })
