@@ -435,8 +435,13 @@ interface PresetRowProps {
  * ("Tomorrow 9am", "Next Monday 9am") to a different instant than the
  * device-local timezone does, we render a split button instead — main click
  * still fires in device-local (the established default), the chevron opens
- * a dropdown listing both options so the user can opt into "9am in my home
- * timezone" without having to do offset math.
+ * a side-menu listing both resolved times so the user can opt into "9am in
+ * my home timezone" without having to do offset math.
+ *
+ * Visual matches the `GroupedItem` split-button in `message-context-menu`
+ * (the "Copy as Markdown ↘ Plain text" pattern): each half owns its own
+ * hover/focus background, separated by a `border-l`; the chevron's menu
+ * opens to the right like a Radix submenu rather than below the row.
  *
  * Duration presets ("In 15 minutes") are timezone-invariant, so the split
  * never appears for them.
@@ -472,11 +477,11 @@ function PresetRow({ preset, timezone, prefTimezone, onPreset }: PresetRowProps)
   }
 
   return (
-    <div className="flex items-stretch mx-1 rounded-md hover:bg-accent group/preset">
+    <div className="flex items-stretch mx-1">
       <button
         type="button"
         onClick={() => onPreset(preset)}
-        className="flex flex-1 items-center justify-between rounded-l-md px-2 py-1.5 text-left text-sm"
+        className="flex flex-1 items-center justify-between gap-2 rounded-md rounded-r-none px-2 py-1.5 text-left text-sm hover:bg-accent focus-visible:bg-accent focus:outline-none"
       >
         <span>{preset.label}</span>
         <span className="text-xs text-muted-foreground">{localLabel}</span>
@@ -486,31 +491,23 @@ function PresetRow({ preset, timezone, prefTimezone, onPreset }: PresetRowProps)
           <button
             type="button"
             aria-label={`Other timezones for ${preset.label}`}
-            className="flex items-center justify-center rounded-r-md border-l border-border/50 px-1.5 hover:bg-accent/80"
+            className="flex items-center justify-center rounded-md rounded-l-none border-l border-border/50 px-2 hover:bg-accent focus-visible:bg-accent focus:outline-none"
           >
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-[200px]">
-          <DropdownMenuItem
-            className="flex items-center justify-between gap-3 cursor-pointer"
-            onSelect={() => onPreset(preset)}
-          >
-            <span>{preset.label}</span>
-            <span className="text-xs text-muted-foreground">{localLabel}</span>
+        <DropdownMenuContent side="right" align="start" sideOffset={4} alignOffset={-4} className="min-w-[160px]">
+          <DropdownMenuItem className="cursor-pointer font-medium" onSelect={() => onPreset(preset)}>
+            {localLabel}
           </DropdownMenuItem>
           <Tooltip>
             <TooltipTrigger asChild>
-              <DropdownMenuItem
-                className="flex items-center justify-between gap-3 cursor-pointer"
-                onSelect={() => onPreset(preset, prefTimezone ?? undefined)}
-              >
-                <span>{preset.label}</span>
-                <span className="text-xs text-muted-foreground">{prefLabel}</span>
+              <DropdownMenuItem className="cursor-pointer" onSelect={() => onPreset(preset, prefTimezone ?? undefined)}>
+                {prefLabel}
               </DropdownMenuItem>
             </TooltipTrigger>
-            <TooltipContent side="left" className="text-xs">
-              Default timezone from your preferences ({prefTimezone})
+            <TooltipContent side="right" className="text-xs">
+              From your timezone preference ({prefTimezone})
             </TooltipContent>
           </Tooltip>
         </DropdownMenuContent>
