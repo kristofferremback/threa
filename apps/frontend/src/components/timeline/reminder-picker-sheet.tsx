@@ -5,7 +5,6 @@ import type { SavedMessageView } from "@threa/types"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { usePreferences } from "@/contexts"
 import { useSaveMessage, useUpdateSaved } from "@/hooks/use-saved"
 import { ReminderBadge } from "@/components/saved/reminder-badge"
 import { REMINDER_PRESETS, computeRemindAt } from "@/lib/reminder-presets"
@@ -31,8 +30,9 @@ interface ReminderPickerSheetProps {
  * trailing calendar icon, which meant users couldn't edit just the time.
  */
 export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId, saved }: ReminderPickerSheetProps) {
-  const { preferences } = usePreferences()
-  const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  // Browser-local timezone — never use `preferences.timezone` in the UI
+  // because native pickers always operate in device-local.
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const saveMutation = useSaveMessage(workspaceId)
   const updateMutation = useUpdateSaved(workspaceId)
   const [mode, setMode] = useState<"presets" | "custom">("presets")

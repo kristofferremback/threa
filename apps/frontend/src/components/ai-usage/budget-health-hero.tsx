@@ -1,6 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { usePreferences } from "@/contexts"
 import { cn } from "@/lib/utils"
 import { formatCurrency, formatShortDate, statusStyles, type BudgetMetrics } from "./metrics"
 import { Stat } from "./primitives"
@@ -8,8 +7,8 @@ import { TrajectoryChart } from "./trajectory-chart"
 
 export function BudgetHealthHero({ metrics, isLoading }: { metrics: BudgetMetrics; isLoading: boolean }) {
   const styles = statusStyles[metrics.status]
-  const { preferences } = usePreferences()
-  const timezone = preferences?.timezone
+  // Browser-local timezone — UI surfaces always render in device-local.
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   if (isLoading) {
     return (

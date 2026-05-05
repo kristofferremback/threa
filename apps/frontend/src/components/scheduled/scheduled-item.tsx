@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatSendCountdown } from "@/lib/dates"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
-import { usePreferences } from "@/contexts"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -35,8 +34,12 @@ interface ScheduledItemProps {
  */
 export function ScheduledItem({ scheduled, workspaceId, onEdit, onCancel, onSendNow }: ScheduledItemProps) {
   const isMobile = useIsMobile()
-  const { preferences } = usePreferences()
-  const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  // Always render in the device's local timezone — using a stored
+  // `preferences.timezone` would silently disagree with native pickers
+  // (which always operate in device-local), so a row scheduled at 07:46
+  // in the dialog could appear as 08:46 in the list. Browser-local
+  // everywhere keeps display and input consistent.
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   // Stream name resolution must go through the canonical helpers so #channels
   // pick up their slug prefix and untitled streams get a context-appropriate

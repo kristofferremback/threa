@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react"
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ReferenceDot, ReferenceLine, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
-import { usePreferences } from "@/contexts"
 import { cn } from "@/lib/utils"
 import { formatCurrency, formatShortDate, MS_PER_DAY, statusStyles, type BudgetMetrics } from "./metrics"
 
@@ -54,8 +53,8 @@ function ChartLegendItem({
 export function TrajectoryChart({ metrics }: { metrics: BudgetMetrics }) {
   const styles = statusStyles[metrics.status]
   const [focused, setFocused] = useState<string | null>(null)
-  const { preferences } = usePreferences()
-  const timezone = preferences?.timezone
+  // Browser-local timezone — UI surfaces always render in device-local.
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   // Build the data series. Actual line runs [0, daysElapsed]; projected runs
   // [daysElapsed, daysTotal]. They share a transition point at today so the

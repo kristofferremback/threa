@@ -9,7 +9,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatFutureTime, formatSendCountdown, toDateTimeLocalValue } from "@/lib/dates"
-import { usePreferences } from "@/contexts"
 import { useScheduledList, useCancelScheduled, useSendScheduledNow } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -78,8 +77,11 @@ export function ScheduledMessagesPicker({
   const { items } = useScheduledList(workspaceId, "pending", streamId)
   const cancelMutation = useCancelScheduled(workspaceId)
   const sendNowMutation = useSendScheduledNow(workspaceId)
-  const { preferences } = usePreferences()
-  const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  // Browser-local timezone everywhere in the UI — never use
+  // `preferences.timezone` here, native pickers always operate in
+  // device-local and any drift between the two silently shifts saved
+  // times.
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   const count = items.length
   // Re-anchor relative-time labels each time the popover opens.
