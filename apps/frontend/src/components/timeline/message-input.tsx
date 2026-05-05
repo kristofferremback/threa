@@ -34,6 +34,8 @@ interface MessageInputProps {
   disabled?: boolean
   disabledReason?: string
   autoFocus?: boolean
+  /** Called whenever the floating composer's measured height changes. */
+  onComposerHeightChange?: (height: number) => void
 }
 
 function attachmentMatchKey(attachment: Pick<PendingAttachment, "filename" | "mimeType">): string {
@@ -182,7 +184,14 @@ export function materializePendingAttachmentReferences(
   }
 }
 
-export function MessageInput({ workspaceId, streamId, disabled, disabledReason, autoFocus }: MessageInputProps) {
+export function MessageInput({
+  workspaceId,
+  streamId,
+  disabled,
+  disabledReason,
+  autoFocus,
+  onComposerHeightChange,
+}: MessageInputProps) {
   const editLastCtx = useEditLastMessage()
   const triggerEditLast = editLastCtx?.triggerEditLast
   const scrollToMessage = editLastCtx?.scrollToMessage
@@ -440,7 +449,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   // reserve matching space (Virtuoso Footer, plain-scroll padding-bottom).
   // Disabled while the expanded overlay is open so the scroll area can use its
   // full height behind the overlay.
-  useComposerHeightPublish(selfRef, { active: !expanded })
+  useComposerHeightPublish(selfRef, { active: !expanded, onHeightChange: onComposerHeightChange })
 
   // Escape to close — only when focus is inside this expanded editor
   useEffect(() => {

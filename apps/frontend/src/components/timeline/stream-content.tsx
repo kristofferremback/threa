@@ -104,6 +104,11 @@ export function StreamContent({
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set())
   const [hoveredBatchTargetId, setHoveredBatchTargetId] = useState<string | null>(null)
   const [dragGhost, setDragGhost] = useState<{ x: number; y: number } | null>(null)
+  // Track the floating composer's height so the Virtuoso Footer spacer can
+  // re-render with an exact pixel value. This guarantees Virtuoso re-measures
+  // the footer whenever the composer grows or shrinks.
+  const [composerHeight, setComposerHeight] = useState(0)
+  const composerHeightTimerRef = useRef<number | null>(null)
   // Single source of truth for the move flow: opens the dialog immediately on
   // drop with the real message count from selection (no need to wait for the
   // server). `leaseKey` stays null while validate is in flight, then gets
@@ -950,6 +955,36 @@ export function StreamContent({
     }
   }, [isJumpMode, exitJumpMode, resetPrependState, scrollToBottom])
 
+  // Re-scroll to bottom when the composer height changes so the most recent
+  // message stays visible above the floating composer. Debounced to batch
+  // rapid resize events (e.g. during keyboard animation) and give Virtuoso a
+  // frame to re-measure the Footer spacer.
+  const isScrolledFarFromBottomRef = useRef(isScrolledFarFromBottom)
+  isScrolledFarFromBottomRef.current = isScrolledFarFromBottom
+  const scrollToBottomRef = useRef(scrollToBottom)
+  scrollToBottomRef.current = scrollToBottom
+
+  const handleComposerHeightChange = useCallback((height: number) => {
+    setComposerHeight(height)
+    if (composerHeightTimerRef.current !== null) {
+      window.clearTimeout(composerHeightTimerRef.current)
+    }
+    composerHeightTimerRef.current = window.setTimeout(() => {
+      composerHeightTimerRef.current = null
+      if (!isScrolledFarFromBottomRef.current) {
+        scrollToBottomRef.current({ force: true })
+      }
+    }, 50)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (composerHeightTimerRef.current !== null) {
+        window.clearTimeout(composerHeightTimerRef.current)
+      }
+    }
+  }, [])
+
   if (error && !isDraft && events.length === 0 && !idbStream) {
     return (
       <ErrorView
@@ -1033,6 +1068,7 @@ export function StreamContent({
                     isSearchOpen={isSearchOpen}
                     batch={batchState}
                     batchPointerHandlers={batchPointerHandlers}
+                    composerHeight={composerHeight}
                   />
                   {/* Overlay loading indicators — absolutely positioned so they
                     don't cause layout shift when prepending older messages. */}
@@ -1207,6 +1243,7 @@ export function StreamContent({
                 disabled={isArchived || isSystem}
                 disabledReason={disabledReason}
                 autoFocus={autoFocus}
+                onComposerHeightChange={handleComposerHeightChange}
               />
             )}
           </div>
@@ -1246,6 +1283,7 @@ function VirtuosoMessageList({
   isSearchOpen,
   batch,
   batchPointerHandlers,
+  composerHeight,
 }: {
   visibleItems: TimelineItem[]
   isLoading: boolean
@@ -1278,6 +1316,7 @@ function VirtuosoMessageList({
   isSearchOpen: boolean
   batch?: BatchTimelineState
   batchPointerHandlers?: React.HTMLAttributes<HTMLElement>
+  composerHeight: number
 }) {
   const { phase } = useCoordinatedLoading()
   const socket = useSocket()
@@ -1457,9 +1496,9 @@ function VirtuosoMessageList({
       // `bottom-[calc(100%-20px)]`) doesn't get clipped by the scroller's
       // top edge. Bar-open state uses the taller h-11 spacer.
       Header: reservedTopSpacer ? BarTopSpacer : StreamHeaderSpacer,
-      Footer: ComposerFooterSpacer,
+      Footer: () => <ComposerFooterSpacer height={composerHeight} />,
     }),
-    [reservedTopSpacer]
+    [reservedTopSpacer, composerHeight]
   )
 
   if (isLoading) {
@@ -1525,7 +1564,7 @@ function VirtuosoMessageList({
 // for the composer's height (Virtuoso treats Footer as content).
 const StreamHeaderSpacer = () => <div className="h-3 sm:h-6" aria-hidden />
 
-const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--composer-height, 0px)" }} />
+const ComposerFooterSpacer = ({ height }: { height: number }) => <div aria-hidden style={{ height: `${height}px` }} />
 
 // 44px scrollable spacer used as Virtuoso's Header while the search or
 // batch-selection bar is open. Both bars render `absolute top-0` outside the
