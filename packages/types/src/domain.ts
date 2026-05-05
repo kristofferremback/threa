@@ -125,13 +125,20 @@ export function getBotAvatarUrl(
   return `/api/workspaces/${workspaceId}/bots/${botId}/avatar/${timestamp}.${size}.webp`
 }
 
+export type WorkspaceInvitationKind = "email" | "link"
+
 export interface WorkspaceInvitation {
   id: string
   workspaceId: string
-  email: string
+  /** `'email'` invites have an email at creation; `'link'` invites bind email at claim time. */
+  kind: WorkspaceInvitationKind
+  /** Null until a `'link'` invite is claimed by a recipient. */
+  email: string | null
   role: WorkspaceUserRole
   invitedBy: string
   status: InvitationStatus
+  /** Admin-only memo. Only set on `'link'` invites; never returned by public surfaces. */
+  note: string | null
   createdAt: string
   expiresAt: string
   acceptedAt: string | null

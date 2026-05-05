@@ -351,3 +351,187 @@ describe("InvitationService.revokeInvitation", () => {
     expect(mockInsertOutbox).not.toHaveBeenCalled()
   })
 })
+
+describe("InvitationService.createLink", () => {
+  let service: InvitationService
+
+  const mockInsertLink = spyOn(InvitationRepository, "insertLink")
+  const mockInsertOutbox = spyOn(OutboxRepository, "insert")
+
+  beforeEach(() => {
+    mockInsertLink.mockReset().mockImplementation(async (_db, params) => ({
+      id: params.id,
+      workspaceId: params.workspaceId,
+      kind: "link",
+      email: null,
+      role: params.role,
+      invitedBy: params.invitedBy,
+      workosInvitationId: null,
+      tokenHash: params.tokenHash,
+      note: params.note,
+      status: "pending",
+      createdAt: new Date(),
+      expiresAt: params.expiresAt,
+      acceptedAt: null,
+      revokedAt: null,
+    }))
+    mockInsertOutbox.mockReset().mockResolvedValue({
+      id: 1n,
+      eventType: "test",
+      payload: {},
+      createdAt: new Date(),
+    } as never)
+
+    service = new InvitationService({} as never, {} as never)
+  })
+
+  test("returns plaintext token only on creation; persists only the hash", async () => {
+    const { token, invitation } = await service.createLink({
+      workspaceId: "ws_1",
+      invitedBy: "usr_admin",
+      role: "user",
+      note: "for Simon",
+    })
+
+    expect(token).toMatch(/^[A-Za-z0-9_-]{40,}$/)
+    expect(invitation.kind).toBe("link")
+    expect(invitation.email).toBeNull()
+
+    const insertCall = mockInsertLink.mock.calls[0]!
+    expect(insertCall[1].tokenHash).toBeDefined()
+    // Hex-encoded sha256 → 64 chars
+    expect(insertCall[1].tokenHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(insertCall[1].tokenHash).not.toBe(token)
+    expect(insertCall[1].note).toBe("for Simon")
+    expect(insertCall[1].role).toBe("user")
+  })
+
+  test("emits invitation:link-created outbox event", async () => {
+    await service.createLink({ workspaceId: "ws_1", invitedBy: "usr_admin", role: "admin", note: null })
+
+    const event = mockInsertOutbox.mock.calls.find((call) => call[1] === "invitation:link-created")
+    expect(event).toBeDefined()
+    expect(event![2]).toMatchObject({
+      workspaceId: "ws_1",
+      role: "admin",
+    })
+    expect((event![2] as unknown as Record<string, unknown>).tokenHash).toMatch(/^[a-f0-9]{64}$/)
+  })
+})
+
+describe("InvitationService.claimLinkByToken", () => {
+  let service: InvitationService
+
+  const mockFindByTokenHash = spyOn(InvitationRepository, "findPendingByTokenHash")
+  const mockClaim = spyOn(InvitationRepository, "claimLinkByTokenHash")
+  const mockFindUserById = spyOn(UserRepository, "findById")
+  const mockFindEmails = spyOn(UserRepository, "findEmails")
+  const mockInsertOutbox = spyOn(OutboxRepository, "insert")
+
+  const linkRow = {
+    id: "inv_link_1",
+    workspaceId: "ws_1",
+    kind: "link",
+    email: null,
+    role: "user",
+    invitedBy: "usr_admin",
+    workosInvitationId: null,
+    tokenHash: "deadbeef",
+    note: null,
+    status: "pending",
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 60_000),
+    acceptedAt: null,
+    revokedAt: null,
+  }
+
+  beforeEach(() => {
+    mockFindByTokenHash.mockReset().mockResolvedValue(linkRow as never)
+    mockClaim.mockReset().mockImplementation(async (_db, _hash, email) => ({ ...linkRow, email }) as never)
+    mockFindUserById.mockReset().mockResolvedValue(null)
+    mockFindEmails.mockReset().mockResolvedValue(new Set<string>())
+    mockInsertOutbox.mockReset().mockResolvedValue({
+      id: 1n,
+      eventType: "test",
+      payload: {},
+      createdAt: new Date(),
+    } as never)
+    service = new InvitationService({} as never, {} as never)
+  })
+
+  test("binds email + emits invitation:link-claimed outbox event", async () => {
+    const result = await service.claimLinkByToken("plaintext-token", "Simon@Example.COM")
+
+    expect(result.alreadyMember).toBeUndefined()
+    expect(mockClaim).toHaveBeenCalledTimes(1)
+    // Email is normalized lowercased + trimmed before hitting the DB
+    expect(mockClaim.mock.calls[0]![2]).toBe("simon@example.com")
+
+    const claimedEvent = mockInsertOutbox.mock.calls.find((c) => c[1] === "invitation:link-claimed")
+    expect(claimedEvent).toBeDefined()
+    expect(claimedEvent![2]).toMatchObject({
+      workspaceId: "ws_1",
+      invitationId: "inv_link_1",
+      email: "simon@example.com",
+      role: "user",
+    })
+  })
+
+  test("returns alreadyMember when email already belongs to a workspace user", async () => {
+    mockFindEmails.mockResolvedValue(new Set(["simon@example.com"]))
+
+    const result = await service.claimLinkByToken("plaintext-token", "simon@example.com")
+
+    expect(result.alreadyMember).toEqual({ workspaceId: "ws_1" })
+  })
+
+  test("rejects revoked link with INVITATION_REVOKED", async () => {
+    mockFindByTokenHash.mockResolvedValue({ ...linkRow, status: "revoked" } as never)
+
+    await expect(service.claimLinkByToken("plaintext-token", "simon@example.com")).rejects.toMatchObject({
+      code: "INVITATION_REVOKED",
+    })
+    expect(mockClaim).not.toHaveBeenCalled()
+  })
+
+  test("rejects expired link with INVITATION_EXPIRED", async () => {
+    mockFindByTokenHash.mockResolvedValue({
+      ...linkRow,
+      expiresAt: new Date(Date.now() - 60_000),
+    } as never)
+
+    await expect(service.claimLinkByToken("plaintext-token", "simon@example.com")).rejects.toMatchObject({
+      code: "INVITATION_EXPIRED",
+    })
+  })
+
+  test("rejects already-claimed link with INVITATION_ALREADY_CLAIMED", async () => {
+    mockFindByTokenHash.mockResolvedValue({
+      ...linkRow,
+      email: "someone-else@example.com",
+    } as never)
+
+    await expect(service.claimLinkByToken("plaintext-token", "simon@example.com")).rejects.toMatchObject({
+      code: "INVITATION_ALREADY_CLAIMED",
+    })
+  })
+
+  test("losing a concurrent race surfaces INVITATION_ALREADY_CLAIMED", async () => {
+    // Find still sees pending+null (raced read), but the atomic UPDATE returns null.
+    mockClaim.mockResolvedValue(null)
+
+    await expect(service.claimLinkByToken("plaintext-token", "simon@example.com")).rejects.toMatchObject({
+      code: "INVITATION_ALREADY_CLAIMED",
+    })
+    // No outbox event should be written — the row was not bound by us.
+    expect(mockInsertOutbox).not.toHaveBeenCalled()
+  })
+
+  test("rejects unknown token with INVITATION_NOT_FOUND", async () => {
+    mockFindByTokenHash.mockResolvedValue(null)
+
+    await expect(service.claimLinkByToken("plaintext-token", "simon@example.com")).rejects.toMatchObject({
+      code: "INVITATION_NOT_FOUND",
+    })
+  })
+})

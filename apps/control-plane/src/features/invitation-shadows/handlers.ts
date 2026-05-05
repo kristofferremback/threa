@@ -7,17 +7,42 @@ interface Dependencies {
   shadowService: InvitationShadowService
 }
 
-const createShadowSchema = z.object({
-  id: z.string().min(1),
-  workspaceId: z.string().min(1),
-  email: z.string().email(),
-  region: z.string().min(1),
-  expiresAt: z.string().datetime(),
-  inviterWorkosUserId: z.string().min(1).optional(),
-})
+const createShadowSchema = z
+  .object({
+    id: z.string().min(1),
+    workspaceId: z.string().min(1),
+    region: z.string().min(1),
+    expiresAt: z.string().datetime(),
+    kind: z.enum(["email", "link"]).default("email"),
+    email: z.string().email().nullable().optional(),
+    tokenHash: z.string().min(1).nullable().optional(),
+    inviterWorkosUserId: z.string().min(1).optional(),
+  })
+  .refine(
+    (v) => {
+      if (v.kind === "email") return !!v.email
+      if (v.kind === "link") return !!v.tokenHash
+      return true
+    },
+    { message: "email is required for kind='email'; tokenHash is required for kind='link'" }
+  )
 
 const updateShadowSchema = z.object({
   status: z.enum(["revoked"]),
+})
+
+const lookupSchema = z.object({
+  token: z.string().min(1).max(200),
+})
+
+const claimSchema = z.object({
+  token: z.string().min(1).max(200),
+  email: z.string().email(),
+})
+
+const notifyClaimSchema = z.object({
+  email: z.string().email(),
+  inviterWorkosUserId: z.string().min(1).optional(),
 })
 
 export function createInvitationShadowHandlers({ shadowService }: Dependencies) {
@@ -31,8 +56,10 @@ export function createInvitationShadowHandlers({ shadowService }: Dependencies) 
       const shadow = await shadowService.createShadow({
         id: parsed.data.id,
         workspaceId: parsed.data.workspaceId,
-        email: parsed.data.email,
         region: parsed.data.region,
+        kind: parsed.data.kind,
+        email: parsed.data.email ?? null,
+        tokenHash: parsed.data.tokenHash ?? null,
         expiresAt: new Date(parsed.data.expiresAt),
         inviterWorkosUserId: parsed.data.inviterWorkosUserId,
       })
@@ -52,6 +79,40 @@ export function createInvitationShadowHandlers({ shadowService }: Dependencies) 
         throw new HttpError("Invitation shadow not found", { status: 404, code: "NOT_FOUND" })
       }
 
+      res.json({ ok: true })
+    },
+
+    /** Public/unauthenticated: resolve a /join token to workspace metadata */
+    async lookup(req: Request, res: Response) {
+      const parsed = lookupSchema.safeParse({ token: req.query.token })
+      if (!parsed.success) {
+        throw new HttpError("Missing token", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      const result = await shadowService.lookupByToken(parsed.data.token)
+      res.json(result)
+    },
+
+    /** Public/unauthenticated: claim a /join link by submitting an email */
+    async claim(req: Request, res: Response) {
+      const parsed = claimSchema.safeParse(req.body)
+      if (!parsed.success) {
+        throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      const result = await shadowService.claimByToken(parsed.data.token, parsed.data.email)
+      res.json(result)
+    },
+
+    /** Internal: regional notifies CP that a link was claimed; CP triggers WorkOS invite */
+    async notifyClaim(req: Request, res: Response) {
+      const parsed = notifyClaimSchema.safeParse(req.body)
+      if (!parsed.success) {
+        throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      await shadowService.acceptLinkClaim({
+        id: req.params.id,
+        email: parsed.data.email,
+        inviterWorkosUserId: parsed.data.inviterWorkosUserId,
+      })
       res.json({ ok: true })
     },
 

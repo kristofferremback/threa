@@ -1,4 +1,5 @@
 import type { Pool } from "pg"
+import { createHash } from "node:crypto"
 import {
   withTransaction,
   displayNameFromWorkos,
@@ -9,8 +10,12 @@ import {
 } from "@threa/backend-common"
 import { InvitationShadowRepository } from "./repository"
 import { WorkspaceRegistryRepository } from "../workspaces"
-import type { RegionalClient } from "../../lib/regional-client"
-import type { PendingInvitation } from "@threa/types"
+import { RegionalClaimError, type RegionalClient } from "../../lib/regional-client"
+import type { InvitationLinkLookupResponse, PendingInvitation } from "@threa/types"
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex")
+}
 
 const WORKOS_ERROR_CODES = {
   USER_ALREADY_MEMBER: "user_already_organization_member",
@@ -63,7 +68,9 @@ export class InvitationShadowService {
     if (!shadow) {
       throw new HttpError("Invitation not found", { status: 404, code: "NOT_FOUND" })
     }
-    if (shadow.email.toLowerCase() !== user.email.toLowerCase()) {
+    // Email is null for unclaimed link invites — those can't be accepted via
+    // this surface (they require the public claim flow first to bind an email).
+    if (!shadow.email || shadow.email.toLowerCase() !== user.email.toLowerCase()) {
       throw new HttpError("Invitation not found", { status: 404, code: "NOT_FOUND" })
     }
 
@@ -122,50 +129,168 @@ export class InvitationShadowService {
   }
 
   /**
-   * Create an invitation shadow and send the WorkOS invitation email.
-   * The shadow is always created regardless of WorkOS outcome — WorkOS
-   * state conflicts (already invited, already member) are logged as warnings.
+   * Create an invitation shadow. For email invites, also send the WorkOS
+   * invitation email. For link invites, the shadow is created with no email
+   * yet — WorkOS isn't contacted until the recipient claims the link.
+   * WorkOS state conflicts (already invited, already member) are logged as warnings.
    */
   async createShadow(params: {
     id: string
     workspaceId: string
-    email: string
     region: string
+    kind: "email" | "link"
+    email: string | null
+    tokenHash: string | null
     expiresAt: Date
     inviterWorkosUserId?: string
   }) {
     // Step 1: Insert shadow record (quick DB write)
     const shadow = await InvitationShadowRepository.insert(this.pool, params)
 
+    // Link invites have no email at creation — defer WorkOS until claim.
+    if (params.kind === "link" || !params.email) {
+      return shadow
+    }
+
     // Step 2: Ensure WorkOS organization exists for this workspace (lazy create, cached)
     const orgId = await this.ensureWorkosOrganization(params.workspaceId)
 
     // Step 3: Send WorkOS invitation email (no DB connection held — INV-41)
     if (orgId && params.inviterWorkosUserId) {
-      try {
-        const workosInvitation = await this.workosOrgService.sendInvitation({
-          organizationId: orgId,
-          email: params.email,
-          inviterUserId: params.inviterWorkosUserId,
-        })
-        await InvitationShadowRepository.setWorkosInvitationId(this.pool, shadow.id, workosInvitation.id)
-      } catch (error) {
-        const errorCode = getWorkosErrorCode(error)
-        const isKnownStateConflict =
-          errorCode === WORKOS_ERROR_CODES.USER_ALREADY_MEMBER || errorCode === WORKOS_ERROR_CODES.EMAIL_ALREADY_INVITED
-
-        if (isKnownStateConflict) {
-          logger.warn(
-            { errorCode, email: params.email, shadowId: shadow.id },
-            "WorkOS state conflict when sending invitation (noop)"
-          )
-        } else {
-          logger.error({ err: error, email: params.email, shadowId: shadow.id }, "Failed to send WorkOS invitation")
-        }
-      }
+      await this.sendWorkosInvitationForShadow({
+        shadowId: shadow.id,
+        email: params.email,
+        organizationId: orgId,
+        inviterWorkosUserId: params.inviterWorkosUserId,
+      })
     }
 
     return shadow
+  }
+
+  /**
+   * Resolve a public-surface link token. Returns workspace name + expiry only —
+   * never the email, role, note, or inviter identity.
+   */
+  async lookupByToken(token: string): Promise<InvitationLinkLookupResponse> {
+    const tokenHash = hashToken(token)
+    const row = await InvitationShadowRepository.findByTokenHashWithWorkspace(this.pool, tokenHash)
+    if (!row) {
+      throw new HttpError("Invitation not found", { status: 404, code: "INVITATION_NOT_FOUND" })
+    }
+    if (row.status === "revoked") {
+      throw new HttpError("Invitation revoked", { status: 409, code: "INVITATION_REVOKED" })
+    }
+    if (row.status === "accepted") {
+      throw new HttpError("Invitation already used", { status: 409, code: "INVITATION_ALREADY_CLAIMED" })
+    }
+    if (row.expires_at <= new Date()) {
+      throw new HttpError("Invitation expired", { status: 409, code: "INVITATION_EXPIRED" })
+    }
+
+    return {
+      workspaceName: row.workspace_name,
+      expiresAt: row.expires_at.toISOString(),
+    }
+  }
+
+  /**
+   * Public-surface claim. The token-hash lookup happens on CP (so the public
+   * call doesn't have to leak which region owns the row), then forwards to
+   * the regional backend for the atomic single-use claim. Regional emits an
+   * outbox event that loops back to `acceptLinkClaim` below to drive WorkOS.
+   */
+  async claimByToken(token: string, email: string): Promise<{ ok: true; alreadyMember?: { workspaceId: string } }> {
+    const tokenHash = hashToken(token)
+    const shadow = await InvitationShadowRepository.findByTokenHashWithWorkspace(this.pool, tokenHash)
+    if (!shadow) {
+      throw new HttpError("Invitation not found", { status: 404, code: "INVITATION_NOT_FOUND" })
+    }
+
+    // Look up region from full shadow row (the workspace-joined row drops region)
+    const fullShadow = await InvitationShadowRepository.findById(this.pool, shadow.id)
+    if (!fullShadow) {
+      throw new HttpError("Invitation not found", { status: 404, code: "INVITATION_NOT_FOUND" })
+    }
+
+    try {
+      return await this.regionalClient.claimInvitationLink(fullShadow.region, { token, email })
+    } catch (err) {
+      if (err instanceof RegionalClaimError) {
+        const code = err.upstreamCode()
+        if (code === "INVITATION_REVOKED" || code === "INVITATION_EXPIRED" || code === "INVITATION_ALREADY_CLAIMED") {
+          throw new HttpError(code, { status: 409, code })
+        }
+        if (code === "INVITATION_NOT_FOUND") {
+          throw new HttpError(code, { status: 404, code })
+        }
+      }
+      throw err
+    }
+  }
+
+  /**
+   * Inbound shadow-sync: regional has bound an email to a previously-unclaimed
+   * link invitation. Mirror the email locally, then trigger the WorkOS
+   * invitation so the recipient gets a verification email. Idempotent.
+   */
+  async acceptLinkClaim(params: { id: string; email: string; inviterWorkosUserId?: string }): Promise<void> {
+    // Mirror email onto the local shadow first (idempotent).
+    const updated = await InvitationShadowRepository.setEmailFromClaim(this.pool, params.id, params.email, null)
+    if (!updated) {
+      logger.warn({ id: params.id }, "Link claim received for unknown shadow (or non-link kind)")
+      return
+    }
+
+    if (updated.workos_invitation_id) {
+      // Idempotent replay: WorkOS invite already sent. Nothing to do.
+      return
+    }
+
+    const orgId = await this.ensureWorkosOrganization(updated.workspace_id)
+    if (!orgId || !params.inviterWorkosUserId) {
+      logger.warn(
+        { id: params.id, hasOrg: !!orgId, hasInviter: !!params.inviterWorkosUserId },
+        "Skipping WorkOS invite for link claim — missing org or inviter"
+      )
+      return
+    }
+
+    await this.sendWorkosInvitationForShadow({
+      shadowId: updated.id,
+      email: params.email,
+      organizationId: orgId,
+      inviterWorkosUserId: params.inviterWorkosUserId,
+    })
+  }
+
+  private async sendWorkosInvitationForShadow(params: {
+    shadowId: string
+    email: string
+    organizationId: string
+    inviterWorkosUserId: string
+  }): Promise<void> {
+    try {
+      const workosInvitation = await this.workosOrgService.sendInvitation({
+        organizationId: params.organizationId,
+        email: params.email,
+        inviterUserId: params.inviterWorkosUserId,
+      })
+      await InvitationShadowRepository.setWorkosInvitationId(this.pool, params.shadowId, workosInvitation.id)
+    } catch (error) {
+      const errorCode = getWorkosErrorCode(error)
+      const isKnownStateConflict =
+        errorCode === WORKOS_ERROR_CODES.USER_ALREADY_MEMBER || errorCode === WORKOS_ERROR_CODES.EMAIL_ALREADY_INVITED
+
+      if (isKnownStateConflict) {
+        logger.warn(
+          { errorCode, email: params.email, shadowId: params.shadowId },
+          "WorkOS state conflict when sending invitation (noop)"
+        )
+      } else {
+        logger.error({ err: error, email: params.email, shadowId: params.shadowId }, "Failed to send WorkOS invitation")
+      }
+    }
   }
 
   /**

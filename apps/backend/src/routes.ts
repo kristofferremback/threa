@@ -189,6 +189,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     app.post("/internal/workspaces", internalAuth, internal.createWorkspace)
     app.post("/internal/invitations/:id/accept", internalAuth, internal.acceptInvitation)
+    app.post("/internal/invitations/claim-link", internalAuth, invitation.claimLink)
   }
 
   // Global baseline rate limit
@@ -292,6 +293,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Invitations (admin+ only)
   app.get("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.list)
   app.post("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.send)
+  app.post("/api/workspaces/:workspaceId/invitations/links", ...authed, requireRole("admin"), invitation.createLink)
   app.post(
     "/api/workspaces/:workspaceId/invitations/:invitationId/revoke",
     ...authed,

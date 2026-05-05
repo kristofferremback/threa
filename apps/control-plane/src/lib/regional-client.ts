@@ -84,4 +84,59 @@ export class RegionalClient {
 
     return res.json()
   }
+
+  /**
+   * Forward a link-invitation claim from CP to the regional backend that owns
+   * the row. Regional performs the atomic claim (INV-20). On 4xx, surfaces the
+   * upstream error code so CP can map it to an HTTP status without parsing.
+   */
+  async claimInvitationLink(
+    region: string,
+    data: { token: string; email: string }
+  ): Promise<{ ok: true; alreadyMember?: { workspaceId: string } }> {
+    const url = `${this.getRegionUrl(region)}/internal/invitations/claim-link`
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
+        },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      logger.error({ err, region, url }, "Regional invitation link claim request failed")
+      throw err
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      logger.error({ region, status: res.status, body }, "Regional invitation link claim failed")
+      throw new RegionalClaimError(res.status, body)
+    }
+
+    return res.json()
+  }
+}
+
+export class RegionalClaimError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: string
+  ) {
+    super(`Regional backend returned ${status}: ${body}`)
+    this.name = "RegionalClaimError"
+  }
+
+  /** Try to parse the upstream `code` from the JSON body. */
+  upstreamCode(): string | null {
+    try {
+      const parsed = JSON.parse(this.body) as { code?: string }
+      return typeof parsed.code === "string" ? parsed.code : null
+    } catch {
+      return null
+    }
+  }
 }
