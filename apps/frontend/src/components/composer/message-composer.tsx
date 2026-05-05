@@ -248,6 +248,7 @@ export function MessageComposer({
 
   const richEditorRef = useRef<RichEditorHandle>(null)
   const expandedShellRef = useRef<HTMLDivElement>(null)
+  const actionBarWrapperRef = useRef<HTMLDivElement>(null)
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
   const [formatOpen, setFormatOpen] = useState(false)
   const [mobileExpanded, setMobileExpanded] = useState(false)
@@ -786,9 +787,25 @@ export function MessageComposer({
 
             {/* Bottom action bar — visible on desktop always, on mobile only when focused.
                onMouseDown preventDefault keeps editor focus on mobile so the virtual keyboard
-               stays open when tapping any button in this bar. */}
+               stays open when tapping any button in this bar.
+
+               Subtlety: React synthetic events bubble through the *React component
+               tree*, not the DOM tree. Slots like `scheduledMessagesTrigger` host
+               Radix Popover/Dialog whose content is portaled into <body>, but
+               their synthetic events still bubble back here through the React
+               tree. A blanket `preventDefault` therefore cancels native focus on
+               inputs (date/time pickers, search inputs) inside those portals. The
+               DOM-subtree guard below limits the suppression to elements actually
+               living under this wrapper — buttons in our own action bar — and
+               leaves portaled content untouched. */}
             {(!isMobile || mobileFocused) && (
-              <div onMouseDown={(e) => e.preventDefault()}>
+              <div
+                ref={actionBarWrapperRef}
+                onMouseDown={(e) => {
+                  if (!actionBarWrapperRef.current?.contains(e.target as Node)) return
+                  e.preventDefault()
+                }}
+              >
                 {isMobile ? (
                   <EditorActionBar
                     editorHandle={richEditorRef.current}
