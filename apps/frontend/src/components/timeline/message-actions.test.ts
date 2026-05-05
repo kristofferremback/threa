@@ -359,7 +359,7 @@ describe("groupVisibleActions", () => {
   it("returns single items for ungrouped actions and groups same-id ones", () => {
     const ctx = createContext()
     const items = groupVisibleActions(getVisibleActions(ctx))
-    // No share/copy-link callbacks, so just reply + copy-as-markdown + copy-as-plain-text.
+    // No share/save/copy-link callbacks, so just reply + copy-as-markdown + copy-as-plain-text.
     // copy-as-markdown + copy-as-plain-text share groupId="copy" → one group.
     expect(items.map((i) => i.kind)).toEqual(["single", "group"])
     const reply = items[0]
@@ -368,6 +368,23 @@ describe("groupVisibleActions", () => {
     if (copyGroup.kind !== "group") throw new Error("expected group")
     // Members include the default first.
     expect(copyGroup.members.map((m) => m.id)).toEqual(["copy-as-markdown", "copy-as-plain-text"])
+  })
+
+  it("groups save and reminder with save as the default when both are visible", () => {
+    const ctx = createContext({ onToggleSave: () => {}, onRequestReminder: () => {} })
+    const items = groupVisibleActions(getVisibleActions(ctx))
+    const saveGroup = items.find((i) => i.kind === "group" && i.members[0]?.id === "save-message")
+    expect(saveGroup).toBeDefined()
+    if (saveGroup?.kind !== "group") throw new Error("expected save group")
+    expect(saveGroup.members.map((m) => m.id)).toEqual(["save-message", "set-reminder"])
+  })
+
+  it("degrades to standalone reminder when the message is already saved", () => {
+    const ctx = createContext({ isSaved: true, onToggleSave: () => {}, onRequestReminder: () => {} })
+    const items = groupVisibleActions(getVisibleActions(ctx))
+    expect(items.find((i) => i.kind === "group" && i.members[0]?.id === "save-message")).toBeUndefined()
+    expect(items.find((i) => i.kind === "single" && i.action.id === "set-reminder")).toBeDefined()
+    expect(items.find((i) => i.kind === "single" && i.action.id === "unsave-message")).toBeDefined()
   })
 
   it("collapses adjacent same-groupId actions into a group whose first member is the default", () => {
