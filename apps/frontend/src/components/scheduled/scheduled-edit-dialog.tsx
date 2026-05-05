@@ -11,7 +11,13 @@ import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import { DateTimeField } from "@/components/forms/date-time-field"
 import { parseLocalDateTime, toDateInputValue, toTimeInputValue } from "@/lib/dates"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useUpdateScheduled, useLockScheduledForEdit, useReleaseScheduledEditLock, isLocalScheduledId } from "@/hooks"
+import {
+  useUpdateScheduled,
+  useLockScheduledForEdit,
+  useReleaseScheduledEditLock,
+  useSendScheduledNow,
+  isLocalScheduledId,
+} from "@/hooks"
 import { useMentionStreamContext } from "@/hooks/use-mentionables"
 import { useAttachments } from "@/hooks/use-attachments"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
@@ -47,6 +53,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const updateMutation = useUpdateScheduled(workspaceId)
   const lockMutation = useLockScheduledForEdit(workspaceId)
   const releaseLockMutation = useReleaseScheduledEditLock(workspaceId)
+  const sendNowMutation = useSendScheduledNow(workspaceId)
 
   const [contentJson, setContentJson] = useState<JSONContent>(EMPTY_DOC)
   const [sendDate, setSendDate] = useState<string>("")
@@ -69,10 +76,16 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   const open = scheduled !== null
   const isLocalRow = scheduled ? isLocalScheduledId(scheduled.id) : false
 
-  // The `version` the editor opened against — sent on save as
-  // `expectedVersion` for the optimistic-CAS. Captured from the row prop;
-  // if the row changes underneath us, the CAS rejects on save.
-  const expectedVersion = scheduled?.version ?? null
+  /**
+   * The `version` we'll send back as `expectedVersion`. Captured ONCE on
+   * dialog open (state, not a memo on the prop) so a concurrent socket
+   * update can't silently advance the version and let our save win where
+   * it should have 409'd. Refreshed exactly once from the lock response —
+   * that handles IDB rows that pre-date the version migration and don't
+   * carry a `version` field. Without this refresh, the save guard
+   * (`expectedVersion === null`) silently bails for those rows.
+   */
+  const [expectedVersion, setExpectedVersion] = useState<number | null>(null)
 
   // Seed editor state when the row id changes. Re-seeding mid-edit is
   // intentionally not done — that would clobber the user's in-progress edits
@@ -90,6 +103,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       setError(null)
       setFormatOpen(false)
       setMobileExpanded(false)
+      setExpectedVersion(null)
       attachmentsHook.clear()
       return
     }
@@ -104,13 +118,26 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
     setError(null)
     setFormatOpen(false)
     setMobileExpanded(false)
+    // Initial guess from the prop. May be undefined for IDB rows that
+    // pre-date the version migration; the lock response below corrects it.
+    setExpectedVersion(scheduled.version ?? null)
     attachmentsHook.clear()
 
-    // Fire-and-forget: pause the worker so it doesn't send mid-edit. Local
-    // placeholders haven't been persisted yet, so the lock would 404 — skip.
-    // No heartbeat; the TTL is generous and a save 409s cleanly if it lapses.
+    // Fire-and-forget pause + version refresh: pause the worker so it
+    // doesn't send mid-edit, and use the response to refresh
+    // `expectedVersion` (handles stale IDB rows missing `version`). Local
+    // placeholders haven't been persisted yet — skip both.
     if (!isLocalScheduledId(scheduled.id)) {
-      lockMutation.mutate(scheduled.id)
+      lockMutation
+        .mutateAsync(scheduled.id)
+        .then((res) => {
+          setExpectedVersion(res.scheduled.version)
+        })
+        .catch(() => {
+          // Lock failed (probably 409 NOT_PENDING — worker beat us). The
+          // save will surface the same condition cleanly via STALE_VERSION
+          // or NOT_PENDING; nothing to do here.
+        })
     }
   }, [scheduled, attachmentsHook, lockMutation])
 
@@ -128,10 +155,45 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
 
   const sendAtDate = useMemo(() => parseLocalDateTime(sendDate, sendTime), [sendDate, sendTime])
 
+  /**
+   * Cancel handler. When the wire has passed and we have a real (non-local)
+   * row, "cancel" means "send the original immediately" — atomically via
+   * sendNow rather than waiting on a worker tick. Without this, the user
+   * sees a "Send original" button that effectively does nothing visible:
+   * the row stays in the queue and the next worker retry could be many
+   * seconds away. For future-time or local rows, falls back to plain close.
+   */
+  const handleCancel = useCallback(async () => {
+    const isPastNow = sendAtDate ? sendAtDate.getTime() <= Date.now() : false
+    if (isPastNow && scheduled && !isLocalRow) {
+      try {
+        await sendNowMutation.mutateAsync(scheduled.id)
+        toast.success("Sent")
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Could not send"
+        toast.error(message)
+      }
+    }
+    handleClose()
+  }, [sendAtDate, scheduled, isLocalRow, sendNowMutation, handleClose])
+
+  // Re-evaluate `isPast` on a 1s tick — without this, `isPast` is locked to
+  // whatever it was when sendAtDate last changed, so a user who opened the
+  // dialog 30s before the wire and kept editing past it would never see the
+  // dialog flip into "Send" mode (title, save label, hint all stay on the
+  // future-edit copy). The tick is gated behind `open` so the dialog
+  // doesn't keep ticking after it's closed.
+  const [now, setNow] = useState<number>(() => Date.now())
+  useEffect(() => {
+    if (!open) return
+    const handle = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(handle)
+  }, [open])
+
   const isPast = useMemo(() => {
     if (!sendAtDate) return false
-    return sendAtDate.getTime() <= Date.now()
-  }, [sendAtDate])
+    return sendAtDate.getTime() <= now
+  }, [sendAtDate, now])
 
   const setRichEditorHandle = useCallback((handle: RichEditorHandle | null) => {
     editorRef.current = handle
@@ -195,11 +257,12 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
 
   const description = (() => {
     if (isLocalRow) return "Saving to the server… you can edit once the schedule lands."
-    if (isPast) return "Scheduled time has passed — this message will be sent as soon as you finish editing."
+    if (isPast)
+      return "Send time has passed. Save sends now with your edits; Send original sends the unchanged version."
     return null
   })()
 
-  const cancelLabel = isPast ? "Send unchanged" : "Cancel"
+  const cancelLabel = isPast ? "Send original" : "Cancel"
   const saveLabel = isPast ? "Send" : "Save"
   const title = isPast ? "Send scheduled message" : "Edit scheduled message"
 
@@ -257,8 +320,8 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
           size="sm"
           className="h-8 px-2.5 text-xs shrink-0"
           onPointerDown={(e) => e.preventDefault()}
-          onClick={handleClose}
-          disabled={isSaving}
+          onClick={handleCancel}
+          disabled={isSaving || sendNowMutation.isPending}
         >
           {cancelLabel}
         </Button>
@@ -385,7 +448,13 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
                 showExpand={false}
                 trailingContent={
                   <>
-                    <Button type="button" variant="ghost" size="sm" onClick={handleClose} disabled={isSaving}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCancel}
+                      disabled={isSaving || sendNowMutation.isPending}
+                    >
                       {cancelLabel}
                     </Button>
                     <Button type="button" size="sm" onClick={handleSave} disabled={isSaving || isLocalRow}>

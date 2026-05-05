@@ -223,6 +223,27 @@ describe("ScheduledMessagesService.lockForEdit (worker pause)", () => {
     expect(result.editActiveUntil.getTime()).toBeGreaterThan(Date.now())
     expect(bumpEditFence).toHaveBeenCalledTimes(1)
   })
+
+  it("returns the row's current version so the dialog can refresh stale IDB state", async () => {
+    // Why this matters: an IDB row that was cached before the version
+    // migration shipped doesn't carry a `version` field. The dialog reads
+    // `scheduled.version` for its expectedVersion guard — undefined → save
+    // silently bails (`expectedVersion === null`). The lock response is
+    // the dialog's chance to refresh that state from an authoritative
+    // source before the user even attempts to save.
+    const service = setupService()
+    const row = fakeScheduled({ version: 7 })
+    spyOn(ScheduledMessagesRepository, "findById").mockResolvedValue(row)
+    spyOn(ScheduledMessagesRepository, "bumpEditFence").mockResolvedValue({
+      ...row,
+      editActiveUntil: new Date(Date.now() + 10 * 60_000),
+    })
+
+    const result = await service.lockForEdit({ workspaceId: WORKSPACE_ID, userId: USER_ID, id: SCHEDULED_ID })
+
+    expect(result.scheduled.version).toBe(7)
+    expect(result.scheduled.id).toBe(SCHEDULED_ID)
+  })
 })
 
 describe("ScheduledMessagesService.cancel", () => {

@@ -210,7 +210,11 @@ export class ScheduledMessagesService {
    * 404 SCHEDULED_MESSAGE_NOT_FOUND when missing; 409 with status-aware code
    * when the row has already moved past `pending`.
    */
-  async lockForEdit(params: { workspaceId: string; userId: string; id: string }): Promise<{ editActiveUntil: Date }> {
+  async lockForEdit(params: {
+    workspaceId: string
+    userId: string
+    id: string
+  }): Promise<{ scheduled: ScheduledMessageView; editActiveUntil: Date }> {
     return withTransaction(this.pool, async (client) => {
       await this.assertPendingOrThrow(client, params)
       const bumped = await ScheduledMessagesRepository.bumpEditFence(client, {
@@ -226,7 +230,10 @@ export class ScheduledMessagesService {
           code: "SCHEDULED_MESSAGE_NOT_PENDING",
         })
       }
-      return { editActiveUntil: bumped.editActiveUntil }
+      return {
+        scheduled: toScheduledMessageView(bumped),
+        editActiveUntil: bumped.editActiveUntil,
+      }
     })
   }
 

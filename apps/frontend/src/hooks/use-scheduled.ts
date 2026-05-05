@@ -394,6 +394,12 @@ export function useLockScheduledForEdit(workspaceId: string) {
   const scheduledService = useScheduledService()
   return useMutation({
     mutationFn: (id: string) => scheduledService.lockForEdit(workspaceId, id),
+    onSuccess: (res) => {
+      // Refresh IDB with the authoritative row — the dialog reads
+      // `version` for its expectedVersion, and IDB rows that pre-date the
+      // version migration would otherwise be missing it.
+      void persistScheduledRows([res.scheduled])
+    },
   })
 }
 

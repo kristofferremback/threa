@@ -824,8 +824,13 @@ export interface UpdateScheduledMessageInput {
  * Response from `POST /scheduled/:id/lock`. The caller pauses the worker
  * from sending while the user has the edit dialog open. Anonymous fence —
  * no per-device owner, multiple devices/tabs can hold it concurrently.
+ *
+ * Echoes the current row so the dialog can refresh `expectedVersion` from
+ * an authoritative source, even when the IDB-cached row that triggered
+ * the open was stale (e.g. created before the version migration shipped).
  */
 export interface LockScheduledMessageResponse {
+  scheduled: ScheduledMessageView
   /** ISO of when the worker fence expires. Generous TTL; no heartbeat. */
   editActiveUntil: string
 }

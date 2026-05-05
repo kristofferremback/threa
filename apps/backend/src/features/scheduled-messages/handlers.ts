@@ -148,7 +148,10 @@ export function createScheduledMessagesHandlers({ scheduledMessagesService }: De
       const id = req.params.id!
 
       const result = await scheduledMessagesService.lockForEdit({ workspaceId, userId, id })
-      res.json({ editActiveUntil: result.editActiveUntil.toISOString() })
+      res.json({
+        scheduled: result.scheduled,
+        editActiveUntil: result.editActiveUntil.toISOString(),
+      })
     },
 
     async releaseEditLock(req: Request, res: Response) {
