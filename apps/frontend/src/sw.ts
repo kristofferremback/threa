@@ -16,7 +16,14 @@ declare const self: ServiceWorkerGlobalScope
 interface ExtendedNotificationOptions extends NotificationOptions {
   /** Re-alert the user (vibrate/sound) when replacing an existing notification with the same tag. */
   renotify?: boolean
+  /** Vibration pattern: alternating vibrate/pause durations in ms. Honored on Android Chromium PWAs. */
+  vibrate?: number[]
 }
+
+// Distinct "d-dt" vibration (short tap, brief pause, longer tap) so Threa notifications
+// feel different from the OS default dzzt-dzzt. Honored on Android Chromium PWAs; iOS
+// and most desktop browsers ignore it and fall back to the OS default.
+const THREA_VIBRATION_PATTERN = [30, 10, 100]
 
 // Activate new service worker immediately so users get fresh code
 // without needing to close all tabs.
@@ -477,6 +484,7 @@ self.addEventListener("push", (event) => {
         badge: "/threa-logo-192.png",
         tag: "threa-test",
         renotify: true,
+        vibrate: THREA_VIBRATION_PATTERN,
         data: { ...data, kind: "test" },
       } as ExtendedNotificationOptions)
     )
@@ -492,6 +500,7 @@ self.addEventListener("push", (event) => {
         icon: "/threa-logo-192.png",
         badge: "/threa-logo-192.png",
         tag: "session-expired",
+        vibrate: THREA_VIBRATION_PATTERN,
         data: { ...data, action: "session_expired" },
       } as ExtendedNotificationOptions)
     )
@@ -530,6 +539,7 @@ self.addEventListener("push", (event) => {
           data: { ...data, messages },
           tag,
           renotify: true, // Re-alert (vibrate/sound) even when replacing an existing notification
+          vibrate: THREA_VIBRATION_PATTERN,
         }
 
         await self.registration.showNotification(title, options)
