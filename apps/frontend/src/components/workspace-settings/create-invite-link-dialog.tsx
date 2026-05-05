@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { Check, Copy, Link as LinkIcon } from "lucide-react"
+import { Check, Copy, KeyRound, Link as LinkIcon, ShieldCheck } from "lucide-react"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -11,8 +11,14 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { invitationsApi } from "@/api/invitations"
+
+function resolveErrorMessage(isError: boolean, err: unknown): string | null {
+  if (!isError) return null
+  if (err instanceof Error) return err.message
+  return "Failed to create link."
+}
 
 interface CreateInviteLinkDialogProps {
   workspaceId: string
@@ -87,101 +93,185 @@ export function CreateInviteLinkDialog({
         </ResponsiveDialogHeader>
 
         {createdToken ? (
-          <div className="space-y-4 px-4 sm:px-6">
-            <p className="text-sm text-muted-foreground">
-              Share this link through any channel. The recipient enters their email to join — single use, expires in 7
-              days.
-            </p>
-
-            <div className="space-y-2">
-              <Label htmlFor="link">Share link</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="link"
-                  readOnly
-                  value={joinUrl}
-                  onFocus={(e) => e.currentTarget.select()}
-                  className="font-mono text-xs"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={handleCopy}
-                  aria-label={copied ? "Copied" : "Copy link"}
-                >
-                  {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                We never store the full link — only its hash. Copy it now; you won't see it again.
-              </p>
-            </div>
-
-            <ResponsiveDialogFooter>
-              <Button onClick={handleClose} className="sm:w-auto w-full">
-                Done
-              </Button>
-            </ResponsiveDialogFooter>
-          </div>
+          <TokenReadyView joinUrl={joinUrl} copied={copied} onCopy={handleCopy} onDone={handleClose} />
         ) : (
-          <div className="space-y-4 px-4 sm:px-6">
-            <p className="text-sm text-muted-foreground">
-              Generate a single-use link and share it however you want. The recipient enters their email when they open
-              the link.
-            </p>
-
-            <div className="space-y-2">
-              <Label htmlFor="link-role">Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as "admin" | "user")}>
-                <SelectTrigger id="link-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="link-note">Note (optional)</Label>
-              <Input
-                id="link-note"
-                placeholder="for Simon — sent via Signal"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                maxLength={200}
-              />
-              <p className="text-xs text-muted-foreground">
-                Only visible to admins. Helps you remember what each link is for.
-              </p>
-            </div>
-
-            {createMutation.isError && (
-              <p className="text-sm text-destructive">
-                {createMutation.error instanceof Error ? createMutation.error.message : "Failed to create link."}
-              </p>
-            )}
-
-            <ResponsiveDialogFooter>
-              <Button variant="outline" onClick={handleClose}>
-                Cancel
-              </Button>
-              <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
-                {createMutation.isPending ? (
-                  "Creating..."
-                ) : (
-                  <>
-                    <LinkIcon className="mr-2 h-4 w-4" />
-                    Create link
-                  </>
-                )}
-              </Button>
-            </ResponsiveDialogFooter>
-          </div>
+          <CreateFormView
+            role={role}
+            onRoleChange={setRole}
+            note={note}
+            onNoteChange={setNote}
+            isSubmitting={createMutation.isPending}
+            errorMessage={resolveErrorMessage(createMutation.isError, createMutation.error)}
+            onCancel={handleClose}
+            onSubmit={() => createMutation.mutate()}
+          />
         )}
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  )
+}
+
+function TokenReadyView({
+  joinUrl,
+  copied,
+  onCopy,
+  onDone,
+}: {
+  joinUrl: string
+  copied: boolean
+  onCopy: () => void
+  onDone: () => void
+}) {
+  return (
+    <div className="space-y-6 px-4 sm:px-6">
+      {/* Hero: halo'd key icon + "REVEAL ONCE" stamp. Communicates that this
+          moment is ceremonial — the plaintext token only exists right now. */}
+      <div className="flex flex-col items-center gap-3 pt-1">
+        <div className="relative flex h-14 w-14 items-center justify-center">
+          <div aria-hidden className="absolute inset-0 rounded-full bg-primary/20 blur-xl" />
+          <div className="relative flex h-12 w-12 items-center justify-center rounded-full border bg-background">
+            <KeyRound className="h-5 w-5 text-primary" />
+          </div>
+        </div>
+        <span className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Reveal once</span>
+      </div>
+
+      {/* Spotlight card: warm primary-tinted border, monospace url, inline copy.
+          The card feels like a small vault — when the dialog closes, this view
+          is gone forever. */}
+      <div className="overflow-hidden rounded-lg border border-primary/30 bg-gradient-to-b from-primary/5 to-transparent">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <LinkIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <input
+            readOnly
+            value={joinUrl}
+            onFocus={(e) => e.currentTarget.select()}
+            aria-label="Share link"
+            className="flex-1 bg-transparent font-mono text-xs text-foreground outline-none selection:bg-primary/20"
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant={copied ? "default" : "outline"}
+            onClick={onCopy}
+            aria-label={copied ? "Copied" : "Copy link"}
+            className="h-7 gap-1 px-2.5 text-[11px] font-medium uppercase tracking-[0.10em] transition-colors"
+          >
+            {copied ? (
+              <>
+                <Check className="h-3.5 w-3.5" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" />
+                Copy
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        Share it through any channel. The recipient enters their email when they open it — single use, expires in 7
+        days.
+      </p>
+
+      <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2.5">
+        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          We only stored the link's hash. Copy it now — once this dialog closes you won't see it again.
+        </p>
+      </div>
+
+      <ResponsiveDialogFooter>
+        <Button onClick={onDone} className="w-full sm:w-auto">
+          Done
+        </Button>
+      </ResponsiveDialogFooter>
+    </div>
+  )
+}
+
+function CreateFormView({
+  role,
+  onRoleChange,
+  note,
+  onNoteChange,
+  isSubmitting,
+  errorMessage,
+  onCancel,
+  onSubmit,
+}: {
+  role: "admin" | "user"
+  onRoleChange: (role: "admin" | "user") => void
+  note: string
+  onNoteChange: (note: string) => void
+  isSubmitting: boolean
+  errorMessage: string | null
+  onCancel: () => void
+  onSubmit: () => void
+}) {
+  return (
+    <div className="space-y-5 px-4 sm:px-6">
+      <p className="text-sm text-muted-foreground">
+        Generate a single-use link and share it however you want. The recipient enters their email when they open it.
+      </p>
+
+      <div className="space-y-2">
+        <Label className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-medium">Role</Label>
+        <ToggleGroup
+          type="single"
+          value={role}
+          onValueChange={(v) => v && onRoleChange(v as "admin" | "user")}
+          variant="outline"
+          className="w-full"
+        >
+          <ToggleGroupItem value="user" className="flex-1">
+            User
+          </ToggleGroupItem>
+          <ToggleGroupItem value="admin" className="flex-1">
+            Admin
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
+      <div className="space-y-2">
+        <Label
+          htmlFor="link-note"
+          className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-medium"
+        >
+          Note <span className="normal-case tracking-normal text-muted-foreground/70">(optional)</span>
+        </Label>
+        <Input
+          id="link-note"
+          placeholder="for Simon — sent via Signal"
+          value={note}
+          onChange={(e) => onNoteChange(e.target.value)}
+          maxLength={200}
+        />
+        <p className="text-xs text-muted-foreground">
+          Only visible to admins. Helps you remember what each link is for.
+        </p>
+      </div>
+
+      {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
+
+      <ResponsiveDialogFooter>
+        <Button variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button onClick={onSubmit} disabled={isSubmitting}>
+          {isSubmitting ? (
+            "Creating…"
+          ) : (
+            <>
+              <LinkIcon className="mr-2 h-4 w-4" />
+              Create link
+            </>
+          )}
+        </Button>
+      </ResponsiveDialogFooter>
+    </div>
   )
 }

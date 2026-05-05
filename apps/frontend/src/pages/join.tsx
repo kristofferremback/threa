@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { Mail, ShieldAlert } from "lucide-react"
+import { Ban, Hourglass, Mail, SearchX, Unlink2, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,24 +19,29 @@ type LookupErrorCode =
 interface LookupErrorCopy {
   title: string
   body: string
+  icon: LucideIcon
 }
 
 const LOOKUP_ERROR_COPY: Record<LookupErrorCode, LookupErrorCopy> = {
   INVITATION_NOT_FOUND: {
     title: "Invitation not found",
     body: "This link is invalid or no longer exists. Ask the workspace admin for a fresh one.",
+    icon: SearchX,
   },
   INVITATION_REVOKED: {
     title: "Invitation revoked",
     body: "This invitation has been revoked. Ask the workspace admin for a new link.",
+    icon: Ban,
   },
   INVITATION_EXPIRED: {
     title: "Invitation expired",
     body: "This invite link has expired. Ask the workspace admin for a fresh one.",
+    icon: Hourglass,
   },
   INVITATION_ALREADY_CLAIMED: {
     title: "Link already used",
     body: "This invitation link has already been claimed. Ask for a fresh one if you still need access.",
+    icon: Unlink2,
   },
 }
 
@@ -54,16 +59,34 @@ function resolveClaimErrorMessage(code: LookupErrorCode | null, err: unknown): s
 }
 
 /**
- * Centred shell shared by every state on the join page. Mirrors the
- * `LoginPage` / `WorkspaceSelectPage` layout: full-height, `bg-background`,
- * a vertical column with `ThreaLogo` at the top and content below.
+ * Centred shell shared by every state on the join page. A warm radial halo
+ * behind the column picks up Threa's amber primary so the page feels arrived-at,
+ * not like a fallback. Mirrors the LoginPage / WorkspaceSelectPage layout.
  */
 function JoinShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="flex w-full max-w-md flex-col items-center gap-8 p-6">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,hsl(var(--primary)/0.10),transparent_55%)]"
+      />
+      <div className="relative flex w-full max-w-md flex-col items-center gap-10 p-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
         <ThreaLogo size="lg" />
         {children}
+      </div>
+    </div>
+  )
+}
+
+/** Soft halo'd icon used in success/error hero blocks. */
+function HaloIcon({ icon: Icon, tone = "muted" }: { icon: LucideIcon; tone?: "primary" | "muted" }) {
+  const haloClass = tone === "primary" ? "bg-primary/15" : "bg-muted/60"
+  const iconClass = tone === "primary" ? "text-primary" : "text-muted-foreground"
+  return (
+    <div className="relative mx-auto flex h-16 w-16 items-center justify-center">
+      <div aria-hidden className={`absolute inset-1 rounded-full ${haloClass} blur-xl`} />
+      <div className="relative flex h-14 w-14 items-center justify-center rounded-full border bg-background">
+        <Icon className={`h-6 w-6 ${iconClass}`} />
       </div>
     </div>
   )
@@ -110,8 +133,8 @@ export function JoinPage() {
     return (
       <JoinShell>
         <div className="text-center">
-          <h1 className="text-xl font-medium">Loading invitation</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Just a moment…</p>
+          <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Resolving invitation</span>
+          <p className="mt-3 text-sm text-muted-foreground">Just a moment…</p>
         </div>
       </JoinShell>
     )
@@ -149,13 +172,14 @@ export function JoinPage() {
 
   return (
     <JoinShell>
-      <div className="w-full space-y-6">
-        <div className="text-center">
-          <h1 className="text-xl font-medium">
-            You've been invited to <span className="text-primary">{data.workspaceName}</span>
+      <div className="w-full space-y-8">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Workspace invitation</span>
+          <h1 className="text-2xl font-medium leading-tight">
+            You're invited to <span className="text-primary">{data.workspaceName}</span>
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Enter your email and we'll send a sign-in link. Expires {formatDisplayDate(new Date(data.expiresAt))}.
+          <p className="text-sm text-muted-foreground">
+            Single-use link · expires {formatDisplayDate(new Date(data.expiresAt))}
           </p>
         </div>
 
@@ -167,7 +191,12 @@ export function JoinPage() {
           className="space-y-4"
         >
           <div className="space-y-2">
-            <Label htmlFor="join-email">Email</Label>
+            <Label
+              htmlFor="join-email"
+              className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-medium"
+            >
+              Email
+            </Label>
             <Input
               id="join-email"
               type="email"
@@ -177,19 +206,24 @@ export function JoinPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={claimMutation.isPending}
+              className="h-11"
             />
           </div>
 
           {claimErrorMessage && <p className="text-sm text-destructive">{claimErrorMessage}</p>}
 
-          <Button type="submit" className="w-full" disabled={!canSubmit}>
-            {claimMutation.isPending ? "Sending..." : "Continue"}
+          <Button
+            type="submit"
+            className="h-11 w-full text-xs font-medium uppercase tracking-[0.14em]"
+            disabled={!canSubmit}
+          >
+            {claimMutation.isPending ? "Sending…" : "Continue"}
           </Button>
         </form>
 
         <p className="text-center text-xs text-muted-foreground">
-          Single-use link. Already have an account?{" "}
-          <Link to="/login" className="underline underline-offset-4 hover:text-foreground">
+          Already have an account?{" "}
+          <Link to="/login" className="text-foreground underline-offset-4 hover:underline">
             Sign in
           </Link>
         </p>
@@ -201,15 +235,14 @@ export function JoinPage() {
 function ErrorState({ code }: { code: LookupErrorCode }) {
   const copy = LOOKUP_ERROR_COPY[code]
   return (
-    <div className="text-center space-y-4">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-muted/50">
-        <ShieldAlert className="h-6 w-6 text-muted-foreground" />
+    <div className="w-full space-y-6 text-center">
+      <HaloIcon icon={copy.icon} tone="muted" />
+      <div className="space-y-2">
+        <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Workspace invitation</span>
+        <h1 className="text-2xl font-medium leading-tight">{copy.title}</h1>
+        <p className="text-sm text-muted-foreground">{copy.body}</p>
       </div>
-      <div>
-        <h1 className="text-xl font-medium">{copy.title}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{copy.body}</p>
-      </div>
-      <Button asChild variant="outline">
+      <Button asChild variant="outline" className="h-11 w-full text-xs font-medium uppercase tracking-[0.14em]">
         <Link to="/login">Sign in instead</Link>
       </Button>
     </div>
@@ -228,17 +261,16 @@ function SubmittedState({
   if (alreadyMember) {
     return (
       <div className="w-full space-y-6 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-muted/50">
-          <Mail className="h-6 w-6 text-muted-foreground" />
-        </div>
-        <div>
-          <h1 className="text-xl font-medium">You're already a member</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+        <HaloIcon icon={Mail} tone="muted" />
+        <div className="space-y-2">
+          <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Already a member</span>
+          <h1 className="text-2xl font-medium leading-tight">You're already in</h1>
+          <p className="text-sm text-muted-foreground">
             <span className="text-foreground">{email}</span> already belongs to{" "}
             <span className="text-foreground">{workspaceName}</span>. Sign in to continue.
           </p>
         </div>
-        <Button asChild className="w-full">
+        <Button asChild className="h-11 w-full text-xs font-medium uppercase tracking-[0.14em]">
           <Link to="/login">Sign in</Link>
         </Button>
       </div>
@@ -247,19 +279,18 @@ function SubmittedState({
 
   return (
     <div className="w-full space-y-6 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-muted/50">
-        <Mail className="h-6 w-6 text-muted-foreground" />
-      </div>
-      <div>
-        <h1 className="text-xl font-medium">Check your inbox</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+      <HaloIcon icon={Mail} tone="primary" />
+      <div className="space-y-2">
+        <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Sign-in link sent</span>
+        <h1 className="text-2xl font-medium leading-tight">Check your inbox</h1>
+        <p className="text-sm text-muted-foreground">
           We sent a sign-in link to <span className="text-foreground">{email}</span>. Click it to join{" "}
           <span className="text-foreground">{workspaceName}</span>.
         </p>
       </div>
       <p className="text-xs text-muted-foreground">
-        Didn't get it? Check your spam folder, or{" "}
-        <Link to="/login" className="underline underline-offset-4 hover:text-foreground">
+        Didn't get it? Check spam, or{" "}
+        <Link to="/login" className="text-foreground underline-offset-4 hover:underline">
           sign in
         </Link>{" "}
         if you already have an account.

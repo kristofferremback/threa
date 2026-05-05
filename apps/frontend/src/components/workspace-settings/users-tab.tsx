@@ -1,6 +1,6 @@
 import { useRef, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Check, ChevronDown, Copy, Link as LinkIcon, Mail } from "lucide-react"
+import { Check, ChevronDown, Copy, KeyRound, Link as LinkIcon, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -10,6 +10,31 @@ import { useFormattedDate } from "@/hooks"
 import { InviteDialog } from "./invite-dialog"
 import { CreateInviteLinkDialog } from "./create-invite-link-dialog"
 import type { User, WorkspaceInvitation } from "@threa/types"
+
+function CopyLinkLabel({ isCopied, tokenInMemory }: { isCopied: boolean; tokenInMemory: boolean }) {
+  if (isCopied) {
+    return (
+      <>
+        <Check className="h-3.5 w-3.5 text-primary" />
+        Copied
+      </>
+    )
+  }
+  if (tokenInMemory) {
+    return (
+      <>
+        <KeyRound className="h-3.5 w-3.5 text-primary" />
+        Copy link
+      </>
+    )
+  }
+  return (
+    <>
+      <Copy className="h-3.5 w-3.5" />
+      Link sent
+    </>
+  )
+}
 
 interface UsersTabProps {
   workspaceId: string
@@ -125,29 +150,35 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
               const tokenInMemory = tokensRef.current.has(invitation.id)
               const isCopied = copiedInvitationId === invitation.id
 
+              const unclaimedLink = isLink && !invitation.email
               return (
                 <div
                   key={invitation.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-md border px-3 py-2"
+                  className={`relative flex flex-col gap-2 rounded-md border px-3 py-2 sm:flex-row sm:items-center sm:justify-between ${
+                    unclaimedLink ? "border-l-2 border-l-primary/60 bg-gradient-to-r from-primary/5 to-transparent" : ""
+                  }`}
                 >
-                  <div className="flex flex-col gap-1 min-w-0 flex-1">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0">
-                      {isLink && !invitation.email ? (
-                        <span className="inline-flex items-center gap-1.5 text-sm font-medium truncate">
-                          <LinkIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                      {unclaimedLink ? (
+                        <span className="inline-flex items-center gap-1.5 truncate text-sm font-medium">
+                          <LinkIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
                           Invite link
+                          {tokenInMemory && (
+                            <span className="text-[10px] uppercase tracking-[0.16em] text-primary/80">live</span>
+                          )}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 text-sm truncate">
+                        <span className="inline-flex items-center gap-1.5 truncate text-sm">
                           {isLink ? (
-                            <LinkIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <LinkIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           ) : (
-                            <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           )}
                           <span className="truncate">{invitation.email}</span>
                         </span>
                       )}
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex shrink-0 items-center gap-2">
                         <Badge variant="outline" className="capitalize">
                           {invitation.role}
                         </Badge>
@@ -157,31 +188,25 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
                       </div>
                     </div>
                     {invitation.note && (
-                      <p className="text-xs text-muted-foreground truncate" title={invitation.note}>
+                      <p
+                        className="truncate pl-5 text-xs text-muted-foreground before:mr-1.5 before:text-muted-foreground/60 before:content-['—']"
+                        title={invitation.note}
+                      >
                         {invitation.note}
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-1 shrink-0">
-                    {isLink && !invitation.email ? (
+                  <div className="flex shrink-0 gap-1">
+                    {unclaimedLink ? (
                       <Button
                         size="sm"
-                        variant="ghost"
+                        variant={tokenInMemory ? "outline" : "ghost"}
                         onClick={() => handleCopy(invitation.id)}
                         disabled={!tokenInMemory}
                         title={tokenInMemory ? "Copy link to clipboard" : "Link only available right after creation"}
+                        className={tokenInMemory ? "gap-1" : "gap-1 text-muted-foreground"}
                       >
-                        {isCopied ? (
-                          <>
-                            <Check className="mr-1 h-3.5 w-3.5 text-green-500" />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="mr-1 h-3.5 w-3.5" />
-                            {tokenInMemory ? "Copy link" : "Link sent"}
-                          </>
-                        )}
+                        <CopyLinkLabel isCopied={isCopied} tokenInMemory={tokenInMemory} />
                       </Button>
                     ) : (
                       <Button
