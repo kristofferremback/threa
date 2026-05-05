@@ -270,20 +270,15 @@ export const messageActions: MessageAction[] = [
     action: (ctx) => ctx.onShareToParent?.(),
   },
   {
-    // Split into two rows (save / unsave) so the menu entry always matches
-    // the action that will fire — a single "Save for later" row on an
-    // already-saved message was misleading and silently unsaved things.
+    // Save is the primary action in the save/reminder split group. Once a
+    // message is already saved this row disappears; "Remove from Saved" stays
+    // as a separate explicit action so we never silently unsave via a mislabeled
+    // "Save for later" row.
     id: "save-message",
     label: "Save for later",
     icon: Bookmark,
+    groupId: "save",
     when: (ctx) => !!ctx.onToggleSave && !ctx.isSaved,
-    action: (ctx) => ctx.onToggleSave?.(),
-  },
-  {
-    id: "unsave-message",
-    label: "Remove from Saved",
-    icon: BookmarkX,
-    when: (ctx) => !!ctx.onToggleSave && !!ctx.isSaved,
     action: (ctx) => ctx.onToggleSave?.(),
   },
   {
@@ -293,8 +288,16 @@ export const messageActions: MessageAction[] = [
     // custom-time dialog.
     label: "Set reminder…",
     icon: Bell,
+    groupId: "save",
     when: (ctx) => !!ctx.onRequestReminder,
     action: (ctx) => ctx.onRequestReminder?.(),
+  },
+  {
+    id: "unsave-message",
+    label: "Remove from Saved",
+    icon: BookmarkX,
+    when: (ctx) => !!ctx.onToggleSave && !!ctx.isSaved,
+    action: (ctx) => ctx.onToggleSave?.(),
   },
   {
     // Per-message entry into the move-to-thread flow. Mirrors the stream
