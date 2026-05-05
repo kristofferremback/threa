@@ -10,14 +10,8 @@ import { loginAndCreateWorkspace, createChannel, expectApiOk } from "./helpers"
  */
 
 test.describe("Stream composer bottom spacing", () => {
-  let testId: string
-
-  test.beforeEach(async ({ page }) => {
-    const result = await loginAndCreateWorkspace(page, "composer-spacing-test")
-    testId = result.testId
-  })
-
   test("last message is fully visible above the composer in a small stream", async ({ page }) => {
+    const { testId } = await loginAndCreateWorkspace(page, "composer-spacing-test")
     const channelName = `small-stream-${testId}`
     await createChannel(page, channelName)
 
@@ -49,21 +43,24 @@ test.describe("Stream composer bottom spacing", () => {
       .first()
     await expect(lastMessage).toBeVisible({ timeout: 10000 })
 
-    // Get the bounding box of the last message and the composer
-    const lastMessageBox = await lastMessage.boundingBox()
+    // Poll until the last message sits above the composer (gives Virtuoso
+    // time to measure the Footer spacer and re-scroll if needed).
     const composer = page.locator("[data-message-composer-root]").first()
-    const composerBox = await composer.boundingBox()
-
-    expect(lastMessageBox).toBeTruthy()
-    expect(composerBox).toBeTruthy()
-
-    // The bottom of the last message should be at or above the top of the composer
-    const messageBottom = lastMessageBox!.y + lastMessageBox!.height
-    const composerTop = composerBox!.y
-    expect(messageBottom).toBeLessThanOrEqual(composerTop + 2)
+    await expect
+      .poll(
+        async () => {
+          const lastMessageBox = await lastMessage.boundingBox()
+          const composerBox = await composer.boundingBox()
+          if (!lastMessageBox || !composerBox) return Number.POSITIVE_INFINITY
+          return lastMessageBox.y + lastMessageBox.height - composerBox.y
+        },
+        { timeout: 5000 }
+      )
+      .toBeLessThanOrEqual(2)
   })
 
   test("last message stays visible after composer grows from multi-line input", async ({ page }) => {
+    const { testId } = await loginAndCreateWorkspace(page, "composer-spacing-test")
     const channelName = `grow-composer-${testId}`
     await createChannel(page, channelName)
 
@@ -103,18 +100,18 @@ test.describe("Stream composer bottom spacing", () => {
       await page.keyboard.press("Shift+Enter")
     }
 
-    // Wait a moment for the composer to resize and the list to re-scroll
-    await page.waitForTimeout(300)
-
-    // The last message should still be fully visible above the composer
-    const lastMessageBox = await lastMessage.boundingBox()
-    const composerBox = await page.locator("[data-message-composer-root]").first().boundingBox()
-
-    expect(lastMessageBox).toBeTruthy()
-    expect(composerBox).toBeTruthy()
-
-    const messageBottom = lastMessageBox!.y + lastMessageBox!.height
-    const composerTop = composerBox!.y
-    expect(messageBottom).toBeLessThanOrEqual(composerTop + 2)
+    // Poll until the composer resize + re-scroll stabilises
+    const composer = page.locator("[data-message-composer-root]").first()
+    await expect
+      .poll(
+        async () => {
+          const lastMessageBox = await lastMessage.boundingBox()
+          const composerBox = await composer.boundingBox()
+          if (!lastMessageBox || !composerBox) return Number.POSITIVE_INFINITY
+          return lastMessageBox.y + lastMessageBox.height - composerBox.y
+        },
+        { timeout: 5000 }
+      )
+      .toBeLessThanOrEqual(2)
   })
 })
