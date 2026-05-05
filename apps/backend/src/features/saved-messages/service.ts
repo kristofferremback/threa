@@ -12,8 +12,7 @@ import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository, StreamMemberRepository } from "../streams"
 import { MessageRepository } from "../messaging"
 import { reminderQueueId } from "../../lib/id"
-import { JobQueues, QueueRepository, type SavedReminderFireJobData } from "../../lib/queue"
-import { isUniqueViolation } from "@threa/backend-common"
+import { JobQueues, QueueRepository, enqueueQueuedJob, type SavedReminderFireJobData } from "../../lib/queue"
 import { logger } from "../../lib/logger"
 import { SavedMessagesRepository, type SavedMessage } from "./repository"
 import { resolveSavedView } from "./view"
@@ -294,48 +293,30 @@ export class SavedMessagesService {
 }
 
 /**
- * Enqueue a reminder fire job inside the current transaction and update the
- * saved row's `reminder_queue_message_id` pointer. On the (cryptographically
- * rare) ULID collision, re-mint and retry a handful of times — the previous
- * "swallow and continue" branch was unsafe because it left the saved row
- * pointing at a queue row that belonged to a *different* job, so a later
- * cancel would cancel the wrong work.
+ * Enqueue a reminder fire job inside the current transaction and pin the
+ * queue id back onto the saved row's `reminder_queue_message_id` pointer.
+ * The insert + retry-on-PK-collision loop lives in `enqueueQueuedJob`; we
+ * only do the table-specific write-back here so a later edit can cancel
+ * the exact job we enqueued (the previous "swallow and continue" branch was
+ * unsafe because it left the saved row pointing at a queue row that belonged
+ * to a different job).
  */
-const MAX_QUEUE_ID_RETRIES = 5
-
 async function enqueueReminder(
   client: import("pg").PoolClient,
   params: { saved: SavedMessage; remindAt: Date }
 ): Promise<SavedMessage> {
-  const now = new Date()
   const payload: SavedReminderFireJobData = {
     workspaceId: params.saved.workspaceId,
     userId: params.saved.userId,
     savedMessageId: params.saved.id,
   }
-
-  let queueMessageId = reminderQueueId()
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await QueueRepository.insert(client, {
-        id: queueMessageId,
-        queueName: JobQueues.SAVED_REMINDER_FIRE,
-        workspaceId: params.saved.workspaceId,
-        payload,
-        processAfter: params.remindAt,
-        insertedAt: now,
-      })
-      break
-    } catch (err) {
-      if (!isUniqueViolation(err, "queue_messages_pkey")) throw err
-      if (attempt >= MAX_QUEUE_ID_RETRIES) {
-        logger.error({ attempt, queueMessageId }, "Gave up after repeated reminder queue id collisions")
-        throw err
-      }
-      logger.warn({ attempt, queueMessageId }, "Saved reminder queue id collision; retrying")
-      queueMessageId = reminderQueueId()
-    }
-  }
+  const queueMessageId = await enqueueQueuedJob(client, {
+    queueName: JobQueues.SAVED_REMINDER_FIRE,
+    workspaceId: params.saved.workspaceId,
+    payload,
+    processAfter: params.remindAt,
+    generateId: reminderQueueId,
+  })
 
   const updated = await SavedMessagesRepository.updateReminder(
     client,

@@ -125,6 +125,18 @@ export const SavedStatuses = {
   ARCHIVED: "archived",
 } as const satisfies Record<string, SavedStatus>
 
+// Scheduled message statuses
+export const SCHEDULED_MESSAGE_STATUSES = ["pending", "sending", "sent", "cancelled", "failed"] as const
+export type ScheduledMessageStatus = (typeof SCHEDULED_MESSAGE_STATUSES)[number]
+
+export const ScheduledMessageStatuses = {
+  PENDING: "pending",
+  SENDING: "sending",
+  SENT: "sent",
+  CANCELLED: "cancelled",
+  FAILED: "failed",
+} as const satisfies Record<string, ScheduledMessageStatus>
+
 // Invitation statuses
 export const INVITATION_STATUSES = ["pending", "accepted", "expired", "revoked"] as const
 export type InvitationStatus = (typeof INVITATION_STATUSES)[number]

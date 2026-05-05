@@ -19,8 +19,12 @@ import type {
   SavedUpsertedPayload,
   SavedDeletedPayload,
   SavedReminderFiredPayload,
+  ScheduledMessageUpsertedPayload,
+  ScheduledMessageSentPayload,
+  ScheduledMessageCancelledPayload,
 } from "@threa/types"
 import { persistSavedRows, removeSavedRow, savedKeys } from "@/hooks/use-saved"
+import { persistScheduledRows, removeScheduledRow, scheduledKeys } from "@/hooks/use-scheduled"
 import { NOTIFICATION_CONFIG, NotificationLevels, StreamTypes, Visibilities } from "@threa/types"
 import { applyStreamBootstrapInCurrentTransaction } from "./stream-sync"
 
@@ -378,12 +382,13 @@ export function registerWorkspaceSocketHandlers(
 ): () => void {
   const abortController = new AbortController()
 
-  // Close the reconnect event gap (INV-53): if the Saved view is mounted
-  // when the socket re-registers, invalidate so TanStack refetches and
-  // rehydrates IDB with any rows whose upsert/delete events we missed
+  // Close the reconnect event gap (INV-53): if the Saved or Scheduled view
+  // is mounted when the socket re-registers, invalidate so TanStack refetches
+  // and rehydrates IDB with any rows whose upsert/delete events we missed
   // during the disconnect. `refetchOnReconnect: true` alone only covers
   // browser network online/offline, not socket.io reconnects.
   queryClient.invalidateQueries({ queryKey: savedKeys.all })
+  queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
 
   // Handle stream created
   const handleStreamCreated = (payload: StreamPayload) => {
@@ -1301,6 +1306,47 @@ export function registerWorkspaceSocketHandlers(
     queryClient.invalidateQueries({ queryKey: savedKeys.list(workspaceId, "saved") })
   }
 
+  // Scheduled messages — write-through to IDB and invalidate TanStack lists
+  // so the To send / Sent tabs and the per-stream composer popover reflect
+  // cross-tab and cross-device state without a refresh.
+  const handleScheduledUpserted = (payload: ScheduledMessageUpsertedPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void (async () => {
+      // If the row carries a clientMessageId, sweep any optimistic placeholder
+      // sharing that key — the operation queue's `replaceLocalScheduledRow`
+      // already does this when the POST returns, but a socket event can race
+      // ahead of the executor and we don't want both rows visible briefly.
+      const cmid = payload.scheduled.clientMessageId
+      if (cmid) {
+        const stale = await db.scheduledMessages
+          .where("workspaceId")
+          .equals(workspaceId)
+          .filter((row) => row._localOnly === true && row.id !== payload.scheduled.id && row.clientMessageId === cmid)
+          .toArray()
+        if (stale.length > 0) {
+          await db.scheduledMessages.bulkDelete(stale.map((row) => row.id))
+        }
+      }
+      await persistScheduledRows([payload.scheduled])
+      queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
+    })()
+  }
+
+  const handleScheduledSent = (payload: ScheduledMessageSentPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    // Persist the (now status='sent') row so the Sent tab picks it up; the
+    // live message itself has already been broadcast through the standard
+    // message:created path so the in-stream timeline updates separately.
+    void persistScheduledRows([payload.scheduled])
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
+  }
+
+  const handleScheduledCancelled = (payload: ScheduledMessageCancelledPayload) => {
+    if (payload.workspaceId !== workspaceId) return
+    void removeScheduledRow(payload.scheduledId)
+    queryClient.invalidateQueries({ queryKey: scheduledKeys.all })
+  }
+
   // Register all handlers
   socket.on("stream:created", handleStreamCreated)
   socket.on("stream:updated", handleStreamUpdated)
@@ -1322,6 +1368,9 @@ export function registerWorkspaceSocketHandlers(
   socket.on("saved:upserted", handleSavedUpserted)
   socket.on("saved:deleted", handleSavedDeleted)
   socket.on("saved_reminder:fired", handleSavedReminderFired)
+  socket.on("scheduled_message:upserted", handleScheduledUpserted)
+  socket.on("scheduled_message:sent", handleScheduledSent)
+  socket.on("scheduled_message:cancelled", handleScheduledCancelled)
   socket.on("attachment:transcoded", handleAttachmentTranscoded)
 
   return () => {
@@ -1348,6 +1397,9 @@ export function registerWorkspaceSocketHandlers(
     socket.off("saved:upserted", handleSavedUpserted)
     socket.off("saved:deleted", handleSavedDeleted)
     socket.off("saved_reminder:fired", handleSavedReminderFired)
+    socket.off("scheduled_message:upserted", handleScheduledUpserted)
+    socket.off("scheduled_message:sent", handleScheduledSent)
+    socket.off("scheduled_message:cancelled", handleScheduledCancelled)
     socket.off("attachment:transcoded", handleAttachmentTranscoded)
   }
 }

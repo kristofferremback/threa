@@ -197,6 +197,14 @@ export interface MessageComposerProps {
    * context rather than shared by reference.
    */
   stashedDraftsTriggerFab?: ReactNode
+
+  /**
+   * Slot for the unified scheduled-messages picker — both the "schedule this
+   * draft" entry point and the "what's queued for this stream?" peek live
+   * behind a single trigger. Omit to hide the affordance entirely (used by
+   * edit forms and any composer that isn't sending a fresh message).
+   */
+  scheduledMessagesTrigger?: ReactNode
 }
 
 export function MessageComposer({
@@ -232,6 +240,7 @@ export function MessageComposer({
   onStashDraft,
   stashedDraftsTrigger,
   stashedDraftsTriggerFab,
+  scheduledMessagesTrigger,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -791,9 +800,10 @@ export function MessageComposer({
                     showAttach
                     onAttachClick={handleAttachClick}
                     trailingContent={
-                      stashedDraftsTrigger ? (
+                      stashedDraftsTrigger || scheduledMessagesTrigger ? (
                         <div className="flex items-center gap-1">
                           {stashedDraftsTrigger}
+                          {scheduledMessagesTrigger}
                           {sendButton}
                         </div>
                       ) : (
@@ -918,6 +928,7 @@ export function MessageComposer({
                       </TooltipContent>
                     </Tooltip>
                     {stashedDraftsTrigger}
+                    {scheduledMessagesTrigger}
                     {sendButton}
                   </div>
                 )}

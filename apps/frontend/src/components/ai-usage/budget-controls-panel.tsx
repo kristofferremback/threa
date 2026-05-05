@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { useUpdateAIBudget } from "@/hooks"
-import { usePreferences } from "@/contexts"
 import type { UpdateAIBudgetInput } from "@threa/types"
 import { cn } from "@/lib/utils"
 import { formatCurrency, type BudgetMetrics } from "./metrics"
@@ -46,8 +45,8 @@ export function BudgetControlsPanel({
   isLoading: boolean
 }) {
   const updateBudget = useUpdateAIBudget(workspaceId)
-  const { preferences } = usePreferences()
-  const timezone = preferences?.timezone
+  // Browser-local timezone — UI surfaces always render in device-local.
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   const handleUpdate = useCallback(
     (updates: UpdateAIBudgetInput) => {

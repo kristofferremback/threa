@@ -36,6 +36,7 @@ export const JobQueues = {
   VIDEO_TRANSCODE_SUBMIT: "video.transcode_submit",
   VIDEO_TRANSCODE_CHECK: "video.transcode_check",
   SAVED_REMINDER_FIRE: "saved.reminder_fire",
+  SCHEDULED_MESSAGE_SEND: "scheduled_message.send",
   CONTEXT_BAG_PRECOMPUTE: "context_bag.precompute",
 } as const
 
@@ -187,6 +188,22 @@ export interface SavedReminderFireJobData {
 }
 
 /**
+ * Scheduled-message send job. Enqueued when a row is created or rescheduled
+ * and tombstoned (queue cancel) when the row is cancelled or rescheduled.
+ *
+ * The worker re-reads the row scoped to (workspaceId, scheduledMessageId),
+ * attempts a CAS to take the lock + flip status to `sending`, then invokes
+ * EventService.createMessage with the stored payload. If the CAS fails (an
+ * editor holds the lock), the worker schedules a short retry; bounded retry
+ * count is enforced before marking the row `failed`.
+ */
+export interface ScheduledMessageSendJobData {
+  workspaceId: string
+  userId: string
+  scheduledMessageId: string
+}
+
+/**
  * Context-bag pre-compute job. Warms the shared `context_summaries` cache and
  * persists the initial render snapshot for a newly-created bag-attached
  * scratchpad — see `context-bag-precompute-handler.ts` for the flow. No
@@ -219,6 +236,7 @@ export interface JobDataMap {
   [JobQueues.VIDEO_TRANSCODE_SUBMIT]: VideoTranscodeSubmitJobData
   [JobQueues.VIDEO_TRANSCODE_CHECK]: VideoTranscodeCheckJobData
   [JobQueues.SAVED_REMINDER_FIRE]: SavedReminderFireJobData
+  [JobQueues.SCHEDULED_MESSAGE_SEND]: ScheduledMessageSendJobData
   [JobQueues.CONTEXT_BAG_PRECOMPUTE]: ContextBagPrecomputeJobData
 }
 

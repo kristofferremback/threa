@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import {
@@ -6,16 +6,21 @@ import {
   getDraftMessageKey,
   useStreamOrDraft,
   useComposerHeightPublish,
-  useStreamBootstrap,
   useStashComposer,
+  useMentionStreamContext,
 } from "@/hooks"
-import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
-import { useUser } from "@/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePreferences } from "@/contexts"
 import { useConnectionState } from "@/components/layout/connection-status"
-import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
+import {
+  FloatingComposerShell,
+  MessageComposer,
+  ScheduledMessagesPicker,
+  StashedDraftsPicker,
+} from "@/components/composer"
 import type { ComposerControlHandle } from "@/components/composer"
+import { useScheduleMessage } from "@/hooks"
+import { toast } from "sonner"
 import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { commandsApi } from "@/api"
 import { extractCommandNode } from "@/lib/commands"
@@ -24,8 +29,7 @@ import { useEditLastMessage } from "./edit-last-message-context"
 import { useQuoteReply, type QuoteReplyData } from "./quote-reply-context"
 import { consumeShareHandoff, subscribeShareHandoff } from "@/stores/share-handoff-store"
 import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
-import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
-import type { MentionStreamContext } from "@/hooks/use-mentionables"
+import { DISCUSS_WITH_ARIADNE_COMMAND, type JSONContent } from "@threa/types"
 import type { PendingAttachment } from "@/hooks/use-attachments"
 
 interface MessageInputProps {
@@ -190,55 +194,13 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
   const { preferences } = usePreferences()
   const { stream, sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
+  const scheduleMessageMutation = useScheduleMessage(workspaceId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
-  // Resolve stream context for broadcast mention filtering.
-  // For threads, look up the root stream's type from IDB workspace streams.
-  const idbStreams = useWorkspaceStreams(workspaceId)
-
-  // Access is gated at the channel level: threads inherit their member list
-  // and bot grants from the root channel. For channels/DMs, read from self.
-  const rootStreamId = stream?.rootStreamId
-  const { data: currentBootstrap } = useStreamBootstrap(workspaceId, streamId, {
-    enabled: !!streamId && !rootStreamId,
-  })
-  const { data: rootBootstrap } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
-    enabled: !!rootStreamId,
-  })
-  const accessBootstrap = rootStreamId ? rootBootstrap : currentBootstrap
-
-  const currentUser = useUser()
-  const workspaceUsers = useWorkspaceUsers(workspaceId)
-  const currentUserRole = useMemo(
-    () => workspaceUsers.find((u) => u.workosUserId === currentUser?.id)?.role,
-    [workspaceUsers, currentUser?.id]
-  )
-
-  const streamContext = useMemo<MentionStreamContext | undefined>(() => {
-    if (!stream) return undefined
-    const ctx: MentionStreamContext = { streamType: stream.type }
-
-    if (stream.type === StreamTypes.THREAD && stream.rootStreamId) {
-      const rootStream = idbStreams.find((s) => s.id === stream.rootStreamId)
-      if (rootStream) ctx.rootStreamType = rootStream.type
-    }
-
-    // Invite-mode exclusion: everyone who already has channel-level access —
-    // since threads inherit access from the root, inviting a root-member to a
-    // thread is a no-op (they can already see and @mention inside it).
-    if (accessBootstrap?.members) {
-      const ids = new Set(accessBootstrap.members.map((m) => m.memberId))
-      for (const botId of accessBootstrap.botMemberIds ?? []) ids.add(botId)
-      ctx.memberIds = ids
-    }
-
-    // Bot mention filter: the same channel-level grants determine mentionability.
-    if (accessBootstrap?.botMemberIds) ctx.botMemberIds = new Set(accessBootstrap.botMemberIds)
-
-    ctx.canInviteBots = currentUserRole === "admin" || currentUserRole === "owner"
-
-    return ctx
-  }, [stream, idbStreams, accessBootstrap, currentUserRole])
+  // Broadcast/mention filtering, member/bot allow-lists, and the admin gate
+  // for bot invites all live in `useMentionStreamContext`. Threads route
+  // through their root channel for access grants — handled inside the hook.
+  const streamContext = useMentionStreamContext(workspaceId, stream)
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const quoteReplyCtx = useQuoteReply()
@@ -561,6 +523,51 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
     [composer, sendMessage, navigate, workspaceId, streamId, startDiscussWithAriadne]
   )
 
+  /**
+   * Schedule the current composer content for a future send. Mirrors the
+   * happy-path of handleSubmit (materialize attachment refs, capture
+   * attachments, clear the composer) but routes to the schedule API instead
+   * of the live send pipeline. The schedule row appears immediately in the
+   * Scheduled page via the upserted socket event.
+   */
+  const handleSchedule = useCallback(
+    async (when: Date) => {
+      if (!composer.canSend) return
+
+      composer.setIsSending(true)
+      setError(null)
+
+      const pendingAttachments = composer.getPendingAttachmentsSnapshot()
+      const liveContent = composer.content
+      const normalizedContent = materializePendingAttachmentReferences(liveContent, pendingAttachments)
+      const attachments = extractUploadedAttachments(normalizedContent)
+      const attachmentIds = attachments.map((a) => a.id)
+      const contentMarkdown = serializeToMarkdown(normalizedContent)
+
+      try {
+        composer.setContent(EMPTY_DOC)
+        setExpanded(false)
+        await scheduleMessageMutation.mutateAsync({
+          streamId,
+          contentJson: normalizedContent,
+          contentMarkdown,
+          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+          scheduledFor: when.toISOString(),
+        })
+        composer.clearDraft()
+        composer.clearAttachments()
+        toast.success("Scheduled")
+      } catch (err) {
+        composer.setContent(liveContent)
+        const message = err instanceof Error ? err.message : "Could not schedule message"
+        setError(message)
+      } finally {
+        composer.setIsSending(false)
+      }
+    },
+    [composer, scheduleMessageMutation, streamId]
+  )
+
   if (disabled && disabledReason) {
     return (
       <div className="border-t">
@@ -640,6 +647,15 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         onDelete={stash.handleDeleteStashed}
         controlsDisabled={composer.isSending}
         size="fab"
+      />
+    ),
+    scheduledMessagesTrigger: (
+      <ScheduledMessagesPicker
+        workspaceId={workspaceId}
+        streamId={streamId}
+        canSchedule={composer.canSend}
+        onSchedule={handleSchedule}
+        controlsDisabled={composer.isSending}
       />
     ),
   } as const

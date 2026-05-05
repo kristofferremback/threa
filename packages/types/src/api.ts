@@ -4,7 +4,14 @@
  * These types define the contracts between frontend and backend.
  */
 
-import type { StreamType, Visibility, CompanionMode, SavedStatus, AuthorType } from "./constants"
+import type {
+  StreamType,
+  Visibility,
+  CompanionMode,
+  SavedStatus,
+  AuthorType,
+  ScheduledMessageStatus,
+} from "./constants"
 import type { ContextBag, ContextIntent } from "./context-bag"
 import type { UserId } from "./ids"
 import type { JSONContent } from "./prosemirror"
@@ -736,4 +743,123 @@ export interface SavedReminderFiredPayload {
   messageId: string
   streamId: string
   saved: SavedMessageView
+}
+
+// ============================================================================
+// Scheduled Messages API
+// ============================================================================
+
+/**
+ * Wire shape for a scheduled-message row. Mirrors the table columns minus the
+ * lock fields the user doesn't care about; lock state is exposed only on the
+ * `/claim` response.
+ */
+export interface ScheduledMessageView {
+  id: string
+  workspaceId: string
+  userId: string
+  streamId: string
+  parentMessageId: string | null
+  contentJson: JSONContent
+  contentMarkdown: string
+  attachmentIds: string[]
+  metadata: Record<string, string> | null
+  scheduledFor: string
+  status: ScheduledMessageStatus
+  sentMessageId: string | null
+  lastError: string | null
+  /**
+   * Worker fence — the worker won't fire while this is in the future. Bumped
+   * by `claim` / heartbeat. Anonymous: any editor session keeps the worker
+   * out; first save still wins via the `updatedAt` optimistic CAS, not via
+   * this fence. ISO string; null when no editor session is active.
+   */
+  editActiveUntil: string | null
+  /**
+   * Idempotency key the original `POST /scheduled` carried. Echoed back so
+   * the frontend can match a server-issued row against an optimistic
+   * placeholder waiting in IDB and swap them in one transaction.
+   */
+  clientMessageId: string | null
+  /**
+   * Optimistic-concurrency version. Starts at 1; every state-changing
+   * server-side UPDATE increments it. The client sends this back as
+   * `expectedVersion` on PATCH; mismatch → 409 STALE_VERSION.
+   */
+  version: number
+  createdAt: string
+  updatedAt: string
+  statusChangedAt: string
+}
+
+export interface ScheduleMessageInput {
+  streamId: string
+  parentMessageId?: string | null
+  contentJson: JSONContent
+  contentMarkdown: string
+  attachmentIds?: string[]
+  metadata?: Record<string, string>
+  scheduledFor: string
+  /** Idempotency key for optimistic create retries (mirrors message create). */
+  clientMessageId?: string
+}
+
+/**
+ * Optimistic-concurrency update payload. The client sends `expectedVersion`
+ * — the `version` integer it last saw on the row — and the server CAS rejects
+ * with 409 STALE_VERSION when the row has moved on (someone else saved, the
+ * worker fired, etc). Any number of editors can coexist; first save wins.
+ */
+export interface UpdateScheduledMessageInput {
+  contentJson?: JSONContent
+  contentMarkdown?: string
+  attachmentIds?: string[]
+  metadata?: Record<string, string> | null
+  scheduledFor?: string
+  /** Row's `version` integer at the time the editor opened. */
+  expectedVersion: number
+}
+
+/**
+ * Response from `POST /scheduled/:id/lock`. The caller pauses the worker
+ * from sending while the user has the edit dialog open. Anonymous fence —
+ * no per-device owner, multiple devices/tabs can hold it concurrently.
+ *
+ * Echoes the current row so the dialog can refresh `expectedVersion` from
+ * an authoritative source, even when the IDB-cached row that triggered
+ * the open was stale (e.g. created before the version migration shipped).
+ */
+export interface LockScheduledMessageResponse {
+  scheduled: ScheduledMessageView
+  /** ISO of when the worker fence expires. Generous TTL; no heartbeat. */
+  editActiveUntil: string
+}
+
+export interface ScheduledMessageListResponse {
+  scheduled: ScheduledMessageView[]
+  nextCursor: string | null
+}
+
+/** Wire payload broadcast on `scheduled_message:upserted` socket events. */
+export interface ScheduledMessageUpsertedPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+/** Wire payload broadcast on `scheduled_message:sent` socket events. */
+export interface ScheduledMessageSentPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduledId: string
+  sentMessageId: string
+  streamId: string
+  scheduled: ScheduledMessageView
+}
+
+/** Wire payload broadcast on `scheduled_message:cancelled` socket events. */
+export interface ScheduledMessageCancelledPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduledId: string
 }
