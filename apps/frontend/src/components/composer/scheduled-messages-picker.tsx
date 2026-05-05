@@ -1,17 +1,19 @@
 import { useId, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { ArrowLeft, CalendarClock, ChevronRight } from "lucide-react"
+import { ArrowLeft, CalendarClock, ChevronDown, ChevronRight } from "lucide-react"
 import type { ScheduledMessageView } from "@threa/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { formatFutureTime, formatSendCountdown, toDateTimeLocalValue } from "@/lib/dates"
 import { useScheduledList, useCancelScheduled, useSendScheduledNow } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
+import { useCurrentWorkspaceUser } from "@/hooks/use-workspaces"
 import { REMINDER_PRESETS, computeRemindAt, type ReminderPreset } from "@/lib/reminder-presets"
 import { ScheduledEditDialog } from "@/components/scheduled/scheduled-edit-dialog"
 import { ScheduledActionDrawer } from "@/components/scheduled/scheduled-action-drawer"
@@ -78,11 +80,15 @@ export function ScheduledMessagesPicker({
   const { items } = useScheduledList(workspaceId, "pending", streamId)
   const cancelMutation = useCancelScheduled(workspaceId)
   const sendNowMutation = useSendScheduledNow(workspaceId)
-  // Browser-local timezone everywhere in the UI — never use
-  // `preferences.timezone` here, native pickers always operate in
-  // device-local and any drift between the two silently shifts saved
-  // times.
+  // Browser-local timezone is the default everywhere in the UI — native
+  // pickers operate in device-local, so we keep the custom-time path on
+  // device-local to avoid silent drift. The user's saved profile timezone
+  // (`prefTimezone`) is offered as an *opt-in alternative* on the calendar
+  // preset rows ("Tomorrow 9am"): when the two timezones resolve a preset
+  // to different instants, the row becomes a split button so the user can
+  // pick either "9am in my current location" or "9am in my home timezone".
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const prefTimezone = useCurrentWorkspaceUser(workspaceId)?.timezone ?? null
 
   const count = items.length
   // Re-anchor relative-time labels each time the popover opens.
@@ -108,8 +114,9 @@ export function ScheduledMessagesPicker({
     setShowCustom(false)
   }
 
-  const handlePreset = (preset: ReminderPreset) => {
-    const when = computeRemindAt(preset, new Date(), timezone)
+  const handlePreset = (preset: ReminderPreset, overrideTz?: string) => {
+    // Default to device-local; pref-tz is opt-in via the split-button dropdown.
+    const when = computeRemindAt(preset, new Date(), overrideTz ?? timezone)
     onSchedule(when)
     setOpen(false)
     resetToList()
@@ -201,6 +208,7 @@ export function ScheduledMessagesPicker({
           ) : (
             <PickingMode
               timezone={timezone}
+              prefTimezone={prefTimezone}
               inputId={inputId}
               showCustom={showCustom}
               customValue={customValue}
@@ -334,13 +342,14 @@ function ListMode({
 
 interface PickingModeProps {
   timezone: string
+  prefTimezone: string | null
   inputId: string
   showCustom: boolean
   customValue: string
   customMin: string
   previewLabel: string | null
   onBack: () => void
-  onPreset: (preset: ReminderPreset) => void
+  onPreset: (preset: ReminderPreset, overrideTz?: string) => void
   onShowCustom: () => void
   onCustomChange: (value: string) => void
   onCustomSubmit: () => void
@@ -348,6 +357,7 @@ interface PickingModeProps {
 
 function PickingMode({
   timezone,
+  prefTimezone,
   inputId,
   showCustom,
   customValue,
@@ -371,17 +381,13 @@ function PickingMode({
       {!showCustom ? (
         <div className="flex flex-col py-1">
           {REMINDER_PRESETS.map((preset) => (
-            <button
+            <PresetRow
               key={preset.label}
-              type="button"
-              onClick={() => onPreset(preset)}
-              className="flex items-center justify-between rounded-md mx-1 px-2 py-1.5 text-left text-sm hover:bg-accent"
-            >
-              <span>{preset.label}</span>
-              <span className="text-xs text-muted-foreground">
-                {formatFutureTime(computeRemindAt(preset, new Date(), timezone), new Date(), { timezone })}
-              </span>
-            </button>
+              preset={preset}
+              timezone={timezone}
+              prefTimezone={prefTimezone}
+              onPreset={onPreset}
+            />
           ))}
           <button
             type="button"
@@ -413,6 +419,103 @@ function PickingMode({
         </div>
       )}
     </>
+  )
+}
+
+interface PresetRowProps {
+  preset: ReminderPreset
+  timezone: string
+  prefTimezone: string | null
+  onPreset: (preset: ReminderPreset, overrideTz?: string) => void
+}
+
+/**
+ * Single row in the preset list. Renders as a plain button by default; when
+ * the user has a saved profile timezone that resolves a *calendar* preset
+ * ("Tomorrow 9am", "Next Monday 9am") to a different instant than the
+ * device-local timezone does, we render a split button instead — main click
+ * still fires in device-local (the established default), the chevron opens
+ * a dropdown listing both options so the user can opt into "9am in my home
+ * timezone" without having to do offset math.
+ *
+ * Duration presets ("In 15 minutes") are timezone-invariant, so the split
+ * never appears for them.
+ */
+function PresetRow({ preset, timezone, prefTimezone, onPreset }: PresetRowProps) {
+  const now = useMemo(() => new Date(), [])
+  const localDate = useMemo(() => computeRemindAt(preset, now, timezone), [preset, now, timezone])
+  // Calendar presets only — duration presets resolve to the same instant in
+  // every timezone.
+  const prefDate = useMemo(() => {
+    if (preset.kind !== "calendar") return null
+    if (!prefTimezone || prefTimezone === timezone) return null
+    return computeRemindAt(preset, now, prefTimezone)
+  }, [preset, now, timezone, prefTimezone])
+  // Even with different tz strings the offsets can match at the resolved
+  // wall-clock (e.g. London ↔ Lisbon at certain times of year). Don't show
+  // the split when both options would fire at the same moment.
+  const hasAlt = prefDate !== null && prefDate.getTime() !== localDate.getTime()
+  const localLabel = formatFutureTime(localDate, now, { timezone })
+  const prefLabel = prefDate ? formatFutureTime(prefDate, now, { timezone }) : null
+
+  if (!hasAlt) {
+    return (
+      <button
+        type="button"
+        onClick={() => onPreset(preset)}
+        className="flex items-center justify-between rounded-md mx-1 px-2 py-1.5 text-left text-sm hover:bg-accent"
+      >
+        <span>{preset.label}</span>
+        <span className="text-xs text-muted-foreground">{localLabel}</span>
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-stretch mx-1 rounded-md hover:bg-accent group/preset">
+      <button
+        type="button"
+        onClick={() => onPreset(preset)}
+        className="flex flex-1 items-center justify-between rounded-l-md px-2 py-1.5 text-left text-sm"
+      >
+        <span>{preset.label}</span>
+        <span className="text-xs text-muted-foreground">{localLabel}</span>
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Other timezones for ${preset.label}`}
+            className="flex items-center justify-center rounded-r-md border-l border-border/50 px-1.5 hover:bg-accent/80"
+          >
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[200px]">
+          <DropdownMenuItem
+            className="flex items-center justify-between gap-3 cursor-pointer"
+            onSelect={() => onPreset(preset)}
+          >
+            <span>{preset.label}</span>
+            <span className="text-xs text-muted-foreground">{localLabel}</span>
+          </DropdownMenuItem>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuItem
+                className="flex items-center justify-between gap-3 cursor-pointer"
+                onSelect={() => onPreset(preset, prefTimezone ?? undefined)}
+              >
+                <span>{preset.label}</span>
+                <span className="text-xs text-muted-foreground">{prefLabel}</span>
+              </DropdownMenuItem>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="text-xs">
+              Default timezone from your preferences ({prefTimezone})
+            </TooltipContent>
+          </Tooltip>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
 
