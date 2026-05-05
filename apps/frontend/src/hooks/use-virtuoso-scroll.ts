@@ -191,11 +191,6 @@ export function useVirtuosoScroll({
       el.style.overflowX = "hidden"
       el.style.overscrollBehaviorY = "contain"
       el.style.overflowAnchor = "none"
-      // Reserve bottom space for the floating composer pill. Using native
-      // padding-bottom instead of a Virtuoso Footer component means the
-      // browser updates scrollHeight synchronously when --composer-height
-      // changes, and Virtuoso's ResizeObserver re-scrolls automatically.
-      el.style.paddingBottom = "var(--composer-height, 0px)"
     }
   }, [])
 

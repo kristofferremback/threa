@@ -1457,6 +1457,7 @@ function VirtuosoMessageList({
       // `bottom-[calc(100%-20px)]`) doesn't get clipped by the scroller's
       // top edge. Bar-open state uses the taller h-11 spacer.
       Header: reservedTopSpacer ? BarTopSpacer : StreamHeaderSpacer,
+      Footer: ComposerFooterSpacer,
     }),
     [reservedTopSpacer]
   )
@@ -1519,10 +1520,12 @@ function VirtuosoMessageList({
   )
 }
 
-// Top spacer used as Virtuoso's Header so the head row's hover toolbar
-// (which floats above the message via `bottom-[calc(100%-20px)]`) doesn't
-// get clipped by the scroller's top edge.
+// Spacer reserving room for the floating composer pill, so the most recent
+// message sits visually offset above the pill at rest and `atBottom` accounts
+// for the composer's height (Virtuoso treats Footer as content).
 const StreamHeaderSpacer = () => <div className="h-3 sm:h-6" aria-hidden />
+
+const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--composer-height, 0px)" }} />
 
 // 44px scrollable spacer used as Virtuoso's Header while the search or
 // batch-selection bar is open. Both bars render `absolute top-0` outside the
