@@ -573,7 +573,10 @@ function ScheduledRow({ scheduled, now, timezone, onEdit, onSendNow, onCancel, o
   return (
     <li>
       <div
-        className={cn("group flex items-start gap-2 px-3 py-2 hover:bg-muted/60", longPress.isPressed && "bg-muted/60")}
+        className={cn(
+          "group flex items-start gap-2 px-3 py-2 hover:bg-muted/60 focus-within:bg-muted/60",
+          longPress.isPressed && "bg-muted/60"
+        )}
         onTouchStart={longPress.handlers.onTouchStart}
         onTouchEnd={longPress.handlers.onTouchEnd}
         onTouchMove={longPress.handlers.onTouchMove}
@@ -582,7 +585,7 @@ function ScheduledRow({ scheduled, now, timezone, onEdit, onSendNow, onCancel, o
         <button
           type="button"
           onClick={() => onEdit(scheduled)}
-          className="min-w-0 flex-1 text-left focus:outline-none focus-visible:bg-muted/60"
+          className="min-w-0 flex-1 text-left focus:outline-none"
           title="Edit scheduled message"
         >
           <p className="text-sm line-clamp-2 break-words">{preview}</p>
