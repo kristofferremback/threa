@@ -16,5 +16,15 @@
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": false
   },
-  "plansDirectory": ".claude/plans"
+  "plansDirectory": ".claude/plans",
+  "availableModels": [
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "sonnet",
+    "haiku",
+    "opusplan"
+  ],
+  "env": {
+    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
+  }
 }
