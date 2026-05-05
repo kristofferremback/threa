@@ -15,6 +15,7 @@ import { useLongPress } from "@/hooks/use-long-press"
 import { REMINDER_PRESETS, computeRemindAt, type ReminderPreset } from "@/lib/reminder-presets"
 import { ScheduledEditDialog } from "@/components/scheduled/scheduled-edit-dialog"
 import { ScheduledActionDrawer } from "@/components/scheduled/scheduled-action-drawer"
+import { ScheduledActions } from "@/components/scheduled/scheduled-actions"
 
 interface ScheduledMessagesPickerProps {
   workspaceId: string
@@ -193,6 +194,8 @@ export function ScheduledMessagesPicker({
               onClose={() => handleOpenChange(false)}
               onSchedulePress={enterPickingMode}
               onEdit={handleEdit}
+              onSendNow={(id) => sendNowMutation.mutate(id)}
+              onCancel={(id) => cancelMutation.mutate(id)}
               onRequestActions={handleRequestActions}
             />
           ) : (
@@ -252,6 +255,8 @@ interface ListModeProps {
   onClose: () => void
   onSchedulePress: () => void
   onEdit: (scheduled: ScheduledMessageView) => void
+  onSendNow: (id: string) => void
+  onCancel: (id: string) => void
   onRequestActions: (scheduled: ScheduledMessageView) => void
 }
 
@@ -265,6 +270,8 @@ function ListMode({
   onClose,
   onSchedulePress,
   onEdit,
+  onSendNow,
+  onCancel,
   onRequestActions,
 }: ListModeProps) {
   return (
@@ -304,6 +311,8 @@ function ListMode({
                 now={now}
                 timezone={timezone}
                 onEdit={onEdit}
+                onSendNow={onSendNow}
+                onCancel={onCancel}
                 onRequestActions={onRequestActions}
               />
             ))}
@@ -412,6 +421,8 @@ interface ScheduledRowProps {
   now: Date
   timezone: string
   onEdit: (scheduled: ScheduledMessageView) => void
+  onSendNow: (id: string) => void
+  onCancel: (id: string) => void
   /**
    * Mobile long-press handler — the picker hosts the action drawer at its
    * top level (above the popover) so we just bubble the request up; the
@@ -423,11 +434,15 @@ interface ScheduledRowProps {
 }
 
 /**
- * Row inside the composer popover. Tap opens the edit dialog; long-press on
- * mobile bubbles a request up to the picker, which closes the popover and
- * opens the shared `ScheduledActionDrawer`.
+ * Row inside the composer popover. Mirrors the `/scheduled` list-row:
+ *   - Body click opens the edit dialog (same affordance as before).
+ *   - Desktop hover reveals the Send-now / Edit / Cancel triplet via the
+ *     shared `ScheduledActions` cluster — the popover used to expose those
+ *     only behind a keyboard-unreachable click=edit, which felt
+ *     inconsistent with the full list view.
+ *   - Mobile keeps long-press → bottom-sheet drawer (no tiny tap targets).
  */
-function ScheduledRow({ scheduled, now, timezone, onEdit, onRequestActions }: ScheduledRowProps) {
+function ScheduledRow({ scheduled, now, timezone, onEdit, onSendNow, onCancel, onRequestActions }: ScheduledRowProps) {
   const isMobile = useIsMobile()
   const longPress = useLongPress({
     enabled: isMobile,
@@ -444,25 +459,37 @@ function ScheduledRow({ scheduled, now, timezone, onEdit, onRequestActions }: Sc
 
   return (
     <li>
-      <button
-        type="button"
-        onClick={() => onEdit(scheduled)}
-        className={cn(
-          "block w-full text-left focus:outline-none px-3 py-2 hover:bg-muted/60 focus-visible:bg-muted/60",
-          longPress.isPressed && "bg-muted/60"
-        )}
-        title="Edit scheduled message"
+      <div
+        className={cn("group flex items-start gap-2 px-3 py-2 hover:bg-muted/60", longPress.isPressed && "bg-muted/60")}
         onTouchStart={longPress.handlers.onTouchStart}
         onTouchEnd={longPress.handlers.onTouchEnd}
         onTouchMove={longPress.handlers.onTouchMove}
         onContextMenu={longPress.handlers.onContextMenu}
       >
-        <p className="text-sm line-clamp-2 break-words">{preview}</p>
-        <p className="text-[11px] text-muted-foreground mt-0.5">
-          {label}
-          {attachmentCount > 0 && <span className="ml-1.5">· {attachmentCount} 📎</span>}
-        </p>
-      </button>
+        <button
+          type="button"
+          onClick={() => onEdit(scheduled)}
+          className="min-w-0 flex-1 text-left focus:outline-none focus-visible:bg-muted/60"
+          title="Edit scheduled message"
+        >
+          <p className="text-sm line-clamp-2 break-words">{preview}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {label}
+            {attachmentCount > 0 && <span className="ml-1.5">· {attachmentCount} 📎</span>}
+          </p>
+        </button>
+        {!isMobile && (
+          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            <ScheduledActions
+              scheduled={scheduled}
+              variant="hover-cluster"
+              onEdit={() => onEdit(scheduled)}
+              onSendNow={onSendNow}
+              onCancel={onCancel}
+            />
+          </div>
+        )}
+      </div>
     </li>
   )
 }
