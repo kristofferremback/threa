@@ -313,23 +313,26 @@ interface LinkPreviewReadyPayload {
 // Helper: find and update a message_created event in IndexedDB
 // ============================================================================
 
-async function updateMessageEvent(
+export async function updateMessageEvent(
   streamId: string,
   messageId: string,
   updater: (payload: Record<string, unknown>) => Record<string, unknown>
 ): Promise<void> {
   // Use compound index to narrow to message_created events for this stream,
   // then filter by messageId in the payload (not indexed but over a small set).
-  const events = await db.events
+  // modify() runs the callback inside a readwrite cursor so the read and write
+  // are atomic. This prevents lost updates when multiple socket handlers
+  // (messages:moved, stream:created, message:updated) update the same parent
+  // message concurrently — the second transaction sees the first's writes.
+  await db.events
     .where("[streamId+eventType]")
     .equals([streamId, "message_created"])
     .filter((e) => (e.payload as { messageId?: string })?.messageId === messageId)
-    .toArray()
-
-  if (events.length === 0) return
-  const event = events[0]
-  const updatedPayload = updater(event.payload as Record<string, unknown>)
-  await db.events.update(event.id, { payload: updatedPayload, _cachedAt: Date.now() })
+    .modify((event) => {
+      const updatedPayload = updater(event.payload as Record<string, unknown>)
+      event.payload = updatedPayload
+      event._cachedAt = Date.now()
+    })
 }
 
 /**
