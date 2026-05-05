@@ -286,7 +286,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       staticToolbarOpen={!isMobile && formatOpen}
       belowToolbarContent={
         attachmentsHook.pendingAttachments.length > 0 ? (
-          <div className="px-3 pt-3 pb-2 border-b border-border/50 [&>div]:mb-0">
+          <div className="border-b border-border/50 p-3 [&>div]:mb-0">
             <PendingAttachments
               attachments={attachmentsHook.pendingAttachments}
               onRemove={attachmentsHook.removeAttachment}
@@ -369,9 +369,9 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
                 the tap target line up exactly. */}
             <div
               data-inline-edit
-              className="flex-1 min-h-0 overflow-y-auto rounded-md border border-input bg-background focus-within:border-ring focus-within:ring-1 focus-within:ring-ring [&_.tiptap]:!pt-0 [&_.tiptap]:!pb-0 [&_.tiptap_p]:!leading-relaxed [&_.tiptap]:max-h-none [&_.tiptap]:min-h-full [&_.tiptap]:px-3 [&_.tiptap]:py-3"
+              className="flex-1 min-h-0 overflow-y-auto rounded-modal border border-input bg-card focus-within:border-ring focus-within:ring-1 focus-within:ring-ring [&_.tiptap_p]:!leading-relaxed [&_.tiptap]:max-h-none [&_.tiptap]:min-h-full [&_.tiptap]:px-3 [&_.tiptap]:py-3"
             >
-              {error ? <div className="px-3 py-3 text-sm text-destructive">{error}</div> : editorElement}
+              {error ? <div className="p-3 text-sm text-destructive">{error}</div> : editorElement}
             </div>
           </div>
 
@@ -443,11 +443,11 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
 
           <div
             data-inline-edit
-            className="rounded-md border border-input bg-background overflow-hidden focus-within:border-ring focus-within:ring-1 focus-within:ring-ring [&_.tiptap]:!pt-0 [&_.tiptap]:!pb-0 [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-3 [&_.tiptap]:min-h-[14rem] [&_.tiptap]:max-h-[24rem]"
+            className="rounded-modal border border-input bg-card overflow-hidden focus-within:border-ring focus-within:ring-1 focus-within:ring-ring [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-3 [&_.tiptap]:min-h-[14rem] [&_.tiptap]:max-h-[24rem]"
           >
-            {error ? <div className="px-3 py-3 text-sm text-destructive">{error}</div> : editorElement}
+            {error ? <div className="p-3 text-sm text-destructive">{error}</div> : editorElement}
             {fileInput}
-            <div className="border-t px-3 py-2">
+            <div className="border-t border-border/50 px-3 py-2">
               <EditorActionBar
                 editorHandle={editorRef.current}
                 disabled={isSaving}
