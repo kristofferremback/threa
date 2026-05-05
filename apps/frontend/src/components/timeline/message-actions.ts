@@ -218,26 +218,32 @@ export const messageActions: MessageAction[] = [
     getHref: (ctx) => ctx.traceUrl,
   },
   {
+    id: "edit-message",
+    label: "Edit message",
+    icon: Pencil,
+    when: (ctx) => ctx.actorType === "user" && !!ctx.authorId && ctx.authorId === ctx.currentUserId,
+    action: (ctx) => ctx.onEdit?.(),
+  },
+  {
+    id: "see-revisions",
+    label: "See revisions",
+    icon: History,
+    when: (ctx) => !!ctx.editedAt,
+    action: (ctx) => ctx.onShowHistory?.(),
+  },
+  {
     id: "reply-in-thread",
     label: "Reply in thread",
     icon: MessageSquareReply,
+    groupId: "reply",
     when: (ctx) => !ctx.isThreadParent,
     getHref: (ctx) => ctx.replyUrl,
-  },
-  {
-    // Seed a private scratchpad that has this message's thread pre-loaded as
-    // context — lets the user poke at a thread without polluting it with
-    // @mentions.
-    id: "discuss-with-ariadne",
-    label: "Discuss with Ariadne",
-    icon: Sparkles,
-    when: (ctx) => !!ctx.onDiscussWithAriadne && !!ctx.streamId,
-    action: (ctx) => ctx.onDiscussWithAriadne?.(),
   },
   {
     id: "quote-reply",
     label: "Quote reply",
     icon: Quote,
+    groupId: "reply",
     when: (ctx) => !!ctx.onQuoteReply,
     action: (ctx) => ctx.onQuoteReply?.(),
   },
@@ -300,6 +306,16 @@ export const messageActions: MessageAction[] = [
     action: (ctx) => ctx.onToggleSave?.(),
   },
   {
+    // Seed a private scratchpad that has this message's thread pre-loaded as
+    // context — lets the user poke at a thread without polluting it with
+    // @mentions.
+    id: "discuss-with-ariadne",
+    label: "Discuss with Ariadne",
+    icon: Sparkles,
+    when: (ctx) => !!ctx.onDiscussWithAriadne && !!ctx.streamId,
+    action: (ctx) => ctx.onDiscussWithAriadne?.(),
+  },
+  {
     // Per-message entry into the move-to-thread flow. Mirrors the stream
     // header entry but seeds the selection with this single message so the
     // common "I just want this one in a thread" path is one tap shorter.
@@ -318,20 +334,6 @@ export const messageActions: MessageAction[] = [
     icon: CornerDownRight,
     when: (ctx) => !!ctx.onShowMoveDetails,
     action: (ctx) => ctx.onShowMoveDetails?.(),
-  },
-  {
-    id: "edit-message",
-    label: "Edit message",
-    icon: Pencil,
-    when: (ctx) => ctx.actorType === "user" && !!ctx.authorId && ctx.authorId === ctx.currentUserId,
-    action: (ctx) => ctx.onEdit?.(),
-  },
-  {
-    id: "see-revisions",
-    label: "See revisions",
-    icon: History,
-    when: (ctx) => !!ctx.editedAt,
-    action: (ctx) => ctx.onShowHistory?.(),
   },
   {
     id: "copy-as-markdown",
@@ -389,7 +391,6 @@ export const messageActions: MessageAction[] = [
     action: (ctx) => ctx.onDelete?.(),
   },
 ]
-
 /** Filter actions that should be shown for a given message context. */
 export function getVisibleActions(context: MessageActionContext): MessageAction[] {
   return messageActions.filter((a) => a.when(context))

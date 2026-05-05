@@ -370,6 +370,14 @@ describe("groupVisibleActions", () => {
     expect(copyGroup.members.map((m) => m.id)).toEqual(["copy-as-markdown", "copy-as-plain-text"])
   })
 
+  it("groups reply actions with reply-in-thread as the default when quote reply is available", () => {
+    const ctx = createContext({ onQuoteReply: () => {} })
+    const items = groupVisibleActions(getVisibleActions(ctx))
+    const replyGroup = items.find((i) => i.kind === "group" && i.members[0]?.id === "reply-in-thread")
+    expect(replyGroup).toBeDefined()
+    if (replyGroup?.kind !== "group") throw new Error("expected reply group")
+    expect(replyGroup.members.map((m) => m.id)).toEqual(["reply-in-thread", "quote-reply"])
+  })
   it("groups save and reminder with save as the default when both are visible", () => {
     const ctx = createContext({ onToggleSave: () => {}, onRequestReminder: () => {} })
     const items = groupVisibleActions(getVisibleActions(ctx))
