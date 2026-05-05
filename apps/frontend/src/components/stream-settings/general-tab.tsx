@@ -81,6 +81,14 @@ export function GeneralTab({
         rootStreamName={rootStream.slug ? `#${rootStream.slug}` : (rootStream.displayName ?? "parent stream")}
       />
     )
+  } else if (isThread) {
+    sections.push(
+      <VisibilityDisplay
+        key="visibility"
+        label="Visibility"
+        hint="Threads inherit visibility from their parent stream"
+      />
+    )
   } else if (isSystem) {
     sections.push(<VisibilityDisplay key="visibility" label="Visibility" hint="System messages are always private" />)
   }
