@@ -146,7 +146,9 @@ export default {
         (WORKSPACES_COLLECTION_RE.test(path) && (method === "GET" || method === "POST")) ||
         REGIONS_ROUTE_RE.test(path) ||
         DEV_AUTH_ROUTE_RE.test(path) ||
-        (INVITATION_ACCEPT_RE.test(path) && method === "POST")
+        (INVITATION_ACCEPT_RE.test(path) && method === "POST") ||
+        (INVITATION_LOOKUP_RE.test(path) && method === "GET") ||
+        (INVITATION_CLAIM_RE.test(path) && method === "POST")
       ) {
         try {
           return await proxyRequest(request, env.CONTROL_PLANE_URL)

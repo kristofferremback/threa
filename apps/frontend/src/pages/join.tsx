@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { ThreaLogo } from "@/components/threa-logo"
 import { ApiError } from "@/api/client"
 import { invitationsApi } from "@/api/invitations"
-import { useFormattedDate } from "@/hooks"
+import { formatDisplayDate } from "@/lib/dates"
 
 type LookupErrorCode =
   | "INVITATION_NOT_FOUND"
@@ -71,7 +71,6 @@ function JoinShell({ children }: { children: React.ReactNode }) {
 
 export function JoinPage() {
   const { token } = useParams<{ token: string }>()
-  const { formatDate } = useFormattedDate()
   const [email, setEmail] = useState("")
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null)
   const [alreadyMemberWorkspaceId, setAlreadyMemberWorkspaceId] = useState<string | null>(null)
@@ -156,7 +155,7 @@ export function JoinPage() {
             You've been invited to <span className="text-primary">{data.workspaceName}</span>
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Enter your email and we'll send a sign-in link. Expires {formatDate(new Date(data.expiresAt))}.
+            Enter your email and we'll send a sign-in link. Expires {formatDisplayDate(new Date(data.expiresAt))}.
           </p>
         </div>
 
