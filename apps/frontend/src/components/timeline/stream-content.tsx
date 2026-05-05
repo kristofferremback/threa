@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useLayoutEffect, useCallback, useRef, useState } from "react"
+import { useMemo, useEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Virtuoso } from "react-virtuoso"
 import { MessageSquare, ArrowDown, X, Move, Loader2, Check } from "lucide-react"
@@ -950,64 +950,6 @@ export function StreamContent({
     }
   }, [isJumpMode, exitJumpMode, resetPrependState, scrollToBottom])
 
-  // Re-scroll to bottom when the composer height changes so the most recent
-  // message stays visible above the floating composer.
-  //
-  // Virtuoso measures its Footer spacer with a ResizeObserver. When the CSS
-  // variable updates, the browser recalculates layout, the RO fires, and only
-  // then does Virtuoso's internal state reflect the new footer size. Calling
-  // scrollToIndex before that means Virtuoso still uses the old footer height
-  // and the message lands under the composer. We simply wait 150 ms — long
-  // enough for Virtuoso to catch up, short enough to feel instant.
-  const isScrolledFarFromBottomRef = useRef(isScrolledFarFromBottom)
-  isScrolledFarFromBottomRef.current = isScrolledFarFromBottom
-  const scrollToBottomRef = useRef(scrollToBottom)
-  scrollToBottomRef.current = scrollToBottom
-  const composerHeightTimerRef = useRef<number | null>(null)
-
-  const handleComposerHeightChange = useCallback(() => {
-    if (composerHeightTimerRef.current !== null) {
-      window.clearTimeout(composerHeightTimerRef.current)
-    }
-    composerHeightTimerRef.current = window.setTimeout(() => {
-      composerHeightTimerRef.current = null
-      if (!isScrolledFarFromBottomRef.current) {
-        scrollToBottomRef.current({ force: true })
-      }
-    }, 150)
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (composerHeightTimerRef.current !== null) {
-        window.clearTimeout(composerHeightTimerRef.current)
-      }
-    }
-  }, [])
-
-  // Safety-net re-scroll after the first batch of messages renders.
-  // Virtuoso's initial scroll (driven by initialTopMostItemIndex) can race
-  // with useComposerHeightPublish's effect, so the list may be positioned
-  // before the Footer spacer knows its real height. We wait until messages
-  // have arrived and then scroll again once, gated on the user not having
-  // already scrolled away.
-  const didInitialScrollFixRef = useRef(false)
-  useLayoutEffect(() => {
-    didInitialScrollFixRef.current = false
-  }, [streamId])
-
-  useLayoutEffect(() => {
-    if (isDraft || highlightMessageId || visibleItems.length === 0) return
-    if (didInitialScrollFixRef.current) return
-    didInitialScrollFixRef.current = true
-    const timer = window.setTimeout(() => {
-      if (!isScrolledFarFromBottomRef.current) {
-        scrollToBottomRef.current({ force: true })
-      }
-    }, 200)
-    return () => window.clearTimeout(timer)
-  }, [isDraft, highlightMessageId, visibleItems.length])
-
   if (error && !isDraft && events.length === 0 && !idbStream) {
     return (
       <ErrorView
@@ -1265,7 +1207,6 @@ export function StreamContent({
                 disabled={isArchived || isSystem}
                 disabledReason={disabledReason}
                 autoFocus={autoFocus}
-                onComposerHeightChange={handleComposerHeightChange}
               />
             )}
           </div>
@@ -1516,7 +1457,6 @@ function VirtuosoMessageList({
       // `bottom-[calc(100%-20px)]`) doesn't get clipped by the scroller's
       // top edge. Bar-open state uses the taller h-11 spacer.
       Header: reservedTopSpacer ? BarTopSpacer : StreamHeaderSpacer,
-      Footer: ComposerFooterSpacer,
     }),
     [reservedTopSpacer]
   )
@@ -1579,12 +1519,10 @@ function VirtuosoMessageList({
   )
 }
 
-// Spacer reserving room for the floating composer pill, so the most recent
-// message sits visually offset above the pill at rest and `atBottom` accounts
-// for the composer's height (Virtuoso treats Footer as content).
+// Top spacer used as Virtuoso's Header so the head row's hover toolbar
+// (which floats above the message via `bottom-[calc(100%-20px)]`) doesn't
+// get clipped by the scroller's top edge.
 const StreamHeaderSpacer = () => <div className="h-3 sm:h-6" aria-hidden />
-
-const ComposerFooterSpacer = () => <div aria-hidden style={{ height: "var(--composer-height, 0px)" }} />
 
 // 44px scrollable spacer used as Virtuoso's Header while the search or
 // batch-selection bar is open. Both bars render `absolute top-0` outside the
