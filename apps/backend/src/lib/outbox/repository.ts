@@ -54,6 +54,8 @@ export type OutboxEventType =
   | "stream:member_added"
   | "stream:member_removed"
   | "invitation:sent"
+  | "invitation:link-created"
+  | "invitation:link-claimed"
   | "invitation:accepted"
   | "invitation:revoked"
   | "activity:created"
@@ -356,6 +358,20 @@ export interface InvitationSentOutboxPayload extends WorkspaceScopedPayload {
   inviterWorkosUserId?: string
 }
 
+export interface InvitationLinkCreatedOutboxPayload extends WorkspaceScopedPayload {
+  invitationId: string
+  tokenHash: string
+  role: string
+  expiresAt: string
+}
+
+export interface InvitationLinkClaimedOutboxPayload extends WorkspaceScopedPayload {
+  invitationId: string
+  email: string
+  role: string
+  inviterWorkosUserId?: string
+}
+
 export interface InvitationAcceptedOutboxPayload extends WorkspaceScopedPayload {
   invitationId: string
   email: string
@@ -496,6 +512,8 @@ export interface OutboxEventPayloadMap {
   "user_preferences:updated": UserPreferencesUpdatedOutboxPayload
   "budget:alert": BudgetAlertOutboxPayload
   "invitation:sent": InvitationSentOutboxPayload
+  "invitation:link-created": InvitationLinkCreatedOutboxPayload
+  "invitation:link-claimed": InvitationLinkClaimedOutboxPayload
   "invitation:accepted": InvitationAcceptedOutboxPayload
   "invitation:revoked": InvitationRevokedOutboxPayload
   "activity:created": ActivityCreatedOutboxPayload

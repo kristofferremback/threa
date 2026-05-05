@@ -464,6 +464,36 @@ export interface SendInvitationsResponse {
   skipped: Array<{ email: string; reason: InvitationSkipReason }>
 }
 
+// Link-based invitations
+
+export interface CreateInvitationLinkInput {
+  role: "admin" | "user"
+  /** Admin-only memo, e.g. "for Simon — sent via Signal". Optional. */
+  note?: string
+}
+
+export interface CreateInvitationLinkResponse {
+  invitation: WorkspaceInvitation
+  /** The plaintext claim token. Returned exactly once at create time; never retrievable again. */
+  token: string
+}
+
+export interface InvitationLinkLookupResponse {
+  workspaceName: string
+  expiresAt: string
+}
+
+export interface ClaimInvitationLinkInput {
+  token: string
+  email: string
+}
+
+export interface ClaimInvitationLinkResponse {
+  ok: true
+  /** Set when the email already belongs to a workspace member; frontend can deep-link to login. */
+  alreadyMember?: { workspaceId: string }
+}
+
 export interface CompleteUserSetupInput {
   name?: string
   slug?: string

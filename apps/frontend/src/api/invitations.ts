@@ -1,5 +1,14 @@
 import { api } from "./client"
-import type { WorkspaceInvitation, SendInvitationsInput, SendInvitationsResponse } from "@threa/types"
+import type {
+  WorkspaceInvitation,
+  SendInvitationsInput,
+  SendInvitationsResponse,
+  CreateInvitationLinkInput,
+  CreateInvitationLinkResponse,
+  InvitationLinkLookupResponse,
+  ClaimInvitationLinkInput,
+  ClaimInvitationLinkResponse,
+} from "@threa/types"
 
 export const invitationsApi = {
   async list(workspaceId: string): Promise<WorkspaceInvitation[]> {
@@ -11,6 +20,10 @@ export const invitationsApi = {
     return api.post<SendInvitationsResponse>(`/api/workspaces/${workspaceId}/invitations`, data)
   },
 
+  async createLink(workspaceId: string, data: CreateInvitationLinkInput): Promise<CreateInvitationLinkResponse> {
+    return api.post<CreateInvitationLinkResponse>(`/api/workspaces/${workspaceId}/invitations/links`, data)
+  },
+
   async revoke(workspaceId: string, invitationId: string): Promise<void> {
     await api.post(`/api/workspaces/${workspaceId}/invitations/${invitationId}/revoke`)
   },
@@ -20,5 +33,15 @@ export const invitationsApi = {
       `/api/workspaces/${workspaceId}/invitations/${invitationId}/resend`
     )
     return res.invitation
+  },
+
+  /** Public/unauthenticated: look up a /join token's workspace metadata. */
+  async lookupLink(token: string): Promise<InvitationLinkLookupResponse> {
+    return api.get<InvitationLinkLookupResponse>(`/api/invitations/lookup?token=${encodeURIComponent(token)}`)
+  },
+
+  /** Public/unauthenticated: submit an email to claim a /join link. */
+  async claimLink(data: ClaimInvitationLinkInput): Promise<ClaimInvitationLinkResponse> {
+    return api.post<ClaimInvitationLinkResponse>(`/api/invitations/claim`, data)
   },
 }

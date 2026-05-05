@@ -74,13 +74,20 @@ export class InvitationShadowSyncHandler implements OutboxHandler {
 
       try {
         for (const event of events) {
-          if (!isOneOfOutboxEventType(event, ["invitation:sent", "invitation:revoked"])) {
+          if (
+            !isOneOfOutboxEventType(event, [
+              "invitation:sent",
+              "invitation:link-created",
+              "invitation:link-claimed",
+              "invitation:revoked",
+            ])
+          ) {
             seen.push(event.id)
             continue
           }
 
           if (isOutboxEventType(event, "invitation:sent")) {
-            const { invitationId, workspaceId, inviterWorkosUserId } = event.payload
+            const { invitationId, workspaceId, email, inviterWorkosUserId } = event.payload
             const invitation = await InvitationRepository.findById(this.db, invitationId)
             if (!invitation) {
               logger.warn({ invitationId }, "Invitation not found for shadow sync, skipping")
@@ -91,9 +98,36 @@ export class InvitationShadowSyncHandler implements OutboxHandler {
             await this.controlPlaneClient.createInvitationShadow({
               id: invitation.id,
               workspaceId,
-              email: invitation.email,
               region: this.region,
+              kind: "email",
+              email,
+              tokenHash: null,
               expiresAt: invitation.expiresAt,
+              inviterWorkosUserId,
+            })
+          } else if (isOutboxEventType(event, "invitation:link-created")) {
+            const { invitationId, workspaceId, tokenHash } = event.payload
+            const invitation = await InvitationRepository.findById(this.db, invitationId)
+            if (!invitation) {
+              logger.warn({ invitationId }, "Link invitation not found for shadow sync, skipping")
+              seen.push(event.id)
+              continue
+            }
+
+            await this.controlPlaneClient.createInvitationShadow({
+              id: invitation.id,
+              workspaceId,
+              region: this.region,
+              kind: "link",
+              email: null,
+              tokenHash,
+              expiresAt: invitation.expiresAt,
+            })
+          } else if (isOutboxEventType(event, "invitation:link-claimed")) {
+            const { invitationId, email, inviterWorkosUserId } = event.payload
+            await this.controlPlaneClient.notifyInvitationLinkClaimed({
+              id: invitationId,
+              email,
               inviterWorkosUserId,
             })
           } else if (event.eventType === "invitation:revoked") {

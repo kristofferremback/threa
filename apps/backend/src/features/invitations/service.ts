@@ -1,4 +1,5 @@
 import { Pool } from "pg"
+import { randomBytes, createHash } from "node:crypto"
 import { withTransaction, type Querier } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
 import { UserRepository, type WorkspaceService } from "../workspaces"
@@ -8,12 +9,41 @@ import { logger } from "../../lib/logger"
 import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const LINK_TOKEN_BYTES = 32 // 256 bits → ~43 base64url chars
+
+function generateLinkToken(): { token: string; tokenHash: string } {
+  const token = randomBytes(LINK_TOKEN_BYTES).toString("base64url")
+  const tokenHash = createHash("sha256").update(token).digest("hex")
+  return { token, tokenHash }
+}
+
+export function hashInvitationToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex")
+}
 
 interface SendInvitationsParams {
   workspaceId: string
   invitedBy: string // user_id
   emails: string[]
   role: "admin" | "user"
+}
+
+interface CreateLinkParams {
+  workspaceId: string
+  invitedBy: string
+  role: "admin" | "user"
+  note: string | null
+}
+
+export interface CreateLinkResult {
+  invitation: Invitation
+  /** Plaintext claim token. Returned exactly once; never persisted. */
+  token: string
+}
+
+export interface ClaimLinkResult {
+  /** When the email already belongs to a workspace member; the link is consumed and the caller should be redirected to login. */
+  alreadyMember?: { workspaceId: string }
 }
 
 interface SendResult {
@@ -152,10 +182,13 @@ export class InvitationService {
       setupCompleted: false,
     })
 
+    // By the time an invitation is acceptable, email is bound — either it was
+    // an email invite (set at creation) or a link invite that's been claimed.
+    // Fall back to the authenticated identity's email defensively.
     await OutboxRepository.insert(client, "invitation:accepted", {
       workspaceId: invitation.workspaceId,
       invitationId: invitation.id,
-      email: invitation.email,
+      email: invitation.email ?? identity.email,
       workosUserId: identity.workosUserId,
       userName: identity.name,
     })
@@ -187,7 +220,7 @@ export class InvitationService {
           logger.error({ err, invitationId: invitation.id, email }, "Failed to accept invitation")
           failed.push({
             invitationId: invitation.id,
-            email: invitation.email,
+            email: invitation.email ?? email,
             error: err instanceof Error ? err.message : String(err),
           })
         }
@@ -226,6 +259,12 @@ export class InvitationService {
     if (!invitation || invitation.workspaceId !== workspaceId || invitation.status !== "pending") {
       return null
     }
+    // Resend only makes sense for email invites. Link invites without a bound
+    // email have nothing to resend; once a link is claimed, the recipient gets
+    // the WorkOS email automatically. Admin can revoke + create a new link.
+    if (invitation.kind !== "email" || !invitation.email) {
+      return null
+    }
 
     // Revoke old and create new
     await this.revokeInvitation(invitationId, workspaceId)
@@ -246,8 +285,116 @@ export class InvitationService {
     return InvitationRepository.listByWorkspace(this.pool, workspaceId, status ? { status } : undefined)
   }
 
+  /**
+   * Create an unclaimed link invitation. The plaintext token is returned exactly
+   * once; only the SHA-256 hash is persisted. The recipient's email is bound
+   * later via `claimLinkByToken`. WorkOS is not contacted at create time —
+   * there's no email yet to invite.
+   */
+  async createLink(params: CreateLinkParams): Promise<CreateLinkResult> {
+    const { token, tokenHash } = generateLinkToken()
+    const id = invitationId()
+    const expiresAt = new Date(Date.now() + INVITATION_EXPIRY_MS)
+
+    const invitation = await withTransaction(this.pool, async (client) => {
+      const inv = await InvitationRepository.insertLink(client, {
+        id,
+        workspaceId: params.workspaceId,
+        role: params.role,
+        invitedBy: params.invitedBy,
+        tokenHash,
+        note: params.note,
+        expiresAt,
+      })
+
+      // Mirror to control-plane via outbox so the public /join lookup can
+      // resolve workspace metadata without a regional round-trip.
+      await OutboxRepository.insert(client, "invitation:link-created", {
+        workspaceId: params.workspaceId,
+        invitationId: id,
+        tokenHash,
+        role: params.role,
+        expiresAt: expiresAt.toISOString(),
+      })
+
+      return inv
+    })
+
+    return { invitation, token }
+  }
+
+  /**
+   * Atomic single-use claim. Binds an email to a previously unclaimed link
+   * invitation, then triggers the existing WorkOS-invite path so the recipient
+   * receives a verification email. Returns `alreadyMember` if the email
+   * already belongs to a workspace member; the row is consumed in that case
+   * so the link can't be reused.
+   */
+  async claimLinkByToken(token: string, rawEmail: string): Promise<ClaimLinkResult> {
+    const email = rawEmail.toLowerCase().trim()
+    const tokenHash = hashInvitationToken(token)
+
+    // Look up first to surface specific error codes (revoked vs. expired vs. claimed)
+    const existing = await InvitationRepository.findByTokenHash(this.pool, tokenHash)
+    if (!existing || existing.kind !== "link") {
+      throw new InvitationLinkError("INVITATION_NOT_FOUND")
+    }
+    if (existing.status === "revoked") throw new InvitationLinkError("INVITATION_REVOKED")
+    if (existing.status === "expired" || existing.expiresAt <= new Date()) {
+      throw new InvitationLinkError("INVITATION_EXPIRED")
+    }
+    if (existing.status === "accepted" || existing.email !== null) {
+      throw new InvitationLinkError("INVITATION_ALREADY_CLAIMED")
+    }
+
+    // Atomic claim: bind email + write outbox event in one tx.
+    // Concurrent claimers race on the WHERE clause; loser sees null and 409s.
+    const claimed = await withTransaction(this.pool, async (client) => {
+      const updated = await InvitationRepository.claimLinkByTokenHash(client, tokenHash, email)
+      if (!updated) return null
+
+      const inviterWorkosUserId =
+        (await this.getInviterWorkosUserId(updated.workspaceId, updated.invitedBy)) ?? undefined
+
+      await OutboxRepository.insert(client, "invitation:link-claimed", {
+        workspaceId: updated.workspaceId,
+        invitationId: updated.id,
+        email,
+        role: updated.role,
+        inviterWorkosUserId,
+      })
+
+      return updated
+    })
+
+    if (!claimed) throw new InvitationLinkError("INVITATION_ALREADY_CLAIMED")
+
+    // If the email is already a member of this workspace, short-circuit:
+    // they don't need a new WorkOS invite, they just need to log in. The link
+    // is consumed regardless so it can't be reused.
+    const memberMatches = await UserRepository.findEmails(this.pool, claimed.workspaceId, [email])
+    if (memberMatches.has(email)) {
+      return { alreadyMember: { workspaceId: claimed.workspaceId } }
+    }
+
+    return {}
+  }
+
   private async getInviterWorkosUserId(workspaceId: string, invitedBy: string): Promise<string | null> {
     const inviterUser = await UserRepository.findById(this.pool, workspaceId, invitedBy)
     return inviterUser?.workosUserId ?? null
+  }
+}
+
+export type InvitationLinkErrorCode =
+  | "INVITATION_NOT_FOUND"
+  | "INVITATION_REVOKED"
+  | "INVITATION_EXPIRED"
+  | "INVITATION_ALREADY_CLAIMED"
+
+export class InvitationLinkError extends Error {
+  constructor(public readonly code: InvitationLinkErrorCode) {
+    super(code)
+    this.name = "InvitationLinkError"
   }
 }
