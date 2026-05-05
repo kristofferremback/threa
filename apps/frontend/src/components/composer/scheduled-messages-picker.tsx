@@ -110,7 +110,10 @@ export function ScheduledMessagesPicker({
   }
 
   const handleOpenChange = (next: boolean) => {
-    if (controlsDisabled) return
+    // Block opens while controls are disabled (sending in flight), but
+    // always honor closes — otherwise Escape / outside-click can't dismiss
+    // the popover if disable flips on while it's open.
+    if (controlsDisabled && next) return
     setOpen(next)
     if (!next) resetToList()
   }

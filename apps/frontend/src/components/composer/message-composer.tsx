@@ -205,6 +205,14 @@ export interface MessageComposerProps {
    * edit forms and any composer that isn't sending a fresh message).
    */
   scheduledMessagesTrigger?: ReactNode
+
+  /**
+   * Separate slot for the expanded-mode FAB drawer; mirrors
+   * `stashedDraftsTriggerFab`. The picker is rendered fresh per context
+   * (with `size="fab"`) rather than shared by reference because the trigger
+   * sizing differs between the inline action bar and the floating drawer.
+   */
+  scheduledMessagesTriggerFab?: ReactNode
 }
 
 export function MessageComposer({
@@ -241,6 +249,7 @@ export function MessageComposer({
   stashedDraftsTrigger,
   stashedDraftsTriggerFab,
   scheduledMessagesTrigger,
+  scheduledMessagesTriggerFab,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -572,6 +581,7 @@ export function MessageComposer({
             {/* Action drawer — slides out from behind the + button on hover or focus-within */}
             <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[240px] group-hover/fab:opacity-100 group-focus-within/fab:max-w-[240px] group-focus-within/fab:opacity-100 transition-all duration-200 ease-out">
               {stashedDraftsTriggerFab}
+              {scheduledMessagesTriggerFab}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

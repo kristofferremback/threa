@@ -658,6 +658,16 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason, 
         controlsDisabled={composer.isSending}
       />
     ),
+    scheduledMessagesTriggerFab: (
+      <ScheduledMessagesPicker
+        workspaceId={workspaceId}
+        streamId={streamId}
+        canSchedule={composer.canSend}
+        onSchedule={handleSchedule}
+        controlsDisabled={composer.isSending}
+        size="fab"
+      />
+    ),
   } as const
 
   return (
