@@ -1,20 +1,21 @@
-import { useId, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { ArrowLeft, CalendarClock, ChevronDown, ChevronRight } from "lucide-react"
 import type { ScheduledMessageView } from "@threa/types"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { stripMarkdownToInline } from "@/lib/markdown"
-import { formatFutureTime, formatSendCountdown, toDateTimeLocalValue } from "@/lib/dates"
+import { formatFutureTime, formatSendCountdown } from "@/lib/dates"
 import { useScheduledList, useCancelScheduled, useSendScheduledNow } from "@/hooks"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
-import { useCurrentWorkspaceUser } from "@/hooks/use-workspaces"
+import { usePreferencesOptional } from "@/contexts"
 import { REMINDER_PRESETS, computeRemindAt, type ReminderPreset } from "@/lib/reminder-presets"
+import { DateTimeField } from "@/components/forms/date-time-field"
+import { parseLocalDateTime, toDateInputValue, toTimeInputValue } from "@/lib/dates"
 import { ScheduledEditDialog } from "@/components/scheduled/scheduled-edit-dialog"
 import { ScheduledActionDrawer } from "@/components/scheduled/scheduled-action-drawer"
 import { ScheduledActions } from "@/components/scheduled/scheduled-actions"
@@ -65,8 +66,9 @@ export function ScheduledMessagesPicker({
 }: ScheduledMessagesPickerProps) {
   const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<Mode>("list")
-  const [customValue, setCustomValue] = useState<string>("")
-  const [customMin, setCustomMin] = useState<string>("")
+  const [customDate, setCustomDate] = useState<string>("")
+  const [customTime, setCustomTime] = useState<string>("")
+  const [customMinDate, setCustomMinDate] = useState<string>("")
   const [showCustom, setShowCustom] = useState(false)
   const [editing, setEditing] = useState<ScheduledMessageView | null>(null)
   // Lifted out of the row so the drawer stacks above the popover. Local
@@ -75,7 +77,6 @@ export function ScheduledMessagesPicker({
   // bottom sheet). We instead close the popover when long-press fires and
   // render the drawer at the picker's top level, outside the popover tree.
   const [actionTarget, setActionTarget] = useState<ScheduledMessageView | null>(null)
-  const inputId = useId()
 
   const { items } = useScheduledList(workspaceId, "pending", streamId)
   const cancelMutation = useCancelScheduled(workspaceId)
@@ -88,7 +89,11 @@ export function ScheduledMessagesPicker({
   // to different instants, the row becomes a split button so the user can
   // pick either "9am in my current location" or "9am in my home timezone".
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-  const prefTimezone = useCurrentWorkspaceUser(workspaceId)?.timezone ?? null
+  // Pull from `UserPreferences.timezone` (always set, defaults to "UTC") via
+  // the preferences context — `User.timezone` is `string | null` on the
+  // domain model and frequently null on accounts that haven't completed the
+  // setup wizard, which silently disabled the alt-tz split for those users.
+  const prefTimezone = usePreferencesOptional()?.preferences?.timezone ?? null
 
   const count = items.length
   // Re-anchor relative-time labels each time the popover opens.
@@ -100,7 +105,8 @@ export function ScheduledMessagesPicker({
   const resetToList = () => {
     setMode("list")
     setShowCustom(false)
-    setCustomValue("")
+    setCustomDate("")
+    setCustomTime("")
   }
 
   const handleOpenChange = (next: boolean) => {
@@ -123,9 +129,8 @@ export function ScheduledMessagesPicker({
   }
 
   const handleCustomSubmit = () => {
-    if (!customValue) return
-    const when = new Date(customValue)
-    if (Number.isNaN(when.getTime())) return
+    const when = parseLocalDateTime(customDate, customTime)
+    if (!when) return
     // Clamp 30s into the future so the server's 5s clamp doesn't surprise a
     // user picking "now-ish" as a way of saying "send shortly".
     const minMs = Date.now() + 30_000
@@ -135,11 +140,10 @@ export function ScheduledMessagesPicker({
   }
 
   const previewLabel = useMemo(() => {
-    if (!customValue) return null
-    const d = new Date(customValue)
-    if (Number.isNaN(d.getTime())) return null
+    const d = parseLocalDateTime(customDate, customTime)
+    if (!d) return null
     return formatFutureTime(d, new Date(), { timezone })
-  }, [customValue, timezone])
+  }, [customDate, customTime, timezone])
 
   const handleEdit = (scheduled: ScheduledMessageView) => {
     // Close the popover first, then defer mounting the dialog to the next
@@ -209,22 +213,24 @@ export function ScheduledMessagesPicker({
             <PickingMode
               timezone={timezone}
               prefTimezone={prefTimezone}
-              inputId={inputId}
               showCustom={showCustom}
-              customValue={customValue}
-              customMin={customMin}
+              customDate={customDate}
+              customTime={customTime}
+              customMinDate={customMinDate}
               previewLabel={previewLabel}
               onBack={resetToList}
               onPreset={handlePreset}
               onShowCustom={() => {
                 // Built fresh each time — the composer is mounted for the
                 // lifetime of a session, so a memoized seed would go stale.
-                const dt = toDateTimeLocalValue(new Date(Date.now() + 60 * 60_000))
-                setCustomMin(dt)
-                setCustomValue(dt)
+                const seed = new Date(Date.now() + 60 * 60_000)
+                setCustomMinDate(toDateInputValue(new Date()))
+                setCustomDate(toDateInputValue(seed))
+                setCustomTime(toTimeInputValue(seed))
                 setShowCustom(true)
               }}
-              onCustomChange={setCustomValue}
+              onCustomDateChange={setCustomDate}
+              onCustomTimeChange={setCustomTime}
               onCustomSubmit={handleCustomSubmit}
             />
           )}
@@ -343,32 +349,38 @@ function ListMode({
 interface PickingModeProps {
   timezone: string
   prefTimezone: string | null
-  inputId: string
   showCustom: boolean
-  customValue: string
-  customMin: string
+  customDate: string
+  customTime: string
+  customMinDate: string
   previewLabel: string | null
   onBack: () => void
   onPreset: (preset: ReminderPreset, overrideTz?: string) => void
   onShowCustom: () => void
-  onCustomChange: (value: string) => void
+  onCustomDateChange: (value: string) => void
+  onCustomTimeChange: (value: string) => void
   onCustomSubmit: () => void
 }
 
 function PickingMode({
   timezone,
   prefTimezone,
-  inputId,
   showCustom,
-  customValue,
-  customMin,
+  customDate,
+  customTime,
+  customMinDate,
   previewLabel,
   onBack,
   onPreset,
   onShowCustom,
-  onCustomChange,
+  onCustomDateChange,
+  onCustomTimeChange,
   onCustomSubmit,
 }: PickingModeProps) {
+  // Disable Schedule until both halves are filled — `parseLocalDateTime`
+  // returns null on either-empty, which would otherwise let the click fire
+  // and silently no-op.
+  const canSubmit = Boolean(customDate && customTime)
   return (
     <>
       <div className="flex items-center gap-2 px-3 py-2 border-b">
@@ -398,21 +410,22 @@ function PickingMode({
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-2 p-3">
-          <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">
-            Pick a time
-          </label>
-          <Input
-            id={inputId}
-            type="datetime-local"
-            value={customValue}
-            onChange={(e) => onCustomChange(e.target.value)}
-            min={customMin}
-            autoFocus
+        <div className="flex flex-col gap-3 p-3">
+          {/* Use the canonical DateTimeField (split native date + time inputs)
+              rather than a single `<input type="datetime-local">` — Android only
+              opens its picker via the trailing calendar icon on the combo input,
+              which made the time half effectively un-editable on phones. */}
+          <DateTimeField
+            date={customDate}
+            time={customTime}
+            onDateChange={onCustomDateChange}
+            onTimeChange={onCustomTimeChange}
+            minDate={customMinDate}
+            density="compact"
           />
           {previewLabel && <div className="text-xs text-muted-foreground">Sends {previewLabel}</div>}
           <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" size="sm" onClick={onCustomSubmit} disabled={!customValue}>
+            <Button type="button" size="sm" onClick={onCustomSubmit} disabled={!canSubmit}>
               Schedule
             </Button>
           </div>
