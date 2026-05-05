@@ -286,7 +286,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
       staticToolbarOpen={!isMobile && formatOpen}
       belowToolbarContent={
         attachmentsHook.pendingAttachments.length > 0 ? (
-          <div className="px-3 pt-1 pb-2 border-b border-border/50 [&>div]:mb-0">
+          <div className="px-3 pt-3 pb-2 border-b border-border/50 [&>div]:mb-0">
             <PendingAttachments
               attachments={attachmentsHook.pendingAttachments}
               onRemove={attachmentsHook.removeAttachment}
@@ -369,7 +369,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
                 the tap target line up exactly. */}
             <div
               data-inline-edit
-              className="flex-1 min-h-0 overflow-y-auto [&_.tiptap]:!pt-0 [&_.tiptap]:!pb-0 [&_.tiptap_p]:!leading-relaxed [&_.tiptap]:max-h-none [&_.tiptap]:min-h-full [&_.tiptap]:px-3 [&_.tiptap]:py-3"
+              className="flex-1 min-h-0 overflow-y-auto rounded-md border border-input bg-background focus-within:border-ring focus-within:ring-1 focus-within:ring-ring [&_.tiptap]:!pt-0 [&_.tiptap]:!pb-0 [&_.tiptap_p]:!leading-relaxed [&_.tiptap]:max-h-none [&_.tiptap]:min-h-full [&_.tiptap]:px-3 [&_.tiptap]:py-3"
             >
               {error ? <div className="px-3 py-3 text-sm text-destructive">{error}</div> : editorElement}
             </div>
@@ -415,7 +415,17 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
   // a click anywhere within the visible editor focuses it.
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        className="sm:max-w-lg"
+        // Radix's default focus management races TipTap's `autofocus: "end"`:
+        // Radix grabs the close-X on open while TipTap claims the editor, and
+        // the bounce can swallow the user's first click on the date/time
+        // inputs (especially on Chrome where `<input type="time">` requires a
+        // clean focus pass to enter spinner-edit mode). preventDefault here
+        // lets TipTap own initial focus uncontested; subsequent clicks then
+        // route normally.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -433,7 +443,7 @@ export function ScheduledEditDialog({ workspaceId, scheduled, onClose }: Schedul
 
           <div
             data-inline-edit
-            className="rounded-md border bg-background overflow-hidden [&_.tiptap]:!pt-0 [&_.tiptap]:!pb-0 [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-3 [&_.tiptap]:min-h-[14rem] [&_.tiptap]:max-h-[24rem]"
+            className="rounded-md border border-input bg-background overflow-hidden focus-within:border-ring focus-within:ring-1 focus-within:ring-ring [&_.tiptap]:!pt-0 [&_.tiptap]:!pb-0 [&_.tiptap]:overflow-y-auto [&_.tiptap]:px-3 [&_.tiptap]:py-3 [&_.tiptap]:min-h-[14rem] [&_.tiptap]:max-h-[24rem]"
           >
             {error ? <div className="px-3 py-3 text-sm text-destructive">{error}</div> : editorElement}
             {fileInput}
