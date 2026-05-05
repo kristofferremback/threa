@@ -3,13 +3,14 @@ import { useEffect } from "react"
 /**
  * Measures the element referenced by `ref` and publishes its height (in px) as
  * `--composer-height` on the nearest `[data-editor-zone]` ancestor. Scrollable
- * siblings inside the same editor zone can consume the variable (Virtuoso
- * Footer spacer, plain-scroll `padding-bottom`) to reserve space for the
- * floating composer pill.
+ * siblings inside the same editor zone can consume the variable (e.g.
+ * plain-scroll `padding-bottom`) to reserve space for the floating composer
+ * pill.
  *
  * Pass `active: false` (e.g. while the expand-to-fullscreen overlay is open)
- * to disconnect the observer and clear the variable so consumers collapse back
- * to zero.
+ * to disconnect the observer. The CSS variable is intentionally *not* cleared
+ * on cleanup so that stream navigation preserves the last-known height; the
+ * next composer mount overwrites it with its own measurement.
  */
 export function useComposerHeightPublish(
   ref: React.RefObject<HTMLElement | null>,
@@ -37,7 +38,8 @@ export function useComposerHeightPublish(
 
     return () => {
       ro.disconnect()
-      zone.style.removeProperty("--composer-height")
+      // Intentionally leave --composer-height set so stream navigation
+      // starts with a reasonable approximation instead of falling back to 0px.
     }
   }, [ref, active])
 }
