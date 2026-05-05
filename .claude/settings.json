@@ -14,7 +14,7 @@
     ]
   },
   "enabledPlugins": {
-    "frontend-design@claude-plugins-official": true
+    "frontend-design@claude-plugins-official": false
   },
   "plansDirectory": ".claude/plans"
 }
