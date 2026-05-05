@@ -20,6 +20,7 @@ export type {
   DraftAttachment,
   StashedDraft,
   CachedSavedMessage,
+  CachedScheduledMessage,
 } from "./database"
 // Re-export EventType from the shared types package
 export type { EventType } from "@threa/types"

@@ -101,7 +101,12 @@ export { useNewMessageIndicator } from "./use-new-message-indicator"
 
 export { useScrollToElement } from "./use-scroll-to-element"
 
-export { useMentionables, filterMentionables, filterBroadcastMentions } from "./use-mentionables"
+export {
+  useMentionables,
+  useMentionStreamContext,
+  filterMentionables,
+  filterBroadcastMentions,
+} from "./use-mentionables"
 export type { MentionStreamContext } from "./use-mentionables"
 
 export { useAllDrafts, type UnifiedDraft, type DraftType } from "./use-all-drafts"
@@ -166,3 +171,20 @@ export {
   replaceSavedPage,
   savedKeys,
 } from "./use-saved"
+
+export {
+  useScheduledList,
+  useLiveScheduledCount,
+  useScheduleMessage,
+  useUpdateScheduled,
+  useCancelScheduled,
+  useSendScheduledNow,
+  useLockScheduledForEdit,
+  useReleaseScheduledEditLock,
+  persistScheduledRows,
+  removeScheduledRow,
+  replaceScheduledPage,
+  replaceLocalScheduledRow,
+  isLocalScheduledId,
+  scheduledKeys,
+} from "./use-scheduled"

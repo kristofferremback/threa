@@ -42,6 +42,14 @@ interface SyncEngineDeps {
     add: (workspaceId: string, messageId: string, emoji: string) => Promise<void>
     remove: (workspaceId: string, messageId: string, emoji: string) => Promise<void>
   }
+  scheduledService?: {
+    create: (
+      workspaceId: string,
+      input: import("@threa/types").ScheduleMessageInput
+    ) => Promise<import("@threa/types").ScheduledMessageView>
+    delete: (workspaceId: string, id: string) => Promise<void>
+    sendNow: (workspaceId: string, id: string) => Promise<import("@threa/types").ScheduledMessageView>
+  }
 }
 
 /**
@@ -204,6 +212,7 @@ export class SyncEngine {
     void processOperationQueue(
       this.deps.messageService,
       this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
+      this.deps.scheduledService,
       () => this.socket !== null && !this.isDestroyed
     )
   }

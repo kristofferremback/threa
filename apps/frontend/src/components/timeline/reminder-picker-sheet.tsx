@@ -5,10 +5,11 @@ import type { SavedMessageView } from "@threa/types"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { usePreferences } from "@/contexts"
 import { useSaveMessage, useUpdateSaved } from "@/hooks/use-saved"
 import { ReminderBadge } from "@/components/saved/reminder-badge"
 import { REMINDER_PRESETS, computeRemindAt } from "@/lib/reminder-presets"
+import { DateTimeField } from "@/components/forms/date-time-field"
+import { parseLocalDateTime, toDateInputValue, toTimeInputValue } from "@/lib/dates"
 
 interface ReminderPickerSheetProps {
   open: boolean
@@ -29,8 +30,9 @@ interface ReminderPickerSheetProps {
  * trailing calendar icon, which meant users couldn't edit just the time.
  */
 export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId, saved }: ReminderPickerSheetProps) {
-  const { preferences } = usePreferences()
-  const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  // Browser-local timezone — never use `preferences.timezone` in the UI
+  // because native pickers always operate in device-local.
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const saveMutation = useSaveMessage(workspaceId)
   const updateMutation = useUpdateSaved(workspaceId)
   const [mode, setMode] = useState<"presets" | "custom">("presets")
@@ -40,14 +42,14 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
   // Date's `min` is today — the time input can't express a past-today clamp
   // without extra logic, so we let the server-side clamp catch "today at 9am
   // when it's already noon".
-  const minDate = useMemo(() => toDateInput(new Date()), [open, mode])
+  const minDate = useMemo(() => toDateInputValue(new Date()), [open, mode])
 
   const openCustom = () => {
     // If a reminder is already set, pre-populate with that; otherwise default
     // to now + 15 minutes so the picker opens on a sensible seed.
     const baseline = saved?.remindAt ? new Date(saved.remindAt) : new Date(Date.now() + 15 * 60_000)
-    setCustomDate(toDateInput(baseline))
-    setCustomTime(toTimeInput(baseline))
+    setCustomDate(toDateInputValue(baseline))
+    setCustomTime(toTimeInputValue(baseline))
     setMode("custom")
   }
 
@@ -85,9 +87,8 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
   }
 
   const handleCustom = () => {
-    if (!customDate || !customTime) return
-    const parsed = new Date(`${customDate}T${customTime}`)
-    if (isNaN(parsed.getTime())) {
+    const parsed = parseLocalDateTime(customDate, customTime)
+    if (!parsed) {
       toast.error("Invalid date")
       return
     }
@@ -153,29 +154,15 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
           ) : (
             // Keep the inputs + Set button grouped at the bottom of the sheet
             // so the tap target is close to the thumb that just opened the
-            // drawer. Two separate inputs so each opens its own native picker.
+            // drawer.
             <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-2 gap-3">
-                <label className="flex flex-col gap-2">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Date</span>
-                  <input
-                    type="date"
-                    value={customDate}
-                    min={minDate}
-                    onChange={(e) => setCustomDate(e.target.value)}
-                    className="w-full rounded-lg border border-input bg-muted/30 px-3 py-4 text-base focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                  />
-                </label>
-                <label className="flex flex-col gap-2">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Time</span>
-                  <input
-                    type="time"
-                    value={customTime}
-                    onChange={(e) => setCustomTime(e.target.value)}
-                    className="w-full rounded-lg border border-input bg-muted/30 px-3 py-4 text-base focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                  />
-                </label>
-              </div>
+              <DateTimeField
+                date={customDate}
+                time={customTime}
+                onDateChange={setCustomDate}
+                onTimeChange={setCustomTime}
+                minDate={minDate}
+              />
               <Button
                 className="w-full h-12 text-base"
                 onClick={handleCustom}
@@ -194,18 +181,6 @@ export function ReminderPickerSheet({ open, onOpenChange, workspaceId, messageId
 function resolveTitle(mode: "presets" | "custom", saved: SavedMessageView | null): string {
   if (mode === "custom") return "Pick a reminder time"
   return saved ? "Reminder" : "Save & remind"
-}
-
-/** Format a Date as `YYYY-MM-DD` in local time — the shape `<input type="date">` expects. */
-function toDateInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-
-/** Format a Date as `HH:mm` in local time — the shape `<input type="time">` expects. */
-function toTimeInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 interface SheetMenuButtonProps {

@@ -135,6 +135,12 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useStreamBootstrap").mockReturnValue({
     data: undefined,
   } as unknown as ReturnType<typeof hooksModule.useStreamBootstrap>)
+  // useMentionStreamContext composes useStreamBootstrap + useUser + workspace
+  // user role lookups; tests only care that the editor receives *some* context,
+  // so stub to undefined which falls through to "no broadcast filter applied".
+  vi.spyOn(hooksModule, "useMentionStreamContext").mockReturnValue(
+    undefined as unknown as ReturnType<typeof hooksModule.useMentionStreamContext>
+  )
 
   vi.spyOn(quoteReplyModule, "useQuoteReply").mockReturnValue({
     triggerQuoteReply: vi.fn(),
@@ -201,6 +207,14 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useComposerHeightPublish").mockImplementation(
     () => undefined as unknown as ReturnType<typeof hooksModule.useComposerHeightPublish>
   )
+  // The composer's schedule-send entry needs the scheduled service via
+  // ServicesProvider; tests run without that wrapper, so stub the hook to a
+  // no-op mutation. The schedule path itself is exercised by the page tests.
+  vi.spyOn(hooksModule, "useScheduleMessage").mockReturnValue({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    mutate: vi.fn(),
+    isPending: false,
+  } as unknown as ReturnType<typeof hooksModule.useScheduleMessage>)
 
   vi.spyOn(composerModule, "FloatingComposerShell").mockImplementation((({
     children,

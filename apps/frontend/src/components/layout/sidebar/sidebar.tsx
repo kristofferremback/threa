@@ -9,6 +9,7 @@ import {
   createDmDraftId,
   useDraftScratchpads,
   useLiveSavedCount,
+  useLiveScheduledCount,
   useUnreadCounts,
 } from "@/hooks"
 import { useSyncStatus } from "@/sync/sync-status"
@@ -74,8 +75,10 @@ export function Sidebar({ workspaceId }: SidebarProps) {
 
   const draftCount = allDrafts.length
   const savedCount = useLiveSavedCount(workspaceId)
+  const scheduledCount = useLiveScheduledCount(workspaceId)
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
   const isSavedPage = splat === "saved" || window.location.pathname.endsWith("/saved")
+  const isScheduledPage = splat === "scheduled" || window.location.pathname.includes("/scheduled")
   const isActivityPage = splat === "activity" || window.location.pathname.endsWith("/activity")
   const isMemoryPage = splat === "memory" || location.pathname.endsWith("/memory")
 
@@ -368,6 +371,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
               draftCount={draftCount}
               isSavedPage={isSavedPage}
               savedCount={savedCount}
+              isScheduledPage={isScheduledPage}
+              scheduledCount={scheduledCount}
               isActivityPage={isActivityPage}
               isMemoryPage={isMemoryPage}
               unreadActivityCount={unreadActivityCount}

@@ -197,6 +197,22 @@ export interface MessageComposerProps {
    * context rather than shared by reference.
    */
   stashedDraftsTriggerFab?: ReactNode
+
+  /**
+   * Slot for the unified scheduled-messages picker — both the "schedule this
+   * draft" entry point and the "what's queued for this stream?" peek live
+   * behind a single trigger. Omit to hide the affordance entirely (used by
+   * edit forms and any composer that isn't sending a fresh message).
+   */
+  scheduledMessagesTrigger?: ReactNode
+
+  /**
+   * Separate slot for the expanded-mode FAB drawer; mirrors
+   * `stashedDraftsTriggerFab`. The picker is rendered fresh per context
+   * (with `size="fab"`) rather than shared by reference because the trigger
+   * sizing differs between the inline action bar and the floating drawer.
+   */
+  scheduledMessagesTriggerFab?: ReactNode
 }
 
 export function MessageComposer({
@@ -232,6 +248,8 @@ export function MessageComposer({
   onStashDraft,
   stashedDraftsTrigger,
   stashedDraftsTriggerFab,
+  scheduledMessagesTrigger,
+  scheduledMessagesTriggerFab,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -239,6 +257,7 @@ export function MessageComposer({
 
   const richEditorRef = useRef<RichEditorHandle>(null)
   const expandedShellRef = useRef<HTMLDivElement>(null)
+  const actionBarWrapperRef = useRef<HTMLDivElement>(null)
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
   const [formatOpen, setFormatOpen] = useState(false)
   const [mobileExpanded, setMobileExpanded] = useState(false)
@@ -562,6 +581,7 @@ export function MessageComposer({
             {/* Action drawer — slides out from behind the + button on hover or focus-within */}
             <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[240px] group-hover/fab:opacity-100 group-focus-within/fab:max-w-[240px] group-focus-within/fab:opacity-100 transition-all duration-200 ease-out">
               {stashedDraftsTriggerFab}
+              {scheduledMessagesTriggerFab}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -777,9 +797,25 @@ export function MessageComposer({
 
             {/* Bottom action bar — visible on desktop always, on mobile only when focused.
                onMouseDown preventDefault keeps editor focus on mobile so the virtual keyboard
-               stays open when tapping any button in this bar. */}
+               stays open when tapping any button in this bar.
+
+               Subtlety: React synthetic events bubble through the *React component
+               tree*, not the DOM tree. Slots like `scheduledMessagesTrigger` host
+               Radix Popover/Dialog whose content is portaled into <body>, but
+               their synthetic events still bubble back here through the React
+               tree. A blanket `preventDefault` therefore cancels native focus on
+               inputs (date/time pickers, search inputs) inside those portals. The
+               DOM-subtree guard below limits the suppression to elements actually
+               living under this wrapper — buttons in our own action bar — and
+               leaves portaled content untouched. */}
             {(!isMobile || mobileFocused) && (
-              <div onMouseDown={(e) => e.preventDefault()}>
+              <div
+                ref={actionBarWrapperRef}
+                onMouseDown={(e) => {
+                  if (!actionBarWrapperRef.current?.contains(e.target as Node)) return
+                  e.preventDefault()
+                }}
+              >
                 {isMobile ? (
                   <EditorActionBar
                     editorHandle={richEditorRef.current}
@@ -791,9 +827,10 @@ export function MessageComposer({
                     showAttach
                     onAttachClick={handleAttachClick}
                     trailingContent={
-                      stashedDraftsTrigger ? (
+                      stashedDraftsTrigger || scheduledMessagesTrigger ? (
                         <div className="flex items-center gap-1">
                           {stashedDraftsTrigger}
+                          {scheduledMessagesTrigger}
                           {sendButton}
                         </div>
                       ) : (
@@ -918,6 +955,7 @@ export function MessageComposer({
                       </TooltipContent>
                     </Tooltip>
                     {stashedDraftsTrigger}
+                    {scheduledMessagesTrigger}
                     {sendButton}
                   </div>
                 )}
