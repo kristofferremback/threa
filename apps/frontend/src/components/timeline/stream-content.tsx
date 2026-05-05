@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useCallback, useRef, useState } from "react"
+import { useMemo, useEffect, useLayoutEffect, useCallback, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Virtuoso } from "react-virtuoso"
 import { MessageSquare, ArrowDown, X, Move, Loader2, Check } from "lucide-react"
@@ -951,36 +951,62 @@ export function StreamContent({
   }, [isJumpMode, exitJumpMode, resetPrependState, scrollToBottom])
 
   // Re-scroll to bottom when the composer height changes so the most recent
-  // message stays visible above the floating composer. We use a double
-  // requestAnimationFrame to defer until after Virtuoso's internal
-  // ResizeObserver has processed the Footer spacer's new height.
+  // message stays visible above the floating composer.
+  //
+  // Virtuoso measures its Footer spacer with a ResizeObserver. When the CSS
+  // variable updates, the browser recalculates layout, the RO fires, and only
+  // then does Virtuoso's internal state reflect the new footer size. Calling
+  // scrollToIndex before that means Virtuoso still uses the old footer height
+  // and the message lands under the composer. We simply wait 150 ms — long
+  // enough for Virtuoso to catch up, short enough to feel instant.
   const isScrolledFarFromBottomRef = useRef(isScrolledFarFromBottom)
   isScrolledFarFromBottomRef.current = isScrolledFarFromBottom
   const scrollToBottomRef = useRef(scrollToBottom)
   scrollToBottomRef.current = scrollToBottom
-  const composerHeightRafRef = useRef<number | null>(null)
+  const composerHeightTimerRef = useRef<number | null>(null)
 
   const handleComposerHeightChange = useCallback(() => {
-    if (composerHeightRafRef.current !== null) {
-      cancelAnimationFrame(composerHeightRafRef.current)
+    if (composerHeightTimerRef.current !== null) {
+      window.clearTimeout(composerHeightTimerRef.current)
     }
-    composerHeightRafRef.current = requestAnimationFrame(() => {
-      composerHeightRafRef.current = requestAnimationFrame(() => {
-        composerHeightRafRef.current = null
-        if (!isScrolledFarFromBottomRef.current) {
-          scrollToBottomRef.current({ force: true })
-        }
-      })
-    })
+    composerHeightTimerRef.current = window.setTimeout(() => {
+      composerHeightTimerRef.current = null
+      if (!isScrolledFarFromBottomRef.current) {
+        scrollToBottomRef.current({ force: true })
+      }
+    }, 150)
   }, [])
 
   useEffect(() => {
     return () => {
-      if (composerHeightRafRef.current !== null) {
-        cancelAnimationFrame(composerHeightRafRef.current)
+      if (composerHeightTimerRef.current !== null) {
+        window.clearTimeout(composerHeightTimerRef.current)
       }
     }
   }, [])
+
+  // Safety-net re-scroll after the first batch of messages renders.
+  // Virtuoso's initial scroll (driven by initialTopMostItemIndex) can race
+  // with useComposerHeightPublish's effect, so the list may be positioned
+  // before the Footer spacer knows its real height. We wait until messages
+  // have arrived and then scroll again once, gated on the user not having
+  // already scrolled away.
+  const didInitialScrollFixRef = useRef(false)
+  useLayoutEffect(() => {
+    didInitialScrollFixRef.current = false
+  }, [streamId])
+
+  useLayoutEffect(() => {
+    if (isDraft || highlightMessageId || visibleItems.length === 0) return
+    if (didInitialScrollFixRef.current) return
+    didInitialScrollFixRef.current = true
+    const timer = window.setTimeout(() => {
+      if (!isScrolledFarFromBottomRef.current) {
+        scrollToBottomRef.current({ force: true })
+      }
+    }, 200)
+    return () => window.clearTimeout(timer)
+  }, [isDraft, highlightMessageId, visibleItems.length])
 
   if (error && !isDraft && events.length === 0 && !idbStream) {
     return (
