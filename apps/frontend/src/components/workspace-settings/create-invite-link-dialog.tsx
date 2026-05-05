@@ -245,7 +245,7 @@ function CreateFormView({
         </Label>
         <Input
           id="link-note"
-          placeholder="for Simon — sent via Signal"
+          placeholder="e.g. shared in #design — sent via Signal"
           value={note}
           onChange={(e) => onNoteChange(e.target.value)}
           maxLength={200}
