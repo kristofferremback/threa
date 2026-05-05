@@ -117,11 +117,11 @@ describe("StreamSettingsDialog", () => {
     )
 
     expect(await screen.findByText("Direct chat Settings")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /General/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Companion/i })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Members/i })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /General/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /Companion/i })).not.toBeInTheDocument()
-    expect(screen.getByText("People and bot access")).toBeInTheDocument()
-    expect(screen.getByText("Members panel")).toBeVisible()
+    expect(screen.getByText("Notifications and stream details")).toBeInTheDocument()
+    expect(screen.getByText("General panel")).toBeVisible()
 
     const tabs = document.body.querySelector('[data-slot="settings-tabs"]')
     const panels = document.body.querySelector('[data-slot="settings-panels"]')
