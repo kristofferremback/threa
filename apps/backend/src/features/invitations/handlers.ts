@@ -1,8 +1,19 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
 import { HttpError } from "../../lib/errors"
+import type { Invitation } from "./repository"
 import type { InvitationService, InvitationLinkErrorCode } from "./service"
 import { InvitationLinkError } from "./service"
+
+/**
+ * Project an `Invitation` to its wire shape. We deliberately drop `tokenHash`
+ * (no reason to expose it on responses) so callers only see the fields
+ * declared in `WorkspaceInvitation`.
+ */
+function toWire(invitation: Invitation) {
+  const { tokenHash: _tokenHash, ...wire } = invitation
+  return wire
+}
 
 const sendInvitationsSchema = z.object({
   emails: z
@@ -56,7 +67,10 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
         role,
       })
 
-      res.status(201).json(sendResult)
+      res.status(201).json({
+        sent: sendResult.sent.map(toWire),
+        skipped: sendResult.skipped,
+      })
     },
 
     async list(req: Request, res: Response) {
@@ -64,7 +78,7 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
 
       const invitations = await invitationService.listInvitations(workspaceId)
 
-      res.json({ invitations })
+      res.json({ invitations: invitations.map(toWire) })
     },
 
     async revoke(req: Request, res: Response) {
@@ -90,7 +104,7 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
         return res.status(404).json({ error: "Invitation not found or not pending" })
       }
 
-      res.json({ invitation })
+      res.json({ invitation: toWire(invitation) })
     },
 
     /**
@@ -120,7 +134,7 @@ export function createInvitationHandlers({ invitationService }: Dependencies) {
       // window.location.origin so we don't have to plumb a public-app-URL env
       // through to the regional backend (and it just-works across staging,
       // PR previews, and prod without per-env config).
-      res.status(201).json({ invitation, token })
+      res.status(201).json({ invitation: toWire(invitation), token })
     },
 
     /**

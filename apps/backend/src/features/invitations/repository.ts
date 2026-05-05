@@ -98,7 +98,7 @@ export const InvitationRepository = {
     return mapRow(result.rows[0])
   },
 
-  async findPendingByTokenHash(db: Querier, tokenHash: string): Promise<Invitation | null> {
+  async findByTokenHash(db: Querier, tokenHash: string): Promise<Invitation | null> {
     const result = await db.query<InvitationRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM workspace_invitations
       WHERE token_hash = ${tokenHash} AND kind = 'link'

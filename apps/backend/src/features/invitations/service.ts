@@ -335,7 +335,7 @@ export class InvitationService {
     const tokenHash = hashInvitationToken(token)
 
     // Look up first to surface specific error codes (revoked vs. expired vs. claimed)
-    const existing = await InvitationRepository.findPendingByTokenHash(this.pool, tokenHash)
+    const existing = await InvitationRepository.findByTokenHash(this.pool, tokenHash)
     if (!existing || existing.kind !== "link") {
       throw new InvitationLinkError("INVITATION_NOT_FOUND")
     }

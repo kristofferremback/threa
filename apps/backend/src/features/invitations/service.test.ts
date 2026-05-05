@@ -422,7 +422,7 @@ describe("InvitationService.createLink", () => {
 describe("InvitationService.claimLinkByToken", () => {
   let service: InvitationService
 
-  const mockFindByTokenHash = spyOn(InvitationRepository, "findPendingByTokenHash")
+  const mockFindByTokenHash = spyOn(InvitationRepository, "findByTokenHash")
   const mockClaim = spyOn(InvitationRepository, "claimLinkByTokenHash")
   const mockFindUserById = spyOn(UserRepository, "findById")
   const mockFindEmails = spyOn(UserRepository, "findEmails")
