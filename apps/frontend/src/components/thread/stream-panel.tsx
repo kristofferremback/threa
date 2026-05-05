@@ -496,7 +496,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                 draftPortalTargetRef.current
               )}
             <div
-              className={draftExpanded ? "flex-1 overflow-y-auto hidden" : "flex-1 overflow-y-auto"}
+              className={
+                draftExpanded ? "hidden flex-1 flex-col overflow-y-auto" : "flex flex-1 flex-col overflow-y-auto"
+              }
               style={{ paddingBottom: "var(--composer-height, 0px)" }}
             >
               {parentMessage && (
@@ -519,7 +521,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   streamId={panelId!}
                 />
               ) : (
-                <Empty className="h-full border-0">
+                <Empty className="min-h-0 flex-1 border-0">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
                       <MessageSquare />
