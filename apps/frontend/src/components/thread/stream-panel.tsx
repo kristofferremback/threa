@@ -521,7 +521,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   streamId={panelId!}
                 />
               ) : (
-                <Empty className="min-h-0 flex-1 border-0">
+                <Empty className="min-h-[16rem] flex-none border-0">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
                       <MessageSquare />
