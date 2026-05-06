@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { botsApi } from "@/api/bots"
 import { StreamTypes, type WorkspaceBootstrap } from "@threa/types"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { Hash, X } from "lucide-react"
 
 interface BotChannelsSectionProps {
@@ -16,7 +16,6 @@ interface BotChannelsSectionProps {
 
 export function BotChannelsSection({ workspaceId, botId, isArchived }: BotChannelsSectionProps) {
   const queryClient = useQueryClient()
-  const [channelSearch, setChannelSearch] = useState("")
 
   const grantsQueryKey = ["bot-stream-grants", workspaceId, botId]
   const { data: streamGrants = [] } = useQuery({
@@ -33,10 +32,7 @@ export function BotChannelsSection({ workspaceId, botId, isArchived }: BotChanne
 
   const grantStreamMutation = useMutation({
     mutationFn: (streamId: string) => botsApi.grantStreamAccess(workspaceId, botId, streamId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: grantsQueryKey })
-      setChannelSearch("")
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: grantsQueryKey }),
   })
 
   const revokeStreamMutation = useMutation({
@@ -47,18 +43,11 @@ export function BotChannelsSection({ workspaceId, botId, isArchived }: BotChanne
   const grantedStreamIds = useMemo(() => new Set(streamGrants.map((g) => g.streamId)), [streamGrants])
 
   const availableChannels = useMemo(() => {
-    if (!channelSearch || !wsBootstrap?.streams) return []
-    const q = channelSearch.toLowerCase()
-    return wsBootstrap.streams
-      .filter(
-        (s) =>
-          s.type === StreamTypes.CHANNEL &&
-          !s.archivedAt &&
-          !grantedStreamIds.has(s.id) &&
-          (s.slug?.toLowerCase().includes(q) || s.displayName?.toLowerCase().includes(q))
-      )
-      .slice(0, 10)
-  }, [wsBootstrap, channelSearch, grantedStreamIds])
+    if (!wsBootstrap?.streams) return []
+    return wsBootstrap.streams.filter(
+      (s) => s.type === StreamTypes.CHANNEL && !s.archivedAt && !grantedStreamIds.has(s.id)
+    )
+  }, [wsBootstrap, grantedStreamIds])
 
   const grantedStreams = useMemo(() => {
     if (!wsBootstrap?.streams) return []
@@ -113,34 +102,31 @@ export function BotChannelsSection({ workspaceId, botId, isArchived }: BotChanne
       )}
 
       {!isArchived && (
-        <div className="space-y-1.5">
-          <Input
-            placeholder="Search channels to grant access..."
-            value={channelSearch}
-            onChange={(e) => setChannelSearch(e.target.value)}
-            className="h-8"
-          />
-          {availableChannels.length > 0 && (
-            <div className="rounded-md border divide-y max-h-40 overflow-y-auto">
-              {availableChannels.map((stream) => (
-                <button
-                  key={stream.id}
-                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent/50 transition-colors text-left"
-                  onClick={() => grantStreamMutation.mutate(stream.id)}
-                >
-                  <Hash className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-sm truncate">{stream.slug ?? stream.displayName}</span>
-                  <Badge variant="outline" className="ml-auto text-[10px] shrink-0">
-                    {stream.visibility}
-                  </Badge>
-                </button>
-              ))}
-            </div>
+        <SearchableSelect
+          items={availableChannels}
+          value={null}
+          onChange={(stream) => grantStreamMutation.mutate(stream.id)}
+          getKey={(s) => s.id}
+          getKeywords={(s) =>
+            [s.slug ?? "", s.slug ? `#${s.slug}` : "", s.displayName ?? ""].filter(Boolean) as string[]
+          }
+          placeholder={availableChannels.length === 0 ? "All channels granted" : "Grant channel access..."}
+          searchPlaceholder="Search channels..."
+          emptyMessage="No matching channels"
+          triggerIcon={Hash}
+          disabled={availableChannels.length === 0 || grantStreamMutation.isPending}
+          showAvailableCount
+          availableLabel={(n) => `${n} ${n === 1 ? "channel" : "channels"} available`}
+          renderItem={(stream) => (
+            <>
+              <Hash className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-sm truncate">{stream.slug ?? stream.displayName}</span>
+              <Badge variant="outline" className="ml-auto text-[10px] shrink-0">
+                {stream.visibility}
+              </Badge>
+            </>
           )}
-          {channelSearch && availableChannels.length === 0 && (
-            <p className="text-xs text-muted-foreground py-1">No matching channels</p>
-          )}
-        </div>
+        />
       )}
     </section>
   )

@@ -5,8 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { SearchableList } from "@/components/ui/searchable-list"
-import { renderUserListItem, type UserListItem } from "@/components/ui/user-list-item"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import {
   ResponsiveAlertDialog,
   ResponsiveAlertDialogAction,
@@ -36,7 +35,6 @@ interface MembersTabProps {
 export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabProps) {
   const streamService = useStreamService()
   const [search, setSearch] = useState("")
-  const [addSearch, setAddSearch] = useState("")
   const addMutation = useAddStreamMember(workspaceId, streamId)
   const removeMutation = useRemoveStreamMember(workspaceId, streamId)
 
@@ -81,29 +79,14 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
     return enrichedMembers.filter((m) => m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
   }, [enrichedMembers, search])
 
-  const availableToAdd = useMemo((): UserListItem[] => {
-    if (!addSearch) return []
-    const q = addSearch.toLowerCase()
-    return workspaceUsers
-      .filter(
-        (m) => !streamMemberIds.has(m.id) && (m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
-      )
-      .map((m) => ({
-        id: m.id,
-        label: m.name || m.slug,
-        description: `@${m.slug}`,
-        slug: m.slug,
-        name: m.name,
-      }))
-  }, [workspaceUsers, streamMemberIds, addSearch])
+  const availableToAdd = useMemo(() => {
+    return workspaceUsers.filter((m) => !streamMemberIds.has(m.id))
+  }, [workspaceUsers, streamMemberIds])
 
   const handleAdd = useCallback(
-    (item: UserListItem) => {
-      addMutation.mutate(item.id, {
-        onSuccess: () => {
-          toast.success("Member added")
-          setAddSearch("")
-        },
+    (user: (typeof workspaceUsers)[number]) => {
+      addMutation.mutate(user.id, {
+        onSuccess: () => toast.success("Member added"),
         onError: () => toast.error("Failed to add member"),
       })
     },
@@ -180,17 +163,36 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
       </div>
 
       {canAddUserMembers && (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Label className="text-sm font-medium">Add member</Label>
-          <SearchableList
+          <SearchableSelect
             items={availableToAdd}
-            renderItem={renderUserListItem}
-            onSelect={handleAdd}
-            search={addSearch}
-            onSearchChange={setAddSearch}
-            placeholder="Search workspace users..."
+            value={null}
+            onChange={handleAdd}
+            getKey={(u) => u.id}
+            getKeywords={(u) => [u.name, u.slug, `@${u.slug}`]}
+            placeholder={availableToAdd.length === 0 ? "All workspace users are members" : "Add member..."}
+            searchPlaceholder="Search workspace users..."
             emptyMessage="No matching users"
-            icon={UserPlus}
+            triggerIcon={UserPlus}
+            disabled={availableToAdd.length === 0}
+            showAvailableCount
+            availableLabel={(n) => `${n} ${n === 1 ? "user" : "users"} available`}
+            renderItem={(user) => {
+              const initials = getInitials(user.name || user.slug)
+              const color = getAvatarColor(user.id)
+              return (
+                <>
+                  <div
+                    className={`flex items-center justify-center h-6 w-6 rounded-full text-[10px] font-medium shrink-0 ${color}`}
+                  >
+                    {initials}
+                  </div>
+                  <span className="text-sm font-medium truncate">{user.name || user.slug}</span>
+                  <span className="ml-auto text-xs text-muted-foreground shrink-0">@{user.slug}</span>
+                </>
+              )
+            }}
           />
         </div>
       )}
@@ -232,7 +234,6 @@ function StreamBotsSection({
   readOnly?: boolean
 }) {
   const queryClient = useQueryClient()
-  const [botSearch, setBotSearch] = useState("")
   const allBots = useWorkspaceBots(workspaceId)
 
   // Single query: which bots have been granted access to this stream
@@ -246,25 +247,14 @@ function StreamBotsSection({
 
   const botsWithAccess = useMemo(() => allBots.filter((b) => grantedBotIdSet.has(b.id)), [allBots, grantedBotIdSet])
 
-  const availableToGrant = useMemo(() => {
-    if (!botSearch) return []
-    const q = botSearch.toLowerCase()
-    return allBots
-      .filter(
-        (b) =>
-          !b.archivedAt &&
-          !grantedBotIdSet.has(b.id) &&
-          (b.name.toLowerCase().includes(q) || b.slug?.toLowerCase().includes(q))
-      )
-      .slice(0, 10)
-  }, [allBots, grantedBotIdSet, botSearch])
+  const availableToGrant = useMemo(
+    () => allBots.filter((b) => !b.archivedAt && !grantedBotIdSet.has(b.id)),
+    [allBots, grantedBotIdSet]
+  )
 
   const grantMutation = useMutation({
     mutationFn: (botId: string) => botsApi.grantStreamAccess(workspaceId, botId, streamId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: streamBotsQueryKey })
-      setBotSearch("")
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: streamBotsQueryKey }),
   })
 
   const revokeMutation = useMutation({
@@ -314,34 +304,29 @@ function StreamBotsSection({
       )}
 
       {!readOnly && allBots.length > 0 && (
-        <div className="space-y-1.5">
-          <Input
-            placeholder="Search bots to add..."
-            value={botSearch}
-            onChange={(e) => setBotSearch(e.target.value)}
-            className="h-8"
-          />
-          {availableToGrant.length > 0 && (
-            <div className="rounded-md border divide-y max-h-40 overflow-y-auto">
-              {availableToGrant.map((bot) => (
-                <button
-                  key={bot.id}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-accent/50 transition-colors text-left"
-                  onClick={() => grantMutation.mutate(bot.id)}
-                >
-                  <div className="flex items-center justify-center h-6 w-6 rounded-full bg-emerald-500/10 text-emerald-600 text-xs shrink-0">
-                    {bot.avatarEmoji ?? <BotIcon className="h-3 w-3" />}
-                  </div>
-                  <span className="text-sm truncate">{bot.name}</span>
-                  {bot.slug && <span className="text-xs text-muted-foreground">@{bot.slug}</span>}
-                </button>
-              ))}
-            </div>
+        <SearchableSelect
+          items={availableToGrant}
+          value={null}
+          onChange={(bot) => grantMutation.mutate(bot.id)}
+          getKey={(b) => b.id}
+          getKeywords={(b) => [b.name, b.slug ?? "", b.slug ? `@${b.slug}` : ""].filter(Boolean)}
+          placeholder={availableToGrant.length === 0 ? "All bots have access" : "Add bot..."}
+          searchPlaceholder="Search bots..."
+          emptyMessage="No matching bots"
+          triggerIcon={BotIcon}
+          disabled={availableToGrant.length === 0 || grantMutation.isPending}
+          showAvailableCount
+          availableLabel={(n) => `${n} ${n === 1 ? "bot" : "bots"} available`}
+          renderItem={(bot) => (
+            <>
+              <div className="flex items-center justify-center h-6 w-6 rounded-full bg-emerald-500/10 text-emerald-600 text-xs shrink-0">
+                {bot.avatarEmoji ?? <BotIcon className="h-3 w-3" />}
+              </div>
+              <span className="text-sm font-medium truncate">{bot.name}</span>
+              {bot.slug && <span className="ml-auto text-xs text-muted-foreground shrink-0">@{bot.slug}</span>}
+            </>
           )}
-          {botSearch && availableToGrant.length === 0 && (
-            <p className="text-xs text-muted-foreground py-1">No matching bots</p>
-          )}
-        </div>
+        />
       )}
     </div>
   )
