@@ -9,6 +9,7 @@ import {
 } from "@threa/backend-common"
 import { PlatformRoleRepository } from "./repository"
 import { WorkspaceRegistryRepository } from "../workspaces"
+import { WorkosAuthzRepository } from "../workos-authz"
 
 /** Platform roles recognised by the backoffice gate. */
 export const PLATFORM_ROLES = ["admin"] as const
@@ -82,6 +83,26 @@ export interface WorkspaceOwnerSummary {
 
 export interface WorkspaceDetail extends WorkspaceSummary {
   owner: WorkspaceOwnerSummary
+}
+
+/**
+ * Mirror-derived view of a workspace member. Source of truth is
+ * `workos_organization_memberships` (populated by `WorkosAuthzPoller` and the
+ * backfill script). `firstName`/`lastName` are best-effort lookups via WorkOS;
+ * they're null when the user no longer exists or WorkOS lookup fails.
+ *
+ * `lastEventAt` is the timestamp from the latest event applied to the row, or
+ * the backfill timestamp if no events have arrived yet — exposed so the UI can
+ * show a "last sync" hint and make stale data visible.
+ */
+export interface WorkspaceMemberSummary {
+  workosUserId: string
+  email: string | null
+  firstName: string | null
+  lastName: string | null
+  status: string
+  roleSlugs: string[]
+  lastEventAt: string
 }
 
 /**
@@ -258,6 +279,57 @@ export class BackofficeService {
       ...this.toWorkspaceSummary(row),
       owner: summarizeOwner(row.created_by_workos_user_id, ownerUser),
     }
+  }
+
+  /**
+   * List the WorkOS-mirrored membership for a workspace. Returns an empty
+   * array if the workspace exists but isn't linked to a WorkOS organization
+   * yet (or backfill hasn't reached it).
+   *
+   * 404s when the workspace itself doesn't exist so the UI can distinguish
+   * "no members yet" from "wrong id".
+   */
+  async listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMemberSummary[]> {
+    const workspace = await WorkspaceRegistryRepository.findById(this.pool, workspaceId)
+    if (!workspace) {
+      throw new HttpError("Workspace not found", { status: 404, code: "NOT_FOUND" })
+    }
+    if (!workspace.workos_organization_id) {
+      return []
+    }
+
+    const rows = await WorkosAuthzRepository.listByOrganization(this.pool, workspace.workos_organization_id)
+    if (rows.length === 0) return []
+
+    // Best-effort parallel WorkOS user lookups. WorkOS has no batched
+    // get-many-users endpoint as of this writing; backoffice traffic is low
+    // enough that N round-trips per page is fine. allSettled keeps a single
+    // user-not-found failure from blanking the whole tab.
+    const lookups = await Promise.allSettled(
+      rows.map(async (row) => ({
+        workosUserId: row.workos_user_id,
+        user: await this.workosOrgService.getUser(row.workos_user_id),
+      }))
+    )
+    const userByWorkosId = new Map<string, WorkosUserSummary | null>()
+    for (const result of lookups) {
+      if (result.status === "fulfilled") {
+        userByWorkosId.set(result.value.workosUserId, result.value.user)
+      }
+    }
+
+    return rows.map((row) => {
+      const user = userByWorkosId.get(row.workos_user_id) ?? null
+      return {
+        workosUserId: row.workos_user_id,
+        email: user?.email ?? null,
+        firstName: user?.firstName ?? null,
+        lastName: user?.lastName ?? null,
+        status: row.status,
+        roleSlugs: row.role_slugs,
+        lastEventAt: row.last_event_at.toISOString(),
+      }
+    })
   }
 
   // --- private helpers -----------------------------------------------------

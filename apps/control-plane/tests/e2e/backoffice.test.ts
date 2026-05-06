@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { Pool } from "pg"
-import { TestClient, loginAs } from "../client"
+import { TestClient, loginAs, createWorkspace } from "../client"
 import { PlatformRoleRepository } from "../../src/features/backoffice"
 
 /**
@@ -162,6 +162,58 @@ describe("Backoffice", () => {
 
       expect(res.status).toBe(200)
       expect(Array.isArray(res.data.workspaces)).toBe(true)
+    })
+  })
+
+  describe("GET /api/backoffice/workspaces/:id/members", () => {
+    test("returns 401 without session", async () => {
+      const client = new TestClient()
+      const res = await client.get("/api/backoffice/workspaces/ws_anything/members")
+      expect(res.status).toBe(401)
+    })
+
+    test("returns 403 when authenticated but not a platform admin", async () => {
+      const client = new TestClient()
+      await loginAs(client, "members-nonadmin@example.com", "Members Non Admin")
+
+      const res = await client.get<{ code: string }>("/api/backoffice/workspaces/ws_anything/members")
+      expect(res.status).toBe(403)
+      expect(res.data.code).toBe("NOT_PLATFORM_ADMIN")
+    })
+
+    test("returns 404 when workspace does not exist", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "members-admin-404@example.com", "Members Admin 404")
+      await grantAdmin(user.id)
+
+      const res = await client.get<{ code: string }>("/api/backoffice/workspaces/ws_does_not_exist/members")
+      expect(res.status).toBe(404)
+      expect(res.data.code).toBe("NOT_FOUND")
+    })
+
+    test("returns members array (mirror-shaped) for an admin and existing workspace", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "members-admin@example.com", "Members Admin")
+      await grantAdmin(user.id)
+
+      // Stub auth provisions a WorkOS organization on workspace creation, but
+      // the mirror is empty until backfill or events run. The route should
+      // still return an empty array, not 404.
+      const ws = await createWorkspace(client, "Members Test")
+      const res = await client.get<{
+        members: Array<{
+          workosUserId: string
+          email: string | null
+          firstName: string | null
+          lastName: string | null
+          status: string
+          roleSlugs: string[]
+          lastEventAt: string
+        }>
+      }>(`/api/backoffice/workspaces/${ws.id}/members`)
+
+      expect(res.status).toBe(200)
+      expect(Array.isArray(res.data.members)).toBe(true)
     })
   })
 
