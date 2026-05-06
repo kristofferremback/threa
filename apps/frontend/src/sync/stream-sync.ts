@@ -1,4 +1,4 @@
-import { db, sequenceToNum } from "@/db"
+import { db, sequenceToNum, type CachedEvent } from "@/db"
 import {
   StreamTypes,
   type StreamEvent,
@@ -151,37 +151,64 @@ async function writeBootstrapEventsAndStream(
   }
 
   if (bootstrap.events.length > 0) {
-    // For message_created events, merge per-field rather than overwriting the
-    // whole row. The bootstrap snapshot can race against socket updates that
-    // already landed in IDB (e.g. a reply commits between the backend's
-    // getThreadsWithReplyCounts and getThreadSummaries snapshots, so the
-    // bootstrap payload omits threadSummary while a socket-delivered
-    // message:updated has already written it to IDB). A wholesale bulkPut
-    // would clobber those fields. Per-field merge makes bootstrap commutative
-    // with socket writes: fields the bootstrap explicitly carries take
-    // effect; fields it omits fall through to the existing IDB payload.
+    // For message_created events, the bootstrap snapshot can race against
+    // socket updates that already landed in IDB. We resolve this in two
+    // tiers:
+    //
+    //   1. Freshness skip — if the row was patched by a socket handler
+    //      AFTER the backend's snapshot was taken (`_patchedAt > snapshotMs`),
+    //      bootstrap's enrichment for that row may be stale, so we preserve
+    //      the existing row entirely. Example: a reaction:added arrives at
+    //      the client before the bootstrap response; the bootstrap's
+    //      reactions enrichment query ran before the reaction committed, so
+    //      its payload omits the reaction — overwriting would lose it.
+    //
+    //   2. Per-field merge — if the row wasn't patched after the snapshot
+    //      (or no snapshotAt is on the wire), we still merge per-field so
+    //      bootstrap-internal-inconsistency races (e.g.
+    //      getThreadsWithReplyCounts and getThreadSummaries seeing different
+    //      snapshots of the same reply) can't omit a field that was already
+    //      populated in IDB.
+    //
     // Other event types' payloads are immutable post-creation, so a plain
-    // overwrite is equivalent to merge for them.
+    // overwrite is equivalent for them.
+    const snapshotMs = bootstrap.snapshotAt ? Date.parse(bootstrap.snapshotAt) : null
     const existingRows = await db.events.bulkGet(bootstrap.events.map((e) => e.id))
     const existingById = new Map(
       existingRows.filter((row): row is NonNullable<typeof row> => row != null).map((row) => [row.id, row] as const)
     )
 
-    await db.events.bulkPut(
-      bootstrap.events.map((e) => {
-        const base = { ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }
-        if (e.eventType !== "message_created") return base
-        const existing = existingById.get(e.id)
-        if (!existing) return base
-        return {
-          ...base,
-          payload: {
-            ...(existing.payload as Record<string, unknown>),
-            ...(e.payload as Record<string, unknown>),
-          },
-        }
+    const toWrite: CachedEvent[] = []
+    for (const e of bootstrap.events) {
+      const base = { ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }
+      if (e.eventType !== "message_created") {
+        toWrite.push(base)
+        continue
+      }
+      const existing = existingById.get(e.id)
+      if (!existing) {
+        toWrite.push(base)
+        continue
+      }
+      if (snapshotMs !== null && existing._patchedAt !== undefined && existing._patchedAt > snapshotMs) {
+        // Skip the put — existing row is fresher than this snapshot.
+        continue
+      }
+      toWrite.push({
+        ...base,
+        payload: {
+          ...(existing.payload as Record<string, unknown>),
+          ...(e.payload as Record<string, unknown>),
+        },
+        // Preserve the patch watermark so subsequent bootstraps still see
+        // that this row has been touched by socket activity.
+        _patchedAt: existing._patchedAt,
       })
-    )
+    }
+
+    if (toWrite.length > 0) {
+      await db.events.bulkPut(toWrite)
+    }
   }
 
   // Merge stream metadata without destroying fields that only exist on the
@@ -363,8 +390,14 @@ export async function updateMessageEvent(
     .filter((e) => (e.payload as { messageId?: string })?.messageId === messageId)
     .modify((event) => {
       const updatedPayload = updater(event.payload as Record<string, unknown>)
+      const now = Date.now()
       event.payload = updatedPayload
-      event._cachedAt = Date.now()
+      event._cachedAt = now
+      // Freshness watermark — see `_patchedAt` doc on CachedEvent. Only
+      // bumped by socket-handler patches (and the optimistic helpers below
+      // that mirror them); bootstrap apply leaves it alone so a later
+      // bootstrap response can decide whether its enrichment is stale.
+      event._patchedAt = now
     })
 }
 

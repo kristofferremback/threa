@@ -651,6 +651,15 @@ export function createStreamHandlers({
 
       const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
+      // Captured BEFORE the parallel queries fire. Shipped on the wire as the
+      // bootstrap's freshness watermark. The frontend stamps `_patchedAt` on
+      // any IDB row mutated by a socket handler, and at apply time skips
+      // bootstrap merge for rows whose `_patchedAt` is newer than this — so a
+      // stale enrichment subquery (e.g. `getThreadSummaries` reading just
+      // before a reply commits) can't clobber a fresher socket-delivered
+      // value. See `writeBootstrapEventsAndStream` in stream-sync.ts.
+      const snapshotAt = new Date().toISOString()
+
       const [members, botMemberIds, membership, threadDataMap, threadSummaryMap, latestSequence, activityCounts] =
         await Promise.all([
           streamService.getMembers(streamId),
@@ -706,6 +715,7 @@ export function createStreamHandlers({
           botMemberIds,
           membership,
           latestSequence: (latestSequence ?? 0n).toString(),
+          snapshotAt,
           hasOlderEvents,
           syncMode,
           unreadCount,

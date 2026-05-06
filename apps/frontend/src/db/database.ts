@@ -118,6 +118,16 @@ export interface CachedEvent {
   _clientId?: string
   _status?: "pending" | "sent" | "failed" | "editing"
   _cachedAt: number
+  /**
+   * Client wall-clock (ms) of the most recent socket-driven payload patch
+   * applied to this row by `updateMessageEvent`. Compared against the
+   * bootstrap response's `snapshotAt` so a freshly-arrived patch (e.g. a
+   * reaction added between the backend's snapshot and the client's apply)
+   * isn't clobbered by a stale enrichment value carried in the bootstrap
+   * payload. Distinct from `_cachedAt`, which is bumped on bootstrap apply
+   * too — `_patchedAt` is bumped only by socket-handler patches.
+   */
+  _patchedAt?: number
 }
 
 /**
