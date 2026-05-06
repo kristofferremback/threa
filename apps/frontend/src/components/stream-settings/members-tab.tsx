@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { SearchableSelect } from "@/components/ui/searchable-select"
+import { ActorAvatar } from "@/components/actor-avatar"
 import {
   ResponsiveAlertDialog,
   ResponsiveAlertDialogAction,
@@ -22,8 +23,6 @@ import { useStreamService } from "@/contexts"
 import { botsApi } from "@/api/bots"
 import { useWorkspaceUsers, useWorkspaceBots } from "@/stores/workspace-store"
 import { StreamTypes, type StreamMember } from "@threa/types"
-import { getInitials } from "@/lib/initials"
-import { getAvatarColor } from "@/lib/avatar-color"
 import { toast } from "sonner"
 
 interface MembersTabProps {
@@ -123,17 +122,16 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
 
         <div className="space-y-1 max-h-64 overflow-y-auto">
           {filteredMembers.map((member) => {
-            const initials = getInitials(member.name || member.slug)
-            const color = getAvatarColor(member.memberId)
-
             return (
               <div key={member.memberId} className="flex items-center justify-between rounded-md border px-3 py-2">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className={`flex items-center justify-center h-7 w-7 rounded-full text-xs font-medium shrink-0 ${color}`}
-                  >
-                    {initials}
-                  </div>
+                  <ActorAvatar
+                    actorId={member.memberId}
+                    actorType="user"
+                    workspaceId={workspaceId}
+                    size="sm"
+                    alt={member.name || member.slug}
+                  />
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="text-sm font-medium truncate">{member.name || member.slug}</span>
                     <span className="text-xs text-muted-foreground">@{member.slug}</span>
@@ -178,21 +176,19 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
             disabled={availableToAdd.length === 0}
             showAvailableCount
             availableLabel={(n) => `${n} ${n === 1 ? "user" : "users"} available`}
-            renderItem={(user) => {
-              const initials = getInitials(user.name || user.slug)
-              const color = getAvatarColor(user.id)
-              return (
-                <>
-                  <div
-                    className={`flex items-center justify-center h-6 w-6 rounded-full text-[10px] font-medium shrink-0 ${color}`}
-                  >
-                    {initials}
-                  </div>
-                  <span className="text-sm font-medium truncate">{user.name || user.slug}</span>
-                  <span className="ml-auto text-xs text-muted-foreground shrink-0">@{user.slug}</span>
-                </>
-              )
-            }}
+            renderItem={(user) => (
+              <>
+                <ActorAvatar
+                  actorId={user.id}
+                  actorType="user"
+                  workspaceId={workspaceId}
+                  size="xs"
+                  alt={user.name || user.slug}
+                />
+                <span className="text-sm font-medium truncate">{user.name || user.slug}</span>
+                <span className="ml-auto text-xs text-muted-foreground shrink-0">@{user.slug}</span>
+              </>
+            )}
           />
         </div>
       )}
@@ -271,9 +267,7 @@ function StreamBotsSection({
           {botsWithAccess.map((bot) => (
             <div key={bot.id} className="flex items-center justify-between rounded-md border px-3 py-2 group">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex items-center justify-center h-7 w-7 rounded-full bg-emerald-500/10 text-emerald-600 text-xs font-medium shrink-0">
-                  {bot.avatarEmoji ?? <BotIcon className="h-3.5 w-3.5" />}
-                </div>
+                <ActorAvatar actorId={bot.id} actorType="bot" workspaceId={workspaceId} size="sm" alt={bot.name} />
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-sm font-medium truncate">{bot.name}</span>
                   {bot.slug && <span className="text-xs text-muted-foreground">@{bot.slug}</span>}
@@ -319,9 +313,7 @@ function StreamBotsSection({
           availableLabel={(n) => `${n} ${n === 1 ? "bot" : "bots"} available`}
           renderItem={(bot) => (
             <>
-              <div className="flex items-center justify-center h-6 w-6 rounded-full bg-emerald-500/10 text-emerald-600 text-xs shrink-0">
-                {bot.avatarEmoji ?? <BotIcon className="h-3 w-3" />}
-              </div>
+              <ActorAvatar actorId={bot.id} actorType="bot" workspaceId={workspaceId} size="xs" alt={bot.name} />
               <span className="text-sm font-medium truncate">{bot.name}</span>
               {bot.slug && <span className="ml-auto text-xs text-muted-foreground shrink-0">@{bot.slug}</span>}
             </>
