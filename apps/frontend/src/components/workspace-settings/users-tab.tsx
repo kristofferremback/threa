@@ -1,15 +1,14 @@
 import { useRef, useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useMutation } from "@tanstack/react-query"
 import { Check, ChevronDown, Copy, KeyRound, Link as LinkIcon, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { invitationsApi } from "@/api/invitations"
-import { workspaceKeys } from "@/hooks/use-workspaces"
+import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { useFormattedDate } from "@/hooks"
 import { InviteDialog } from "./invite-dialog"
 import { CreateInviteLinkDialog } from "./create-invite-link-dialog"
-import type { User, WorkspaceInvitation } from "@threa/types"
 
 function CopyLinkLabel({ isCopied, tokenInMemory }: { isCopied: boolean; tokenInMemory: boolean }) {
   if (isCopied) {
@@ -55,21 +54,9 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
   // discards the map — there's no API to retrieve a token after creation.
   const tokensRef = useRef<Map<string, string>>(new Map())
 
-  const queryClient = useQueryClient()
   const { formatDate } = useFormattedDate()
 
-  const { data: bootstrapData } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () =>
-      queryClient.getQueryData<{
-        users: User[]
-        invitations?: WorkspaceInvitation[]
-      }>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
-
-  const users = bootstrapData?.users ?? []
+  const users = useWorkspaceUsers(workspaceId)
 
   const invitationsQuery = useQuery({
     queryKey: ["invitations", workspaceId],
