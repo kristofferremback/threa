@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { Check } from "lucide-react"
 import { CommandItem } from "@/components/ui/command"
 import { SearchableSelect } from "@/components/ui/searchable-select"
@@ -53,6 +53,15 @@ interface TimezonePickerProps {
 export function TimezonePicker({ value, onChange }: TimezonePickerProps) {
   const detectedTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
   const timezones = useMemo(() => getAvailableTimezones(), [])
+  // Precompute the formatted label for every timezone once. formatTimezoneLabel
+  // spins up a fresh Intl.DateTimeFormat per call, and this list has 400+
+  // entries — caching keeps every keystroke during search cheap.
+  const labelByTz = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const tz of timezones) map.set(tz, formatTimezoneLabel(tz))
+    return map
+  }, [timezones])
+  const labelFor = useCallback((tz: string) => labelByTz.get(tz) ?? formatTimezoneLabel(tz), [labelByTz])
 
   return (
     <SearchableSelect
@@ -60,15 +69,15 @@ export function TimezonePicker({ value, onChange }: TimezonePickerProps) {
       value={value}
       onChange={onChange}
       getKey={(tz) => tz}
-      getKeywords={(tz) => [tz, tz.replace(/_/g, " "), formatTimezoneLabel(tz)]}
+      getKeywords={(tz) => [tz, tz.replace(/_/g, " "), labelFor(tz)]}
       searchPlaceholder="Search timezone..."
       emptyMessage="No timezone found."
       contentClassName="w-[400px]"
-      renderSelected={(tz) => <span className="font-mono">{formatTimezoneLabel(tz)}</span>}
+      renderSelected={(tz) => <span className="font-mono">{labelFor(tz)}</span>}
       renderItem={(tz, isSelected) => (
         <>
           <Check className={cn("mr-2 h-4 w-4", isSelected ? "opacity-100" : "opacity-0")} />
-          <span className="font-mono">{formatTimezoneLabel(tz)}</span>
+          <span className="font-mono">{labelFor(tz)}</span>
         </>
       )}
       prefixContent={({ close }) =>
@@ -82,7 +91,7 @@ export function TimezonePicker({ value, onChange }: TimezonePickerProps) {
             className="font-medium"
           >
             <Check className="mr-2 h-4 w-4 opacity-0" aria-hidden="true" />
-            <span className="font-mono">{formatTimezoneLabel(detectedTimezone)}</span>
+            <span className="font-mono">{labelFor(detectedTimezone)}</span>
             <span className="ml-2 text-muted-foreground">(device)</span>
           </CommandItem>
         ) : null
