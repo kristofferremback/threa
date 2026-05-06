@@ -287,6 +287,206 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
     })
   })
 
+  it("preserves a row whose _patchedAt is newer than the bootstrap snapshot (stale-but-present field)", async () => {
+    // CodeRabbit's race: bootstrap CARRIES a value for a field that the
+    // socket already updated more recently (e.g. reactions enrichment ran
+    // before a reaction:added committed; bootstrap therefore ships an
+    // older reactions map than what's in IDB). Per-field merge alone would
+    // overwrite the fresher value because bootstrap "wins" on the spread.
+    // The freshness watermark catches this case: existing._patchedAt is
+    // greater than snapshotMs, so the merge is skipped entirely.
+    const streamId = "stream_freshness_skip"
+
+    const snapshotAt = new Date(Date.now() - 1000).toISOString()
+    const fresherPatchAt = Date.now() // socket patch happened after the snapshot
+
+    await db.events.put({
+      ...makeEvent({
+        id: "evt_M",
+        streamId,
+        sequence: "100",
+        payload: {
+          messageId: "evt_M",
+          contentMarkdown: "react to me",
+          // The reaction the socket just added — bootstrap doesn't know yet.
+          reactions: { "🎉": ["user_2"] },
+        },
+      }),
+      workspaceId: "ws_1",
+      _sequenceNum: 100,
+      _cachedAt: fresherPatchAt,
+      _patchedAt: fresherPatchAt,
+    })
+
+    const bootstrap = {
+      ...makeBootstrap(
+        [
+          makeEvent({
+            id: "evt_M",
+            streamId,
+            sequence: "100",
+            payload: {
+              messageId: "evt_M",
+              contentMarkdown: "react to me",
+              // Stale enrichment — empty reactions, taken before the patch.
+              reactions: {},
+            },
+          }),
+        ],
+        streamId
+      ),
+      snapshotAt,
+    }
+
+    await applyStreamBootstrap("ws_1", streamId, bootstrap)
+
+    const merged = await db.events.get("evt_M")
+    expect((merged?.payload as { reactions: Record<string, string[]> }).reactions).toEqual({ "🎉": ["user_2"] })
+  })
+
+  it("applies bootstrap normally when _patchedAt is older than the snapshot", async () => {
+    // Symmetry check: a patch that landed BEFORE the snapshot means the
+    // backend's enrichment had a chance to read the patched state, so the
+    // bootstrap value is canonical and should win on the merge.
+    const streamId = "stream_freshness_apply"
+
+    const oldPatchAt = Date.now() - 5000
+    const snapshotAt = new Date().toISOString()
+
+    await db.events.put({
+      ...makeEvent({
+        id: "evt_M",
+        streamId,
+        sequence: "100",
+        payload: { messageId: "evt_M", contentMarkdown: "old", reactions: { "👀": ["user_3"] } },
+      }),
+      workspaceId: "ws_1",
+      _sequenceNum: 100,
+      _cachedAt: oldPatchAt,
+      _patchedAt: oldPatchAt,
+    })
+
+    const bootstrap = {
+      ...makeBootstrap(
+        [
+          makeEvent({
+            id: "evt_M",
+            streamId,
+            sequence: "100",
+            payload: {
+              messageId: "evt_M",
+              contentMarkdown: "old",
+              reactions: { "👀": ["user_3"], "🚀": ["user_4"] },
+            },
+          }),
+        ],
+        streamId
+      ),
+      snapshotAt,
+    }
+
+    await applyStreamBootstrap("ws_1", streamId, bootstrap)
+
+    const merged = await db.events.get("evt_M")
+    expect((merged?.payload as { reactions: Record<string, string[]> }).reactions).toEqual({
+      "👀": ["user_3"],
+      "🚀": ["user_4"],
+    })
+  })
+
+  it("preserves _patchedAt across bootstrap merge so subsequent bootstraps still see the watermark", async () => {
+    // After a merge that doesn't skip (bootstrap is canonical for this
+    // window), the row's _patchedAt must carry over — otherwise the next
+    // bootstrap that arrives during a still-newer socket patch would lose
+    // the freshness signal.
+    const streamId = "stream_watermark_carry"
+
+    const patchAt = Date.now() - 3000
+    const snapshotAt = new Date().toISOString() // newer than patch
+
+    await db.events.put({
+      ...makeEvent({
+        id: "evt_M",
+        streamId,
+        sequence: "100",
+        payload: { messageId: "evt_M", contentMarkdown: "x", replyCount: 1 },
+      }),
+      workspaceId: "ws_1",
+      _sequenceNum: 100,
+      _cachedAt: patchAt,
+      _patchedAt: patchAt,
+    })
+
+    const bootstrap = {
+      ...makeBootstrap(
+        [
+          makeEvent({
+            id: "evt_M",
+            streamId,
+            sequence: "100",
+            payload: { messageId: "evt_M", contentMarkdown: "x", replyCount: 2 },
+          }),
+        ],
+        streamId
+      ),
+      snapshotAt,
+    }
+
+    await applyStreamBootstrap("ws_1", streamId, bootstrap)
+
+    const merged = await db.events.get("evt_M")
+    expect(merged?._patchedAt).toBe(patchAt)
+    expect((merged?.payload as { replyCount: number }).replyCount).toBe(2)
+  })
+
+  it("falls back to per-field merge when snapshotAt is missing (older response)", async () => {
+    // Backwards compat: cached responses written before snapshotAt landed
+    // on the wire don't carry it. The merge path should still work and
+    // behave like the previous PR — preserve fields that bootstrap omits.
+    const streamId = "stream_legacy"
+
+    const fresherPatchAt = Date.now()
+
+    await db.events.put({
+      ...makeEvent({
+        id: "evt_M",
+        streamId,
+        sequence: "100",
+        payload: {
+          messageId: "evt_M",
+          contentMarkdown: "x",
+          threadSummary: { participants: [], latestReply: null, lastReplyAt: null },
+        },
+      }),
+      workspaceId: "ws_1",
+      _sequenceNum: 100,
+      _cachedAt: fresherPatchAt,
+      _patchedAt: fresherPatchAt,
+    })
+
+    // No snapshotAt on the bootstrap.
+    const bootstrap = makeBootstrap(
+      [
+        makeEvent({
+          id: "evt_M",
+          streamId,
+          sequence: "100",
+          payload: { messageId: "evt_M", contentMarkdown: "x", threadId: "thread_1", replyCount: 1 },
+        }),
+      ],
+      streamId
+    )
+
+    await applyStreamBootstrap("ws_1", streamId, bootstrap)
+
+    const merged = await db.events.get("evt_M")
+    const payload = merged?.payload as Record<string, unknown>
+    // Per-field merge: bootstrap fields applied, omitted fields preserved.
+    expect(payload.threadId).toBe("thread_1")
+    expect(payload.replyCount).toBe(1)
+    expect(payload.threadSummary).toEqual({ participants: [], latestReply: null, lastReplyAt: null })
+  })
+
   it("preserves optimistic events that are still in the send queue", async () => {
     const streamId = "stream_pending"
 
@@ -448,6 +648,24 @@ describe("updateMessageEvent", () => {
 
     const event = await db.events.get("evt_1")
     expect((event?.payload as Record<string, unknown>).replyCount).toBe(5)
+  })
+
+  it("stamps _patchedAt on every update so bootstrap can see the freshness watermark", async () => {
+    const streamId = "stream_patched_at"
+    const messageId = "msg_patched"
+    const before = Date.now()
+    await db.events.put({
+      ...makeEvent({ id: "evt_patched", streamId, sequence: "100", payload: { messageId, contentMarkdown: "x" } }),
+      workspaceId: "ws_1",
+      _sequenceNum: 100,
+      _cachedAt: before - 10000,
+    })
+
+    await updateMessageEvent(streamId, messageId, (p) => ({ ...p, replyCount: 1 }))
+
+    const event = await db.events.get("evt_patched")
+    expect(event?._patchedAt).toBeDefined()
+    expect(event?._patchedAt).toBeGreaterThanOrEqual(before)
   })
 
   it("does not lose fields when multiple concurrent updates target the same message", async () => {

@@ -102,6 +102,16 @@ export interface StreamBootstrap {
   botMemberIds: string[]
   membership: StreamMember | null
   latestSequence: string
+  /**
+   * Server wall-clock (ISO) captured immediately before the bootstrap's
+   * parallel queries fire. The frontend uses it as a freshness watermark:
+   * any IDB row patched by a socket handler after this instant is preserved
+   * over the bootstrap's enrichment values, since the snapshot may have
+   * read stale data for that row. Optional for backwards compatibility
+   * with cached responses written before this field landed — when missing,
+   * the merge path falls through to per-field overlay only.
+   */
+  snapshotAt?: string
   hasOlderEvents: boolean
   syncMode: "append" | "replace"
   unreadCount: number
