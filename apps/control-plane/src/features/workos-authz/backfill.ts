@@ -36,10 +36,7 @@ export class WorkosAuthzBackfill {
   }
 
   async run(): Promise<WorkosAuthzBackfillResult> {
-    const workspaces = await WorkspaceRegistryRepository.listAllWithMemberCounts(this.pool)
-    const orgIds = Array.from(
-      new Set(workspaces.map((w) => w.workos_organization_id).filter((id): id is string => id != null && id.length > 0))
-    )
+    const orgIds = await WorkspaceRegistryRepository.listWorkosOrganizationIds(this.pool)
 
     let membershipsUpserted = 0
     for (const orgId of orgIds) {

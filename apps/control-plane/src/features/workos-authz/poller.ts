@@ -105,7 +105,10 @@ export class WorkosAuthzPoller {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       logger.error({ err }, "WorkOS event poller tick failed")
-      await this.lock.recordError(message)
+      const { shouldRetry } = await this.lock.recordError(message)
+      if (!shouldRetry) {
+        logger.error({ lastError: message }, "WorkOS event poller exhausted retries — manual intervention required")
+      }
     } finally {
       this.lock.stopRefreshTimer()
       await this.lock.release()

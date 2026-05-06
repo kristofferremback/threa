@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto"
 import type { Pool } from "pg"
-import { calculateBackoffMs, logger, sql } from "@threa/backend-common"
+import { calculateBackoffMs, logger, sql, withClient } from "@threa/backend-common"
 
 export interface WorkosEventPollerLockConfig {
   pool: Pool
@@ -127,36 +127,50 @@ export class WorkosEventPollerLock {
    * Returns whether to keep retrying (false once `maxRetries` is exceeded —
    * the caller should fall back to whatever escalation it wants; this lock
    * does not have a DLQ analog).
+   *
+   * SELECT-then-UPDATE runs on the same client (see `CursorLock.recordError`)
+   * so retry_count and retry_after are written together in one round-trip,
+   * and the `lock_run_id` guard ensures only the current lease holder writes.
    */
   async recordError(message: string, now: Date = new Date()): Promise<{ shouldRetry: boolean }> {
-    const result = await this.pool.query<{ retry_count: number }>(sql`
-      UPDATE workos_event_poller_state
-      SET
-        retry_count = retry_count + 1,
-        last_error = ${message},
-        updated_at = ${now}
-      WHERE name = ${this.name}
-      RETURNING retry_count
-    `)
-    if (result.rows.length === 0) return { shouldRetry: false }
+    if (!this.runId) return { shouldRetry: false }
+    const runId = this.runId
 
-    const newRetryCount = result.rows[0].retry_count
-    if (newRetryCount > this.maxRetries) {
-      return { shouldRetry: false }
-    }
+    return withClient(this.pool, async (client) => {
+      const current = await client.query<{ retry_count: number }>(sql`
+        SELECT retry_count
+        FROM workos_event_poller_state
+        WHERE name = ${this.name} AND lock_run_id = ${runId}
+      `)
+      if (current.rows.length === 0) return { shouldRetry: false }
 
-    const backoffMs = calculateBackoffMs({ baseMs: this.baseBackoffMs, retryCount: newRetryCount })
-    const retryAfter = new Date(now.getTime() + backoffMs)
-    await this.pool.query(sql`
-      UPDATE workos_event_poller_state
-      SET retry_after = ${retryAfter}, updated_at = ${now}
-      WHERE name = ${this.name}
-    `)
-    logger.warn(
-      { name: this.name, retryCount: newRetryCount, retryAfter: retryAfter.toISOString() },
-      "WorkOS event poller error, will retry after backoff"
-    )
-    return { shouldRetry: true }
+      const newRetryCount = current.rows[0].retry_count + 1
+      if (newRetryCount > this.maxRetries) {
+        await client.query(sql`
+          UPDATE workos_event_poller_state
+          SET retry_count = ${newRetryCount}, last_error = ${message}, updated_at = ${now}
+          WHERE name = ${this.name} AND lock_run_id = ${runId}
+        `)
+        return { shouldRetry: false }
+      }
+
+      const backoffMs = calculateBackoffMs({ baseMs: this.baseBackoffMs, retryCount: newRetryCount })
+      const retryAfter = new Date(now.getTime() + backoffMs)
+      await client.query(sql`
+        UPDATE workos_event_poller_state
+        SET
+          retry_count = ${newRetryCount},
+          retry_after = ${retryAfter},
+          last_error = ${message},
+          updated_at = ${now}
+        WHERE name = ${this.name} AND lock_run_id = ${runId}
+      `)
+      logger.warn(
+        { name: this.name, retryCount: newRetryCount, retryAfter: retryAfter.toISOString() },
+        "WorkOS event poller error, will retry after backoff"
+      )
+      return { shouldRetry: true }
+    })
   }
 
   /** Release the lease. Idempotent — safe to call on shutdown even if nothing held. */
