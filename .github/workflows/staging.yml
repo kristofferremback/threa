@@ -20,7 +20,7 @@ jobs:
       github.event.action != 'closed' &&
       github.event.action != 'unlabeled' &&
       contains(github.event.pull_request.labels.*.name, 'staging')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       pull-requests: write
     steps:
@@ -155,7 +155,7 @@ jobs:
     if: |
       (github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'staging')) ||
       (github.event.action == 'unlabeled' && github.event.label.name == 'staging')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
