@@ -241,7 +241,7 @@ describe("TraceStep", () => {
             stepType: "tool_call",
             content: JSON.stringify({
               tool: "github_list_pull_requests",
-              args: { repo: "kristofferremback/threa", path: null, author: null, page: 1 },
+              args: { repo: "threahq/threa", path: null, author: null, page: 1 },
             }),
           })}
           workspaceId="ws_1"
@@ -250,7 +250,7 @@ describe("TraceStep", () => {
       </MemoryRouter>
     )
 
-    const code = screen.getByText(/"repo": "kristofferremback\/threa"/)
+    const code = screen.getByText(/"repo": "threahq\/threa"/)
     const pre = code.closest("pre")
     expect(pre).not.toBeNull()
     expect(pre?.className).toMatch(/overflow-x-auto/)

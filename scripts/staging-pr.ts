@@ -389,7 +389,7 @@ async function deployRailwayService(): Promise<string> {
     `mutation($id: String!, $input: ServiceConnectInput!) {
       serviceConnect(id: $id, input: $input) { id }
     }`,
-    { id: service.id, input: { repo: "kristofferremback/threa", branch } }
+    { id: service.id, input: { repo: "threahq/threa", branch } }
   )
 
   // Trigger deploy from latest commit on the branch
