@@ -4,6 +4,7 @@ import { Section } from "@/components/layout/section"
 import { backofficeKeys, listWorkspaceMembers, type WorkspaceMember } from "@/api/backoffice"
 import { ApiError } from "@/api/client"
 import { cn } from "@/lib/utils"
+import { formatDateTime } from "@/lib/format"
 
 function formatRelativeTimestamp(iso: string): string {
   const then = new Date(iso).getTime()
@@ -21,16 +22,6 @@ function formatRelativeTimestamp(iso: string): string {
   const d = Math.floor(seconds / 86_400)
   if (d < 30) return `${d}d ago`
   return new Date(iso).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "2-digit" })
-}
-
-function formatAbsoluteTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
 }
 
 function memberDisplayName(m: WorkspaceMember): string | null {
@@ -120,7 +111,7 @@ function MemberRow({ member }: { member: WorkspaceMember }) {
         <StatusBadge status={member.status} />
         <span
           className="hidden text-xs tabular-nums text-muted-foreground sm:inline"
-          title={formatAbsoluteTimestamp(member.lastEventAt)}
+          title={formatDateTime(member.lastEventAt)}
         >
           {formatRelativeTimestamp(member.lastEventAt)}
         </span>

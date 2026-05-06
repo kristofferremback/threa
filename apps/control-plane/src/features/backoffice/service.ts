@@ -301,21 +301,18 @@ export class BackofficeService {
     const rows = await WorkosAuthzRepository.listByOrganization(this.pool, workspace.workos_organization_id)
     if (rows.length === 0) return []
 
-    // Best-effort parallel WorkOS user lookups. WorkOS has no batched
-    // get-many-users endpoint as of this writing; backoffice traffic is low
-    // enough that N round-trips per page is fine. allSettled keeps a single
-    // user-not-found failure from blanking the whole tab.
-    const lookups = await Promise.allSettled(
-      rows.map(async (row) => ({
-        workosUserId: row.workos_user_id,
-        user: await this.workosOrgService.getUser(row.workos_user_id),
-      }))
-    )
-    const userByWorkosId = new Map<string, WorkosUserSummary | null>()
-    for (const result of lookups) {
-      if (result.status === "fulfilled") {
-        userByWorkosId.set(result.value.workosUserId, result.value.user)
-      }
+    // Single batched WorkOS round-trip via `listUsers({ organizationId })`,
+    // joined back to mirror rows in-memory. If the call fails the tab still
+    // renders with workosUserId-only fallbacks rather than 500-ing the page.
+    const userByWorkosId = new Map<string, WorkosUserSummary>()
+    try {
+      const users = await this.workosOrgService.listOrganizationUsers(workspace.workos_organization_id)
+      for (const user of users) userByWorkosId.set(user.id, user)
+    } catch (err) {
+      logger.warn(
+        { err, workspaceId, organizationId: workspace.workos_organization_id },
+        "Backoffice: failed to list WorkOS users for organization; rendering members without enrichment"
+      )
     }
 
     return rows.map((row) => {

@@ -27,16 +27,7 @@ import {
   revokeWorkspaceOwnerInvitation,
   type WorkspaceOwnerInvitation,
 } from "@/api/backoffice"
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
+import { formatDateTime } from "@/lib/format"
 
 function stateBadgeVariant(
   state: WorkspaceOwnerInvitation["state"]

@@ -3,23 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { ExternalLink } from "lucide-react"
 import { Section } from "@/components/layout/section"
-import {
-  backofficeKeys,
-  getBackofficeConfig,
-  getWorkspace,
-  type BackofficeConfig,
-  type WorkspaceDetail,
-} from "@/api/backoffice"
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
+import { backofficeKeys, getBackofficeConfig, type BackofficeConfig, type WorkspaceDetail } from "@/api/backoffice"
+import { formatDateTime } from "@/lib/format"
 
 function buildWorkspaceUrl(appBaseUrl: string, workspaceId: string): string {
   // The user-facing app routes workspaces under `/w/<id>`, not `/ws/<id>`.
@@ -34,14 +19,12 @@ export function WorkspaceDetailOverviewPage() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
 
-  // Cache-only observer: the layout owns the actual fetch; this tab just
-  // reads from cache so both tabs stay in sync without re-fetching on swap.
+  // Cache-only observer: the layout owns the actual fetch and only renders
+  // this tab once the workspace query has data, so reading directly from the
+  // cache here is safe and avoids a duplicate request.
   const query = useQuery({
     queryKey: id ? backofficeKeys.workspace(id) : ["backoffice", "workspaces", "missing"],
-    queryFn: () => {
-      if (!id) return null
-      return queryClient.getQueryData<WorkspaceDetail>(backofficeKeys.workspace(id)) ?? getWorkspace(id)
-    },
+    queryFn: () => (id ? (queryClient.getQueryData<WorkspaceDetail>(backofficeKeys.workspace(id)) ?? null) : null),
     enabled: !!id,
     staleTime: Infinity,
   })
