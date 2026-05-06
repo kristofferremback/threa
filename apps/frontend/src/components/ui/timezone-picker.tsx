@@ -81,7 +81,7 @@ export function TimezonePicker({ value, onChange }: TimezonePickerProps) {
             }}
             className="font-medium"
           >
-            <Check className={cn("mr-2 h-4 w-4", value === detectedTimezone ? "opacity-100" : "opacity-0")} />
+            <Check className="mr-2 h-4 w-4 opacity-0" aria-hidden="true" />
             <span className="font-mono">{formatTimezoneLabel(detectedTimezone)}</span>
             <span className="ml-2 text-muted-foreground">(device)</span>
           </CommandItem>
