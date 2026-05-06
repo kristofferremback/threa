@@ -17,7 +17,7 @@ on:
 
 jobs:
   browser-tests:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 25
     continue-on-error: true
     env:
@@ -199,7 +199,7 @@ jobs:
           retention-days: 7
 
   evaluate-results:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: browser-tests
     if: always()
     continue-on-error: true
@@ -251,7 +251,7 @@ jobs:
           fi
 
   merge-playwright-reports:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: browser-tests
     if: always()
     continue-on-error: true

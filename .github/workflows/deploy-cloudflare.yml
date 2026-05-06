@@ -9,7 +9,7 @@ on:
 jobs:
   deploy-frontend:
     name: Deploy Frontend
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.event.workflow_run.conclusion == 'success'
     concurrency:
       group: deploy-frontend
@@ -47,7 +47,7 @@ jobs:
 
   deploy-workspace-router:
     name: Deploy Workspace Router
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.event.workflow_run.conclusion == 'success'
     concurrency:
       group: deploy-workspace-router
@@ -82,7 +82,7 @@ jobs:
 
   deploy-backoffice:
     name: Deploy Backoffice
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.event.workflow_run.conclusion == 'success'
     concurrency:
       group: deploy-backoffice
@@ -120,7 +120,7 @@ jobs:
 
   deploy-backoffice-router:
     name: Deploy Backoffice Router
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.event.workflow_run.conclusion == 'success'
     concurrency:
       group: deploy-backoffice-router
@@ -155,7 +155,7 @@ jobs:
 
   deploy-backoffice-staging:
     name: Deploy Backoffice (Staging)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.event.workflow_run.conclusion == 'success'
     concurrency:
       group: deploy-backoffice-staging
@@ -193,7 +193,7 @@ jobs:
 
   deploy-backoffice-router-staging:
     name: Deploy Backoffice Router (Staging)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.event.workflow_run.conclusion == 'success'
     concurrency:
       group: deploy-backoffice-router-staging
@@ -228,7 +228,7 @@ jobs:
 
   deploy-frontend-staging:
     name: Deploy Frontend (Staging)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.event.workflow_run.conclusion == 'success'
     concurrency:
       group: deploy-frontend-staging
@@ -271,7 +271,7 @@ jobs:
 
   deploy-workspace-router-staging:
     name: Deploy Workspace Router (Staging)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.event.workflow_run.conclusion == 'success'
     concurrency:
       group: deploy-workspace-router-staging
