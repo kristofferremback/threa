@@ -528,12 +528,11 @@ export class StreamService {
         await StreamMemberRepository.insert(client, stream.id, params.createdBy)
       }
 
-      // Add parent message author as member so they can participate in the thread
+      // Add parent message author as member and emit stream:member_added so they
+      // discover the thread in real-time (the stream:created event only surfaces
+      // private streams for the creator, not for other members).
       if (parentMessage.authorType === "user" && parentMessage.authorId !== params.createdBy) {
-        const authorIsMember = await StreamMemberRepository.isMember(client, stream.id, parentMessage.authorId)
-        if (!authorIsMember) {
-          await StreamMemberRepository.insert(client, stream.id, parentMessage.authorId)
-        }
+        await this.addToStream(client, stream, parentMessage.authorId, params.createdBy)
       }
 
       // Only broadcast if we created a new thread
