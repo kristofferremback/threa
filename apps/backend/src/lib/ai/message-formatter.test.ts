@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach, spyOn } from "bun:test"
+import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from "bun:test"
 import { MessageFormatter } from "./message-formatter"
 import { UserRepository } from "../../features/workspaces"
 import { PersonaRepository } from "../../features/agents"
@@ -48,6 +48,8 @@ describe("MessageFormatter", () => {
 
     formatter = new MessageFormatter()
   })
+
+  afterEach(() => mock.restore())
 
   test("should return empty wrapper for empty message list", async () => {
     const result = await formatter.formatMessages(mockClient, "ws_test", [])
