@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach, spyOn } from "bun:test"
+import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from "bun:test"
 import type { JSONContent } from "@threa/types"
 import type { Querier } from "../../db"
 import { MessageRepository, type Message } from "../messaging"
@@ -72,6 +72,8 @@ describe("resolveQuoteReplies", () => {
     spyOn(UserRepository, "findByIds").mockImplementation(mockFindUsersByIds as never)
     spyOn(PersonaRepository, "findByIds").mockImplementation(mockFindPersonasByIds as never)
   })
+
+  afterEach(() => mock.restore())
 
   test("resolves a single direct precursor", async () => {
     const seed = createMessage({
