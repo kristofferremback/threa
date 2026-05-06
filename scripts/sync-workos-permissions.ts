@@ -8,7 +8,7 @@
  * Usage:
  *   bun scripts/sync-workos-permissions.ts              # sync (create/update)
  *   bun scripts/sync-workos-permissions.ts --dry-run    # preview without changes
- *   bun scripts/sync-workos-permissions.ts --check      # check for drift, exit 1 if found
+ *   bun scripts/sync-workos-permissions.ts --check      # check for drift, exit 1 on orphans (manual cleanup required)
  *   WORKOS_API_KEY=sk_... bun scripts/sync-workos-permissions.ts
  */
 
@@ -331,12 +331,12 @@ async function check() {
     hasRoleDrift = true
   }
 
-  if (hasRoleDrift) {
-    console.error("\nCheck failed: role drift detected. Run `bun workos:sync` to reconcile.")
-    process.exit(1)
+  // Role drift (missing role, field drift, missing/extra permissions) is informational —
+  // `sync` on merge to main resolves all of these via createRole/updateRole/setRolePermissions.
+  // Only orphan permissions exit 1 because they require manual dashboard cleanup.
+  if (!hasRoleDrift) {
+    console.log("No role drift detected.")
   }
-
-  console.log("No role drift detected.")
 }
 
 async function sync(dryRun: boolean) {
