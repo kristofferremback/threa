@@ -52,6 +52,11 @@ Added tests for the mobile/PWA-style already-connected navigation path:
 **Chose:** Track active route-change refreshes by stream id.
 **Why:** Rapid route/effect churn should not fan out duplicate bootstrap requests for the same stream. This mirrors the existing workspace bootstrap singleflight behavior.
 
+### Merge against current cache on write
+
+**Chose:** Use the functional `setQueryData` updater and merge append responses into the cache value present at write time.
+**Why:** Socket handlers or other observers can update stream bootstrap cache while the navigation refresh is awaiting room join, cursor lookup, bootstrap fetch, or IndexedDB writes. Merging against the current cache avoids overwriting those concurrent updates, and append-mode cache conversion keeps the highest known `latestSequence`.
+
 ## Design Evolution
 
 - **Initial suspicion:** React Query invalidation might be enough.
@@ -71,6 +76,7 @@ None.
 
 - [x] Route stream changes trigger subscribe-then-bootstrap refresh.
 - [x] Delta and full bootstrap paths are selected based on cache state.
+- [x] Navigation refresh cache writes preserve concurrent cache updates.
 - [x] Regression tests cover stale query cache and IDB-only navigation.
 - [x] Focused frontend sync tests pass.
 - [x] Frontend typecheck passes.

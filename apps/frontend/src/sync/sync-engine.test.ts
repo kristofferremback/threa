@@ -340,11 +340,59 @@ describe("SyncEngine.handlePageResume", () => {
     engine.setCurrentStreamId("stream_1")
     await vi.waitFor(() => {
       expect(deps.streamService.bootstrap).toHaveBeenCalledWith("ws_1", "stream_1", { after: "1" })
+      expect(deps.queryClient.getQueryData(["streams", "bootstrap", "ws_1", "stream_1"])).toMatchObject({
+        latestSequence: "2",
+      })
     })
 
     expect(await db.events.get("evt_2")).toBeTruthy()
-    expect(deps.queryClient.getQueryData(["streams", "bootstrap", "ws_1", "stream_1"])).toMatchObject({
-      latestSequence: "2",
+  })
+
+  it("merges navigation refresh results against concurrent query cache updates", async () => {
+    const deps = makeDeps()
+    const engine = new SyncEngine(deps)
+    const socket = new MockSocket()
+    await primeConnectedEngine(engine, socket)
+
+    let resolveBootstrap: (bootstrap: StreamBootstrap) => void = () => {}
+    const bootstrapPromise = new Promise<StreamBootstrap>((resolve) => {
+      resolveBootstrap = resolve
+    })
+
+    deps.streamService.bootstrap.mockClear()
+    deps.streamService.bootstrap.mockImplementationOnce(() => bootstrapPromise)
+    deps.queryClient.setQueryData(["streams", "bootstrap", "ws_1", "stream_1"], makeStreamBootstrap("stream_1", "1"))
+    await db.events.put({
+      id: "evt_1",
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      sequence: "1",
+      eventType: "message_created",
+      payload: {
+        messageId: "msg_1",
+        contentMarkdown: "old",
+        contentJson: { type: "doc", content: [{ type: "paragraph" }] },
+      },
+      actorId: "user_1",
+      actorType: "user",
+      createdAt: new Date().toISOString(),
+      _sequenceNum: 1,
+      _cachedAt: Date.now(),
+    })
+
+    engine.setCurrentStreamId("stream_1")
+    await vi.waitFor(() => {
+      expect(deps.streamService.bootstrap).toHaveBeenCalledWith("ws_1", "stream_1", { after: "1" })
+    })
+
+    const concurrentBootstrap = makeStreamBootstrap("stream_1", "3")
+    deps.queryClient.setQueryData(["streams", "bootstrap", "ws_1", "stream_1"], concurrentBootstrap)
+
+    resolveBootstrap(makeStreamBootstrap("stream_1", "2"))
+    await vi.waitFor(() => {
+      const cached = deps.queryClient.getQueryData<StreamBootstrap>(["streams", "bootstrap", "ws_1", "stream_1"])
+      expect(cached?.latestSequence).toBe("3")
+      expect(cached?.events.map((event) => event.id)).toEqual(["evt_2", "evt_3"])
     })
   })
 

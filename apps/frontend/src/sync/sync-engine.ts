@@ -478,9 +478,8 @@ export class SyncEngine {
       const bootstrap = await streamService.bootstrap(workspaceId, streamId, after ? { after } : undefined)
       await applyStreamBootstrap(workspaceId, streamId, bootstrap)
 
-      queryClient.setQueryData(
-        queryKey,
-        toCachedStreamBootstrap(bootstrap, previousBootstrap, {
+      queryClient.setQueryData<CachedStreamBootstrap>(queryKey, (currentBootstrap) =>
+        toCachedStreamBootstrap(bootstrap, currentBootstrap ?? previousBootstrap, {
           incrementWindowVersionOnReplace: bootstrap.syncMode === "replace",
         })
       )

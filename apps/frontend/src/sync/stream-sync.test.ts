@@ -379,6 +379,30 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
     expect(replace.windowVersion).toBe(1)
   })
 
+  it("keeps the newer cached latestSequence when appending an older catch-up response", () => {
+    const streamId = "stream_latest"
+    const current = toCachedStreamBootstrap(
+      {
+        ...makeBootstrap([makeEvent({ id: "evt_C", streamId, sequence: "30" })], streamId),
+        latestSequence: "30",
+      },
+      undefined,
+      { incrementWindowVersionOnReplace: false }
+    )
+    const append = toCachedStreamBootstrap(
+      {
+        ...makeBootstrap([makeEvent({ id: "evt_B", streamId, sequence: "20" })], streamId),
+        syncMode: "append",
+        latestSequence: "20",
+      },
+      current,
+      { incrementWindowVersionOnReplace: false }
+    )
+
+    expect(append.latestSequence).toBe("30")
+    expect(append.events.map((event) => event.id)).toEqual(["evt_B", "evt_C"])
+  })
+
   it("derives the reconnect cursor from the latest persisted non-optimistic event", async () => {
     const streamId = "stream_cursor"
     await db.events.bulkPut([
