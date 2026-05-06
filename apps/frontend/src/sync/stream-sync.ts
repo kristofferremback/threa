@@ -146,8 +146,36 @@ async function writeBootstrapEventsAndStream(
   }
 
   if (bootstrap.events.length > 0) {
+    // For message_created events, merge per-field rather than overwriting the
+    // whole row. The bootstrap snapshot can race against socket updates that
+    // already landed in IDB (e.g. a reply commits between the backend's
+    // getThreadsWithReplyCounts and getThreadSummaries snapshots, so the
+    // bootstrap payload omits threadSummary while a socket-delivered
+    // message:updated has already written it to IDB). A wholesale bulkPut
+    // would clobber those fields. Per-field merge makes bootstrap commutative
+    // with socket writes: fields the bootstrap explicitly carries take
+    // effect; fields it omits fall through to the existing IDB payload.
+    // Other event types' payloads are immutable post-creation, so a plain
+    // overwrite is equivalent to merge for them.
+    const existingRows = await db.events.bulkGet(bootstrap.events.map((e) => e.id))
+    const existingById = new Map(
+      existingRows.filter((row): row is NonNullable<typeof row> => row != null).map((row) => [row.id, row] as const)
+    )
+
     await db.events.bulkPut(
-      bootstrap.events.map((e) => ({ ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }))
+      bootstrap.events.map((e) => {
+        const base = { ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }
+        if (e.eventType !== "message_created") return base
+        const existing = existingById.get(e.id)
+        if (!existing) return base
+        return {
+          ...base,
+          payload: {
+            ...(existing.payload as Record<string, unknown>),
+            ...(e.payload as Record<string, unknown>),
+          },
+        }
+      })
     )
   }
 

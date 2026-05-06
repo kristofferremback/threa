@@ -168,6 +168,125 @@ describe("applyStreamBootstrap (real IndexedDB)", () => {
     expect(await db.events.get("evt_A")).toBeDefined()
   })
 
+  it("preserves payload fields from a socket update when the bootstrap omits them", async () => {
+    // Backend bootstrap takes getThreadsWithReplyCounts and getThreadSummaries
+    // as separate non-transactional snapshots. If a reply commits between
+    // them, the bootstrap can include threadId+replyCount but omit
+    // threadSummary. Meanwhile the message:updated socket handler has already
+    // written the full threadSummary into IDB. Per-field merge must keep the
+    // socket-written threadSummary in place.
+    const streamId = "stream_merge_omit"
+
+    const threadSummary = {
+      participants: [{ id: "user_2", name: "Alice", avatarUrl: null }],
+      latestReply: {
+        actor: { id: "user_2", name: "Alice", avatarUrl: null },
+        contentMarkdown: "first reply",
+      },
+      lastReplyAt: new Date().toISOString(),
+    }
+
+    await db.events.put({
+      ...makeEvent({
+        id: "evt_parent",
+        streamId,
+        sequence: "100",
+        payload: {
+          messageId: "evt_parent",
+          contentMarkdown: "parent",
+          threadId: "stream_thread",
+          replyCount: 1,
+          threadSummary,
+        },
+      }),
+      workspaceId: "ws_1",
+      _sequenceNum: 100,
+      _cachedAt: Date.now(),
+    })
+
+    const bootstrap = makeBootstrap(
+      [
+        makeEvent({
+          id: "evt_parent",
+          streamId,
+          sequence: "100",
+          payload: {
+            messageId: "evt_parent",
+            contentMarkdown: "parent",
+            threadId: "stream_thread",
+            replyCount: 1,
+            // threadSummary deliberately missing — snapshot race
+          },
+        }),
+      ],
+      streamId
+    )
+
+    await applyStreamBootstrap("ws_1", streamId, bootstrap)
+
+    const merged = await db.events.get("evt_parent")
+    expect(merged?.payload).toMatchObject({
+      threadId: "stream_thread",
+      replyCount: 1,
+      threadSummary,
+    })
+  })
+
+  it("overwrites existing payload fields when the bootstrap explicitly carries them", async () => {
+    // Symmetry check: when the bootstrap snapshot is fresher than the IDB
+    // value (e.g. the user opened a stream that already had thread activity
+    // from another session), bootstrap fields should win.
+    const streamId = "stream_merge_present"
+
+    await db.events.put({
+      ...makeEvent({
+        id: "evt_parent",
+        streamId,
+        sequence: "100",
+        payload: { messageId: "evt_parent", contentMarkdown: "parent", replyCount: 0 },
+      }),
+      workspaceId: "ws_1",
+      _sequenceNum: 100,
+      _cachedAt: Date.now(),
+    })
+
+    const freshSummary = {
+      participants: [{ id: "user_2", name: "Alice", avatarUrl: null }],
+      latestReply: {
+        actor: { id: "user_2", name: "Alice", avatarUrl: null },
+        contentMarkdown: "fresh from server",
+      },
+      lastReplyAt: new Date().toISOString(),
+    }
+
+    const bootstrap = makeBootstrap(
+      [
+        makeEvent({
+          id: "evt_parent",
+          streamId,
+          sequence: "100",
+          payload: {
+            messageId: "evt_parent",
+            contentMarkdown: "parent",
+            threadId: "stream_thread",
+            replyCount: 3,
+            threadSummary: freshSummary,
+          },
+        }),
+      ],
+      streamId
+    )
+
+    await applyStreamBootstrap("ws_1", streamId, bootstrap)
+
+    const merged = await db.events.get("evt_parent")
+    expect(merged?.payload).toMatchObject({
+      threadId: "stream_thread",
+      replyCount: 3,
+      threadSummary: freshSummary,
+    })
+  })
+
   it("preserves optimistic events that are still in the send queue", async () => {
     const streamId = "stream_pending"
 
