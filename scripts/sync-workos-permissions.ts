@@ -392,8 +392,8 @@ async function sync(dryRun: boolean) {
   const roleDriftsBySlug = new Map(detectRoleDrift(remoteRoles).map((d) => [d.slug, d]))
 
   for (const local of REQUIRED_ROLES) {
-    const roleDrift = roleDriftsBySlug.get(local.slug)
-    if (!roleDrift) continue
+    // detectRoleDrift emits exactly one entry per REQUIRED_ROLES slug, so the lookup is total.
+    const roleDrift = roleDriftsBySlug.get(local.slug)!
 
     if (!roleDrift.exists) {
       if (dryRun) {
