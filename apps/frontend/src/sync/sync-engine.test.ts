@@ -112,9 +112,69 @@ function makeWorkspaceBootstrap(): WorkspaceBootstrap {
   } satisfies WorkspaceBootstrap
 }
 
+function makeStreamBootstrap(streamId = "stream_1", sequence = "2"): StreamBootstrap {
+  const now = new Date().toISOString()
+  return {
+    stream: {
+      id: streamId,
+      workspaceId: "ws_1",
+      type: "dm",
+      displayName: null,
+      slug: null,
+      description: null,
+      visibility: "private",
+      parentStreamId: null,
+      parentMessageId: null,
+      rootStreamId: null,
+      companionMode: "off",
+      companionPersonaId: null,
+      createdBy: "user_1",
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+    },
+    events: [
+      {
+        id: `evt_${sequence}`,
+        streamId,
+        sequence,
+        eventType: "message_created",
+        payload: {
+          messageId: `msg_${sequence}`,
+          contentMarkdown: "new",
+          contentJson: { type: "doc", content: [{ type: "paragraph" }] },
+        },
+        actorId: "user_1",
+        actorType: "user",
+        createdAt: now,
+      },
+    ],
+    members: [],
+    botMemberIds: [],
+    membership: {
+      streamId,
+      memberId: "user_1",
+      pinned: false,
+      pinnedAt: null,
+      notificationLevel: null,
+      lastReadEventId: null,
+      lastReadAt: null,
+      joinedAt: now,
+    },
+    latestSequence: sequence,
+    hasOlderEvents: false,
+    syncMode: "append",
+    unreadCount: 0,
+    mentionCount: 0,
+    activityCount: 0,
+    sharedMessages: {},
+    contextBag: { bag: null, refs: [] },
+  } satisfies StreamBootstrap
+}
+
 function makeDeps() {
   const workspaceBootstrap = vi.fn(async () => makeWorkspaceBootstrap())
-  const streamBootstrap = vi.fn(async () => ({}) as StreamBootstrap)
+  const streamBootstrap = vi.fn(async (_workspaceId: string, streamId: string) => makeStreamBootstrap(streamId))
   return {
     workspaceId: "ws_1",
     syncStatus: new SyncStatusStore(),
@@ -141,6 +201,8 @@ describe("SyncEngine.handlePageResume", () => {
       db.unreadState.clear(),
       db.userPreferences.clear(),
       db.workspaceMetadata.clear(),
+      db.events.clear(),
+      db.pendingMessages.clear(),
     ])
   })
 
@@ -247,5 +309,138 @@ describe("SyncEngine.handlePageResume", () => {
     // at most 2 bootstrap fetches for overlapping calls (active + 1 queued).
     // Two rapid resume calls should NOT fan out to 3+ fetches.
     expect(deps.workspaceService.bootstrap.mock.calls.length).toBeLessThanOrEqual(2)
+  })
+
+  it("does not refresh a route stream while the socket transport is disconnected", async () => {
+    const deps = makeDeps()
+    const engine = new SyncEngine(deps)
+    const socket = new MockSocket()
+    await primeConnectedEngine(engine, socket)
+
+    deps.streamService.bootstrap.mockClear()
+    socket.connected = false
+    engine.onDisconnect()
+
+    engine.setCurrentStreamId("stream_1")
+    await Promise.resolve()
+
+    expect(deps.streamService.bootstrap).not.toHaveBeenCalled()
+    expect(socket.emittedEvents.filter((event) => event.event === "join")).toHaveLength(1)
+  })
+
+  it("refreshes the current stream when navigating to it in an already-connected app", async () => {
+    const deps = makeDeps()
+    const engine = new SyncEngine(deps)
+    const socket = new MockSocket()
+    await primeConnectedEngine(engine, socket)
+
+    deps.streamService.bootstrap.mockClear()
+    deps.queryClient.setQueryData(["streams", "bootstrap", "ws_1", "stream_1"], makeStreamBootstrap("stream_1", "1"))
+    await db.events.put({
+      id: "evt_1",
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      sequence: "1",
+      eventType: "message_created",
+      payload: {
+        messageId: "msg_1",
+        contentMarkdown: "old",
+        contentJson: { type: "doc", content: [{ type: "paragraph" }] },
+      },
+      actorId: "user_1",
+      actorType: "user",
+      createdAt: new Date().toISOString(),
+      _sequenceNum: 1,
+      _cachedAt: Date.now(),
+    })
+
+    engine.setCurrentStreamId("stream_1")
+    await vi.waitFor(() => {
+      expect(deps.streamService.bootstrap).toHaveBeenCalledWith("ws_1", "stream_1", { after: "1" })
+      expect(deps.queryClient.getQueryData(["streams", "bootstrap", "ws_1", "stream_1"])).toMatchObject({
+        latestSequence: "2",
+      })
+    })
+
+    expect(await db.events.get("evt_2")).toBeTruthy()
+  })
+
+  it("merges navigation refresh results against concurrent query cache updates", async () => {
+    const deps = makeDeps()
+    const engine = new SyncEngine(deps)
+    const socket = new MockSocket()
+    await primeConnectedEngine(engine, socket)
+
+    let resolveBootstrap: (bootstrap: StreamBootstrap) => void = () => {}
+    const bootstrapPromise = new Promise<StreamBootstrap>((resolve) => {
+      resolveBootstrap = resolve
+    })
+
+    deps.streamService.bootstrap.mockClear()
+    deps.streamService.bootstrap.mockImplementationOnce(() => bootstrapPromise)
+    deps.queryClient.setQueryData(["streams", "bootstrap", "ws_1", "stream_1"], makeStreamBootstrap("stream_1", "1"))
+    await db.events.put({
+      id: "evt_1",
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      sequence: "1",
+      eventType: "message_created",
+      payload: {
+        messageId: "msg_1",
+        contentMarkdown: "old",
+        contentJson: { type: "doc", content: [{ type: "paragraph" }] },
+      },
+      actorId: "user_1",
+      actorType: "user",
+      createdAt: new Date().toISOString(),
+      _sequenceNum: 1,
+      _cachedAt: Date.now(),
+    })
+
+    engine.setCurrentStreamId("stream_1")
+    await vi.waitFor(() => {
+      expect(deps.streamService.bootstrap).toHaveBeenCalledWith("ws_1", "stream_1", { after: "1" })
+    })
+
+    const concurrentBootstrap = makeStreamBootstrap("stream_1", "3")
+    deps.queryClient.setQueryData(["streams", "bootstrap", "ws_1", "stream_1"], concurrentBootstrap)
+
+    resolveBootstrap(makeStreamBootstrap("stream_1", "2"))
+    await vi.waitFor(() => {
+      const cached = deps.queryClient.getQueryData<StreamBootstrap>(["streams", "bootstrap", "ws_1", "stream_1"])
+      expect(cached?.latestSequence).toBe("3")
+      expect(cached?.events.map((event) => event.id)).toEqual(["evt_2", "evt_3"])
+    })
+  })
+
+  it("uses a full bootstrap on navigation when only IndexedDB has stream data", async () => {
+    const deps = makeDeps()
+    const engine = new SyncEngine(deps)
+    const socket = new MockSocket()
+    await primeConnectedEngine(engine, socket)
+
+    deps.streamService.bootstrap.mockClear()
+    await db.events.put({
+      id: "evt_1",
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      sequence: "1",
+      eventType: "message_created",
+      payload: {
+        messageId: "msg_1",
+        contentMarkdown: "old",
+        contentJson: { type: "doc", content: [{ type: "paragraph" }] },
+      },
+      actorId: "user_1",
+      actorType: "user",
+      createdAt: new Date().toISOString(),
+      _sequenceNum: 1,
+      _cachedAt: Date.now(),
+    })
+
+    engine.setCurrentStreamId("stream_1")
+    await vi.waitFor(() => {
+      expect(deps.streamService.bootstrap).toHaveBeenCalledWith("ws_1", "stream_1", undefined)
+    })
   })
 })

@@ -44,6 +44,10 @@ function dedupeAndSortEvents(events: StreamEvent[]): StreamEvent[] {
   })
 }
 
+function maxSequence(a: string, b: string): string {
+  return BigInt(a) >= BigInt(b) ? a : b
+}
+
 export function toCachedStreamBootstrap(
   bootstrap: StreamBootstrap,
   previous?: CachedStreamBootstrap,
@@ -51,14 +55,15 @@ export function toCachedStreamBootstrap(
 ): CachedStreamBootstrap {
   const nextStream = preserveDmDisplayName(bootstrap.stream, previous?.stream)
   const shouldIncrementWindowVersion = bootstrap.syncMode === "replace" && options?.incrementWindowVersionOnReplace
+  const shouldAppend = bootstrap.syncMode === "append" && previous
   return {
     ...bootstrap,
     stream: nextStream,
-    events:
-      bootstrap.syncMode === "append" && previous
-        ? dedupeAndSortEvents([...previous.events, ...bootstrap.events])
-        : bootstrap.events,
-    hasOlderEvents: bootstrap.syncMode === "append" && previous ? previous.hasOlderEvents : bootstrap.hasOlderEvents,
+    events: shouldAppend ? dedupeAndSortEvents([...previous.events, ...bootstrap.events]) : bootstrap.events,
+    latestSequence: shouldAppend
+      ? maxSequence(previous.latestSequence, bootstrap.latestSequence)
+      : bootstrap.latestSequence,
+    hasOlderEvents: shouldAppend ? previous.hasOlderEvents : bootstrap.hasOlderEvents,
     windowVersion: shouldIncrementWindowVersion ? (previous?.windowVersion ?? 0) + 1 : (previous?.windowVersion ?? 0),
   }
 }
