@@ -311,6 +311,23 @@ describe("SyncEngine.handlePageResume", () => {
     expect(deps.workspaceService.bootstrap.mock.calls.length).toBeLessThanOrEqual(2)
   })
 
+  it("does not refresh a route stream while the socket transport is disconnected", async () => {
+    const deps = makeDeps()
+    const engine = new SyncEngine(deps)
+    const socket = new MockSocket()
+    await primeConnectedEngine(engine, socket)
+
+    deps.streamService.bootstrap.mockClear()
+    socket.connected = false
+    engine.onDisconnect()
+
+    engine.setCurrentStreamId("stream_1")
+    await Promise.resolve()
+
+    expect(deps.streamService.bootstrap).not.toHaveBeenCalled()
+    expect(socket.emittedEvents.filter((event) => event.event === "join")).toHaveLength(1)
+  })
+
   it("refreshes the current stream when navigating to it in an already-connected app", async () => {
     const deps = makeDeps()
     const engine = new SyncEngine(deps)

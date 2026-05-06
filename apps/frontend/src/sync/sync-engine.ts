@@ -445,7 +445,13 @@ export class SyncEngine {
   }
 
   private refreshStreamAfterNavigation(streamId: string): Promise<void> {
-    if (this.isDestroyed || !this.socket || streamId.startsWith("draft_") || streamId.startsWith("draft:")) {
+    if (
+      this.isDestroyed ||
+      !this.socket ||
+      !this.socket.connected ||
+      streamId.startsWith("draft_") ||
+      streamId.startsWith("draft:")
+    ) {
       return Promise.resolve()
     }
 
