@@ -88,15 +88,13 @@ describe("WorkosAuthzPoller", () => {
     await poller.tick()
 
     const row = await WorkosAuthzRepository.getByOrgAndUser(pool, orgId, userId)
-    expect(row!.role_slugs).toEqual(["owner"])
-    expect(row!.last_event_id).toBe("event_03")
+    expect(row).toMatchObject({ role_slugs: ["owner"], last_event_id: "event_03" })
 
     const cursor = await pool.query<{ last_event_id: string | null; locked_until: Date | null }>(
       "SELECT last_event_id, locked_until FROM workos_event_poller_state WHERE name = $1",
       [lockName]
     )
-    expect(cursor.rows[0].last_event_id).toBe("event_03")
-    expect(cursor.rows[0].locked_until).toBeNull()
+    expect(cursor.rows[0]).toMatchObject({ last_event_id: "event_03", locked_until: null })
   })
 
   test("no-events tick: claims, drains nothing, releases", async () => {
@@ -109,8 +107,7 @@ describe("WorkosAuthzPoller", () => {
       "SELECT last_event_id, locked_until FROM workos_event_poller_state WHERE name = $1",
       [lockName]
     )
-    expect(state.rows[0].last_event_id).toBeNull()
-    expect(state.rows[0].locked_until).toBeNull()
+    expect(state.rows[0]).toMatchObject({ last_event_id: null, locked_until: null })
   })
 
   test("error path: records error and releases the lock", async () => {
@@ -132,10 +129,12 @@ describe("WorkosAuthzPoller", () => {
     }>("SELECT retry_count, retry_after, last_error, locked_until FROM workos_event_poller_state WHERE name = $1", [
       lockName,
     ])
-    expect(state.rows[0].retry_count).toBe(1)
+    expect(state.rows[0]).toMatchObject({
+      retry_count: 1,
+      last_error: "WorkOS unavailable",
+      locked_until: null,
+    })
     expect(state.rows[0].retry_after).not.toBeNull()
-    expect(state.rows[0].last_error).toBe("WorkOS unavailable")
-    expect(state.rows[0].locked_until).toBeNull()
   })
 
   test("lock contention: a second poller's tick is a no-op while the first holds", async () => {
@@ -177,7 +176,6 @@ describe("WorkosAuthzPoller", () => {
 
     // After stop, the first tick should have completed and persisted state.
     const row = await WorkosAuthzRepository.getByOrgAndUser(pool, orgId, userId)
-    expect(row).not.toBeNull()
-    expect(row!.last_event_id).toBe("event_01")
+    expect(row).toMatchObject({ last_event_id: "event_01" })
   })
 })

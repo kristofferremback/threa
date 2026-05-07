@@ -202,13 +202,23 @@ export class WorkosEventPollerLock {
 
   private async refreshLock(): Promise<void> {
     if (!this.runId) return
+    const runId = this.runId
     const now = new Date()
     const lockedUntil = new Date(now.getTime() + this.lockDurationMs)
-    await this.pool.query(sql`
+    const result = await this.pool.query(sql`
       UPDATE workos_event_poller_state
       SET locked_until = ${lockedUntil}, updated_at = ${now}
-      WHERE name = ${this.name} AND lock_run_id = ${this.runId}
+      WHERE name = ${this.name} AND lock_run_id = ${runId}
     `)
+    // If the row no longer matches our run id, another instance has taken
+    // over. Drop local ownership so subsequent advance/recordError calls
+    // observe `runId === null` and stop writing, and surface the loss so
+    // the poller can abort the in-flight tick.
+    if (result.rowCount === 0) {
+      this.runId = null
+      this.stopRefreshTimer()
+      throw new Error(`Lost WorkOS event poller lease for ${this.name}`)
+    }
   }
 
   private async isReadyToProcess(now: Date): Promise<boolean> {

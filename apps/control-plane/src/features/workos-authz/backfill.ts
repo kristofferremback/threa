@@ -39,8 +39,12 @@ export class WorkosAuthzBackfill {
     const orgIds = await WorkspaceRegistryRepository.listWorkosOrganizationIds(this.pool)
 
     let membershipsUpserted = 0
+    let hadErrors = false
     for (const orgId of orgIds) {
       try {
+        // Stamp once per org before reading, so any membership event WorkOS
+        // observes after this snapshot wins the timestamp guard on upsert.
+        const observedAt = new Date()
         const memberships = await this.workosOrgService.listOrganizationMemberships(orgId)
         for (const m of memberships) {
           await WorkosAuthzRepository.upsertMembershipFromBackfill(this.pool, {
@@ -49,20 +53,23 @@ export class WorkosAuthzBackfill {
             workosUserId: m.userId,
             status: m.status,
             roleSlugs: m.roleSlugs,
-            observedAt: new Date(),
+            observedAt,
           })
           membershipsUpserted++
         }
       } catch (err) {
+        hadErrors = true
         logger.error({ err, organizationId: orgId }, "Failed to backfill WorkOS memberships for organization")
       }
     }
 
-    if (this.lock) {
+    // Only stamp last_backfill_at on a fully successful run — otherwise the
+    // first-boot guard in server.ts would suppress retry of failed orgs.
+    if (!hadErrors && this.lock) {
       await this.lock.stampBackfill()
     }
 
-    logger.info({ orgsScanned: orgIds.length, membershipsUpserted }, "WorkOS authz backfill complete")
+    logger.info({ orgsScanned: orgIds.length, membershipsUpserted, hadErrors }, "WorkOS authz backfill complete")
     return { orgsScanned: orgIds.length, membershipsUpserted }
   }
 }

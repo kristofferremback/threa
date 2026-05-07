@@ -17,10 +17,8 @@
 import { createDatabasePool, runMigrations, WorkosOrgServiceImpl, StubWorkosOrgService } from "@threa/backend-common"
 import path from "path"
 import { loadControlPlaneConfig } from "../src/config"
-import { WorkosAuthzBackfill } from "../src/features/workos-authz"
+import { WorkosAuthzBackfill, WORKOS_EVENT_POLLER_NAME } from "../src/features/workos-authz"
 import { WorkosEventPollerLock } from "../src/lib/workos-event-poller-lock"
-
-const WORKOS_EVENT_POLLER_NAME = "workos-events"
 
 async function main() {
   const config = loadControlPlaneConfig()

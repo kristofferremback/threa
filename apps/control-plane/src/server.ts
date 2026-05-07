@@ -31,12 +31,16 @@ import {
 } from "./features/workspaces"
 import { InvitationShadowService } from "./features/invitation-shadows"
 import { BackofficeService, seedPlatformAdmins } from "./features/backoffice"
-import { WorkosAuthzService, WorkosAuthzBackfill, WorkosAuthzPoller } from "./features/workos-authz"
+import {
+  WorkosAuthzService,
+  WorkosAuthzBackfill,
+  WorkosAuthzPoller,
+  WORKOS_EVENT_POLLER_NAME,
+} from "./features/workos-authz"
 import { WorkosEventPollerLock } from "./lib/workos-event-poller-lock"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
 const LISTENER_ID = "control-plane"
-const WORKOS_EVENT_POLLER_NAME = "workos-events"
 
 export interface ControlPlaneInstance {
   server: Server
@@ -186,14 +190,24 @@ export async function startServer(): Promise<ControlPlaneInstance> {
 
   const server = createServer(app)
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(config.port, "0.0.0.0", () => {
-      server.removeListener("error", reject)
-      logger.info({ port: config.port }, "Control plane started")
-      resolve()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(config.port, "0.0.0.0", () => {
+        server.removeListener("error", reject)
+        logger.info({ port: config.port }, "Control plane started")
+        resolve()
+      })
     })
-  })
+  } catch (err) {
+    // Bind failed — tear down the workers and pools we already spun up so the
+    // process can exit cleanly instead of leaking intervals and connections.
+    await authzPoller.stop().catch(() => {})
+    await outboxDispatcher.stop().catch(() => {})
+    await listenPool.end().catch(() => {})
+    await pool.end().catch(() => {})
+    throw err
+  }
 
   const stop = async () => {
     if (config.fastShutdown) {
