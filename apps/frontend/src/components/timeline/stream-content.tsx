@@ -75,8 +75,8 @@ import { useSearchHighlight } from "@/hooks/use-search-highlight"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { addStartBatchSelectListener } from "@/lib/batch-selection-events"
 
-/** Event types suppressed in threads — see displayEvents memo below. */
-const THREAD_HIDDEN_EVENT_TYPES = new Set<string>(["member_joined", "member_added", "member_left"])
+/** Membership events; suppressed in threads (see displayEvents memo). */
+const THREAD_HIDDEN_EVENT_TYPES = new Set<StreamEvent["eventType"]>(["member_joined", "member_added", "member_left"])
 
 interface StreamContentProps {
   workspaceId: string
