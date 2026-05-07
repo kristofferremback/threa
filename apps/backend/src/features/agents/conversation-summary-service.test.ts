@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
 import type { AI } from "../../lib/ai/ai"
 import type { Message } from "../messaging"
 import { MessageRepository } from "../messaging"
@@ -26,6 +26,13 @@ function makeMessage(sequence: bigint, content: string): Message {
 }
 
 describe("ConversationSummaryService", () => {
+  // Module-level spies on shared repositories leak past this file's tests
+  // unless we tear them down. Bun's `spyOn` returns the existing spy when a
+  // method is already patched, so a downstream file calling
+  // `spyOn(MessageRepository, "list")` would inherit our call history and
+  // break `expect(...).not.toHaveBeenCalled()` assertions.
+  afterAll(() => mock.restore())
+
   const TEST_MODEL_ID = "openrouter:anthropic/claude-haiku-4.5"
   const TEST_TEMPERATURE = 0.1
 
