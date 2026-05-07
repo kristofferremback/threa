@@ -4,6 +4,8 @@ import type { LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 
 interface SearchableSelectProps<T> {
@@ -61,10 +63,11 @@ export function SearchableSelect<T>({
   prefixContent,
   "data-testid": testId,
 }: SearchableSelectProps<T>) {
+  const isMobile = useIsMobile()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
 
-  // Reset filter input each time the popover closes so the next open shows the full list.
+  // Reset filter input each time the popover/drawer closes so the next open shows the full list.
   useEffect(() => {
     if (!open) setSearch("")
   }, [open])
@@ -91,27 +94,63 @@ export function SearchableSelect<T>({
     </span>
   )
 
+  const triggerButton = (
+    <Button
+      type="button"
+      variant="outline"
+      role="combobox"
+      aria-expanded={open}
+      disabled={disabled}
+      data-testid={testId}
+      className={cn("w-full justify-between gap-2 font-normal", className)}
+    >
+      {triggerContent}
+      <ChevronsUpDown
+        className={cn("h-4 w-4 shrink-0 opacity-50 transition-transform duration-150", open && "rotate-180 opacity-80")}
+      />
+    </Button>
+  )
+
+  const commandList = (
+    <>
+      <CommandEmpty>{emptyMessage}</CommandEmpty>
+      {prefixContent && <CommandGroup>{prefixContent({ close: () => setOpen(false) })}</CommandGroup>}
+      <CommandGroup>
+        {items.map((item) => {
+          const key = getKey(item)
+          const isSelected = value !== null && getKey(value) === key
+          return (
+            <CommandItem key={key} value={key} keywords={getKeywords(item)} onSelect={() => handleSelect(item)}>
+              {renderItem(item, isSelected)}
+            </CommandItem>
+          )
+        })}
+      </CommandGroup>
+    </>
+  )
+
+  if (isMobile) {
+    // Drawer (vaul) on mobile: native touch-scroll works inside the list, and
+    // the dvh-based max height shrinks correctly when the on-screen keyboard
+    // appears (the parent Drawer is configured with repositionInputs={false}
+    // so vaul does not also try to set inline heights).
+    return (
+      <Drawer open={open} onOpenChange={setOpen}>
+        <DrawerTrigger asChild>{triggerButton}</DrawerTrigger>
+        <DrawerContent className={cn("flex h-[85dvh] flex-col pb-[env(safe-area-inset-bottom)]", contentClassName)}>
+          <DrawerTitle className="sr-only">{searchPlaceholder}</DrawerTitle>
+          <Command className="flex flex-1 flex-col overflow-hidden">
+            <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
+            <CommandList className="flex-1 overflow-y-auto overscroll-contain">{commandList}</CommandList>
+          </Command>
+        </DrawerContent>
+      </Drawer>
+    )
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen} modal={false}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          data-testid={testId}
-          className={cn("w-full justify-between gap-2 font-normal", className)}
-        >
-          {triggerContent}
-          <ChevronsUpDown
-            className={cn(
-              "h-4 w-4 shrink-0 opacity-50 transition-transform duration-150",
-              open && "rotate-180 opacity-80"
-            )}
-          />
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
       <PopoverContent
         className={cn("w-[--radix-popover-trigger-width] max-w-[calc(100vw-1rem)] p-0", contentClassName)}
         align={align}
@@ -121,25 +160,11 @@ export function SearchableSelect<T>({
           <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
           {/*
            * Override cmdk's default 300px ceiling so the list shows more rows on
-           * tall viewports and stays inside the screen on short ones (mobile,
-           * landscape phones). overscroll-contain prevents body scroll-chaining
-           * once the user reaches the top/bottom of the list.
+           * tall viewports and stays inside the screen on short ones. overscroll-
+           * contain prevents body scroll-chaining once the user reaches the
+           * top/bottom of the list.
            */}
-          <CommandList className="max-h-[min(60vh,360px)] overscroll-contain">
-            <CommandEmpty>{emptyMessage}</CommandEmpty>
-            {prefixContent && <CommandGroup>{prefixContent({ close: () => setOpen(false) })}</CommandGroup>}
-            <CommandGroup>
-              {items.map((item) => {
-                const key = getKey(item)
-                const isSelected = value !== null && getKey(value) === key
-                return (
-                  <CommandItem key={key} value={key} keywords={getKeywords(item)} onSelect={() => handleSelect(item)}>
-                    {renderItem(item, isSelected)}
-                  </CommandItem>
-                )
-              })}
-            </CommandGroup>
-          </CommandList>
+          <CommandList className="max-h-[min(60vh,360px)] overscroll-contain">{commandList}</CommandList>
         </Command>
       </PopoverContent>
     </Popover>
