@@ -1,4 +1,4 @@
-import { describe, test, expect, spyOn, beforeEach } from "bun:test"
+import { afterAll, describe, test, expect, mock, spyOn, beforeEach } from "bun:test"
 import type { PoolClient } from "pg"
 import { StreamService } from "./service"
 import { StreamRepository } from "./repository"
@@ -23,6 +23,13 @@ spyOn(idModule, "eventId").mockReturnValue("evt_1")
 spyOn(idModule, "streamId").mockReturnValue("stream_new")
 spyOn(db, "withClient").mockImplementation((_pool, fn) => fn({} as PoolClient))
 spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn({} as PoolClient))
+
+// Module-level spies (declared via `const x = spyOn(...)`) stay attached to the
+// target methods for the lifetime of this test file. Without this teardown the
+// spies leak into the next test file in the worker — since Bun's `spyOn`
+// returns the existing spy when a method is already patched, the next file
+// inherits the call history and breaks `expect(...).not.toHaveBeenCalled()`.
+afterAll(() => mock.restore())
 
 describe("StreamService.joinPublicChannel", () => {
   let service: StreamService
