@@ -1713,7 +1713,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "oneOf": [
+                      "anyOf": [
                         {
                           "type": "object",
                           "properties": {
@@ -1730,9 +1730,22 @@
                             "kind": { "type": "string", "const": "bot" },
                             "workspaceId": { "type": "string" },
                             "botId": { "type": "string" },
-                            "botType": { "type": "string", "enum": ["shared", "personal"] },
+                            "botType": { "type": "string", "const": "shared" },
                             "traits": { "type": "array", "items": { "type": "string", "enum": ["interactive"] } },
-                            "ownerUserId": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+                            "ownerUserId": { "type": "null" }
+                          },
+                          "required": ["kind", "workspaceId", "botId", "botType", "traits", "ownerUserId"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "const": "bot" },
+                            "workspaceId": { "type": "string" },
+                            "botId": { "type": "string" },
+                            "botType": { "type": "string", "const": "personal" },
+                            "traits": { "type": "array", "items": { "type": "string", "enum": ["interactive"] } },
+                            "ownerUserId": { "type": "string" }
                           },
                           "required": ["kind", "workspaceId", "botId", "botType", "traits", "ownerUserId"],
                           "additionalProperties": false
@@ -1810,8 +1823,6 @@
                         "properties": {
                           "id": { "type": "string" },
                           "workspaceId": { "type": "string" },
-                          "type": { "type": "string", "enum": ["shared", "personal"] },
-                          "ownerUserId": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
                           "traits": { "type": "array", "items": { "type": "string", "enum": ["interactive"] } },
                           "slug": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
                           "name": { "type": "string" },
@@ -1820,13 +1831,13 @@
                           "avatarUrl": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
                           "archivedAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
                           "createdAt": { "type": "string", "format": "date-time" },
-                          "updatedAt": { "type": "string", "format": "date-time" }
+                          "updatedAt": { "type": "string", "format": "date-time" },
+                          "type": { "type": "string", "const": "personal" },
+                          "ownerUserId": { "type": "string" }
                         },
                         "required": [
                           "id",
                           "workspaceId",
-                          "type",
-                          "ownerUserId",
                           "traits",
                           "slug",
                           "name",
@@ -1835,7 +1846,9 @@
                           "avatarUrl",
                           "archivedAt",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "type",
+                          "ownerUserId"
                         ],
                         "additionalProperties": false
                       }

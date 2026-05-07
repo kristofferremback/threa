@@ -235,11 +235,22 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       res.json({ data: bots.map(serializeBot) })
     },
 
-    /** GET /api/workspaces/:workspaceId/bots/:botId */
+    /**
+     * GET /api/workspaces/:workspaceId/bots/:botId
+     *
+     * Visibility rules mirror `list()`: shared bots are visible to any
+     * workspace member; personal bots are visible only to their owner.
+     * Surfacing someone else's personal bot via direct ID lookup would
+     * defeat the privacy that filtering it out of `list()` provides.
+     */
     async get(req: Request, res: Response) {
       const { botId: id } = req.params
+      const actor = req.user!
       const bot = await BotRepository.findById(pool, id)
       if (!bot || bot.workspaceId !== req.workspaceId!) {
+        throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+      }
+      if (bot.type === BotTypes.PERSONAL && bot.ownerUserId !== actor.id) {
         throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
       }
       res.json({ data: serializeBot(bot) })
@@ -330,7 +341,10 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       const { botId: id } = req.params
       const actor = req.user!
 
-      await authorizeBotManagement(pool, workspaceId, id, actor)
+      const bot = await authorizeBotManagement(pool, workspaceId, id, actor)
+      if (bot.archivedAt) {
+        throw new HttpError("Bot is archived", { status: 409, code: "BOT_ARCHIVED" })
+      }
 
       const result = createBotKeySchema.safeParse(req.body)
       if (!result.success) {

@@ -105,11 +105,12 @@ const userSchema = z.object({
   role: z.string(),
 })
 
-const botSchema = z.object({
+// Bot wire schema is a discriminated union so the type/ownerUserId invariant
+// (personal ⇒ ownerUserId non-null; shared ⇒ ownerUserId null) is enforced at
+// the schema layer and reflected in the generated OpenAPI/client types.
+const botCommonFields = {
   id: z.string(),
   workspaceId: z.string(),
-  type: z.enum(BOT_TYPES),
-  ownerUserId: z.string().nullable(),
   traits: z.array(z.enum(BOT_TRAITS)),
   slug: z.string().nullable(),
   name: z.string(),
@@ -119,9 +120,27 @@ const botSchema = z.object({
   archivedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+}
+
+const sharedBotSchema = z.object({
+  ...botCommonFields,
+  type: z.literal("shared"),
+  ownerUserId: z.null(),
 })
 
-const principalSchema = z.discriminatedUnion("kind", [
+const personalBotSchema = z.object({
+  ...botCommonFields,
+  type: z.literal("personal"),
+  ownerUserId: z.string(),
+})
+
+const botSchema = z.discriminatedUnion("type", [sharedBotSchema, personalBotSchema])
+
+// Principal can't use a single-discriminator union because the bot variants
+// share `kind: "bot"` but split on `botType`. z.union handles the three-way
+// shape correctly; the generated OpenAPI uses `oneOf`, which clients narrow
+// on `kind` first and then `botType` for the bot branch.
+const principalSchema = z.union([
   z.object({
     kind: z.literal("user"),
     workspaceId: z.string(),
@@ -131,9 +150,17 @@ const principalSchema = z.discriminatedUnion("kind", [
     kind: z.literal("bot"),
     workspaceId: z.string(),
     botId: z.string(),
-    botType: z.enum(BOT_TYPES),
+    botType: z.literal("shared"),
     traits: z.array(z.enum(BOT_TRAITS)),
-    ownerUserId: z.string().nullable(),
+    ownerUserId: z.null(),
+  }),
+  z.object({
+    kind: z.literal("bot"),
+    workspaceId: z.string(),
+    botId: z.string(),
+    botType: z.literal("personal"),
+    traits: z.array(z.enum(BOT_TRAITS)),
+    ownerUserId: z.string(),
   }),
 ])
 
@@ -554,7 +581,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     parameters: [workspaceIdParam],
     requestSchema: listMyBotsSchema,
     requestIn: "query",
-    responseSchema: dataArrayEnvelope(botSchema),
+    responseSchema: dataArrayEnvelope(personalBotSchema),
   },
 ]
 

@@ -117,11 +117,9 @@ function serializeMessage(
 }
 
 export function serializeBot(bot: Bot): WireBot {
-  return {
+  const common = {
     id: bot.id,
     workspaceId: bot.workspaceId,
-    type: bot.type,
-    ownerUserId: bot.ownerUserId,
     traits: bot.traits,
     slug: bot.slug,
     name: bot.name,
@@ -132,6 +130,13 @@ export function serializeBot(bot: Bot): WireBot {
     createdAt: bot.createdAt.toISOString(),
     updatedAt: bot.updatedAt.toISOString(),
   }
+  if (bot.type === "personal") {
+    if (bot.ownerUserId === null) {
+      throw new Error(`Bot ${bot.id} is personal but has no ownerUserId`)
+    }
+    return { ...common, type: "personal", ownerUserId: bot.ownerUserId }
+  }
+  return { ...common, type: "shared", ownerUserId: null }
 }
 
 function serializeUser(user: {

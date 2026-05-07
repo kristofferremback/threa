@@ -22,15 +22,15 @@ export function assertRoleAtLeast(user: { role: WorkspaceRole }, minimumRole: Wo
 }
 
 export function requireRole(minimumRole: WorkspaceRole): RequestHandler {
-  return function requireRoleMiddleware(req: Request, res: Response, next: NextFunction): void {
+  return function requireRoleMiddleware(req: Request, _res: Response, next: NextFunction): void {
     const user = req.user
     if (!user) {
-      res.status(401).json({ error: "Not authenticated" })
+      next(new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" }))
       return
     }
 
     if (!hasRoleAtLeast(user, minimumRole)) {
-      res.status(403).json({ error: "Insufficient role" })
+      next(new HttpError("Insufficient role", { status: 403, code: "FORBIDDEN" }))
       return
     }
 

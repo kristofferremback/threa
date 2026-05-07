@@ -146,6 +146,12 @@ export const BotRepository = {
       avatarEmoji?: string | null
     }
   ): Promise<Bot> {
+    // Validate against the canonical type/trait vocabularies up front so an
+    // unknown value never reaches the INSERT (and never round-trips back via
+    // RETURNING with a row mapRowToBot would later reject).
+    if (!KNOWN_BOT_TYPES.has(params.type)) {
+      throw new Error(`Bot create: unknown type "${params.type}"`)
+    }
     // Enforce the type/owner shape invariant at the write boundary so the
     // database never holds an inconsistent row (INV-20 — race-safe writes
     // start with a correct contract).

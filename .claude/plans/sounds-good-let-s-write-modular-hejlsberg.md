@@ -90,7 +90,7 @@ Zero personal interactive bots → zero commands rendered (the section disappear
 
 ## Plugin: `packages/openclaw-channel`
 
-```
+```text
 packages/openclaw-channel/
   package.json                 # @threa/openclaw-channel
   openclaw.plugin.json         # manifest: channelConfigs.threa, preferOver: []
