@@ -1,9 +1,10 @@
-import { useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { Check, ChevronDown, Copy, KeyRound, Link as LinkIcon, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ActorAvatar } from "@/components/actor-avatar"
 import { invitationsApi } from "@/api/invitations"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { useFormattedDate } from "@/hooks"
@@ -56,7 +57,11 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
 
   const { formatDate } = useFormattedDate()
 
-  const users = useWorkspaceUsers(workspaceId)
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const users = useMemo(
+    () => workspaceUsers.slice().sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug)),
+    [workspaceUsers]
+  )
 
   const invitationsQuery = useQuery({
     queryKey: ["invitations", workspaceId],
@@ -117,9 +122,18 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
       <div className="space-y-2">
         {users.map((user) => (
           <div key={user.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 min-w-0">
-              <span className="text-sm font-medium truncate">{user.name || user.slug}</span>
-              <span className="text-xs text-muted-foreground truncate">@{user.slug}</span>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <ActorAvatar
+                actorId={user.id}
+                actorType="user"
+                workspaceId={workspaceId}
+                size="sm"
+                alt={user.name || user.slug}
+              />
+              <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 min-w-0">
+                <span className="text-sm font-medium truncate">{user.name || user.slug}</span>
+                <span className="text-xs text-muted-foreground truncate">@{user.slug}</span>
+              </div>
             </div>
             <Badge variant={user.role === "owner" ? "default" : "secondary"} className="shrink-0">
               {user.role}
