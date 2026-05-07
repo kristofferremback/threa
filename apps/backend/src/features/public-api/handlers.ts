@@ -287,7 +287,7 @@ async function resolveAuthorDisplayNames(
   }
   if (byType.bot.size > 0) {
     fetches.push(
-      BotRepository.findByIds(pool, [...byType.bot]).then((bots) => {
+      BotRepository.findByIds(pool, workspaceId, [...byType.bot]).then((bots) => {
         for (const b of bots) nameMap.set(b.id, b.name)
       })
     )
@@ -382,7 +382,7 @@ export function createPublicApiHandlers({
       if (message.authorType !== AuthorTypes.BOT || message.authorId !== req.botApiKey.botId) {
         throw new HttpError("Cannot modify messages created by another bot", { status: 403, code: "FORBIDDEN" })
       }
-      const bot = await BotRepository.findById(pool, message.authorId)
+      const bot = await BotRepository.findById(pool, req.workspaceId!, message.authorId)
       if (!bot) {
         throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
       }
@@ -879,7 +879,7 @@ export function createPublicApiHandlers({
 
       // Bot-scoped key: send as the bot directly (no upsert needed)
       if (req.botApiKey) {
-        const bot = await BotRepository.findById(pool, req.botApiKey.botId)
+        const bot = await BotRepository.findById(pool, workspaceId, req.botApiKey.botId)
         if (!bot || bot.archivedAt) {
           throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
         }
@@ -1009,8 +1009,8 @@ export function createPublicApiHandlers({
       }
 
       if (req.botApiKey) {
-        const bot = await BotRepository.findById(pool, req.botApiKey.botId)
-        if (!bot || bot.workspaceId !== workspaceId) {
+        const bot = await BotRepository.findById(pool, workspaceId, req.botApiKey.botId)
+        if (!bot) {
           throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
         }
         res.json({

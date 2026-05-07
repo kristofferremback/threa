@@ -4,7 +4,6 @@ import type { Pool } from "pg"
 import { BotRepository, type Bot } from "./bot-repository"
 import { BotApiKeyRepository, type BotApiKeyRow } from "./bot-api-key-repository"
 import { BotChannelAccessRepository } from "../api-keys"
-import { StreamRepository } from "../streams"
 import type { StreamService } from "../streams"
 import type { User } from "../workspaces"
 import type { AvatarService } from "../workspaces"
@@ -12,7 +11,7 @@ import type { BotApiKeyService } from "./bot-api-key-service"
 import { serializeBot } from "./handlers"
 import { botId, botChannelAccessId } from "../../lib/id"
 import { generateSlug } from "@threa/backend-common"
-import { withTransaction } from "../../db"
+import { sql, withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { HttpError } from "@threa/backend-common"
 import { isUniqueViolation } from "../../lib/errors"
@@ -89,8 +88,8 @@ interface BotHandlerDeps {
  *   management of someone else's personal bot — capability follows ownership.
  */
 async function authorizeBotManagement(pool: Pool, workspaceId: string, id: string, actor: User): Promise<Bot> {
-  const bot = await BotRepository.findById(pool, id)
-  if (!bot || bot.workspaceId !== workspaceId) {
+  const bot = await BotRepository.findById(pool, workspaceId, id)
+  if (!bot) {
     throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
   }
   if (bot.type === BotTypes.PERSONAL) {
@@ -246,8 +245,8 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
     async get(req: Request, res: Response) {
       const { botId: id } = req.params
       const actor = req.user!
-      const bot = await BotRepository.findById(pool, id)
-      if (!bot || bot.workspaceId !== req.workspaceId!) {
+      const bot = await BotRepository.findById(pool, req.workspaceId!, id)
+      if (!bot) {
         throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
       }
       if (bot.type === BotTypes.PERSONAL && bot.ownerUserId !== actor.id) {
@@ -532,29 +531,46 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       const { botId: id, streamId } = req.params
       const actor = req.user!
 
+      // Authorization on the bot's *type* and the actor's role is decided up
+      // front; both inputs are immutable for this request. The race-sensitive
+      // checks (bot/stream archived, owner membership) are repeated inside the
+      // transaction below under row-level locks (INV-20), mirroring the
+      // pattern in BotApiKeyService.createKey.
       const bot = await authorizeBotManagement(pool, workspaceId, id, actor)
-      if (bot.archivedAt) {
-        throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
-      }
 
-      const stream = await StreamRepository.findById(pool, streamId)
-      if (!stream || stream.workspaceId !== workspaceId || stream.archivedAt) {
-        throw new HttpError("Stream not found", { status: 404, code: "NOT_FOUND" })
-      }
-
-      if (bot.type === BotTypes.PERSONAL) {
-        const ownerIsMember = await streamService.isMember(streamId, actor.id)
-        if (!ownerIsMember) {
-          throw new HttpError("Forbidden", { status: 403, code: "FORBIDDEN" })
+      await withTransaction(pool, async (client) => {
+        const { rows: botRows } = await client.query<{ archived_at: Date | null }>(sql`
+          SELECT archived_at FROM bots
+          WHERE id = ${id} AND workspace_id = ${workspaceId}
+          FOR UPDATE
+        `)
+        if (botRows.length === 0 || botRows[0].archived_at !== null) {
+          throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
         }
-      }
 
-      await BotChannelAccessRepository.grantAccess(pool, {
-        id: botChannelAccessId(),
-        workspaceId,
-        botId: id,
-        streamId,
-        grantedBy: actor.id,
+        const { rows: streamRows } = await client.query<{ archived_at: Date | null }>(sql`
+          SELECT archived_at FROM streams
+          WHERE id = ${streamId} AND workspace_id = ${workspaceId}
+          FOR UPDATE
+        `)
+        if (streamRows.length === 0 || streamRows[0].archived_at !== null) {
+          throw new HttpError("Stream not found", { status: 404, code: "NOT_FOUND" })
+        }
+
+        if (bot.type === BotTypes.PERSONAL) {
+          const ownerIsMember = await streamService.isMemberOn(client, streamId, actor.id)
+          if (!ownerIsMember) {
+            throw new HttpError("Forbidden", { status: 403, code: "FORBIDDEN" })
+          }
+        }
+
+        await BotChannelAccessRepository.grantAccess(client, {
+          id: botChannelAccessId(),
+          workspaceId,
+          botId: id,
+          streamId,
+          grantedBy: actor.id,
+        })
       })
 
       res.status(204).send()

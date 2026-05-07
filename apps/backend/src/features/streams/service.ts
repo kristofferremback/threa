@@ -976,20 +976,27 @@ export class StreamService {
   // membership. Should be broken out into a proper authz module (e.g., canParticipate,
   // canRead, canWrite) that encapsulates the permission model cleanly.
   async isMember(streamId: string, memberId: string): Promise<boolean> {
-    return withClient(this.pool, async (client) => {
-      const directMember = await StreamMemberRepository.isMember(client, streamId, memberId)
-      if (directMember) {
-        return true
-      }
+    return withClient(this.pool, (client) => this.isMemberOn(client, streamId, memberId))
+  }
 
-      // Threads inherit participation rights from root stream
-      const stream = await StreamRepository.findById(client, streamId)
-      if (stream?.rootStreamId) {
-        return StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
-      }
+  /**
+   * Variant of {@link isMember} that runs on a caller-provided querier so the
+   * check can compose into an outer transaction. Used when the membership read
+   * must be consistent with row locks taken in the same transaction.
+   */
+  async isMemberOn(db: Querier, streamId: string, memberId: string): Promise<boolean> {
+    const directMember = await StreamMemberRepository.isMember(db, streamId, memberId)
+    if (directMember) {
+      return true
+    }
 
-      return false
-    })
+    // Threads inherit participation rights from root stream
+    const stream = await StreamRepository.findById(db, streamId)
+    if (stream?.rootStreamId) {
+      return StreamMemberRepository.isMember(db, stream.rootStreamId, memberId)
+    }
+
+    return false
   }
 
   async pinStream(streamId: string, memberId: string, pinned: boolean): Promise<StreamMember | null> {

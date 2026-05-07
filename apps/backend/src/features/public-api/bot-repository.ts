@@ -88,22 +88,22 @@ export const BotRepository = {
     return mapRowToBot(result.rows[0])
   },
 
-  async findById(db: Querier, id: string): Promise<Bot | null> {
+  async findById(db: Querier, workspaceId: string, id: string): Promise<Bot | null> {
     const result = await db.query<BotRow>(sql`
       SELECT ${sql.raw(BOT_COLUMNS)}
       FROM bots
-      WHERE id = ${id}
+      WHERE id = ${id} AND workspace_id = ${workspaceId}
     `)
     if (!result.rows[0]) return null
     return mapRowToBot(result.rows[0])
   },
 
-  async findByIds(db: Querier, ids: string[]): Promise<Bot[]> {
+  async findByIds(db: Querier, workspaceId: string, ids: string[]): Promise<Bot[]> {
     if (ids.length === 0) return []
     const result = await db.query<BotRow>(sql`
       SELECT ${sql.raw(BOT_COLUMNS)}
       FROM bots
-      WHERE id = ANY(${ids})
+      WHERE workspace_id = ${workspaceId} AND id = ANY(${ids})
     `)
     return result.rows.map(mapRowToBot)
   },
