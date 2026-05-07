@@ -1,10 +1,11 @@
 import { type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useParams } from "react-router-dom"
+import { Link, useParams } from "react-router-dom"
 import { ExternalLink } from "lucide-react"
 import { Section } from "@/components/layout/section"
 import { backofficeKeys, getBackofficeConfig, type BackofficeConfig, type WorkspaceDetail } from "@/api/backoffice"
 import { formatDateTime } from "@/lib/format"
+import { cn } from "@/lib/utils"
 
 function buildWorkspaceUrl(appBaseUrl: string, workspaceId: string): string {
   // The user-facing app routes workspaces under `/w/<id>`, not `/ws/<id>`.
@@ -86,7 +87,7 @@ function WorkspaceDetailBody({
             span={2}
           />
           <Field label="Region" value={workspace.region} />
-          <Field label="Members" value={workspace.memberCount.toString()} />
+          <Field label="Members" value={workspace.memberCount.toString()} to={`/workspaces/${workspace.id}/members`} />
           <Field
             label="WorkOS organization"
             value={renderWorkosOrgValue(workspace.workosOrganizationId, workosEnvId)}
@@ -130,9 +131,22 @@ function FieldGrid({ children }: { children: ReactNode }) {
   return <dl className="grid grid-cols-1 gap-x-8 gap-y-5 border-t pt-5 sm:grid-cols-2">{children}</dl>
 }
 
-function Field({ label, value, span = 1 }: { label: string; value: ReactNode; span?: 1 | 2 }) {
+function Field({ label, value, span = 1, to }: { label: string; value: ReactNode; span?: 1 | 2; to?: string }) {
+  const wrapperClass = span === 2 ? "flex flex-col gap-1.5 sm:col-span-2" : "flex flex-col gap-1.5"
+  if (to) {
+    return (
+      <Link to={to} className={cn(wrapperClass, "group rounded-sm transition-colors hover:text-primary")}>
+        <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground transition-colors group-hover:text-primary">
+          {label}
+        </dt>
+        <dd className="text-sm text-foreground transition-colors group-hover:text-primary group-hover:underline group-hover:underline-offset-4">
+          {value}
+        </dd>
+      </Link>
+    )
+  }
   return (
-    <div className={span === 2 ? "flex flex-col gap-1.5 sm:col-span-2" : "flex flex-col gap-1.5"}>
+    <div className={wrapperClass}>
       <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</dt>
       <dd className="text-sm text-foreground">{value}</dd>
     </div>

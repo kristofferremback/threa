@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { Section } from "@/components/layout/section"
-import { backofficeKeys, listWorkspaceMembers, type WorkspaceMember } from "@/api/backoffice"
+import { backofficeKeys, listWorkspaceMembers, type WorkspaceDetail, type WorkspaceMember } from "@/api/backoffice"
 import { ApiError } from "@/api/client"
 import { cn } from "@/lib/utils"
 import { formatDateTime } from "@/lib/format"
@@ -32,6 +32,8 @@ function memberDisplayName(m: WorkspaceMember): string | null {
 
 export function WorkspaceDetailMembersPage() {
   const { id } = useParams<{ id: string }>()
+  const queryClient = useQueryClient()
+
   const query = useQuery({
     queryKey: id ? backofficeKeys.workspaceMembers(id) : ["backoffice", "workspaces", "missing", "members"],
     queryFn: () => {
@@ -41,12 +43,24 @@ export function WorkspaceDetailMembersPage() {
     enabled: !!id,
   })
 
+  // Cache-only observer (the layout owns the actual fetch). We read the
+  // workspace to differentiate "not linked to WorkOS" from "linked but empty"
+  // in the empty state, since both currently come back as `members: []`.
+  const workspaceQ = useQuery({
+    queryKey: id ? backofficeKeys.workspace(id) : ["backoffice", "workspaces", "missing"],
+    queryFn: () => (id ? (queryClient.getQueryData<WorkspaceDetail>(backofficeKeys.workspace(id)) ?? null) : null),
+    enabled: !!id,
+    staleTime: Infinity,
+  })
+
+  const notLinked = workspaceQ.data ? workspaceQ.data.workosOrganizationId === null : false
+
   return (
     <Section
       label="Members"
       description="Mirror of WorkOS organization memberships. Updates within ~5s of changes in the WorkOS dashboard."
     >
-      <MembersBody loading={query.isLoading} error={query.error} members={query.data} />
+      <MembersBody loading={query.isLoading} error={query.error} members={query.data} notLinked={notLinked} />
     </Section>
   )
 }
@@ -55,10 +69,12 @@ function MembersBody({
   loading,
   error,
   members,
+  notLinked,
 }: {
   loading: boolean
   error: unknown
   members: WorkspaceMember[] | undefined
+  notLinked: boolean
 }) {
   if (loading) {
     return <div className="border-y px-1 py-10 text-center text-sm text-muted-foreground">Loading members…</div>
@@ -76,7 +92,9 @@ function MembersBody({
   if (!members || members.length === 0) {
     return (
       <div className="border-y px-1 py-10 text-center text-sm text-muted-foreground">
-        No members yet — backfill may still be running.
+        {notLinked
+          ? "Workspace isn't linked to a WorkOS organization — no mirror data to show."
+          : "No members yet — backfill may still be running."}
       </div>
     )
   }

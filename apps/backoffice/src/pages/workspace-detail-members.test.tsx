@@ -3,11 +3,15 @@ import { render, screen, waitFor, cleanup } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { WorkspaceDetailMembersPage } from "./workspace-detail-members"
+import { backofficeKeys, type WorkspaceDetail } from "@/api/backoffice"
 
-function renderAt(path: string) {
+function renderAt(path: string, opts: { workspace?: WorkspaceDetail } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  if (opts.workspace) {
+    queryClient.setQueryData(backofficeKeys.workspace(opts.workspace.id), opts.workspace)
+  }
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
@@ -17,6 +21,22 @@ function renderAt(path: string) {
       </MemoryRouter>
     </QueryClientProvider>
   )
+}
+
+function makeWorkspace(overrides: Partial<WorkspaceDetail> = {}): WorkspaceDetail {
+  return {
+    id: "ws_abc",
+    name: "Acme",
+    slug: "acme",
+    region: "local",
+    createdByWorkosUserId: "user_01",
+    workosOrganizationId: "org_01",
+    memberCount: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    owner: { workosUserId: "user_01", email: null, name: null },
+    ...overrides,
+  }
 }
 
 describe("WorkspaceDetailMembersPage", () => {
@@ -87,6 +107,21 @@ describe("WorkspaceDetailMembersPage", () => {
     // Member with no name or email falls back to the workos user id
     expect(screen.getByText("user_02")).toBeInTheDocument()
     expect(screen.getByText("pending")).toBeInTheDocument()
+  })
+
+  it("shows the not-linked empty state when the workspace has no WorkOS organization", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ members: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    )
+
+    renderAt("/workspaces/ws_abc/members", {
+      workspace: makeWorkspace({ workosOrganizationId: null }),
+    })
+
+    await screen.findByText(/isn't linked to a WorkOS organization/)
   })
 
   it("shows an error state when the request fails", async () => {
