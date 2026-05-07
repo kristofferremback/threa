@@ -669,7 +669,7 @@ export function StreamContent({
     disableAutoScroll: plainDisableAutoScroll,
   } = useScrollBehavior({
     isLoading,
-    itemCount: !useVirtualized ? events.length : 0,
+    itemCount: !useVirtualized ? displayEvents.length : 0,
     onScrollNearTop: !useVirtualized && hasOlderEvents ? fetchOlderEvents : undefined,
     onScrollNearBottom: !useVirtualized && hasNewerEvents ? fetchNewerEvents : undefined,
     isFetchingOlder,
@@ -904,9 +904,13 @@ export function StreamContent({
   // Track live-arriving messages from other users for brief "new" indicator.
   const newMessageIds = useNewMessageIndicator(events, currentWorkspaceUserId ?? undefined, streamId, lastReadEventId)
 
-  // Unread divider state management (also handles scroll-to-first-unread)
+  // Unread divider state management (also handles scroll-to-first-unread).
+  // Pass `displayEvents` so the divider's first-unread search skips events we
+  // hide from this stream's render (e.g. thread membership rows) — otherwise
+  // the divider can target an event id that never matches a rendered row and
+  // silently fails to show.
   const { dividerEventId, isFading: isDividerFading } = useUnreadDivider({
-    events,
+    events: displayEvents,
     lastReadEventId,
     currentUserId: currentWorkspaceUserId ?? undefined,
     streamId,
