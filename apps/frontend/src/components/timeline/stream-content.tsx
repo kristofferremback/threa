@@ -75,6 +75,9 @@ import { useSearchHighlight } from "@/hooks/use-search-highlight"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { addStartBatchSelectListener } from "@/lib/batch-selection-events"
 
+/** Membership events; suppressed in threads (see displayEvents memo). */
+const THREAD_HIDDEN_EVENT_TYPES = new Set<StreamEvent["eventType"]>(["member_joined", "member_added", "member_left"])
+
 interface StreamContentProps {
   workspaceId: string
   streamId: string
@@ -307,13 +310,18 @@ export function StreamContent({
   // Compute timeline items in StreamContent so the virtualizer can use count + keys.
   // After grouping commands/sessions, annotate consecutive same-author message runs
   // with `groupContinuation` so MessageEvent can collapse the repeated header row.
+  // Membership events are suppressed in threads: thread participation is implicit
+  // (replying joins you, the parent author is auto-added), so "X was added to the
+  // conversation" reads as noise next to the author who clearly is here.
   const displayEvents = useMemo(() => {
     if (!isThread) return events
-    return [...events].sort((a, b) => {
-      const timeDelta = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      if (timeDelta !== 0) return timeDelta
-      return a.id.localeCompare(b.id)
-    })
+    return [...events]
+      .filter((e) => !THREAD_HIDDEN_EVENT_TYPES.has(e.eventType))
+      .sort((a, b) => {
+        const timeDelta = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        if (timeDelta !== 0) return timeDelta
+        return a.id.localeCompare(b.id)
+      })
   }, [events, isThread])
 
   const timelineItems = useMemo(
@@ -661,7 +669,7 @@ export function StreamContent({
     disableAutoScroll: plainDisableAutoScroll,
   } = useScrollBehavior({
     isLoading,
-    itemCount: !useVirtualized ? events.length : 0,
+    itemCount: !useVirtualized ? displayEvents.length : 0,
     onScrollNearTop: !useVirtualized && hasOlderEvents ? fetchOlderEvents : undefined,
     onScrollNearBottom: !useVirtualized && hasNewerEvents ? fetchNewerEvents : undefined,
     isFetchingOlder,
@@ -896,9 +904,13 @@ export function StreamContent({
   // Track live-arriving messages from other users for brief "new" indicator.
   const newMessageIds = useNewMessageIndicator(events, currentWorkspaceUserId ?? undefined, streamId, lastReadEventId)
 
-  // Unread divider state management (also handles scroll-to-first-unread)
+  // Unread divider state management (also handles scroll-to-first-unread).
+  // Pass `displayEvents` so the divider's first-unread search skips events we
+  // hide from this stream's render (e.g. thread membership rows) — otherwise
+  // the divider can target an event id that never matches a rendered row and
+  // silently fails to show.
   const { dividerEventId, isFading: isDividerFading } = useUnreadDivider({
-    events,
+    events: displayEvents,
     lastReadEventId,
     currentUserId: currentWorkspaceUserId ?? undefined,
     streamId,
@@ -1082,7 +1094,7 @@ export function StreamContent({
                       event={parentMessage}
                       workspaceId={workspaceId}
                       streamId={parentStreamId}
-                      replyCount={events.length}
+                      replyCount={displayEvents.length}
                     />
                   )}
                   {isFetchingOlder && (
