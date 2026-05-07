@@ -69,9 +69,6 @@ export class WorkosEventPollerLock {
    * backoff. Holder must call {@link release} when done.
    */
   async tryAcquire(now: Date = new Date()): Promise<{ lastEventId: string | null; lastEventAt: Date | null } | null> {
-    const ready = await this.isReadyToProcess(now)
-    if (!ready) return null
-
     const lockedUntil = new Date(now.getTime() + this.lockDurationMs)
     // Pad delays takeover past apparent expiry so a holder whose clock is
     // slightly ahead of ours still wins the lease; we subtract (not add) so
@@ -79,6 +76,9 @@ export class WorkosEventPollerLock {
     const clockDriftPadMs = 100
     this.runId = randomUUID()
 
+    // Backoff is part of the same atomic UPDATE as the lease check — a separate
+    // SELECT-then-UPDATE would let another holder set retry_after in
+    // recordError() between the read and the write, and we'd trample it.
     const result = await this.pool.query<PollerStateRow>(sql`
       UPDATE workos_event_poller_state
       SET
@@ -86,6 +86,7 @@ export class WorkosEventPollerLock {
         lock_run_id = ${this.runId},
         updated_at = ${now}
       WHERE name = ${this.name}
+        AND (retry_after IS NULL OR retry_after <= ${now})
         AND (locked_until IS NULL OR locked_until < ${new Date(now.getTime() - clockDriftPadMs)})
       RETURNING name, last_event_id, last_event_at, retry_count, retry_after
     `)
@@ -222,14 +223,5 @@ export class WorkosEventPollerLock {
       this.stopRefreshTimer()
       throw new Error(`Lost WorkOS event poller lease for ${this.name}`)
     }
-  }
-
-  private async isReadyToProcess(now: Date): Promise<boolean> {
-    const result = await this.pool.query<{ retry_after: Date | null }>(sql`
-      SELECT retry_after FROM workos_event_poller_state WHERE name = ${this.name}
-    `)
-    if (result.rows.length === 0) return false
-    const retryAfter = result.rows[0].retry_after
-    return retryAfter === null || now >= retryAfter
   }
 }
