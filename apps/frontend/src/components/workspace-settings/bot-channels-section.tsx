@@ -44,14 +44,14 @@ export function BotChannelsSection({ workspaceId, botId, isArchived }: BotChanne
 
   const availableChannels = useMemo(() => {
     if (!wsBootstrap?.streams) return []
-    return wsBootstrap.streams.filter(
-      (s) => s.type === StreamTypes.CHANNEL && !s.archivedAt && !grantedStreamIds.has(s.id)
-    )
+    return wsBootstrap.streams
+      .filter((s) => s.type === StreamTypes.CHANNEL && !s.archivedAt && !grantedStreamIds.has(s.id))
+      .sort((a, b) => (a.slug ?? a.displayName ?? "").localeCompare(b.slug ?? b.displayName ?? ""))
   }, [wsBootstrap, grantedStreamIds])
 
   const grantedStreams = useMemo(() => {
     if (!wsBootstrap?.streams) return []
-    return streamGrants
+    const enriched = streamGrants
       .map((g) => {
         const stream = wsBootstrap.streams.find((s) => s.id === g.streamId)
         return stream ? { ...g, slug: stream.slug, displayName: stream.displayName } : null
@@ -63,6 +63,7 @@ export function BotChannelsSection({ workspaceId, botId, isArchived }: BotChanne
       slug: string | null
       displayName: string | null
     }>
+    return enriched.sort((a, b) => (a.slug ?? a.displayName ?? "").localeCompare(b.slug ?? b.displayName ?? ""))
   }, [streamGrants, wsBootstrap])
 
   return (

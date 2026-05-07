@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { Check, ChevronDown, Copy, KeyRound, Link as LinkIcon, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -57,7 +57,11 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
 
   const { formatDate } = useFormattedDate()
 
-  const users = useWorkspaceUsers(workspaceId)
+  const workspaceUsers = useWorkspaceUsers(workspaceId)
+  const users = useMemo(
+    () => workspaceUsers.slice().sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug)),
+    [workspaceUsers]
+  )
 
   const invitationsQuery = useQuery({
     queryKey: ["invitations", workspaceId],

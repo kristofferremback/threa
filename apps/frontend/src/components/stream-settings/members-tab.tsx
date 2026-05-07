@@ -62,7 +62,7 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
   const streamMemberIds = useMemo(() => new Set(streamMembers.map((m) => m.memberId)), [streamMembers])
 
   const enrichedMembers = useMemo(() => {
-    return streamMembers
+    const enriched = streamMembers
       .map((sm) => {
         const workspaceUser = workspaceUsers.find((u) => u.id === sm.memberId)
         return workspaceUser
@@ -70,6 +70,7 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
           : null
       })
       .filter(Boolean) as (StreamMember & { name: string; slug: string; role: string })[]
+    return enriched.sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug))
   }, [streamMembers, workspaceUsers])
 
   const filteredMembers = useMemo(() => {
@@ -79,7 +80,9 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
   }, [enrichedMembers, search])
 
   const availableToAdd = useMemo(() => {
-    return workspaceUsers.filter((m) => !streamMemberIds.has(m.id))
+    return workspaceUsers
+      .filter((m) => !streamMemberIds.has(m.id))
+      .sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug))
   }, [workspaceUsers, streamMemberIds])
 
   const handleAdd = useCallback(
@@ -241,10 +244,14 @@ function StreamBotsSection({
 
   const grantedBotIdSet = useMemo(() => new Set(grantedBotIds), [grantedBotIds])
 
-  const botsWithAccess = useMemo(() => allBots.filter((b) => grantedBotIdSet.has(b.id)), [allBots, grantedBotIdSet])
+  const botsWithAccess = useMemo(
+    () => allBots.filter((b) => grantedBotIdSet.has(b.id)).sort((a, b) => a.name.localeCompare(b.name)),
+    [allBots, grantedBotIdSet]
+  )
 
   const availableToGrant = useMemo(
-    () => allBots.filter((b) => !b.archivedAt && !grantedBotIdSet.has(b.id)),
+    () =>
+      allBots.filter((b) => !b.archivedAt && !grantedBotIdSet.has(b.id)).sort((a, b) => a.name.localeCompare(b.name)),
     [allBots, grantedBotIdSet]
   )
 

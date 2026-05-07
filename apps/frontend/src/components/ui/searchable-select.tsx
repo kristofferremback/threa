@@ -130,18 +130,19 @@ export function SearchableSelect<T>({
   )
 
   if (isMobile) {
-    // Drawer (vaul) on mobile: native touch-scroll works inside the list, and
-    // the dvh-based max height shrinks correctly when the on-screen keyboard
-    // appears (the parent Drawer is configured with repositionInputs={false}
-    // so vaul does not also try to set inline heights).
+    // Drawer (vaul) on mobile. The drawer itself is content-driven (no fixed
+    // height) so a 4-row list gives a 4-row drawer instead of an empty 85dvh
+    // sheet. The CommandList caps at 70dvh, which lets the keyboard shrink
+    // available space without pushing rows off-screen — vaul is configured
+    // with repositionInputs={false}, so dvh is the single source of truth.
     return (
       <Drawer open={open} onOpenChange={setOpen}>
         <DrawerTrigger asChild>{triggerButton}</DrawerTrigger>
-        <DrawerContent className={cn("flex h-[85dvh] flex-col pb-[env(safe-area-inset-bottom)]", contentClassName)}>
+        <DrawerContent className={cn("pb-[env(safe-area-inset-bottom)]", contentClassName)}>
           <DrawerTitle className="sr-only">{searchPlaceholder}</DrawerTitle>
-          <Command className="flex flex-1 flex-col overflow-hidden">
+          <Command>
             <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
-            <CommandList className="flex-1 overflow-y-auto overscroll-contain">{commandList}</CommandList>
+            <CommandList className="max-h-[70dvh] overscroll-contain">{commandList}</CommandList>
           </Command>
         </DrawerContent>
       </Drawer>
