@@ -1094,7 +1094,7 @@ export function StreamContent({
                       event={parentMessage}
                       workspaceId={workspaceId}
                       streamId={parentStreamId}
-                      replyCount={events.length}
+                      replyCount={displayEvents.length}
                     />
                   )}
                   {isFetchingOlder && (
