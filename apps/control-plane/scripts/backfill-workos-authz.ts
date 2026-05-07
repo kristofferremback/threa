@@ -46,7 +46,7 @@ async function main() {
   try {
     const result = await backfill.run()
     console.log(
-      `Backfill complete: orgsScanned=${result.orgsScanned} membershipsUpserted=${result.membershipsUpserted}`
+      `Backfill complete: orgsScanned=${result.orgsScanned} membershipsUpserted=${result.membershipsUpserted} membershipsRemoved=${result.membershipsRemoved}`
     )
   } finally {
     await pool.end()

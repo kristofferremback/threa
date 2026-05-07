@@ -127,21 +127,22 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     handle: () => debouncer.trigger(),
   }
 
-  await ensureListenerFromLatest(pool, LISTENER_ID)
   const outboxDispatcher = new OutboxDispatcher({ listenPool })
-  outboxDispatcher.register(outboxHandler)
-  await outboxDispatcher.start()
 
   // WorkOS authz mirror — passive polling, no fan-out yet (Phase 1).
   // Multi-instance safe via the time-based lease in WorkosEventPollerLock,
   // mirroring the pattern used for the outbox CursorLock above.
   // Everything from here through `server.listen()` is wrapped so any failure
-  // (lock row creation, first-boot backfill, port bind) tears down the workers
-  // and pools we already spun up — otherwise a crashed boot leaks intervals
-  // and connections.
+  // (listener bootstrap, dispatcher start, lock row creation, first-boot
+  // backfill, port bind) tears down the workers and pools we already spun up
+  // — otherwise a crashed boot leaks intervals and connections.
   let authzPoller: WorkosAuthzPoller | undefined
   let server: Server | undefined
   try {
+    await ensureListenerFromLatest(pool, LISTENER_ID)
+    outboxDispatcher.register(outboxHandler)
+    await outboxDispatcher.start()
+
     const workosEventLock = new WorkosEventPollerLock({
       pool,
       name: WORKOS_EVENT_POLLER_NAME,

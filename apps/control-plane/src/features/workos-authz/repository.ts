@@ -147,6 +147,35 @@ export const WorkosAuthzRepository = {
     return (result.rowCount ?? 0) > 0
   },
 
+  /**
+   * Reconcile a backfill snapshot for one organization: delete mirror rows
+   * whose `organization_membership_id` is absent from the snapshot. The
+   * `last_event_at <= observedAt` guard preserves rows the poller wrote
+   * concurrently after we took the snapshot, so a brand-new membership added
+   * during backfill survives instead of being silently deleted.
+   *
+   * An empty snapshot deletes every (non-fresher) row for the org — that's
+   * intentional: a successful WorkOS list returning zero memberships means the
+   * org genuinely has none.
+   */
+  async reconcileOrganizationSnapshot(
+    db: Querier,
+    params: {
+      workosOrganizationId: string
+      snapshotMembershipIds: string[]
+      observedAt: Date
+    }
+  ): Promise<number> {
+    const result = await db.query(
+      `DELETE FROM workos_organization_memberships
+       WHERE workos_organization_id = $1
+         AND organization_membership_id <> ALL($2::text[])
+         AND last_event_at <= $3`,
+      [params.workosOrganizationId, params.snapshotMembershipIds, params.observedAt]
+    )
+    return result.rowCount ?? 0
+  },
+
   async listByOrganization(db: Querier, workosOrganizationId: string): Promise<WorkosOrgMembershipRow[]> {
     const result = await db.query<WorkosOrgMembershipRow>(
       `SELECT ${SELECT_FIELDS}

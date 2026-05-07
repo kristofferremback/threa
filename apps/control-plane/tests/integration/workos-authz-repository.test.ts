@@ -233,6 +233,96 @@ describe("WorkosAuthzRepository", () => {
     })
   })
 
+  describe("reconcileOrganizationSnapshot", () => {
+    test("removes rows whose membership id is absent from the snapshot", async () => {
+      const t0 = new Date("2026-01-01T00:00:00Z")
+      const observedAt = new Date("2026-01-01T00:00:10Z")
+
+      await WorkosAuthzRepository.upsertMembershipFromBackfill(pool, {
+        organizationMembershipId: "om_keep",
+        workosOrganizationId: orgId,
+        workosUserId: userId,
+        status: "active",
+        roleSlugs: ["member"],
+        observedAt: t0,
+      })
+      await WorkosAuthzRepository.upsertMembershipFromBackfill(pool, {
+        organizationMembershipId: "om_drop",
+        workosOrganizationId: orgId,
+        workosUserId: otherUserId,
+        status: "active",
+        roleSlugs: ["member"],
+        observedAt: t0,
+      })
+
+      const removed = await WorkosAuthzRepository.reconcileOrganizationSnapshot(pool, {
+        workosOrganizationId: orgId,
+        snapshotMembershipIds: ["om_keep"],
+        observedAt,
+      })
+
+      expect(removed).toBe(1)
+      expect(await WorkosAuthzRepository.getByOrgAndUser(pool, orgId, userId)).not.toBeNull()
+      expect(await WorkosAuthzRepository.getByOrgAndUser(pool, orgId, otherUserId)).toBeNull()
+    })
+
+    test("preserves rows the poller wrote after the snapshot was taken", async () => {
+      const observedAt = new Date("2026-01-01T00:00:00Z")
+      const tFreshEvent = new Date("2026-01-01T00:00:30Z")
+
+      // Membership added by a concurrent event AFTER the backfill snapshot.
+      await WorkosAuthzRepository.upsertMembershipFromEvent(pool, {
+        organizationMembershipId: "om_new",
+        workosOrganizationId: orgId,
+        workosUserId: userId,
+        status: "active",
+        roleSlugs: ["member"],
+        eventId: "event_post_snapshot",
+        eventCreatedAt: tFreshEvent,
+      })
+
+      const removed = await WorkosAuthzRepository.reconcileOrganizationSnapshot(pool, {
+        workosOrganizationId: orgId,
+        snapshotMembershipIds: [],
+        observedAt,
+      })
+
+      expect(removed).toBe(0)
+      expect(await WorkosAuthzRepository.getByOrgAndUser(pool, orgId, userId)).not.toBeNull()
+    })
+
+    test("empty snapshot removes every (non-fresher) row for the org", async () => {
+      const t0 = new Date("2026-01-01T00:00:00Z")
+      const observedAt = new Date("2026-01-01T00:00:10Z")
+
+      await WorkosAuthzRepository.upsertMembershipFromBackfill(pool, {
+        organizationMembershipId: "om_a",
+        workosOrganizationId: orgId,
+        workosUserId: userId,
+        status: "active",
+        roleSlugs: ["member"],
+        observedAt: t0,
+      })
+      await WorkosAuthzRepository.upsertMembershipFromBackfill(pool, {
+        organizationMembershipId: "om_b",
+        workosOrganizationId: orgId,
+        workosUserId: otherUserId,
+        status: "active",
+        roleSlugs: ["member"],
+        observedAt: t0,
+      })
+
+      const removed = await WorkosAuthzRepository.reconcileOrganizationSnapshot(pool, {
+        workosOrganizationId: orgId,
+        snapshotMembershipIds: [],
+        observedAt,
+      })
+
+      expect(removed).toBe(2)
+      expect(await WorkosAuthzRepository.listByOrganization(pool, orgId)).toEqual([])
+    })
+  })
+
   describe("listByOrganization", () => {
     test("returns rows for the org in created_at order", async () => {
       const t0 = new Date("2026-01-01T00:00:00Z")
