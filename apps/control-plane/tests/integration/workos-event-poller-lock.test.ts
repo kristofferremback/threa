@@ -162,6 +162,9 @@ describe("WorkosEventPollerLock", () => {
   test("recordError applies exponential backoff and stops retrying after maxRetries", async () => {
     const lock = makeLock({ maxRetries: 2, baseBackoffMs: 100 })
     await lock.ensureRow()
+    // recordError is guarded by lock_run_id, so the lease must be held first.
+    const claim = await lock.tryAcquire()
+    expect(claim).not.toBeNull()
 
     const r1 = await lock.recordError("first")
     expect(r1.shouldRetry).toBe(true)
@@ -177,6 +180,8 @@ describe("WorkosEventPollerLock", () => {
 
     const r3 = await lock.recordError("third")
     expect(r3.shouldRetry).toBe(false)
+
+    await lock.release()
   })
 
   test("isReadyToProcess gates tryAcquire on retry_after", async () => {
