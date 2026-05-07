@@ -409,57 +409,32 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/user-api-keys", ...authed, userApiKeys.create)
   app.post("/api/workspaces/:workspaceId/user-api-keys/:keyId/revoke", ...authed, userApiKeys.revoke)
 
-  // Bot management (admin-only)
+  // Bot management. Per-route admin gating has been replaced by handler-level
+  // authorization (`authorizeBotManagement`) so personal bots can be managed by
+  // their owner without admin rights.
   const botHandlers = createBotHandlers({ botApiKeyService, avatarService, streamService, pool })
   app.get("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.list)
-  app.post("/api/workspaces/:workspaceId/bots", ...authed, requireRole("admin"), botHandlers.create)
+  app.post("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.create)
   app.get("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.get)
-  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, requireRole("admin"), botHandlers.update)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, requireRole("admin"), botHandlers.archive)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, requireRole("admin"), botHandlers.restore)
-  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.listKeys)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.createKey)
-  app.post(
-    "/api/workspaces/:workspaceId/bots/:botId/keys/:keyId/revoke",
-    ...authed,
-    requireRole("admin"),
-    botHandlers.revokeKey
-  )
-  app.post(
-    "/api/workspaces/:workspaceId/bots/:botId/avatar",
-    ...authed,
-    requireRole("admin"),
-    avatarUpload,
-    botHandlers.uploadAvatar
-  )
-  app.delete(
-    "/api/workspaces/:workspaceId/bots/:botId/avatar",
-    ...authed,
-    requireRole("admin"),
-    botHandlers.removeAvatar
-  )
+  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.update)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, botHandlers.archive)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, botHandlers.restore)
+  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, botHandlers.listKeys)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, botHandlers.createKey)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/keys/:keyId/revoke", ...authed, botHandlers.revokeKey)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/avatar", ...authed, avatarUpload, botHandlers.uploadAvatar)
+  app.delete("/api/workspaces/:workspaceId/bots/:botId/avatar", ...authed, botHandlers.removeAvatar)
   // Bot avatar serving (unauthenticated — S3 keys contain unguessable ULIDs)
   app.get("/api/workspaces/:workspaceId/bots/:botId/avatar/:file", botHandlers.serveAvatarFile)
-  // Bot channel access grants (admin-only)
-  app.get(
-    "/api/workspaces/:workspaceId/bots/:botId/streams",
-    ...authed,
-    requireRole("admin"),
-    botHandlers.listStreamGrants
-  )
-  app.post(
-    "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
-    ...authed,
-    requireRole("admin"),
-    botHandlers.grantStreamAccess
-  )
+  // Bot channel access grants
+  app.get("/api/workspaces/:workspaceId/bots/:botId/streams", ...authed, botHandlers.listStreamGrants)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant", ...authed, botHandlers.grantStreamAccess)
   app.delete(
     "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
     ...authed,
-    requireRole("admin"),
     botHandlers.revokeStreamAccess
   )
-  // Stream → bots reverse lookup (admin-only)
+  // Stream → bots reverse lookup (admin-only — only admins manage stream bot inventories)
   app.get(
     "/api/workspaces/:workspaceId/streams/:streamId/bots",
     ...authed,
@@ -576,6 +551,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     requireApiKeyScope(API_KEY_SCOPES.USERS_READ),
     publicApi.listUsers
   )
+
+  // Identity — no scope check. Authentication alone is sufficient for a key
+  // to introspect itself and (for user keys) enumerate the owner's personal bots.
+  app.get("/api/v1/workspaces/:workspaceId/me", ...publicMiddleware, publicApi.getMe)
+  app.get("/api/v1/workspaces/:workspaceId/me/bots", ...publicMiddleware, publicApi.listMyBots)
 
   app.use(errorHandler)
 }

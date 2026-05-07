@@ -1686,6 +1686,192 @@
           "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
+    },
+    "/api/v1/workspaces/{workspaceId}/me": {
+      "get": {
+        "operationId": "getMe",
+        "summary": "Get the authenticated principal",
+        "tags": ["Identity"],
+        "description": "Returns a discriminated union describing the authenticated principal — either the API-key owner (`kind: \"user\"`) or the bot whose key is in use (`kind: \"bot\"`). Used by clients (e.g. the OpenClaw channel plugin) to verify their key and discover their identity after pairing.",
+        "security": [{ "apiKey": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Workspace ID (prefixed ULID)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "const": "user" },
+                            "workspaceId": { "type": "string" },
+                            "userId": { "type": "string" }
+                          },
+                          "required": ["kind", "workspaceId", "userId"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "const": "bot" },
+                            "workspaceId": { "type": "string" },
+                            "botId": { "type": "string" },
+                            "botType": { "type": "string", "enum": ["shared", "personal"] },
+                            "traits": { "type": "array", "items": { "type": "string", "enum": ["interactive"] } },
+                            "ownerUserId": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+                          },
+                          "required": ["kind", "workspaceId", "botId", "botType", "traits", "ownerUserId"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string" },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+                    }
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/me/bots": {
+      "get": {
+        "operationId": "listMyBots",
+        "summary": "List my personal bots",
+        "tags": ["Identity"],
+        "description": "For user-scoped keys: lists the authenticated user's personal bots, optionally filtered by trait. Used by the frontend to enumerate quick-switcher commands. Bot-scoped keys receive 403.",
+        "security": [{ "apiKey": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Workspace ID (prefixed ULID)"
+          },
+          {
+            "name": "traits",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["interactive"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "workspaceId": { "type": "string" },
+                          "type": { "type": "string", "enum": ["shared", "personal"] },
+                          "ownerUserId": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "traits": { "type": "array", "items": { "type": "string", "enum": ["interactive"] } },
+                          "slug": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "name": { "type": "string" },
+                          "description": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "avatarEmoji": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "avatarUrl": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "archivedAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+                          "createdAt": { "type": "string", "format": "date-time" },
+                          "updatedAt": { "type": "string", "format": "date-time" }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "type",
+                          "ownerUserId",
+                          "traits",
+                          "slug",
+                          "name",
+                          "description",
+                          "avatarEmoji",
+                          "avatarUrl",
+                          "archivedAt",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string" },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+                    }
+                  },
+                  "required": ["error"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
+        }
+      }
     }
   },
   "components": {
