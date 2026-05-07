@@ -14,21 +14,28 @@ The user wants Threa to be one such channel so they can talk to their personal c
 
 ### 1. Personal bot data model
 
-Bots today (`apps/backend/src/features/public-api/bot-repository.ts`) are admin-created, workspace-shared. Make the bot kind explicit instead of inferring from a nullable owner column:
+Bots today (`apps/backend/src/features/public-api/bot-repository.ts`) are admin-created, workspace-shared. Make the bot kind explicit instead of inferring from a nullable owner column, and add a `traits` set so callers (UI, plugin) can filter bots by capability:
 
 - New column `type` (`TEXT`, per INV-3 — no DB enums) with values `"shared"` and `"personal"`. Centralized constant in `packages/types/src/domain.ts` (per INV-33), inferred Zod enum drives validation (per INV-31, INV-55).
 - New column `owner_user_id` (`TEXT`, nullable). Server invariant enforced in repo `create()` and any update path: `(type = "personal" AND owner_user_id IS NOT NULL)` OR `(type = "shared" AND owner_user_id IS NULL)`. Reject mismatched shapes with `HttpError` (INV-32).
-- New migration in `apps/backend/src/db/migrations/` following the existing timestamp pattern (e.g. `20260507120000_bots_type_and_owner.sql`, mirroring `20260505120000_invitation_link_kind.sql`). Use the `add-migration` skill. Append-only (INV-17). Backfill: existing rows get `type = "shared"`, `owner_user_id = NULL`.
-- `BotRow` interface (`bot-repository.ts:4-16`): add `type: BotType` and `owner_user_id: string | null`.
-- `mapRowToBot()` (`bot-repository.ts:35`): map to camelCase `type` and `ownerUserId`. Validate the shape invariant on read so corrupt rows fail loudly (INV-11).
-- `create()` (`bot-repository.ts:103`): require both `type` and (for personal) `ownerUserId`. Personal-without-owner or shared-with-owner is a programmer error and throws.
-- `Bot` type in `packages/types/src/domain.ts:284`: discriminated union on `type` so callers narrow correctly:
+- New column `traits TEXT[] NOT NULL DEFAULT '{}'` — a set of capability tags. Validated server-side against a known vocabulary (Zod `z.array(z.enum([...]))`). v0 vocabulary is just `"interactive"` (bot can be used as a scratchpad-with-bot conversational partner). Adding new traits later is schema-free; we only ship what we need (INV-36). Trait constants live in `packages/types/src/domain.ts` (INV-33).
+- New migration in `apps/backend/src/db/migrations/` following the existing timestamp pattern (e.g. `20260507120000_bots_type_owner_traits.sql`, mirroring `20260505120000_invitation_link_kind.sql`). Use the `add-migration` skill. Append-only (INV-17). Backfill: existing rows get `type = "shared"`, `owner_user_id = NULL`, `traits = '{}'`.
+- `BotRow` interface (`bot-repository.ts:4-16`): add `type: BotType`, `owner_user_id: string | null`, `traits: string[]`.
+- `mapRowToBot()` (`bot-repository.ts:35`): map to camelCase. Validate the type/owner shape invariant and the trait vocabulary on read so corrupt rows fail loudly (INV-11).
+- `create()` (`bot-repository.ts:103`): require `type`, `ownerUserId` (for personal), and accept `traits`. Default `traits = []`. Personal-without-owner, shared-with-owner, or unknown trait values are programmer errors and throw.
+- New repo helper `listByOwner(workspaceId, ownerUserId, { traits? })` for the frontend to enumerate the current user's personal bots, optionally filtered by trait. Implemented as a single composable query (INV-27, INV-56).
+- `Bot` type in `packages/types/src/domain.ts:284`: discriminated union on `type` with shared `traits` field so callers narrow correctly:
 
   ```ts
+  export type BotTrait = (typeof BOT_TRAITS)[keyof typeof BOT_TRAITS]
+  export const BOT_TRAITS = { interactive: "interactive" } as const
+
   export type Bot =
-    | { type: "shared"; ownerUserId: null; /* shared fields */ }
-    | { type: "personal"; ownerUserId: UserId; /* personal fields */ }
+    | { type: "shared"; ownerUserId: null; traits: BotTrait[]; /* shared fields */ }
+    | { type: "personal"; ownerUserId: UserId; traits: BotTrait[]; /* shared fields */ }
   ```
+
+**Why traits on the bot, not on the API key.** The capability ("can be used as an interactive partner") describes the bot's identity, not the credential. A bot's keys rotate; its personality doesn't. If we ever need per-key scoping (e.g. "this key can only read"), that's a separate concern and belongs on the key.
 
 ### 2. Authorization rules
 
@@ -47,34 +54,39 @@ No `/me` exists today (closest is `GET /api/v1/workspaces/:wid/users` at `apps/b
 
 - `GET /api/v1/workspaces/:wid/me` — returns the authenticated principal as a discriminated union:
   - `{ kind: "user", userId, workspaceId }`
-  - `{ kind: "bot", botId, botType: "shared", workspaceId }`
-  - `{ kind: "bot", botId, botType: "personal", workspaceId, ownerUserId }`
+  - `{ kind: "bot", botId, botType: "shared", traits, workspaceId }`
+  - `{ kind: "bot", botId, botType: "personal", traits, workspaceId, ownerUserId }`
 
-The plugin calls this once after pairing to verify the key and discover its bot id.
+The plugin calls this once after pairing to verify the key, discover its bot id, and confirm the bot carries the `interactive` trait (so it refuses to attach if the user accidentally uses a non-interactive bot's key).
+
+- `GET /api/v1/workspaces/:wid/me/bots` — for user keys, returns the authenticated user's personal bots (optional `?traits=interactive` filter). Used by the frontend to enumerate quick-switcher commands. For bot keys, returns 403.
 
 ### 4. Frontend — "Personal bots" settings
 
-Settings UI lives in `apps/frontend/src/components/settings/` and is opened via the `useSettings()` dialog (no dedicated route — `apps/frontend/src/routes/index.tsx` has no settings route). Add:
+Users can create N personal bots, each with its own name, avatar, and trait set. Settings UI lives in `apps/frontend/src/components/settings/` and is opened via the `useSettings()` dialog (no dedicated route — `apps/frontend/src/routes/index.tsx` has no settings route). Add:
 
 - A "Personal bots" section in the existing settings dialog.
-- List: name, avatar, key count, revoke.
-- Create form: name + avatar emoji.
-- "Create key" flow: shows the `threa_bk_*` token exactly once.
+- List of the current user's personal bots: name, avatar, traits (as small tag chips), key count, revoke.
+- Create form: name + avatar emoji + traits. v0 surfaces a single "Interactive (show in scratchpad menu)" checkbox bound to the `interactive` trait, defaulted on. Future traits would surface as additional checkboxes without UI restructuring.
+- Edit: rename, change avatar, toggle traits.
+- "Create key" flow per bot: shows the `threa_bk_*` token exactly once.
 
 Reuse Shadcn primitives (INV-14). UI-only component, business logic via service hooks (INV-15). Component must not be defined inside another component (INV-18).
 
-### 5. "Create scratchpad with claw" affordance
+### 5. "Create scratchpad with <bot>" affordance
 
 Existing flow:
 - Hook: `apps/frontend/src/hooks/use-draft-scratchpads.ts:24` (`createDraft()` adds to local IDB).
 - Quick-switcher command: `apps/frontend/src/components/quick-switcher/commands.ts:38` ("New Scratchpad").
 - Caller: `apps/frontend/src/components/quick-switcher/quick-switcher.tsx:72`.
 
-Add a sibling command "New scratchpad with claw" that:
+For each personal bot owned by the current user that carries the `interactive` trait, surface a sibling command "New scratchpad with <Bot Name>" (e.g. "New scratchpad with Clawdius", "New scratchpad with Sebastian"). Each command:
 1. Creates the draft scratchpad.
-2. On first send (when the stream is materialized backend-side), grants the user's personal bot access to the resulting stream via `POST /api/v1/workspaces/:wid/bots/:botId/streams/:streamId/grant`.
+2. On first send (when the stream is materialized backend-side), grants that specific bot access to the resulting stream via `POST /api/v1/workspaces/:wid/bots/:botId/streams/:streamId/grant`.
 
-Hidden if the user has no connected personal bot (cheap check: did they create one in settings?).
+Source the bot list from the `listByOwner(..., { traits: ["interactive"] })` repo helper, exposed via a new `GET /api/v1/workspaces/:wid/me/bots` endpoint (returns only bots owned by the authenticated user; empty array is the default). Cache via TanStack Query with the standard cache-only observer pattern documented in the `## Frontend Patterns` section of CLAUDE.md.
+
+Zero personal interactive bots → zero commands rendered (the section disappears entirely; no placeholder). Three interactive bots → three commands. The base "New Scratchpad" command stays as today.
 
 ## Plugin: `packages/openclaw-channel`
 
@@ -147,30 +159,32 @@ End-to-end:
 1. `bun run dev` (backend + frontend) locally.
 2. Sign in, open Settings → Personal bots → create "claw" → create key → copy.
 3. Install OpenClaw locally; `bun link` the plugin (or `bun run build` + local install per OpenClaw plugin docs); run `openclaw onboard threa`; paste base URL + key.
-4. Verify plugin log: `GET /me` returned `{ kind: "bot", botType: "personal", botId, workspaceId, ownerUserId }`.
-5. In Threa: "New scratchpad with claw" → type a message.
-6. Within ~1-3s claw replies inline in the scratchpad.
-7. Reply on the claw message → confirm a child stream is created and OpenClaw treats it as a new conversation (subsequent messages in the child route to that thread context, not the scratchpad root).
-8. Auth check: as another user, attempt to grant the first user's claw to one of *your* scratchpads → expect 403.
-9. Feedback-loop check: claw's own messages do not re-trigger the plugin (verify by tailing plugin logs through several claw replies).
+4. Verify plugin log: `GET /me` returned `{ kind: "bot", botType: "personal", traits: ["interactive"], botId, workspaceId, ownerUserId }`.
+5. In Threa quick-switcher: confirm "New scratchpad with Clawdius" appears (and not commands for any non-interactive bots). Open it → type a message.
+6. Within ~1-3s Clawdius replies inline in the scratchpad.
+7. Reply on Clawdius's message → confirm a child stream is created and OpenClaw treats it as a new conversation (subsequent messages in the child route to that thread context, not the scratchpad root).
+8. Create a second personal bot "Sebastian" with the `interactive` trait → confirm a second command appears. Create a third without the `interactive` trait → confirm it does NOT appear.
+9. Auth check: as another user, attempt to grant the first user's bot to one of *your* scratchpads → expect 403.
+10. Feedback-loop check: bot's own messages do not re-trigger the plugin (verify by tailing plugin logs through several replies).
 
 Tests (INV-39 frontend integration, INV-48 spy patterns, INV-22 fix failures):
-- `apps/backend/src/features/public-api/__tests__/bot-handlers.test.ts` — new cases: personal bot create by non-admin succeeds; shared bot create by non-admin rejected; grant personal bot by owner to own scratchpad succeeds; grant personal bot by owner to non-owned stream rejected; grant personal bot by non-owner rejected; admin cannot grant a personal bot (only the owner can).
-- Repository tests: `mapRowToBot` round-trip for both `type` values; shape-invariant guard rejects `(personal, null owner)` and `(shared, non-null owner)` rows.
-- `/me` handler tests covering all three principal shapes (user, shared bot, personal bot).
+- `apps/backend/src/features/public-api/__tests__/bot-handlers.test.ts` — new cases: personal bot create by non-admin succeeds; shared bot create by non-admin rejected; grant personal bot by owner to own scratchpad succeeds; grant personal bot by owner to non-owned stream rejected; grant personal bot by non-owner rejected; admin cannot grant a personal bot (only the owner can); creating a bot with an unknown trait is rejected.
+- Repository tests: `mapRowToBot` round-trip for both `type` values and trait sets; shape-invariant guard rejects `(personal, null owner)` and `(shared, non-null owner)` rows; `listByOwner` filters correctly by trait.
+- `/me` handler tests covering all three principal shapes (user, shared bot, personal bot) including `traits` in the bot responses.
+- `/me/bots` handler tests: returns owner's personal bots only; trait filter works; bot keys get 403.
 
 `bun run test` and `bun run test:e2e` must pass before merge.
 
 ## Implementation order
 
-1. Migration + `BotRow` + `mapRowToBot` + types (backend).
-2. `createBotSchema` + `create()` handler authorization (backend).
+1. Migration + `BotRow` + `mapRowToBot` + `listByOwner` + types/constants (backend).
+2. `createBotSchema` + `create()` handler authorization + trait validation (backend).
 3. `grantStreamAccess()` authorization (backend).
-4. `/me` endpoint + handler (backend).
-5. Plugin skeleton + manifest + `outbound.sendText` + pairing against `/me` (plugin).
+4. `/me` and `/me/bots` endpoints + handlers (backend).
+5. Plugin skeleton + manifest + `outbound.sendText` + pairing against `/me` (incl. `interactive` trait check) (plugin).
 6. Plugin `poller.ts` + cursor state + bot-self filter (plugin).
-7. Personal bots settings UI (frontend).
-8. "Create scratchpad with claw" command (frontend).
+7. Personal bots settings UI with trait toggles (frontend).
+8. Quick-switcher command enumeration ("New scratchpad with <Bot>") (frontend).
 9. E2E walkthrough per Verification section.
 
 Steps 1–4 ship independently of OpenClaw and de-risk the integration. Steps 5–6 prove the loop end-to-end with existing CLI tooling. Steps 7–8 polish the UX.
