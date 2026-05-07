@@ -72,7 +72,6 @@ export function TimezonePicker({ value, onChange }: TimezonePickerProps) {
       getKeywords={(tz) => [tz, tz.replace(/_/g, " "), labelFor(tz)]}
       searchPlaceholder="Search timezone..."
       emptyMessage="No timezone found."
-      contentClassName="w-[400px]"
       renderSelected={(tz) => <span className="font-mono">{labelFor(tz)}</span>}
       renderItem={(tz, isSelected) => (
         <>

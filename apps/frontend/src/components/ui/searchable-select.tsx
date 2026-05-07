@@ -113,13 +113,19 @@ export function SearchableSelect<T>({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className={cn("w-[--radix-popover-trigger-width] min-w-[260px] p-0", contentClassName)}
+        className={cn("w-[--radix-popover-trigger-width] max-w-[calc(100vw-1rem)] p-0", contentClassName)}
         align={align}
         onWheel={(e) => e.stopPropagation()}
       >
         <Command>
           <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
-          <CommandList>
+          {/*
+           * Override cmdk's default 300px ceiling so the list shows more rows on
+           * tall viewports and stays inside the screen on short ones (mobile,
+           * landscape phones). overscroll-contain prevents body scroll-chaining
+           * once the user reaches the top/bottom of the list.
+           */}
+          <CommandList className="max-h-[min(60vh,360px)] overscroll-contain">
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             {prefixContent && <CommandGroup>{prefixContent({ close: () => setOpen(false) })}</CommandGroup>}
             <CommandGroup>
