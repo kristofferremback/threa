@@ -75,6 +75,9 @@ import { useSearchHighlight } from "@/hooks/use-search-highlight"
 import { stripMarkdownToInline } from "@/lib/markdown"
 import { addStartBatchSelectListener } from "@/lib/batch-selection-events"
 
+/** Event types suppressed in threads — see displayEvents memo below. */
+const THREAD_HIDDEN_EVENT_TYPES = new Set<string>(["member_joined", "member_added", "member_left"])
+
 interface StreamContentProps {
   workspaceId: string
   streamId: string
@@ -307,13 +310,18 @@ export function StreamContent({
   // Compute timeline items in StreamContent so the virtualizer can use count + keys.
   // After grouping commands/sessions, annotate consecutive same-author message runs
   // with `groupContinuation` so MessageEvent can collapse the repeated header row.
+  // Membership events are suppressed in threads: thread participation is implicit
+  // (replying joins you, the parent author is auto-added), so "X was added to the
+  // conversation" reads as noise next to the author who clearly is here.
   const displayEvents = useMemo(() => {
     if (!isThread) return events
-    return [...events].sort((a, b) => {
-      const timeDelta = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      if (timeDelta !== 0) return timeDelta
-      return a.id.localeCompare(b.id)
-    })
+    return [...events]
+      .filter((e) => !THREAD_HIDDEN_EVENT_TYPES.has(e.eventType))
+      .sort((a, b) => {
+        const timeDelta = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        if (timeDelta !== 0) return timeDelta
+        return a.id.localeCompare(b.id)
+      })
   }, [events, isThread])
 
   const timelineItems = useMemo(
