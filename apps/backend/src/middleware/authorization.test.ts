@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { NextFunction, Request, Response } from "express"
+import { HttpError } from "@threa/backend-common"
 import { requireRole } from "./authorization"
-
-interface MockResponse {
-  statusCode: number
-  body: unknown
-}
 
 function createReq(role?: "owner" | "admin" | "user"): Request {
   return {
@@ -26,49 +22,42 @@ function createReq(role?: "owner" | "admin" | "user"): Request {
   } as Request
 }
 
-function createRes(): Response & MockResponse {
-  return {
-    statusCode: 200,
-    body: null,
-    status(code: number) {
-      this.statusCode = code
-      return this
-    },
-    json(payload: unknown) {
-      this.body = payload
-      return this
-    },
-  } as Response & MockResponse
-}
-
-function run(req: Request): { nextCalled: boolean; res: Response & MockResponse } {
+function run(req: Request): { nextArg: unknown; nextCalled: boolean } {
   const middleware = requireRole("admin")
-  const res = createRes()
+  const res = {} as Response
   let nextCalled = false
-  const next: NextFunction = () => {
+  let nextArg: unknown = undefined
+  const next: NextFunction = (err?: unknown) => {
     nextCalled = true
+    nextArg = err
   }
   middleware(req, res, next)
-  return { nextCalled, res }
+  return { nextArg, nextCalled }
 }
 
 describe("requireRole", () => {
   test("authorization matrix for requireRole('admin')", () => {
     const ownerResult = run(createReq("owner"))
     expect(ownerResult.nextCalled).toBe(true)
-    expect(ownerResult.res.statusCode).toBe(200)
+    expect(ownerResult.nextArg).toBeUndefined()
 
     const adminResult = run(createReq("admin"))
     expect(adminResult.nextCalled).toBe(true)
-    expect(adminResult.res.statusCode).toBe(200)
+    expect(adminResult.nextArg).toBeUndefined()
 
     const userResult = run(createReq("user"))
-    expect(userResult.nextCalled).toBe(false)
-    expect(userResult.res.statusCode).toBe(403)
-    expect(userResult.res.body).toEqual({ error: "Insufficient role" })
+    expect(userResult.nextCalled).toBe(true)
+    expect(userResult.nextArg).toBeInstanceOf(HttpError)
+    const userErr = userResult.nextArg as HttpError
+    expect(userErr.status).toBe(403)
+    expect(userErr.code).toBe("FORBIDDEN")
+    expect(userErr.message).toBe("Insufficient role")
 
     const noUserResult = run(createReq())
-    expect(noUserResult.nextCalled).toBe(false)
-    expect(noUserResult.res.statusCode).toBe(401)
+    expect(noUserResult.nextCalled).toBe(true)
+    expect(noUserResult.nextArg).toBeInstanceOf(HttpError)
+    const noUserErr = noUserResult.nextArg as HttpError
+    expect(noUserErr.status).toBe(401)
+    expect(noUserErr.code).toBe("UNAUTHORIZED")
   })
 })
