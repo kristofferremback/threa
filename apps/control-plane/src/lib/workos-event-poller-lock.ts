@@ -73,6 +73,9 @@ export class WorkosEventPollerLock {
     if (!ready) return null
 
     const lockedUntil = new Date(now.getTime() + this.lockDurationMs)
+    // Pad delays takeover past apparent expiry so a holder whose clock is
+    // slightly ahead of ours still wins the lease; we subtract (not add) so
+    // the pad tightens mutual exclusion under clock skew rather than weakening it.
     const clockDriftPadMs = 100
     this.runId = randomUUID()
 
@@ -83,7 +86,7 @@ export class WorkosEventPollerLock {
         lock_run_id = ${this.runId},
         updated_at = ${now}
       WHERE name = ${this.name}
-        AND (locked_until IS NULL OR locked_until < ${new Date(now.getTime() + clockDriftPadMs)})
+        AND (locked_until IS NULL OR locked_until < ${new Date(now.getTime() - clockDriftPadMs)})
       RETURNING name, last_event_id, last_event_at, retry_count, retry_after
     `)
 
