@@ -499,7 +499,6 @@ export const AttachmentRepository = {
         a.created_at,
         e.content_type AS extraction_content_type,
         e.summary AS extraction_summary,
-        e.full_text AS extraction_full_text,
         s.slug AS stream_slug,
         s.name AS stream_name,
         s.type AS stream_type,
@@ -579,7 +578,8 @@ export interface AttachmentSearchCursor {
   id: string
 }
 
-export interface AttachmentSearchRow extends AttachmentWithExtraction {
+export interface AttachmentSearchRow extends Attachment {
+  extraction: { contentType: ExtractionContentType; summary: string } | null
   streamSlug: string | null
   streamName: string | null
   streamType: string | null
@@ -588,7 +588,9 @@ export interface AttachmentSearchRow extends AttachmentWithExtraction {
   referenceCount: number
 }
 
-interface AttachmentSearchRowDb extends AttachmentWithExtractionRow {
+interface AttachmentSearchRowDb extends AttachmentRow {
+  extraction_content_type: string | null
+  extraction_summary: string | null
   stream_slug: string | null
   stream_name: string | null
   stream_type: string | null
@@ -599,7 +601,13 @@ interface AttachmentSearchRowDb extends AttachmentWithExtractionRow {
 
 function mapRowToSearchRow(row: AttachmentSearchRowDb): AttachmentSearchRow {
   return {
-    ...mapRowToAttachmentWithExtraction(row),
+    ...mapRowToAttachment(row),
+    extraction: row.extraction_content_type
+      ? {
+          contentType: row.extraction_content_type as ExtractionContentType,
+          summary: row.extraction_summary ?? "",
+        }
+      : null,
     streamSlug: row.stream_slug,
     streamName: row.stream_name,
     streamType: row.stream_type,

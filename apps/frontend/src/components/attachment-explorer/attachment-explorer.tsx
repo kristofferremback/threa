@@ -14,11 +14,6 @@ interface AttachmentExplorerProps {
   workspaceId: string
 }
 
-/**
- * Mounted once at the workspace layout. Reads its open/closed state from URL
- * search params (INV-59) so refresh, back/forward, and shared links all
- * reproduce the exact view. There is no internal `useState` for filters.
- */
 export function AttachmentExplorer({ workspaceId }: AttachmentExplorerProps) {
   const { isOpen, filters, close, update } = useExplorerUrlState()
   const streams = useWorkspaceStreams(workspaceId)
@@ -38,8 +33,6 @@ export function AttachmentExplorer({ workspaceId }: AttachmentExplorerProps) {
     return search.items.find((item) => item.id === filters.selectedAttachmentId) ?? null
   }, [filters.selectedAttachmentId, search.items])
 
-  // First-run selection: when results land and nothing is explicitly selected,
-  // pick the top item so the preview pane is not empty.
   useEffect(() => {
     if (!isOpen) return
     if (filters.selectedAttachmentId) return
@@ -47,7 +40,6 @@ export function AttachmentExplorer({ workspaceId }: AttachmentExplorerProps) {
     if (first) update({ selectedAttachmentId: first.id })
   }, [isOpen, filters.selectedAttachmentId, search.items, update])
 
-  // Keyboard navigation in the list pane.
   const containerRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!isOpen) return

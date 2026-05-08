@@ -55,15 +55,11 @@ function renderExplorer(initialEntry: string) {
 describe("AttachmentExplorer", () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    // The explorer does not depend on workspace data when results are mocked,
-    // but the filter chip rail / row date formatting hits these hooks even
-    // for an empty list.
     vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockReturnValue([])
     vi.spyOn(workspaceStoreModule, "useWorkspaceUsers").mockReturnValue([])
     vi.spyOn(preferencesModule, "usePreferences").mockReturnValue({
       preferences: { dateFormat: "YYYY-MM-DD", timeFormat: "24h", timezone: "UTC" } as never,
     } as unknown as ReturnType<typeof preferencesModule.usePreferences>)
-    // Stub URL fetches kicked off by ExplorerRow / ExplorerPreview thumbnails.
     vi.spyOn(attachmentsApiModule.attachmentsApi, "getDownloadUrl").mockResolvedValue("https://example.test/blob")
   })
 

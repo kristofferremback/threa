@@ -514,7 +514,6 @@ describe("attachment search handler", () => {
         extraction: {
           contentType: "document",
           summary: "Quarterly summary",
-          fullText: "Full text body",
         },
         referenceCount: 3,
       }),
@@ -538,7 +537,6 @@ describe("attachment search handler", () => {
       extraction: { contentType: "document", summary: "Quarterly summary" },
       referenceCount: 3,
     })
-    // fullText must NOT leak through the search response — only summary excerpt.
     expect(res.body.items[0].extraction).not.toHaveProperty("fullText")
   })
 })

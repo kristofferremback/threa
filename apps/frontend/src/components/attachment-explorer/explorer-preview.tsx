@@ -6,23 +6,13 @@ import { attachmentsApi, type AttachmentSearchItem } from "@/api/attachments"
 import { Button } from "@/components/ui/button"
 import { useFormattedDate } from "@/hooks"
 import { CATEGORY_META } from "./category"
+import { formatFileSize } from "./format"
 
 interface ExplorerPreviewProps {
   workspaceId: string
   item: AttachmentSearchItem | null
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-/**
- * Right-pane preview. Resolves a presigned URL for the selected attachment
- * and renders by category — image/video render inline, PDF/audio link out
- * to the raw asset, and extracts (when present) get rendered as an excerpt.
- */
 export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   const { formatFull } = useFormattedDate()
   const navigate = useNavigate()

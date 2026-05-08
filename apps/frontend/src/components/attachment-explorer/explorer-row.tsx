@@ -6,6 +6,7 @@ import { attachmentsApi, type AttachmentSearchItem } from "@/api/attachments"
 import { useFormattedDate } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { CATEGORY_META } from "./category"
+import { formatFileSize } from "./format"
 
 interface ExplorerRowProps {
   workspaceId: string
@@ -14,17 +15,6 @@ interface ExplorerRowProps {
   onSelect: (id: string) => void
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-/**
- * Single attachment row. Lazily resolves a thumbnail URL for image rows so
- * the list doesn't fan out 30 download-URL requests on first paint — the
- * preview is requested only when the row's thumbnail is actually rendered.
- */
 export function ExplorerRow({ workspaceId, item, isSelected, onSelect }: ExplorerRowProps) {
   const { formatTime, formatRelative } = useFormattedDate()
   const navigate = useNavigate()
@@ -42,8 +32,8 @@ export function ExplorerRow({ workspaceId, item, isSelected, onSelect }: Explore
         if (!cancelled) setThumbnailUrl(url)
       })
       .catch(() => {
-        // Thumbnail failed: fall back to the category icon. Don't surface
-        // the error — the preview pane will retry and report it there.
+        // Thumbnail failures fall back to the category icon — the preview
+        // pane retries and surfaces the error there.
       })
     return () => {
       cancelled = true

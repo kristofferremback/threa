@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { X, Filter as FilterIcon, Hash, User as UserIcon, Calendar, FileType, FileText } from "lucide-react"
 import type { AttachmentCategory } from "@threa/types"
 import { Badge } from "@/components/ui/badge"
@@ -32,6 +32,9 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
   const users = useWorkspaceUsers(workspaceId)
 
   const [nameDraft, setNameDraft] = useState(filters.nameSubstring ?? "")
+  useEffect(() => {
+    setNameDraft(filters.nameSubstring ?? "")
+  }, [filters.nameSubstring])
 
   const scopedStream = useMemo(() => {
     const scope = filters.scope

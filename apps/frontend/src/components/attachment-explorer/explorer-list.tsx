@@ -1,9 +1,11 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import type { AttachmentSearchItem } from "@/api/attachments"
 import { useFormattedDate } from "@/hooks"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ExplorerRow } from "./explorer-row"
 import { ExplorerEmpty } from "./explorer-empty"
+
+const NEXT_PAGE_PREFETCH_MARGIN = "200px"
 
 interface ExplorerListProps {
   workspaceId: string
@@ -54,12 +56,6 @@ function relativeDayLabel(date: Date, now = new Date()): string {
   return "Older"
 }
 
-/**
- * Day-grouped, IntersectionObserver-paginated list. Virtualization is not
- * worth the complexity at v1 — typical query returns ≤ 150 rows once a few
- * pages load, well within native rendering budget. We can swap in virtuoso
- * if real-world data shows the list growing past that.
- */
 export function ExplorerList({
   workspaceId,
   items,
@@ -85,11 +81,13 @@ export function ExplorerList({
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) fetchNextPage()
       },
-      { rootMargin: "200px" }
+      { rootMargin: NEXT_PAGE_PREFETCH_MARGIN }
     )
     observer.observe(node)
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  const buckets = useMemo(() => bucketByDay(items, (d) => relativeDayLabel(d)), [items])
 
   if (isLoading && items.length === 0) {
     return (
@@ -114,8 +112,6 @@ export function ExplorerList({
       />
     )
   }
-
-  const buckets = bucketByDay(items, (d) => relativeDayLabel(d))
 
   return (
     <div className="flex flex-col gap-2 px-2 pb-3 pt-1" role="list">
