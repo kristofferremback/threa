@@ -1,4 +1,4 @@
-import { Bell, Bookmark, Brain, CalendarClock, FileEdit, MessageSquareText } from "lucide-react"
+import { Bell, Bookmark, Brain, CalendarClock, FileEdit, MessageSquareText, Paperclip } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { UnreadBadge } from "@/components/unread-badge"
@@ -65,6 +65,18 @@ export function SidebarQuickLinks({
       isActive: isSavedPage,
       unreadCount: savedCount,
       signalSlot: savedCount > 0 ? <span className="ml-auto text-xs text-muted-foreground">({savedCount})</span> : null,
+    },
+    {
+      key: "files",
+      // Relative search-only URL keeps the current pathname (so "Files"
+      // works from any page) while toggling the explorer modal via the
+      // shared `?explorer=` URL state contract.
+      to: "?explorer=",
+      icon: Paperclip,
+      label: "Files",
+      isActive: false,
+      unreadCount: 0,
+      signalSlot: null,
     },
     {
       key: "scheduled",

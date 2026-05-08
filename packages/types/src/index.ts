@@ -249,6 +249,15 @@ export {
 } from "./slug"
 export type { BroadcastSlug } from "./slug"
 
+// Attachment categories (mime → category mapping for the attachment explorer)
+export {
+  ATTACHMENT_CATEGORIES,
+  AttachmentCategories,
+  categoryFromMime,
+  mimePrefixesForCategory,
+} from "./attachment-categories"
+export type { AttachmentCategory } from "./attachment-categories"
+
 // API types
 export type {
   // Streams

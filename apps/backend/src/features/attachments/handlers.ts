@@ -3,9 +3,11 @@ import { z } from "zod"
 import type { Pool } from "pg"
 import { buildContentDisposition, type AttachmentService } from "./service"
 import { isAttachmentReadableViaShareOrReference } from "./access"
+import { AttachmentRepository, type AttachmentSearchCursor, type AttachmentSearchRow } from "./repository"
 import type { StreamService } from "../streams"
 import { VideoTranscodeJobRepository } from "./video"
 import type { StorageProvider } from "../../lib/storage/s3-client"
+import { ATTACHMENT_CATEGORIES, type AttachmentCategory } from "@threa/types"
 
 interface Dependencies {
   attachmentService: AttachmentService
@@ -147,5 +149,127 @@ export function createAttachmentHandlers({ attachmentService, streamService, sto
       await attachmentService.delete(attachmentId)
       res.status(204).send()
     },
+
+    /**
+     * Search attachments for the explorer modal.
+     *
+     * One round trip combining readable-stream gating (callers can never see
+     * files in streams they can't read), thread-descendant expansion when
+     * `streamIds` is supplied, FTS / exact substring search across filename
+     * and extracted text, and keyset cursor pagination.
+     *
+     * Returns rows in `created_at DESC, id DESC` order with `nextCursor`
+     * set when more pages are available.
+     */
+    async search(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+
+      const parsed = SEARCH_BODY_SCHEMA.safeParse(req.body)
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request body", details: parsed.error.format() })
+      }
+      const body = parsed.data
+
+      const cursor = decodeCursor(body.cursor)
+      if (body.cursor && !cursor) {
+        return res.status(400).json({ error: "Invalid cursor" })
+      }
+
+      const limit = body.limit ?? DEFAULT_SEARCH_LIMIT
+
+      const rows = await AttachmentRepository.search(pool, {
+        workspaceId,
+        userId,
+        streamIds: body.streamIds,
+        categories: body.categories,
+        uploadedBy: body.uploadedBy,
+        before: body.before ? new Date(body.before) : undefined,
+        after: body.after ? new Date(body.after) : undefined,
+        queryText: body.queryText,
+        exact: body.exact ?? false,
+        nameSubstring: body.nameSubstring,
+        cursor,
+        limit,
+      })
+
+      const hasMore = rows.length > limit
+      const items = hasMore ? rows.slice(0, limit) : rows
+      const last = items[items.length - 1]
+      const nextCursor = hasMore && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null
+
+      res.json({
+        items: items.map(serializeSearchRow),
+        nextCursor,
+      })
+    },
+  }
+}
+
+const DEFAULT_SEARCH_LIMIT = 30
+const MAX_SEARCH_LIMIT = 100
+
+const SEARCH_BODY_SCHEMA = z
+  .object({
+    streamIds: z.array(z.string()).max(100).optional(),
+    categories: z
+      .array(z.enum(ATTACHMENT_CATEGORIES as readonly [AttachmentCategory, ...AttachmentCategory[]]))
+      .max(20)
+      .optional(),
+    uploadedBy: z.string().optional(),
+    before: z.string().datetime().optional(),
+    after: z.string().datetime().optional(),
+    queryText: z.string().max(500).optional(),
+    exact: z.boolean().optional(),
+    nameSubstring: z.string().max(200).optional(),
+    cursor: z.string().optional(),
+    limit: z.number().int().positive().max(MAX_SEARCH_LIMIT).optional(),
+  })
+  .strict()
+
+function encodeCursor(cursor: AttachmentSearchCursor): string {
+  return Buffer.from(JSON.stringify({ c: cursor.createdAt.toISOString(), i: cursor.id }), "utf8").toString("base64url")
+}
+
+function decodeCursor(raw: string | undefined): AttachmentSearchCursor | undefined {
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"))
+    if (typeof parsed?.c !== "string" || typeof parsed?.i !== "string") return undefined
+    const createdAt = new Date(parsed.c)
+    if (Number.isNaN(createdAt.getTime())) return undefined
+    return { createdAt, id: parsed.i }
+  } catch {
+    return undefined
+  }
+}
+
+function serializeSearchRow(row: AttachmentSearchRow) {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    streamId: row.streamId,
+    messageId: row.messageId,
+    uploadedBy: row.uploadedBy,
+    filename: row.filename,
+    mimeType: row.mimeType,
+    sizeBytes: row.sizeBytes,
+    storageProvider: row.storageProvider,
+    storagePath: row.storagePath,
+    processingStatus: row.processingStatus,
+    safetyStatus: row.safetyStatus,
+    createdAt: row.createdAt.toISOString(),
+    extraction: row.extraction
+      ? {
+          contentType: row.extraction.contentType,
+          summary: row.extraction.summary,
+        }
+      : null,
+    streamSlug: row.streamSlug,
+    streamName: row.streamName,
+    streamType: row.streamType,
+    uploaderSlug: row.uploaderSlug,
+    uploaderName: row.uploaderName,
+    referenceCount: row.referenceCount,
   }
 }

@@ -1,7 +1,7 @@
 import { useSearchParams, useParams } from "react-router-dom"
 import { useMemo, useCallback, useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
-import { MessageSquare, ChevronLeft, MoreHorizontal, CornerDownRight, Settings } from "lucide-react"
+import { MessageSquare, ChevronLeft, MoreHorizontal, CornerDownRight, Paperclip, Settings } from "lucide-react"
 import {
   SidePanel,
   SidePanelHeader,
@@ -34,6 +34,7 @@ import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { onDraftPromoted } from "@/lib/draft-promotions"
 import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
+import { useExplorerUrlState } from "@/components/attachment-explorer"
 import { StreamLoadingIndicator } from "@/components/loading"
 import {
   StreamContent,
@@ -68,6 +69,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const user = useUser()
   const { queueDraftMessage, currentUserId } = useQueueDraftMessage(workspaceId)
   const { openStreamSettings } = useStreamSettings()
+  const { open: openExplorer } = useExplorerUrlState()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
 
   const isMainViewStream = (streamId: string) => {
@@ -211,6 +213,14 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     icon: CornerDownRight,
     onSelect: handleSelectMessages,
     separatorBefore: true,
+  })
+  panelMenuActions.push({
+    id: "browse-files",
+    label: "Browse files…",
+    icon: Paperclip,
+    onSelect: () => {
+      if (panelId) openExplorer({ scope: { kind: "stream", streamId: panelId } })
+    },
   })
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
     draftPortalTargetRef.current = el

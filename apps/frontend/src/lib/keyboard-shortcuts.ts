@@ -68,6 +68,14 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     category: "view",
     global: true,
   },
+  {
+    id: "openAttachmentExplorer",
+    label: "Browse Files",
+    description: "Open the attachment explorer",
+    defaultKey: "mod+shift+a",
+    category: "navigation",
+    global: true,
+  },
   // Editor formatting shortcuts (not global — only active when editor is focused)
   {
     id: "formatBold",
