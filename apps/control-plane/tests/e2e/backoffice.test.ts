@@ -1,7 +1,9 @@
 import { describe, test, expect } from "bun:test"
 import { Pool } from "pg"
-import { TestClient, loginAs } from "../client"
+import { TestClient, loginAs, createWorkspace } from "../client"
 import { PlatformRoleRepository } from "../../src/features/backoffice"
+import { WorkosAuthzRepository } from "../../src/features/workos-authz"
+import { WorkspaceRegistryRepository } from "../../src/features/workspaces"
 
 /**
  * Opens a short-lived pool to seed a platform-admin row directly. Tests run in
@@ -16,6 +18,41 @@ async function grantAdmin(workosUserId: string): Promise<void> {
   })
   try {
     await PlatformRoleRepository.upsert(pool, workosUserId, "admin")
+  } finally {
+    await pool.end()
+  }
+}
+
+/**
+ * Seed a single membership row into the mirror so the members endpoint has
+ * something to return. Mirrors the backfill path — `last_event_id` is null and
+ * `last_event_at` is the observed timestamp.
+ */
+async function seedMembership(input: {
+  workspaceId: string
+  workosUserId: string
+  status: "active" | "inactive" | "pending"
+  roleSlugs: string[]
+}): Promise<{ workosOrganizationId: string; lastEventAt: Date }> {
+  const pool = new Pool({
+    connectionString:
+      process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_control_plane_test",
+  })
+  try {
+    const ws = await WorkspaceRegistryRepository.findById(pool, input.workspaceId)
+    if (!ws?.workos_organization_id) {
+      throw new Error(`Test setup: workspace ${input.workspaceId} has no workos_organization_id`)
+    }
+    const observedAt = new Date()
+    await WorkosAuthzRepository.upsertMembershipFromBackfill(pool, {
+      organizationMembershipId: `om_${input.workosUserId}_${input.workspaceId}`,
+      workosOrganizationId: ws.workos_organization_id,
+      workosUserId: input.workosUserId,
+      status: input.status,
+      roleSlugs: input.roleSlugs,
+      observedAt,
+    })
+    return { workosOrganizationId: ws.workos_organization_id, lastEventAt: observedAt }
   } finally {
     await pool.end()
   }
@@ -162,6 +199,93 @@ describe("Backoffice", () => {
 
       expect(res.status).toBe(200)
       expect(Array.isArray(res.data.workspaces)).toBe(true)
+    })
+  })
+
+  describe("GET /api/backoffice/workspaces/:id/members", () => {
+    test("returns 401 without session", async () => {
+      const client = new TestClient()
+      const res = await client.get("/api/backoffice/workspaces/ws_anything/members")
+      expect(res.status).toBe(401)
+    })
+
+    test("returns 403 when authenticated but not a platform admin", async () => {
+      const client = new TestClient()
+      await loginAs(client, "members-nonadmin@example.com", "Members Non Admin")
+
+      const res = await client.get<{ code: string }>("/api/backoffice/workspaces/ws_anything/members")
+      expect(res.status).toBe(403)
+      expect(res.data.code).toBe("NOT_PLATFORM_ADMIN")
+    })
+
+    test("returns 404 when workspace does not exist", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "members-admin-404@example.com", "Members Admin 404")
+      await grantAdmin(user.id)
+
+      const res = await client.get<{ code: string }>("/api/backoffice/workspaces/ws_does_not_exist/members")
+      expect(res.status).toBe(404)
+      expect(res.data.code).toBe("NOT_FOUND")
+    })
+
+    test("returns an empty members array when the mirror has no rows yet", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "members-admin@example.com", "Members Admin")
+      await grantAdmin(user.id)
+
+      // Stub auth provisions a WorkOS organization on workspace creation, but
+      // the mirror is empty until backfill or events run. The route should
+      // still return an empty array, not 404.
+      const ws = await createWorkspace(client, "Members Test")
+      const res = await client.get<{
+        members: unknown[]
+      }>(`/api/backoffice/workspaces/${ws.id}/members`)
+
+      expect(res.status).toBe(200)
+      expect(res.data.members).toEqual([])
+    })
+
+    test("returns mirror-shaped rows with the contract the frontend expects", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "members-shape-admin@example.com", "Members Shape Admin")
+      await grantAdmin(user.id)
+
+      const ws = await createWorkspace(client, "Members Shape Test")
+      const seedUserId = `user_seed_${Date.now()}`
+      const { lastEventAt } = await seedMembership({
+        workspaceId: ws.id,
+        workosUserId: seedUserId,
+        status: "active",
+        roleSlugs: ["admin", "member"],
+      })
+
+      const res = await client.get<{
+        members: Array<{
+          workosUserId: string
+          email: string | null
+          firstName: string | null
+          lastName: string | null
+          status: string
+          roleSlugs: string[]
+          lastEventAt: string
+        }>
+      }>(`/api/backoffice/workspaces/${ws.id}/members`)
+
+      expect(res.status).toBe(200)
+      expect(res.data.members).toHaveLength(1)
+      const [row] = res.data.members
+      // Mirror-derived fields are exact.
+      expect(row.workosUserId).toBe(seedUserId)
+      expect(row.status).toBe("active")
+      expect(row.roleSlugs).toEqual(["admin", "member"])
+      // Best-effort enrichment: stub doesn't know this user, so email/name are null.
+      // The contract is "nullable", not "always present" — assert the type, not a value.
+      expect(row.email === null || typeof row.email === "string").toBe(true)
+      expect(row.firstName === null || typeof row.firstName === "string").toBe(true)
+      expect(row.lastName === null || typeof row.lastName === "string").toBe(true)
+      // lastEventAt is an ISO string round-trippable to the seeded Date.
+      expect(typeof row.lastEventAt).toBe("string")
+      expect(new Date(row.lastEventAt).toISOString()).toBe(lastEventAt.toISOString())
     })
   })
 

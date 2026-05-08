@@ -53,9 +53,20 @@ export interface BackofficeConfig {
   workosEnvironmentId: string | null
 }
 
+export interface WorkspaceMember {
+  workosUserId: string
+  email: string | null
+  firstName: string | null
+  lastName: string | null
+  status: string
+  roleSlugs: string[]
+  lastEventAt: string
+}
+
 export const backofficeKeys = {
   workspaces: ["backoffice", "workspaces"] as const,
   workspace: (id: string) => ["backoffice", "workspaces", id] as const,
+  workspaceMembers: (id: string) => ["backoffice", "workspaces", id, "members"] as const,
   invitations: ["backoffice", "invitations"] as const,
   config: ["backoffice", "config"] as const,
 }
@@ -98,4 +109,10 @@ export function revokeWorkspaceOwnerInvitation(id: string): Promise<void> {
 
 export function getBackofficeConfig(): Promise<BackofficeConfig> {
   return api.get<{ config: BackofficeConfig }>("/api/backoffice/config").then((r) => r.config)
+}
+
+export function listWorkspaceMembers(id: string): Promise<WorkspaceMember[]> {
+  return api
+    .get<{ members: WorkspaceMember[] }>(`/api/backoffice/workspaces/${encodeURIComponent(id)}/members`)
+    .then((r) => r.members)
 }

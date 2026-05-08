@@ -31,12 +31,16 @@ import {
 } from "./features/workspaces"
 import { InvitationShadowService } from "./features/invitation-shadows"
 import { BackofficeService, seedPlatformAdmins } from "./features/backoffice"
-import { WorkosAuthzService, WorkosAuthzBackfill, WorkosAuthzPoller } from "./features/workos-authz"
+import {
+  WorkosAuthzService,
+  WorkosAuthzBackfill,
+  WorkosAuthzPoller,
+  WORKOS_EVENT_POLLER_NAME,
+} from "./features/workos-authz"
 import { WorkosEventPollerLock } from "./lib/workos-event-poller-lock"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
 const LISTENER_ID = "control-plane"
-const WORKOS_EVENT_POLLER_NAME = "workos-events"
 
 export interface ControlPlaneInstance {
   server: Server
@@ -123,83 +127,104 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     handle: () => debouncer.trigger(),
   }
 
-  await ensureListenerFromLatest(pool, LISTENER_ID)
   const outboxDispatcher = new OutboxDispatcher({ listenPool })
-  outboxDispatcher.register(outboxHandler)
-  await outboxDispatcher.start()
 
   // WorkOS authz mirror — passive polling, no fan-out yet (Phase 1).
   // Multi-instance safe via the time-based lease in WorkosEventPollerLock,
   // mirroring the pattern used for the outbox CursorLock above.
-  const workosEventLock = new WorkosEventPollerLock({
-    pool,
-    name: WORKOS_EVENT_POLLER_NAME,
-    lockDurationMs: 10_000,
-    refreshIntervalMs: 5_000,
-    maxRetries: 5,
-    baseBackoffMs: 1_000,
-  })
-  await workosEventLock.ensureRow()
+  // Everything from here through `server.listen()` is wrapped so any failure
+  // (listener bootstrap, dispatcher start, lock row creation, first-boot
+  // backfill, port bind) tears down the workers and pools we already spun up
+  // — otherwise a crashed boot leaks intervals and connections.
+  let authzPoller: WorkosAuthzPoller | undefined
+  let server: Server | undefined
+  try {
+    await ensureListenerFromLatest(pool, LISTENER_ID)
+    outboxDispatcher.register(outboxHandler)
+    await outboxDispatcher.start()
 
-  const authzService = new WorkosAuthzService({ pool })
-  const authzBackfill = new WorkosAuthzBackfill({ pool, workosOrgService, lock: workosEventLock })
-  const authzPoller = new WorkosAuthzPoller({
-    workosOrgService,
-    authzService,
-    lock: workosEventLock,
-    pollIntervalMs: 5_000,
-    batchSize: 100,
-  })
-
-  // First-boot backfill: only run when we've never backfilled before. Re-runs
-  // happen via the bun script so an operator decides when to refresh.
-  const lastBackfillRow = await pool.query<{ last_backfill_at: Date | null }>(
-    "SELECT last_backfill_at FROM workos_event_poller_state WHERE name = $1",
-    [WORKOS_EVENT_POLLER_NAME]
-  )
-  if (lastBackfillRow.rows[0]?.last_backfill_at == null) {
-    try {
-      await authzBackfill.run()
-    } catch (err) {
-      // Non-fatal: poller still starts; operator can run the backfill script later.
-      logger.error({ err }, "Initial WorkOS authz backfill failed; poller will still start")
-    }
-  }
-  authzPoller.start()
-
-  const isProduction = process.env.NODE_ENV === "production"
-  const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins })
-
-  registerRoutes(app, {
-    authService,
-    workspaceService,
-    shadowService,
-    backofficeService,
-    internalApiKey: config.internalApiKey,
-    allowDevAuthRoutes: config.useStubAuth && !isProduction,
-    frontendUrl: config.frontendUrl,
-    allowedRedirectDomain: config.allowedRedirectDomain,
-    regions: config.regions,
-    workosDedicatedRedirectHosts: config.workosDedicatedRedirectHosts,
-    rateLimits: config.rateLimits,
-  })
-
-  const server = createServer(app)
-
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(config.port, "0.0.0.0", () => {
-      server.removeListener("error", reject)
-      logger.info({ port: config.port }, "Control plane started")
-      resolve()
+    const workosEventLock = new WorkosEventPollerLock({
+      pool,
+      name: WORKOS_EVENT_POLLER_NAME,
+      lockDurationMs: 10_000,
+      refreshIntervalMs: 5_000,
+      maxRetries: 5,
+      baseBackoffMs: 1_000,
     })
-  })
+    await workosEventLock.ensureRow()
+
+    const authzService = new WorkosAuthzService({ pool })
+    const authzBackfill = new WorkosAuthzBackfill({ pool, workosOrgService, lock: workosEventLock })
+    authzPoller = new WorkosAuthzPoller({
+      workosOrgService,
+      authzService,
+      lock: workosEventLock,
+      pollIntervalMs: 5_000,
+      batchSize: 100,
+    })
+
+    // First-boot backfill: only run when we've never backfilled before. Re-runs
+    // happen via the bun script so an operator decides when to refresh.
+    const lastBackfillRow = await pool.query<{ last_backfill_at: Date | null }>(
+      "SELECT last_backfill_at FROM workos_event_poller_state WHERE name = $1",
+      [WORKOS_EVENT_POLLER_NAME]
+    )
+    if (lastBackfillRow.rows[0]?.last_backfill_at == null) {
+      try {
+        await authzBackfill.run()
+      } catch (err) {
+        // Non-fatal: poller still starts; operator can run the backfill script later.
+        logger.error({ err }, "Initial WorkOS authz backfill failed; poller will still start")
+      }
+    }
+    authzPoller.start()
+
+    const isProduction = process.env.NODE_ENV === "production"
+    const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins })
+
+    registerRoutes(app, {
+      authService,
+      workspaceService,
+      shadowService,
+      backofficeService,
+      internalApiKey: config.internalApiKey,
+      allowDevAuthRoutes: config.useStubAuth && !isProduction,
+      frontendUrl: config.frontendUrl,
+      allowedRedirectDomain: config.allowedRedirectDomain,
+      regions: config.regions,
+      workosDedicatedRedirectHosts: config.workosDedicatedRedirectHosts,
+      rateLimits: config.rateLimits,
+    })
+
+    server = createServer(app)
+
+    const listenServer = server
+    await new Promise<void>((resolve, reject) => {
+      listenServer.once("error", reject)
+      listenServer.listen(config.port, "0.0.0.0", () => {
+        listenServer.removeListener("error", reject)
+        logger.info({ port: config.port }, "Control plane started")
+        resolve()
+      })
+    })
+  } catch (err) {
+    await authzPoller?.stop().catch(() => {})
+    await outboxDispatcher.stop().catch(() => {})
+    await listenPool.end().catch(() => {})
+    await pool.end().catch(() => {})
+    throw err
+  }
+
+  // The try/catch above either returned with both set or rethrew, so we can
+  // narrow safely here without runtime checks.
+  const startedServer = server
+  const startedPoller = authzPoller
 
   const stop = async () => {
     if (config.fastShutdown) {
       logger.info("Fast shutdown - skipping graceful shutdown")
-      server.close()
-      await authzPoller.stop()
+      startedServer.close()
+      await startedPoller.stop()
       await outboxDispatcher.stop()
       await listenPool.end()
       await pool.end()
@@ -207,19 +232,19 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     }
 
     logger.info("Shutting down control plane...")
-    if (server.listening) {
+    if (startedServer.listening) {
       await new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()))
+        startedServer.close((err) => (err ? reject(err) : resolve()))
       })
     }
-    await authzPoller.stop()
+    await startedPoller.stop()
     await outboxDispatcher.stop()
     await listenPool.end()
     await pool.end()
     logger.info("Control plane stopped")
   }
 
-  return { server, pool, port: config.port, fastShutdown: config.fastShutdown, stop }
+  return { server: startedServer, pool, port: config.port, fastShutdown: config.fastShutdown, stop }
 }
 
 /** Dispatch a single outbox event to the appropriate service method (INV-34) */

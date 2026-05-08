@@ -95,6 +95,13 @@ export interface WorkosOrgService {
   listAppInvitations(): Promise<WorkosAppInvitation[]>
   /** Look up a user by WorkOS id. Returns null if the user no longer exists. */
   getUser(workosUserId: string): Promise<WorkosUserSummary | null>
+  /**
+   * List every user that belongs to a WorkOS organization. Paginates the
+   * underlying `userManagement.listUsers({ organizationId })` call to
+   * completion. Used by the backoffice members tab to avoid N parallel
+   * `getUser` round-trips.
+   */
+  listOrganizationUsers(organizationId: string): Promise<WorkosUserSummary[]>
   getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null>
   ensureOrganizationMembership(params: { organizationId: string; userId: string; roleSlug: string }): Promise<void>
   getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string>
@@ -208,6 +215,31 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
     } catch (error) {
       logger.warn({ err: error, workosUserId }, "Failed to load WorkOS user")
       return null
+    }
+  }
+
+  async listOrganizationUsers(organizationId: string): Promise<WorkosUserSummary[]> {
+    const results: WorkosUserSummary[] = []
+    let after: string | undefined
+
+    for (;;) {
+      const page = await this.workos.userManagement.listUsers({
+        organizationId,
+        limit: 100,
+        ...(after ? { after } : {}),
+      })
+
+      for (const user of page.data) {
+        results.push({
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        })
+      }
+
+      after = page.listMetadata.after ?? undefined
+      if (!after) return results
     }
   }
 

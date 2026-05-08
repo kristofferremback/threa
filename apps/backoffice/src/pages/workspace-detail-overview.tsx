@@ -1,28 +1,11 @@
 import { type ReactNode } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
-import { ChevronLeft, ExternalLink } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/layout/page-header"
+import { ExternalLink } from "lucide-react"
 import { Section } from "@/components/layout/section"
-import {
-  backofficeKeys,
-  getBackofficeConfig,
-  getWorkspace,
-  type BackofficeConfig,
-  type WorkspaceDetail,
-} from "@/api/backoffice"
-import { ApiError } from "@/api/client"
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
+import { backofficeKeys, getBackofficeConfig, type BackofficeConfig, type WorkspaceDetail } from "@/api/backoffice"
+import { formatDateTime } from "@/lib/format"
+import { cn } from "@/lib/utils"
 
 function buildWorkspaceUrl(appBaseUrl: string, workspaceId: string): string {
   // The user-facing app routes workspaces under `/w/<id>`, not `/ws/<id>`.
@@ -33,76 +16,42 @@ function buildWorkosOrgUrl(envId: string, orgId: string): string {
   return `https://dashboard.workos.com/${envId}/organizations/${orgId}`
 }
 
-export function WorkspaceDetailPage() {
+export function WorkspaceDetailOverviewPage() {
   const { id } = useParams<{ id: string }>()
+  const queryClient = useQueryClient()
+
+  // Cache-only observer: the layout owns the actual fetch and only renders
+  // this tab once the workspace query has data, so reading directly from the
+  // cache here is safe and avoids a duplicate request.
   const query = useQuery({
     queryKey: id ? backofficeKeys.workspace(id) : ["backoffice", "workspaces", "missing"],
-    queryFn: () => {
-      if (!id) throw new Error("Missing workspace id")
-      return getWorkspace(id)
-    },
+    queryFn: () => (id ? (queryClient.getQueryData<WorkspaceDetail>(backofficeKeys.workspace(id)) ?? null) : null),
     enabled: !!id,
+    staleTime: Infinity,
   })
 
-  // Backoffice config rarely changes — fetch once and cache forever. The
-  // page still renders if the config is still loading; the linked-id
-  // helpers below fall back to plain text when the relevant value is
-  // missing, so the worst case is one paint with non-link IDs.
   const configQ = useQuery({
     queryKey: backofficeKeys.config,
     queryFn: getBackofficeConfig,
     staleTime: Infinity,
   })
 
-  return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-8">
-      <div>
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to="/workspaces">
-            <ChevronLeft className="size-4" />
-            Back to workspaces
-          </Link>
-        </Button>
-      </div>
-
-      <WorkspaceDetailBody loading={query.isLoading} error={query.error} workspace={query.data} config={configQ.data} />
-    </div>
-  )
+  if (!query.data) return null
+  return <WorkspaceDetailBody workspace={query.data} config={configQ.data} />
 }
 
 function WorkspaceDetailBody({
-  loading,
-  error,
   workspace,
   config,
 }: {
-  loading: boolean
-  error: unknown
-  workspace: WorkspaceDetail | undefined
+  workspace: WorkspaceDetail
   config: BackofficeConfig | undefined
 }) {
-  if (loading) {
-    return <div className="border-y px-1 py-10 text-center text-sm text-muted-foreground">Loading workspace…</div>
-  }
-
-  if (error) {
-    const notFound = ApiError.isApiError(error) && error.status === 404
-    return (
-      <div className="border-y px-1 py-10 text-center text-sm text-muted-foreground">
-        {notFound ? "That workspace doesn't exist." : "Couldn't load workspace."}
-      </div>
-    )
-  }
-
-  if (!workspace) return null
-
   const appBaseUrl = config?.workspaceAppBaseUrl?.length ? config.workspaceAppBaseUrl : null
   const workosEnvId = config?.workosEnvironmentId ?? null
 
   return (
     <div className="flex flex-col gap-10">
-      <PageHeader title={workspace.name} description={`@${workspace.slug}`} />
-
       <Section label="Owner">
         <FieldGrid>
           <Field label="Name" value={workspace.owner.name ?? "Unknown"} />
@@ -138,7 +87,7 @@ function WorkspaceDetailBody({
             span={2}
           />
           <Field label="Region" value={workspace.region} />
-          <Field label="Members" value={workspace.memberCount.toString()} />
+          <Field label="Members" value={workspace.memberCount.toString()} to={`/workspaces/${workspace.id}/members`} />
           <Field
             label="WorkOS organization"
             value={renderWorkosOrgValue(workspace.workosOrganizationId, workosEnvId)}
@@ -164,11 +113,6 @@ function renderWorkosOrgValue(orgId: string | null, envId: string | null): React
   return <ExternalIdLink href={buildWorkosOrgUrl(envId, orgId)}>{orgId}</ExternalIdLink>
 }
 
-/**
- * Mono ID rendered as an external link with a small "open in new tab" icon.
- * Underline only appears on hover so the link reads as data first, link
- * second — same energy as the rest of the table-style detail rows.
- */
 function ExternalIdLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a
@@ -187,9 +131,22 @@ function FieldGrid({ children }: { children: ReactNode }) {
   return <dl className="grid grid-cols-1 gap-x-8 gap-y-5 border-t pt-5 sm:grid-cols-2">{children}</dl>
 }
 
-function Field({ label, value, span = 1 }: { label: string; value: ReactNode; span?: 1 | 2 }) {
+function Field({ label, value, span = 1, to }: { label: string; value: ReactNode; span?: 1 | 2; to?: string }) {
+  const wrapperClass = span === 2 ? "flex flex-col gap-1.5 sm:col-span-2" : "flex flex-col gap-1.5"
+  if (to) {
+    return (
+      <Link to={to} className={cn(wrapperClass, "group rounded-sm transition-colors hover:text-primary")}>
+        <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground transition-colors group-hover:text-primary">
+          {label}
+        </dt>
+        <dd className="text-sm text-foreground transition-colors group-hover:text-primary group-hover:underline group-hover:underline-offset-4">
+          {value}
+        </dd>
+      </Link>
+    )
+  }
   return (
-    <div className={span === 2 ? "flex flex-col gap-1.5 sm:col-span-2" : "flex flex-col gap-1.5"}>
+    <div className={wrapperClass}>
       <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</dt>
       <dd className="text-sm text-foreground">{value}</dd>
     </div>

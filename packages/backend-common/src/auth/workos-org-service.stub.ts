@@ -98,6 +98,16 @@ export class StubWorkosOrgService implements WorkosOrgService {
     return this.users.get(workosUserId) ?? null
   }
 
+  async listOrganizationUsers(organizationId: string): Promise<WorkosUserSummary[]> {
+    const memberships = this.membershipsByOrg.get(organizationId) ?? []
+    const users: WorkosUserSummary[] = []
+    for (const m of memberships) {
+      const user = this.users.get(m.userId)
+      if (user) users.push(user)
+    }
+    return users
+  }
+
   async getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null> {
     return { id: organizationId, domains: [] }
   }
