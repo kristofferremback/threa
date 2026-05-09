@@ -16,6 +16,7 @@ interface SidebarQuickLinksProps {
   scheduledCount: number
   isActivityPage: boolean
   isMemoryPage: boolean
+  isFilesPage: boolean
   unreadActivityCount: number
 }
 
@@ -42,6 +43,7 @@ export function SidebarQuickLinks({
   scheduledCount,
   isActivityPage,
   isMemoryPage,
+  isFilesPage,
   unreadActivityCount,
 }: SidebarQuickLinksProps) {
   const { collapseOnMobile, getSectionState, toggleSectionState } = useSidebar()
@@ -68,13 +70,10 @@ export function SidebarQuickLinks({
     },
     {
       key: "files",
-      // Relative search-only URL keeps the current pathname (so "Files"
-      // works from any page) while toggling the explorer modal via the
-      // shared `?explorer=` URL state contract.
-      to: "?explorer=",
+      to: `/w/${workspaceId}/files`,
       icon: Paperclip,
       label: "Files",
-      isActive: false,
+      isActive: isFilesPage,
       unreadCount: 0,
       signalSlot: null,
     },

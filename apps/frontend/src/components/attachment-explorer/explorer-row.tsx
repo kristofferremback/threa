@@ -41,7 +41,7 @@ export function ExplorerRow({ workspaceId, item, isSelected, onSelect }: Explore
   }, [workspaceId, item.id, category])
 
   const createdAt = new Date(item.createdAt)
-  const sourceUrl = item.streamId && item.messageId ? `/w/${workspaceId}/s/${item.streamId}#${item.messageId}` : null
+  const sourceUrl = item.streamId && item.messageId ? `/w/${workspaceId}/s/${item.streamId}?m=${item.messageId}` : null
 
   return (
     <button

@@ -51,7 +51,7 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   const meta = CATEGORY_META[category]
   const Icon = meta.icon
   const sourceUrl =
-    selected.streamId && selected.messageId ? `/w/${workspaceId}/s/${selected.streamId}#${selected.messageId}` : null
+    selected.streamId && selected.messageId ? `/w/${workspaceId}/s/${selected.streamId}?m=${selected.messageId}` : null
 
   function renderMedia() {
     if (previewError) {

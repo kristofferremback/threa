@@ -32,6 +32,7 @@ function renderQuickLinks(props: Partial<Parameters<typeof SidebarQuickLinks>[0]
         scheduledCount={0}
         isActivityPage={false}
         isMemoryPage={false}
+        isFilesPage={false}
         unreadActivityCount={0}
         {...props}
       />
