@@ -196,7 +196,7 @@ export function StreamPage() {
     id: "browse-files",
     label: "Browse files…",
     icon: Paperclip,
-    onSelect: () => openExplorer({ scope: { kind: "stream", streamId } }),
+    onSelect: () => openExplorer({ streamIds: [streamId] }),
   })
   if (isScratchpad) {
     streamMenuActions.push({

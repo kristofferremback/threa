@@ -36,21 +36,36 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
     setNameDraft(filters.nameSubstring ?? "")
   }, [filters.nameSubstring])
 
-  const scopedStream = useMemo(() => {
-    const scope = filters.scope
-    if (scope.kind !== "stream") return null
-    return streams.find((s) => s.id === scope.streamId) ?? null
-  }, [filters.scope, streams])
+  const [streamSearch, setStreamSearch] = useState("")
+
+  const streamById = useMemo(() => new Map(streams.map((s) => [s.id, s])), [streams])
+
+  const selectedStreams = useMemo(() => {
+    return filters.streamIds.map((id) => ({ id, stream: streamById.get(id) ?? null }))
+  }, [filters.streamIds, streamById])
 
   const parentStream = useMemo(() => {
     if (!parentStreamId) return null
-    return streams.find((s) => s.id === parentStreamId) ?? null
-  }, [parentStreamId, streams])
+    return streamById.get(parentStreamId) ?? null
+  }, [parentStreamId, streamById])
 
   const uploaderUser = useMemo(() => {
     if (!filters.uploadedBy) return null
     return users.find((u) => u.id === filters.uploadedBy) ?? null
   }, [filters.uploadedBy, users])
+
+  // Streams the user can pick from in the picker, filtered by the search box.
+  // Already-selected streams stay in the list (with a checkbox tick) so the
+  // user can deselect from inside the picker without hunting for the chip.
+  const pickerStreams = useMemo(() => {
+    const needle = streamSearch.trim().toLowerCase()
+    if (!needle) return streams
+    return streams.filter((s) => {
+      const slug = s.slug?.toLowerCase() ?? ""
+      const name = s.displayName?.toLowerCase() ?? ""
+      return slug.includes(needle) || name.includes(needle)
+    })
+  }, [streams, streamSearch])
 
   const toggleCategory = (cat: AttachmentCategory) => {
     const set = new Set(filters.categories)
@@ -59,22 +74,39 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
     onUpdate({ categories: Array.from(set) })
   }
 
+  const toggleStream = (id: string) => {
+    const set = new Set(filters.streamIds)
+    if (set.has(id)) set.delete(id)
+    else set.add(id)
+    onUpdate({ streamIds: Array.from(set) })
+  }
+
+  const removeStream = (id: string) => {
+    onUpdate({ streamIds: filters.streamIds.filter((s) => s !== id) })
+  }
+
+  const includeParent = () => {
+    if (!parentStream) return
+    if (filters.streamIds.includes(parentStream.id)) return
+    onUpdate({ streamIds: [...filters.streamIds, parentStream.id] })
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2 px-3 pb-3 pt-1">
-      {scopedStream ? (
-        <Badge variant="secondary" className="gap-1 pr-1">
+      {selectedStreams.map(({ id, stream }) => (
+        <Badge key={id} variant="secondary" className="gap-1 pr-1">
           <Hash className="h-3 w-3" />
-          <span className="max-w-[140px] truncate">{scopedStream.slug ?? scopedStream.displayName ?? "stream"}</span>
+          <span className="max-w-[140px] truncate">{stream?.slug ?? stream?.displayName ?? "stream"}</span>
           <button
             type="button"
             className="rounded-full p-0.5 hover:bg-background/60"
-            onClick={() => onUpdate({ scope: { kind: "workspace" } })}
+            onClick={() => removeStream(id)}
             aria-label="Remove stream filter"
           >
             <X className="h-3 w-3" />
           </button>
         </Badge>
-      ) : null}
+      ))}
 
       {filters.categories.map((cat) => (
         <Badge key={cat} variant="secondary" className="gap-1 pr-1">
@@ -153,6 +185,62 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
           </button>
         </Badge>
       ) : null}
+
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs">
+            <Hash className="h-3 w-3" />
+            Stream
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-0" align="start">
+          <div className="border-b p-2">
+            <Input
+              autoFocus
+              value={streamSearch}
+              onChange={(e) => setStreamSearch(e.target.value)}
+              placeholder="Find stream"
+              className="h-8"
+              aria-label="Find stream"
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto py-1">
+            {pickerStreams.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-muted-foreground">No streams match</div>
+            ) : (
+              pickerStreams.map((s) => {
+                const checked = filters.streamIds.includes(s.id)
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleStream(s.id)}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent/50"
+                  >
+                    <span
+                      className={`flex h-4 w-4 items-center justify-center rounded border ${
+                        checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
+                      }`}
+                      aria-hidden
+                    >
+                      {checked ? <span className="text-[10px] leading-none">✓</span> : null}
+                    </span>
+                    <Hash className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="flex-1 truncate">{s.slug ?? s.displayName ?? "stream"}</span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+          {filters.streamIds.length > 0 ? (
+            <div className="flex justify-end border-t p-2">
+              <Button size="sm" variant="ghost" onClick={() => onUpdate({ streamIds: [] })}>
+                Clear streams
+              </Button>
+            </div>
+          ) : null}
+        </PopoverContent>
+      </Popover>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -249,12 +337,12 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
         </PopoverContent>
       </Popover>
 
-      {parentStream && filters.scope.kind === "stream" && filters.scope.streamId !== parentStream.id ? (
+      {parentStream && !filters.streamIds.includes(parentStream.id) ? (
         <Button
           size="sm"
           variant="ghost"
           className="h-7 text-xs"
-          onClick={() => onUpdate({ scope: { kind: "stream", streamId: parentStream.id } })}
+          onClick={includeParent}
           title={`Include the parent channel #${parentStream.slug ?? parentStream.displayName ?? ""}`}
         >
           + Include #{parentStream.slug ?? parentStream.displayName ?? "parent"}

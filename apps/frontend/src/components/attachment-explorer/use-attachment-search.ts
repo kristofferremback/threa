@@ -12,7 +12,7 @@ export const explorerKeys = {
 
 function filtersToRequest(filters: ExplorerFilters): AttachmentSearchRequest {
   const body: AttachmentSearchRequest = { limit: PAGE_SIZE }
-  if (filters.scope.kind === "stream") body.streamIds = [filters.scope.streamId]
+  if (filters.streamIds.length) body.streamIds = filters.streamIds
   if (filters.categories.length) body.categories = filters.categories
   if (filters.uploadedBy) body.uploadedBy = filters.uploadedBy
   if (filters.nameSubstring) body.nameSubstring = filters.nameSubstring

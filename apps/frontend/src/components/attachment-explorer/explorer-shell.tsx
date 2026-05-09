@@ -29,12 +29,13 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
   const search = useAttachmentSearch(workspaceId, filters, { enabled })
 
   const parentStreamId = useMemo(() => {
-    if (filters.scope.kind !== "stream") return null
-    const scopeStreamId = filters.scope.streamId
-    const stream = streams.find((s) => s.id === scopeStreamId)
+    // Surface a single parent only when exactly one stream is filtered to —
+    // otherwise the "include parent" prompt would be ambiguous.
+    if (filters.streamIds.length !== 1) return null
+    const stream = streams.find((s) => s.id === filters.streamIds[0])
     if (!stream) return null
     return stream.rootStreamId ?? null
-  }, [filters.scope, streams])
+  }, [filters.streamIds, streams])
 
   const selectedItem = useMemo(() => {
     if (!filters.selectedAttachmentId) return null
@@ -77,7 +78,7 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
   }, [enabled, search.items, filters.selectedAttachmentId, update])
 
   const hasFilters =
-    filters.scope.kind === "stream" ||
+    filters.streamIds.length > 0 ||
     filters.categories.length > 0 ||
     Boolean(filters.uploadedBy) ||
     Boolean(filters.nameSubstring) ||
@@ -87,7 +88,7 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
 
   const clearFilters = () =>
     update({
-      scope: { kind: "workspace" },
+      streamIds: [],
       categories: [],
       uploadedBy: null,
       nameSubstring: null,
@@ -96,7 +97,7 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
       queryText: "",
     })
 
-  const widenScope = () => update({ scope: { kind: "workspace" } })
+  const widenScope = () => update({ streamIds: [] })
 
   const showPreviewOnly = isMobile && Boolean(selectedItem)
 

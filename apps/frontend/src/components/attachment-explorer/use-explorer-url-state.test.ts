@@ -14,7 +14,7 @@ describe("isExplorerOpen", () => {
 
   it("returns false when the marker is absent", () => {
     expect(isExplorerOpen(new URLSearchParams(""))).toBe(false)
-    expect(isExplorerOpen(new URLSearchParams("scope=stream-str_1"))).toBe(false)
+    expect(isExplorerOpen(new URLSearchParams("streams=str_1"))).toBe(false)
   })
 })
 
@@ -22,7 +22,7 @@ describe("readExplorerFiltersFromParams", () => {
   it("returns workspace-scoped defaults for an empty URL", () => {
     const filters = readExplorerFiltersFromParams(new URLSearchParams(""))
     expect(filters).toEqual({
-      scope: { kind: "workspace" },
+      streamIds: [],
       queryText: "",
       categories: [],
       uploadedBy: null,
@@ -34,12 +34,12 @@ describe("readExplorerFiltersFromParams", () => {
     })
   })
 
-  it("parses a stream scope and explicit filters", () => {
+  it("parses multi-stream filters and explicit filters", () => {
     const params = new URLSearchParams(
-      "explorer=&scope=stream-str_design&q=invoice&type=image,pdf&from=usr_1&name=q2&before=2026-04-01T00:00:00.000Z&after=2026-01-01T00:00:00.000Z&view=grid&selected=attach_1"
+      "explorer=&streams=str_design,str_strategy&q=invoice&type=image,pdf&from=usr_1&name=q2&before=2026-04-01T00:00:00.000Z&after=2026-01-01T00:00:00.000Z&view=grid&selected=attach_1"
     )
     expect(readExplorerFiltersFromParams(params)).toEqual({
-      scope: { kind: "stream", streamId: "str_design" },
+      streamIds: ["str_design", "str_strategy"],
       queryText: "invoice",
       categories: ["image", "pdf"],
       uploadedBy: "usr_1",
@@ -56,9 +56,9 @@ describe("readExplorerFiltersFromParams", () => {
     expect(filters.categories).toEqual(["image", "pdf"])
   })
 
-  it("falls back to a workspace scope when the scope token is malformed", () => {
-    expect(readExplorerFiltersFromParams(new URLSearchParams("scope=stream-")).scope).toEqual({ kind: "workspace" })
-    expect(readExplorerFiltersFromParams(new URLSearchParams("scope=garbage")).scope).toEqual({ kind: "workspace" })
+  it("dedupes repeated stream IDs and drops empties", () => {
+    const filters = readExplorerFiltersFromParams(new URLSearchParams("streams=str_a,,str_b,str_a"))
+    expect(filters.streamIds).toEqual(["str_a", "str_b"])
   })
 })
 
@@ -66,7 +66,7 @@ describe("writeExplorerFiltersToParams", () => {
   it("round-trips a full filter object back through the params parser", () => {
     const start = new URLSearchParams()
     const written = writeExplorerFiltersToParams(start, {
-      scope: { kind: "stream", streamId: "str_design" },
+      streamIds: ["str_design", "str_strategy"],
       queryText: "invoice",
       categories: ["image", "pdf"],
       uploadedBy: "usr_1",
@@ -80,7 +80,7 @@ describe("writeExplorerFiltersToParams", () => {
 
     const round = readExplorerFiltersFromParams(written)
     expect(round).toEqual({
-      scope: { kind: "stream", streamId: "str_design" },
+      streamIds: ["str_design", "str_strategy"],
       queryText: "invoice",
       categories: ["image", "pdf"],
       uploadedBy: "usr_1",
@@ -94,10 +94,10 @@ describe("writeExplorerFiltersToParams", () => {
 
   it("clears params when filters are reset to their defaults", () => {
     const initial = new URLSearchParams(
-      "scope=stream-str_design&q=invoice&type=image&from=usr_1&name=q2&before=x&after=y&view=grid&selected=attach_1"
+      "streams=str_design&q=invoice&type=image&from=usr_1&name=q2&before=x&after=y&view=grid&selected=attach_1"
     )
     const cleared = writeExplorerFiltersToParams(initial, {
-      scope: { kind: "workspace" },
+      streamIds: [],
       queryText: "",
       categories: [],
       uploadedBy: null,
@@ -113,10 +113,10 @@ describe("writeExplorerFiltersToParams", () => {
   it("preserves non-explorer params when narrowing the scope", () => {
     const initial = new URLSearchParams("panel=str_other&explorer=")
     const updated = writeExplorerFiltersToParams(initial, {
-      scope: { kind: "stream", streamId: "str_design" },
+      streamIds: ["str_design"],
     })
     expect(updated.get("panel")).toBe("str_other")
-    expect(updated.get("scope")).toBe("stream-str_design")
+    expect(updated.get("streams")).toBe("str_design")
     expect(updated.has("explorer")).toBe(true)
   })
 })

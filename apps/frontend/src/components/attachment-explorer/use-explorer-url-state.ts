@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom"
 import { ATTACHMENT_CATEGORIES, type AttachmentCategory } from "@threa/types"
 
 export const EXPLORER_PARAM = "explorer"
-const SCOPE_PARAM = "scope"
+const STREAMS_PARAM = "streams"
 const QUERY_PARAM = "q"
 const TYPE_PARAM = "type"
 const FROM_PARAM = "from"
@@ -13,17 +13,15 @@ const AFTER_PARAM = "after"
 const VIEW_PARAM = "view"
 const SELECTED_PARAM = "selected"
 
-export type ExplorerScope = { kind: "workspace" } | { kind: "stream"; streamId: string }
-
 export type ExplorerView = "list" | "grid"
 
 export interface ExplorerFilters {
   /**
-   * Scope is encoded as `stream-{id}`. `workspace` (or omitted) = no narrowing.
-   * Threads are server-side expanded into their root scope when the streamId
-   * is a thread root — callers don't worry about that.
+   * IDs of streams the user has selected as filters. Empty means "all streams
+   * the caller can read" (workspace-wide). Threads are server-side expanded
+   * into their root scope when the streamId is a thread root.
    */
-  scope: ExplorerScope
+  streamIds: string[]
   queryText: string
   categories: AttachmentCategory[]
   uploadedBy: string | null
@@ -36,13 +34,13 @@ export interface ExplorerFilters {
 
 const CATEGORY_SET = new Set<AttachmentCategory>(ATTACHMENT_CATEGORIES)
 
-function parseScope(raw: string | null): ExplorerScope {
-  if (!raw) return { kind: "workspace" }
-  if (raw.startsWith("stream-")) {
-    const streamId = raw.slice("stream-".length)
-    if (streamId) return { kind: "stream", streamId }
-  }
-  return { kind: "workspace" }
+function parseStreamIds(raw: string | null): string[] {
+  if (!raw) return []
+  const ids = raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean)
+  return Array.from(new Set(ids))
 }
 
 function parseCategories(raw: string | null): AttachmentCategory[] {
@@ -60,7 +58,7 @@ function parseView(raw: string | null): ExplorerView {
 
 export function readExplorerFiltersFromParams(params: URLSearchParams): ExplorerFilters {
   return {
-    scope: parseScope(params.get(SCOPE_PARAM)),
+    streamIds: parseStreamIds(params.get(STREAMS_PARAM)),
     queryText: params.get(QUERY_PARAM) ?? "",
     categories: parseCategories(params.get(TYPE_PARAM)),
     uploadedBy: params.get(FROM_PARAM) || null,
@@ -87,9 +85,10 @@ function applyFilter(params: URLSearchParams, key: string, value: string | null)
 export function writeExplorerFiltersToParams(params: URLSearchParams, next: Partial<ExplorerFilters>): URLSearchParams {
   const updated = new URLSearchParams(params)
 
-  if (next.scope) {
-    if (next.scope.kind === "workspace") updated.delete(SCOPE_PARAM)
-    else updated.set(SCOPE_PARAM, `stream-${next.scope.streamId}`)
+  if ("streamIds" in next) {
+    const ids = next.streamIds ?? []
+    if (ids.length === 0) updated.delete(STREAMS_PARAM)
+    else updated.set(STREAMS_PARAM, Array.from(new Set(ids)).join(","))
   }
   if ("queryText" in next) applyFilter(updated, QUERY_PARAM, next.queryText ?? null)
   if ("categories" in next) applyFilter(updated, TYPE_PARAM, next.categories?.length ? next.categories.join(",") : null)
@@ -108,7 +107,7 @@ export function writeExplorerFiltersToParams(params: URLSearchParams, next: Part
 
 const EXPLORER_KEYS = [
   EXPLORER_PARAM,
-  SCOPE_PARAM,
+  STREAMS_PARAM,
   QUERY_PARAM,
   TYPE_PARAM,
   FROM_PARAM,

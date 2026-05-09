@@ -92,7 +92,7 @@ describe("AttachmentExplorer", () => {
       .spyOn(attachmentsApiModule.attachmentsApi, "search")
       .mockResolvedValue({ items: [], nextCursor: null })
 
-    renderExplorer("/w/ws_1?explorer=&scope=stream-str_design")
+    renderExplorer("/w/ws_1?explorer=&streams=str_design")
 
     await waitFor(() => expect(searchSpy).toHaveBeenCalled())
     expect(searchSpy.mock.calls[0]![1]).toMatchObject({ streamIds: ["str_design"], limit: 30 })

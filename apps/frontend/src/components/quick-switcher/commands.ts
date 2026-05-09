@@ -98,7 +98,7 @@ export const commands: Command[] = [
     keywords: ["attachments", "uploads", "media", "files", "explorer"],
     action: ({ closeDialog, openExplorer }) => {
       closeDialog()
-      openExplorer({ scope: { kind: "workspace" } })
+      openExplorer({ streamIds: [] })
     },
   },
   {

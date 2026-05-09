@@ -85,7 +85,7 @@ function WorkspaceKeyboardHandler({ onOpenSwitcher, currentStreamId, children }:
     openSettings: () => openSettings(),
     openAttachmentExplorer: () =>
       openExplorer({
-        scope: currentStreamId ? { kind: "stream", streamId: currentStreamId } : { kind: "workspace" },
+        streamIds: currentStreamId ? [currentStreamId] : [],
       }),
   })
 

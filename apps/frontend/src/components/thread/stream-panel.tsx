@@ -219,7 +219,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     label: "Browse files…",
     icon: Paperclip,
     onSelect: () => {
-      if (panelId) openExplorer({ scope: { kind: "stream", streamId: panelId } })
+      if (panelId) openExplorer({ streamIds: [panelId] })
     },
   })
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
