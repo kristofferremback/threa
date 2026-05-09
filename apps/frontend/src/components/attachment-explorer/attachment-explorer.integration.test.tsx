@@ -6,6 +6,8 @@ import { AttachmentExplorer } from "./attachment-explorer"
 import * as attachmentsApiModule from "@/api/attachments"
 import * as workspaceStoreModule from "@/stores/workspace-store"
 import * as preferencesModule from "@/contexts/preferences-context"
+import * as unreadCountsModule from "@/hooks/use-unread-counts"
+import * as activityCountsModule from "@/hooks/use-activity-counts"
 
 function makeItem(
   overrides: Partial<attachmentsApiModule.AttachmentSearchItem> = {}
@@ -57,6 +59,14 @@ describe("AttachmentExplorer", () => {
     vi.restoreAllMocks()
     vi.spyOn(workspaceStoreModule, "useWorkspaceStreams").mockReturnValue([])
     vi.spyOn(workspaceStoreModule, "useWorkspaceUsers").mockReturnValue([])
+    vi.spyOn(workspaceStoreModule, "useWorkspaceUnreadState").mockReturnValue(undefined)
+    vi.spyOn(unreadCountsModule, "useUnreadCounts").mockReturnValue({
+      getUnreadCount: () => 0,
+    } as unknown as ReturnType<typeof unreadCountsModule.useUnreadCounts>)
+    vi.spyOn(activityCountsModule, "useActivityCounts").mockReturnValue({
+      getMentionCount: () => 0,
+      unreadActivityCount: 0,
+    } as unknown as ReturnType<typeof activityCountsModule.useActivityCounts>)
     vi.spyOn(preferencesModule, "usePreferences").mockReturnValue({
       preferences: { dateFormat: "YYYY-MM-DD", timeFormat: "24h", timezone: "UTC" } as never,
     } as unknown as ReturnType<typeof preferencesModule.usePreferences>)

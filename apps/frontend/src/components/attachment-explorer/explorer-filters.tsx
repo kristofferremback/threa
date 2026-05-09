@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { X, Filter as FilterIcon, Hash, User as UserIcon, Calendar, FileType, FileText } from "lucide-react"
-import type { AttachmentCategory } from "@threa/types"
+import { StreamTypes, type AttachmentCategory } from "@threa/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,7 +14,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { useWorkspaceStreams, useWorkspaceUsers } from "@/stores/workspace-store"
+import { useWorkspaceStreams, useWorkspaceUnreadState, useWorkspaceUsers } from "@/stores/workspace-store"
+import { useActivityCounts, useUnreadCounts } from "@/hooks"
+import { calculateUrgency } from "@/components/layout/sidebar/utils"
+import { compareStreamEntries, scoreStreamMatch } from "@/lib/stream-sort"
+import { getStreamName, streamFallbackLabel, STREAM_ICONS } from "@/lib/streams"
 import { CATEGORY_OPTIONS } from "./category"
 import type { ExplorerFilters } from "./use-explorer-url-state"
 
@@ -30,6 +34,10 @@ interface ExplorerFiltersProps {
 export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate }: ExplorerFiltersProps) {
   const streams = useWorkspaceStreams(workspaceId)
   const users = useWorkspaceUsers(workspaceId)
+  const { getUnreadCount } = useUnreadCounts(workspaceId)
+  const { getMentionCount } = useActivityCounts(workspaceId)
+  const unreadState = useWorkspaceUnreadState(workspaceId)
+  const mutedStreamIds = useMemo(() => new Set(unreadState?.mutedStreamIds ?? []), [unreadState?.mutedStreamIds])
 
   const [nameDraft, setNameDraft] = useState(filters.nameSubstring ?? "")
   useEffect(() => {
@@ -54,18 +62,37 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
     return users.find((u) => u.id === filters.uploadedBy) ?? null
   }, [filters.uploadedBy, users])
 
-  // Streams the user can pick from in the picker, filtered by the search box.
-  // Already-selected streams stay in the list (with a checkbox tick) so the
-  // user can deselect from inside the picker without hunting for the chip.
-  const pickerStreams = useMemo(() => {
-    const needle = streamSearch.trim().toLowerCase()
-    if (!needle) return streams
-    return streams.filter((s) => {
-      const slug = s.slug?.toLowerCase() ?? ""
-      const name = s.displayName?.toLowerCase() ?? ""
-      return slug.includes(needle) || name.includes(needle)
-    })
-  }, [streams, streamSearch])
+  // Picker entries: scored + sorted with the same comparator the quick
+  // switcher uses, so naming and ordering stay aligned across surfaces.
+  // Threads stay out (the quick switcher hides them), as do archived
+  // streams unless they're already selected in the filter.
+  const pickerEntries = useMemo(() => {
+    const lowerQuery = streamSearch.trim().toLowerCase()
+    const isSearching = lowerQuery.length > 0
+    const selectedSet = new Set(filters.streamIds)
+    return streams
+      .filter(
+        (s) =>
+          s.type === StreamTypes.SCRATCHPAD ||
+          s.type === StreamTypes.CHANNEL ||
+          s.type === StreamTypes.DM ||
+          s.type === StreamTypes.SYSTEM
+      )
+      .filter((s) => !s.archivedAt || selectedSet.has(s.id))
+      .map((stream) => {
+        const score = scoreStreamMatch(stream, lowerQuery)
+        const unreadCount = getUnreadCount(stream.id)
+        const mentionCount = getMentionCount(stream.id)
+        const isMuted = mutedStreamIds.has(stream.id)
+        const urgency = calculateUrgency(stream, unreadCount, mentionCount, isMuted)
+        return { stream, score, urgency }
+      })
+      .filter(({ score }) => score !== Infinity)
+      .sort((a, b) => compareStreamEntries(a, b, { isSearching, mode: "recency" }))
+  }, [streams, streamSearch, filters.streamIds, getUnreadCount, getMentionCount, mutedStreamIds])
+
+  const labelForStream = (stream: { type: string; displayName?: string | null; slug?: string | null }) =>
+    getStreamName(stream) ?? streamFallbackLabel(stream.type as Parameters<typeof streamFallbackLabel>[0], "generic")
 
   const toggleCategory = (cat: AttachmentCategory) => {
     const set = new Set(filters.categories)
@@ -93,20 +120,24 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
 
   return (
     <div className="flex flex-wrap items-center gap-2 px-3 pb-3 pt-1">
-      {selectedStreams.map(({ id, stream }) => (
-        <Badge key={id} variant="secondary" className="gap-1 pr-1">
-          <Hash className="h-3 w-3" />
-          <span className="max-w-[140px] truncate">{stream?.slug ?? stream?.displayName ?? "stream"}</span>
-          <button
-            type="button"
-            className="rounded-full p-0.5 hover:bg-background/60"
-            onClick={() => removeStream(id)}
-            aria-label="Remove stream filter"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
-      ))}
+      {selectedStreams.map(({ id, stream }) => {
+        const Icon = stream ? STREAM_ICONS[stream.type] : Hash
+        const label = stream ? labelForStream(stream) : "stream"
+        return (
+          <Badge key={id} variant="secondary" className="gap-1 pr-1">
+            <Icon className="h-3 w-3" />
+            <span className="max-w-[140px] truncate">{label}</span>
+            <button
+              type="button"
+              className="rounded-full p-0.5 hover:bg-background/60"
+              onClick={() => removeStream(id)}
+              aria-label="Remove stream filter"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        )
+      })}
 
       {filters.categories.map((cat) => (
         <Badge key={cat} variant="secondary" className="gap-1 pr-1">
@@ -205,16 +236,17 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
             />
           </div>
           <div className="max-h-64 overflow-y-auto py-1">
-            {pickerStreams.length === 0 ? (
+            {pickerEntries.length === 0 ? (
               <div className="px-3 py-2 text-xs text-muted-foreground">No streams match</div>
             ) : (
-              pickerStreams.map((s) => {
-                const checked = filters.streamIds.includes(s.id)
+              pickerEntries.map(({ stream }) => {
+                const checked = filters.streamIds.includes(stream.id)
+                const Icon = STREAM_ICONS[stream.type]
                 return (
                   <button
-                    key={s.id}
+                    key={stream.id}
                     type="button"
-                    onClick={() => toggleStream(s.id)}
+                    onClick={() => toggleStream(stream.id)}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent/50"
                   >
                     <span
@@ -225,8 +257,8 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
                     >
                       {checked ? <span className="text-[10px] leading-none">✓</span> : null}
                     </span>
-                    <Hash className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="flex-1 truncate">{s.slug ?? s.displayName ?? "stream"}</span>
+                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="flex-1 truncate">{labelForStream(stream)}</span>
                   </button>
                 )
               })
@@ -343,9 +375,9 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
           variant="ghost"
           className="h-7 text-xs"
           onClick={includeParent}
-          title={`Include the parent channel #${parentStream.slug ?? parentStream.displayName ?? ""}`}
+          title={`Include the parent channel ${labelForStream(parentStream)}`}
         >
-          + Include #{parentStream.slug ?? parentStream.displayName ?? "parent"}
+          + Include {labelForStream(parentStream)}
         </Button>
       ) : null}
     </div>
