@@ -62,7 +62,7 @@ Personal API keys are owned by a workspace member and persist a scope set chosen
 
 This path is low-volume and cannot read from a session JWT (there's no session). PR-3 introduces a regional `workspace_user_permissions` table — denormalized `(workspace_id, workos_user_id) → permission_slugs`, populated by CP fan-out. The public-API auth middleware (`apps/backend/src/middleware/public-api-auth.ts`) does one indexed read on this table per request, intersects with the key's stored scopes, and uses the result as the effective permission set.
 
-If the owner's row is missing (removed entirely from the workspace), the key returns 403. This makes the mirror authoritative for API-key authz without putting it on the user-session hot path.
+If the owner's row is missing (removed entirely from the workspace) or its `status !== "active"`, the public-API auth middleware returns 401 — the key's credential is no longer usable, which is a credential failure, not an authz failure. This matches the session-path treatment of inactive status (line above) and means `requireWorkspacePermission` never sees a key with a missing owner row. The mirror is authoritative for API-key authz without putting it on the user-session hot path.
 
 ### 5. Fan-out reuses the CP outbox pattern, with new event types
 
@@ -269,8 +269,10 @@ Regional feature module (INV-51):
 - `apps/backend/src/middleware/workspace-permission.ts` — `requireWorkspacePermission(slug)`. Logic:
   1. If `req.workosStatus !== "active"` → 401.
   2. If `req.workosPermissions?.has(slug)` → next (session path, JWT-only).
-  3. Else if `req.apiKey` (API-key path): intersect `req.apiKey.scopes` with `repo.getByWorkspaceAndUser(...).permissionSlugs`; if `slug` in result → next. If owner row missing → 403.
+  3. Else if `req.apiKey` (API-key path): intersect `req.apiKey.scopes` with `repo.getByWorkspaceAndUser(...).permissionSlugs`; if `slug` in result → next. (Owner row missing is impossible here — `public-api-auth` returns 401 in that case before this middleware runs.)
   4. Otherwise 403.
+
+  **Status code rule for permission denial.** This middleware always returns 403 on permission failure. That is correct because the gate is workspace-level: an authenticated session/key for `:workspaceId` already proves the caller has standing in this workspace, so workspace existence is not a secret to protect. The "404 to avoid leaking existence" pattern applies *per-resource* (e.g. `GET /streams/:id` for a private stream the caller isn't a member of) and lives in the route handler, not in `requireWorkspacePermission`. New write/action endpoints (e.g. `POST /attachments`, `PATCH /members/:id/role`) gate via this middleware and 403 is the right code; new per-resource read endpoints keep their existing handler-level 404-on-not-a-member behavior even though they may *also* gate on a read-permission slug at the workspace level.
 
 **Modified files.**
 
