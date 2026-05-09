@@ -1,6 +1,3 @@
--- Rename workspace user role from "user" to "member" everywhere it is persisted.
--- One-shot cutover; the application code now only accepts "owner" | "admin" | "member".
-
 UPDATE users
 SET role = 'member'
 WHERE role = 'user';
@@ -8,3 +5,9 @@ WHERE role = 'user';
 UPDATE workspace_invitations
 SET role = 'member'
 WHERE role = 'user';
+
+ALTER TABLE users
+ALTER COLUMN role SET DEFAULT 'member';
+
+ALTER TABLE workspace_invitations
+ALTER COLUMN role SET DEFAULT 'member';

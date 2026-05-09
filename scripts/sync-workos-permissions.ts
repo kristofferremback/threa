@@ -92,12 +92,6 @@ async function updatePermission(
   return workosRequest<WorkOSPermission>(apiKey, "PATCH", `/authorization/permissions/${slug}`, updates)
 }
 
-// --- Role definitions ---
-// Sourced from `WORKSPACE_ROLE_DEFINITIONS` in `@threa/types` so the sync script,
-// the regional middleware, and the API-key picker share one source of truth.
-// The "admin" role additionally gets the WorkOS system permission
-// `widgets:api-keys:manage` so admins can render the API Keys widget.
-
 interface RoleDefinition {
   slug: string
   name: string
@@ -105,13 +99,19 @@ interface RoleDefinition {
   permissions: string[]
 }
 
-const ADMIN_SYSTEM_PERMISSIONS = ["widgets:api-keys:manage"]
+// `widgets:api-keys:manage` is a WorkOS system permission (not a Threa-defined
+// catalog slug) that gates rendering of the API Keys widget in AuthKit.
+const ADMIN_OR_HIGHER_SYSTEM_PERMISSIONS = ["widgets:api-keys:manage"]
+
+const ROLES_WITH_API_KEY_WIDGET = new Set(["admin", "owner"])
 
 const REQUIRED_ROLES: RoleDefinition[] = WORKSPACE_ROLE_DEFINITIONS.map((role) => ({
   slug: role.slug,
   name: role.name,
   description: role.description,
-  permissions: role.slug === "admin" ? [...role.permissions, ...ADMIN_SYSTEM_PERMISSIONS] : [...role.permissions],
+  permissions: ROLES_WITH_API_KEY_WIDGET.has(role.slug)
+    ? [...role.permissions, ...ADMIN_OR_HIGHER_SYSTEM_PERMISSIONS]
+    : [...role.permissions],
 }))
 
 // --- Role API client ---

@@ -5,24 +5,15 @@ import {
   type WorkspacePermissionSlug,
 } from "./workspace-permissions"
 
-/**
- * API-key scopes are a subset of the unified workspace permission catalog
- * (`packages/types/src/workspace-permissions.ts`). Persisted API keys store a
- * subset of these slugs and are clamped at request time against the owner's
- * current workspace permissions in the regional middleware.
- */
+// API-key scopes draw from the same catalog as workspace permissions; persisted
+// keys are clamped at request time against the owner's effective workspace
+// permissions in the regional middleware.
 export const API_KEY_SCOPES = WORKSPACE_PERMISSION_SCOPES
 
 export type ApiKeyScope = WorkspacePermissionSlug
 
 export type ApiKeyPermission = WorkspacePermission
 
-/**
- * Human-readable permission definitions used by the WorkOS sync script and the
- * API-key UI. Re-exported from the unified catalog so the two cannot drift.
- *
- * WorkOS setup: Authorization > Configuration > Organization API key permissions
- */
 export const API_KEY_PERMISSIONS: ApiKeyPermission[] = WORKSPACE_PERMISSIONS
 
 // --- User-scoped API keys ---

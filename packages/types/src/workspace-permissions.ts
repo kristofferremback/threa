@@ -1,17 +1,7 @@
 /**
  * Workspace authorization catalog — single source of truth for the WorkOS
- * dashboard, regional permission middleware, and API-key scope validation.
- *
- * Slugs flow through three places that must stay in sync:
- *   1. WorkOS Authorization > Permissions and Authorization > Roles
- *      (managed by `scripts/sync-workos-permissions.ts`).
- *   2. Regional `requireWorkspacePermission(slug)` middleware reading from the
- *      WorkOS session JWT (`req.workosPermissions`) or the API-key clamp path.
- *   3. API-key scope picker on the frontend.
- *
- * Phase 2 of the WorkOS authz rollout uses this catalog to enforce permissions
- * end-to-end. Phase 1 only sources permissions from `API_KEY_PERMISSIONS`,
- * which is now a re-export of `WORKSPACE_PERMISSIONS` so the two cannot drift.
+ * dashboard sync (`scripts/sync-workos-permissions.ts`), regional
+ * `requireWorkspacePermission(slug)` middleware, and the API-key scope picker.
  */
 
 export const WORKSPACE_PERMISSION_SCOPES = {
@@ -154,12 +144,15 @@ const ADMIN_ADDITIONS: WorkspacePermissionSlug[] = [
   WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN,
 ]
 
+// Order is the canonical role hierarchy: index = privilege rank
+// (member < admin < owner). `roleRank()` and `WORKSPACE_USER_ROLES` derive
+// from this order so adding a role only requires editing this array.
 export const WORKSPACE_ROLE_DEFINITIONS: WorkspaceRoleDefinition[] = [
   {
-    slug: WORKSPACE_ROLE_SLUGS.OWNER,
-    name: "Owner",
-    description: "Full workspace administration including ownership transfer and workspace deletion.",
-    permissions: [...READ_AND_SELF_SERVE, ...ADMIN_ADDITIONS, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER],
+    slug: WORKSPACE_ROLE_SLUGS.MEMBER,
+    name: "Member",
+    description: "Default workspace member: read access plus self-serve writes (messages, attachments, personal bots).",
+    permissions: [...READ_AND_SELF_SERVE],
   },
   {
     slug: WORKSPACE_ROLE_SLUGS.ADMIN,
@@ -168,14 +161,30 @@ export const WORKSPACE_ROLE_DEFINITIONS: WorkspaceRoleDefinition[] = [
     permissions: [...READ_AND_SELF_SERVE, ...ADMIN_ADDITIONS],
   },
   {
-    slug: WORKSPACE_ROLE_SLUGS.MEMBER,
-    name: "Member",
-    description: "Default workspace member: read access plus self-serve writes (messages, attachments, personal bots).",
-    permissions: [...READ_AND_SELF_SERVE],
+    slug: WORKSPACE_ROLE_SLUGS.OWNER,
+    name: "Owner",
+    description: "Full workspace administration including ownership transfer and workspace deletion.",
+    permissions: [...READ_AND_SELF_SERVE, ...ADMIN_ADDITIONS, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER],
   },
 ]
 
-/** Lookup table for `req.workosPermissions` defaulting and tests. */
+export const WORKSPACE_USER_ROLES = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug) as readonly WorkspaceRoleSlug[]
+
+export type WorkspaceUserRole = WorkspaceRoleSlug
+
+const ROLE_RANK: Record<WorkspaceRoleSlug, number> = Object.fromEntries(
+  WORKSPACE_ROLE_DEFINITIONS.map((r, idx) => [r.slug, idx])
+) as Record<WorkspaceRoleSlug, number>
+
+/** Privilege rank for hierarchical comparisons (`member < admin < owner`). */
+export function roleRank(slug: WorkspaceRoleSlug): number {
+  const rank = ROLE_RANK[slug]
+  if (rank === undefined) {
+    throw new Error(`Unknown workspace role: ${slug}`)
+  }
+  return rank
+}
+
 export function permissionsForRole(slug: WorkspaceRoleSlug): WorkspacePermissionSlug[] {
   const definition = WORKSPACE_ROLE_DEFINITIONS.find((r) => r.slug === slug)
   if (!definition) {
