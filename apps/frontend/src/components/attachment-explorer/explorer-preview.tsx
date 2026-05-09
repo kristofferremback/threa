@@ -17,29 +17,43 @@ interface ExplorerPreviewProps {
 export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   const { formatFull } = useFormattedDate()
   const navigate = useNavigate()
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [rawUrl, setRawUrl] = useState<string | null>(null)
+  const [processedUrl, setProcessedUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
 
+  const category = item ? categoryFromMime(item.mimeType) : null
+
   useEffect(() => {
-    setPreviewUrl(null)
+    setRawUrl(null)
+    setProcessedUrl(null)
     setPreviewError(null)
     if (!item) return
     let cancelled = false
     attachmentsApi
       .getDownloadUrl(workspaceId, item.id, { variant: "raw" })
       .then((url) => {
-        if (!cancelled) setPreviewUrl(url)
+        if (!cancelled) setRawUrl(url)
       })
       .catch((err) => {
         if (cancelled) return
         setPreviewError(err instanceof Error ? err.message : "Failed to load preview")
       })
+    if (category === "video" && item.processingStatus === "completed") {
+      attachmentsApi
+        .getDownloadUrl(workspaceId, item.id, { variant: "processed" })
+        .then((url) => {
+          if (!cancelled) setProcessedUrl(url)
+        })
+        .catch(() => {
+          // Processed variant is optional — fall back to raw silently.
+        })
+    }
     return () => {
       cancelled = true
     }
-  }, [workspaceId, item])
+  }, [workspaceId, item, category])
 
-  if (!item) {
+  if (!item || !category) {
     return (
       <div className="flex h-full items-center justify-center px-6 py-10 text-center text-sm text-muted-foreground">
         Select a file to preview it here.
@@ -48,35 +62,34 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   }
 
   const selected = item
-  const category = categoryFromMime(selected.mimeType)
   const meta = CATEGORY_META[category]
   const Icon = meta.icon
   const sourceUrl =
     selected.streamId && selected.messageId ? `/w/${workspaceId}/s/${selected.streamId}?m=${selected.messageId}` : null
+  // Browsers handle iPhone .mov source poorly; prefer the transcoded mp4 when ready.
+  const playbackUrl = category === "video" ? (processedUrl ?? rawUrl) : rawUrl
 
   function renderMedia() {
     if (previewError) {
       return <div className="px-6 py-4 text-xs text-muted-foreground">{previewError}</div>
     }
-    if (!previewUrl) {
+    if (!rawUrl) {
       return (
-        <div className="flex h-full w-full items-center justify-center">
-          <div className={`flex h-16 w-16 items-center justify-center rounded-2xl ${meta.accent}`}>
-            <Icon className="h-8 w-8" />
-          </div>
+        <div className={`flex h-16 w-16 items-center justify-center rounded-2xl ${meta.accent}`}>
+          <Icon className="h-8 w-8" />
         </div>
       )
     }
     if (category === "image") {
-      return <img src={previewUrl} alt={selected.filename} className="max-h-full max-w-full object-contain" />
+      return <img src={rawUrl} alt={selected.filename} className="max-h-full max-w-full object-contain" />
     }
     if (category === "video") {
-      return <video src={previewUrl} controls className="max-h-full max-w-full" />
+      return <video src={playbackUrl ?? undefined} controls className="max-h-full max-w-full" />
     }
     if (category === "audio") {
       return (
         <div className="w-full px-6">
-          <audio src={previewUrl} controls className="w-full" />
+          <audio src={rawUrl} controls className="w-full" />
         </div>
       )
     }
@@ -86,7 +99,7 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
           <Icon className="h-8 w-8" />
         </div>
         <a
-          href={previewUrl}
+          href={rawUrl}
           target="_blank"
           rel="noreferrer"
           className="text-xs text-primary underline-offset-4 hover:underline"
@@ -98,10 +111,12 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-muted/30">{renderMedia()}</div>
+    <div className="h-full overflow-y-auto">
+      <div className="flex max-h-[60vh] min-h-[240px] items-center justify-center bg-muted/30 px-4 py-6">
+        {renderMedia()}
+      </div>
 
-      <div className="max-h-[55%] space-y-3 overflow-y-auto border-t p-4">
+      <div className="space-y-3 border-t p-4">
         <div className="space-y-1">
           <div className="break-all text-sm font-medium">{item.filename}</div>
           <div className="text-xs text-muted-foreground">
@@ -136,14 +151,22 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
           {sourceUrl ? (
             <Button size="sm" variant="outline" onClick={() => navigate(sourceUrl)} className="gap-1">
               <ExternalLink className="h-3.5 w-3.5" />
-              Open in #{item.streamSlug ?? "stream"}
+              Show message
             </Button>
           ) : null}
-          {previewUrl ? (
+          {rawUrl ? (
             <Button size="sm" variant="ghost" asChild>
-              <a href={previewUrl} download={item.filename} className="gap-1">
+              <a href={rawUrl} download={item.filename} className="gap-1">
                 <Download className="h-3.5 w-3.5" />
-                Download
+                {processedUrl ? "Original" : "Download"}
+              </a>
+            </Button>
+          ) : null}
+          {processedUrl ? (
+            <Button size="sm" variant="ghost" asChild>
+              <a href={processedUrl} download={item.filename.replace(/\.[^.]+$/, ".mp4")} className="gap-1">
+                <Download className="h-3.5 w-3.5" />
+                Processed (.mp4)
               </a>
             </Button>
           ) : null}
