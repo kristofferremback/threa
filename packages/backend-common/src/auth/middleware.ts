@@ -7,6 +7,7 @@ interface AuthenticatedUser {
   email: string
   firstName: string | null
   lastName: string | null
+  permissions: string[]
 }
 
 declare global {
@@ -16,12 +17,6 @@ declare global {
       workosUserId?: string
       /** Full WorkOS identity from authenticated session */
       authUser?: AuthenticatedUser
-      /**
-       * Workspace permissions claim from the WorkOS session JWT. Empty when
-       * the token predates the rollout. Phase 2 PR-2 surfaces this for
-       * downstream `requireWorkspacePermission` (PR-3); nothing reads it yet.
-       */
-      workosPermissions?: Set<string>
     }
   }
 }
@@ -51,7 +46,6 @@ export function createAuthMiddleware({ authService }: Dependencies) {
 
     req.workosUserId = result.user.id
     req.authUser = result.user
-    req.workosPermissions = new Set(result.user.permissions)
     next()
   }
 }

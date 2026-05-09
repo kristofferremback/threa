@@ -45,15 +45,15 @@ describe("createAuthMiddleware", () => {
   let sessionCookieName: string
 
   beforeAll(async () => {
-    // The cookies module captures SESSION_COOKIE_NAME at first import; when
-    // this test runs alongside cookies.test.ts the value may already be set.
-    // Read whatever the module resolved to and key our request fixtures off it.
+    // cookies.ts captures SESSION_COOKIE_NAME at module load. Reuse whatever
+    // value the module resolved to so this file works in isolation and when
+    // cookies.test.ts has already locked the name in.
     process.env.SESSION_COOKIE_NAME ??= "wos_session_test_mw"
     sessionCookieName = (await import("../cookies")).SESSION_COOKIE_NAME
     createAuthMiddleware = (await import("./middleware")).createAuthMiddleware
   })
 
-  test("populates req.workosPermissions from the JWT permission claim", async () => {
+  test("populates req.authUser.permissions from the JWT permission claim", async () => {
     const middleware = createAuthMiddleware({
       authService: new FakeAuthService({
         success: true,
@@ -75,12 +75,11 @@ describe("createAuthMiddleware", () => {
     })
 
     expect(nextCalled).toBe(true)
-    expect(req.workosPermissions).toBeInstanceOf(Set)
-    expect(Array.from(req.workosPermissions!).sort()).toEqual(["members:write", "messages:read"])
+    expect(req.authUser?.permissions.slice().sort()).toEqual(["members:write", "messages:read"])
     expect(req.workosUserId).toBe("user_123")
   })
 
-  test("empty permission claim yields an empty set, not undefined", async () => {
+  test("empty permission claim yields an empty array, not undefined", async () => {
     const middleware = createAuthMiddleware({
       authService: new FakeAuthService({
         success: true,
@@ -98,7 +97,6 @@ describe("createAuthMiddleware", () => {
     const req = { cookies: { [sessionCookieName]: "session" } } as unknown as Request
     await middleware(req, makeRes(), () => {})
 
-    expect(req.workosPermissions).toBeInstanceOf(Set)
-    expect(req.workosPermissions!.size).toBe(0)
+    expect(req.authUser?.permissions).toEqual([])
   })
 })

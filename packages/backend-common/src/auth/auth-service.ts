@@ -9,11 +9,7 @@ export interface AuthResult {
     email: string
     firstName: string | null
     lastName: string | null
-    /**
-     * Workspace permissions claim from the WorkOS session JWT. Empty when the
-     * token predates the rollout or the user has no permissions in the active
-     * org. Surfaced as `req.workosPermissions` for downstream middleware.
-     */
+    /** Workspace permission slugs from the WorkOS session JWT. */
     permissions: string[]
   }
   sealedSession?: string
@@ -142,9 +138,8 @@ export class WorkosAuthService implements AuthService {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
-          // The OAuth-callback response does not surface permissions directly.
-          // Callers redirect immediately and the next authenticated request
-          // hits authenticateSession() which populates the permission set.
+          // OAuth callback response has no permissions claim; the next
+          // authenticated request through authenticateSession populates them.
           permissions: [],
         },
         sealedSession: sealedSession!,

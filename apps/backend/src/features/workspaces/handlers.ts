@@ -15,6 +15,7 @@ import { HttpError } from "../../lib/errors"
 import {
   CommandKinds,
   DISCUSS_WITH_ARIADNE_COMMAND,
+  parseJwtPermissions,
   permissionsForRole,
   type CommandInfo,
   type WorkspacePermissionSlug,
@@ -201,13 +202,9 @@ export function createWorkspaceHandlers({
       const isAdmin = userRole === "admin" || userRole === "owner"
       const invitations = isAdmin ? await invitationService.listInvitations(workspaceId) : undefined
 
-      // Prefer JWT-issued permissions; fall back to the role catalog when the
-      // session predates the rollout so the UI is never empty.
-      const jwtPermissions = req.workosPermissions
+      const jwtPermissions = parseJwtPermissions(req.authUser!.permissions)
       const viewerPermissions: WorkspacePermissionSlug[] =
-        jwtPermissions && jwtPermissions.size > 0
-          ? (Array.from(jwtPermissions) as WorkspacePermissionSlug[])
-          : permissionsForRole(userRole)
+        jwtPermissions.length > 0 ? jwtPermissions : permissionsForRole(userRole)
 
       res.json({
         data: {

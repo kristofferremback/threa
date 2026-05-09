@@ -211,3 +211,9 @@ export function permissionsForRole(slug: WorkspaceRoleSlug): WorkspacePermission
   }
   return [...definition.permissions]
 }
+
+const PERMISSION_SLUG_SET = new Set<string>(Object.values(WORKSPACE_PERMISSION_SCOPES))
+
+export function parseJwtPermissions(raw: readonly string[]): WorkspacePermissionSlug[] {
+  return raw.filter((slug): slug is WorkspacePermissionSlug => PERMISSION_SLUG_SET.has(slug))
+}
