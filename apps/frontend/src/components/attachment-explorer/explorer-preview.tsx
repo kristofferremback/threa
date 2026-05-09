@@ -97,10 +97,10 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex flex-1 items-center justify-center overflow-hidden bg-muted/30">{renderMedia()}</div>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-muted/30">{renderMedia()}</div>
 
-      <div className="space-y-3 border-t p-4">
+      <div className="max-h-[55%] space-y-3 overflow-y-auto border-t p-4">
         <div className="space-y-1">
           <div className="break-all text-sm font-medium">{item.filename}</div>
           <div className="text-xs text-muted-foreground">
