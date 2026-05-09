@@ -663,6 +663,7 @@ export interface WorkspaceBootstrapData {
   mentionCounts: Record<string, number>
   activityCounts: Record<string, number>
   unreadActivityCount: number
+  viewerPermissions: string[]
 }
 
 export async function getWorkspaceBootstrap(client: TestClient, workspaceId: string): Promise<WorkspaceBootstrapData> {

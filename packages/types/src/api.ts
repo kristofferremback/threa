@@ -29,6 +29,7 @@ import type {
   Bot,
 } from "./domain"
 import type { UserPreferences } from "./preferences"
+import type { WorkspacePermissionSlug } from "./workspace-permissions"
 
 // ============================================================================
 // Streams API
@@ -450,6 +451,12 @@ export interface WorkspaceBootstrap {
   mutedStreamIds: string[]
   userPreferences: UserPreferences
   invitations?: WorkspaceInvitation[]
+  /**
+   * Effective workspace permissions for the viewer. Sourced from the WorkOS
+   * session JWT when the rollout is active, with a role-derived fallback for
+   * older tokens. Frontend uses this to gate UI affordances.
+   */
+  viewerPermissions: WorkspacePermissionSlug[]
 }
 
 // ============================================================================

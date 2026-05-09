@@ -12,7 +12,13 @@ import { getEffectiveLevel } from "../streams"
 import { BotRepository, serializeBot } from "../public-api"
 import { displayNameFromWorkos, type WorkosOrgService } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
-import { CommandKinds, DISCUSS_WITH_ARIADNE_COMMAND, type CommandInfo } from "@threa/types"
+import {
+  CommandKinds,
+  DISCUSS_WITH_ARIADNE_COMMAND,
+  permissionsForRole,
+  type CommandInfo,
+  type WorkspacePermissionSlug,
+} from "@threa/types"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -195,6 +201,14 @@ export function createWorkspaceHandlers({
       const isAdmin = userRole === "admin" || userRole === "owner"
       const invitations = isAdmin ? await invitationService.listInvitations(workspaceId) : undefined
 
+      // Prefer JWT-issued permissions; fall back to the role catalog when the
+      // session predates the rollout so the UI is never empty.
+      const jwtPermissions = req.workosPermissions
+      const viewerPermissions: WorkspacePermissionSlug[] =
+        jwtPermissions && jwtPermissions.size > 0
+          ? (Array.from(jwtPermissions) as WorkspacePermissionSlug[])
+          : permissionsForRole(userRole)
+
       res.json({
         data: {
           workspace,
@@ -214,6 +228,7 @@ export function createWorkspaceHandlers({
           dmPeers,
           userPreferences,
           invitations,
+          viewerPermissions,
         },
       })
     },
