@@ -27,16 +27,36 @@ export const WORKSPACE_PERMISSION_SCOPES = {
   USERS_READ: "users:read",
   MEMOS_READ: "memos:read",
   ATTACHMENTS_READ: "attachments:read",
+  ATTACHMENTS_WRITE: "attachments:write",       // Phase 2 addition — see decision 1a
+  BOTS_CREATE_PERSONAL: "bots:create:personal", // Phase 2 addition — see decision 1b
+  BOTS_CREATE_SHARED: "bots:create:shared",     // Phase 2 addition — see decision 1b
+  BOTS_MANAGE: "bots:manage",                   // Phase 2 addition — see decision 1b
   MEMBERS_WRITE: "members:write",
   WORKSPACE_ADMIN: "workspace:admin",
-  WORKSPACE_OWNER: "workspace:owner",  // Phase 2 addition — see decision 7
+  WORKSPACE_OWNER: "workspace:owner",           // Phase 2 addition — see decision 7
 } as const
 ```
 
 Three roles ship as real WorkOS roles:
-- **`owner`** — all 10 permissions (the full set, including `workspace:owner`).
-- **`admin`** — all 9 except `workspace:owner`.
-- **`member`** — the 7 read-mostly slugs, no `members:write`, no `workspace:admin`, no `workspace:owner`.
+- **`owner`** — all 14 permissions (the full set, including `workspace:owner`).
+- **`admin`** — all 13 except `workspace:owner`.
+- **`member`** — the 9 read-mostly + self-serve slugs: `messages:search`, `streams:read`, `messages:read`, `messages:write`, `users:read`, `memos:read`, `attachments:read`, `attachments:write`, `bots:create:personal`. No `members:write`, `workspace:admin`, `workspace:owner`, `bots:create:shared`, or `bots:manage`.
+
+#### 1a. Why `attachments:write`
+
+Currently the catalog has `attachments:read` (an API-key scope ported from PR #388) but no write counterpart. The internal upload route (`POST /api/workspaces/:workspaceId/attachments`) gates on session auth only — every member can upload. Adding `attachments:write` doesn't change that for sessions (every role gets it), but it gives us a way to mint API keys (notably for bots, per decision 8) that can read attachments without uploading them. Without the slug, the only way to express "no upload" today is "no API key at all" — too coarse. The cost is one slug; the benefit is bot-capability differentiation when PR #482 lands. INV-36 is satisfied because the requirement is concrete (PR #482 bot scoping), not imagined.
+
+#### 1b. Why three bot slugs
+
+A bot is a long-lived API key. "Any member can create a personal bot" is the right default for solo and small-team use, but it's the wrong default for any enterprise that takes data exfiltration seriously — a personal bot run as a member can quietly join streams and exfiltrate everything that member can read. Splitting bot creation into three slugs gives the WorkOS dashboard a clean knob without code changes:
+
+- **`bots:create:personal`** — create a bot whose `owner_user_id = self`. Personal bots authorize off the owner's permissions (decision 8).
+- **`bots:create:shared`** — create a workspace-owned bot. Shared bots represent the workspace, not a person; the creation right is admin-level by default.
+- **`bots:manage`** — edit/archive/restore/key-rotate any bot, including bots owned by other users. Per-resource ownership (a personal bot's owner managing their own bot) is checked inside the handler — see PR-6.
+
+Default mapping: owner gets all three; admin gets all three; member gets `bots:create:personal` only. An enterprise that wants to lock down personal bots removes that slug from their `member` role in the WorkOS dashboard — no code, no per-workspace toggle, no admin UI work. The middleware reads the new permissions on next session refresh (≤ 5 min) and the front-end's "New bot" control disappears via `viewerPermissions.includes("bots:create:personal")`.
+
+Existing personal bots created before a revocation are not retroactively deleted — `bots:create:personal` gates *creation*, not the continued operation of already-issued keys. An admin walking through the bot list with `bots:manage` can archive them if needed; a follow-up "revoke all personal bots owned by inactive users" sweep is out of scope for Phase 2.
 
 `workspace:owner` is the marker permission for ownership-only operations: promoting/demoting an owner, transferring ownership, deleting the workspace, and (in future) managing billing. Admins can do everything else admins can do today. This rejects PR #388's "owner is implicit from `created_by`" framing because it created friction in the write paths (special-cased guards everywhere instead of a uniform permission check) and made ownership transfer a second-class operation. With owner as a real role, the same `requireWorkspacePermission(...)` mechanism gates every write — no special cases.
 
@@ -95,8 +115,10 @@ Concrete write-path rules, all enforced via `requireWorkspacePermission` rather 
 
 PR #482 (sibling, branch `claude/threa-chat-provider-exploration-Z6oCT`) introduces `bots.type ("shared" | "personal")` and `bots.owner_user_id`. Phase 2 leapfrogs that work by ensuring bot authorization integrates with the new permission model from day one:
 
-- **Shared bots** (workspace-owned): authz uses workspace permissions of the *acting* user (e.g. admin can manage; member cannot).
-- **Personal bots**: authz uses the *owner's* permissions; only the owner (or a workspace admin) can manage. Stream-grant for personal bots requires the owner be a member of the target stream — that's PR #482's `authorizeBotManagement` rule, ported verbatim.
+- **Creating a shared bot** (workspace-owned): requires `bots:create:shared` (admin/owner by default).
+- **Creating a personal bot** (`owner_user_id = self`): requires `bots:create:personal` (member/admin/owner by default; revocable per-org via the WorkOS dashboard, decision 1b).
+- **Managing any bot** (edit/archive/restore/key-rotate): requires `bots:manage` *or* the actor is the bot's `owner_user_id` (per-resource ownership check stays in the handler — that's PR #482's `authorizeBotManagement` rule, extended to also accept `bots:manage` as a workspace-level grant).
+- **Runtime authz once a bot acts:** shared bots use the *acting* user's workspace permissions; personal bots use the *owner's* permissions. Stream-grant for personal bots still requires the owner be a member of the target stream.
 
 PR-6 (frontend role picker) and PR-2 (catalog) coordinate the constants (`BOT_TYPES`, `BOT_TRAITS`) so PR #482 and Phase 2 don't fork the source of truth. If PR #482 lands first, Phase 2 imports its constants; if Phase 2 lands first, the constants are stubbed in PR-1 and PR #482 imports them.
 
@@ -135,7 +157,7 @@ No CP migration in this PR — the CP mirror already speaks `member`.
 
 **New files.**
 - `packages/types/src/workspace-permissions.ts`. Exports:
-  - `WORKSPACE_PERMISSION_SCOPES` — the const map shown in decision 1 (10 slugs).
+  - `WORKSPACE_PERMISSION_SCOPES` — the const map shown in decision 1 (14 slugs).
   - `type WorkspacePermissionSlug` — derived from the values.
   - `WORKSPACE_PERMISSIONS: Permission[]` — `{ slug, name, description }` array (same shape `scripts/sync-workos-permissions.ts` consumes).
   - `WORKSPACE_ROLE_DEFINITIONS: RoleDefinition[]` — three entries (`owner`, `admin`, `member`) with their permission lists per decision 1.
@@ -159,7 +181,7 @@ No CP migration in this PR — the CP mirror already speaks `member`.
 - `WORKSPACE_PERMISSION_SCOPES`, `WorkspacePermissionSlug`, `WORKSPACE_ROLE_DEFINITIONS` exported from `@threa/types`.
 
 **Tests.**
-- `packages/types/src/workspace-permissions.test.ts` — every permission referenced in `WORKSPACE_ROLE_DEFINITIONS` exists in `WORKSPACE_PERMISSION_SCOPES`; admin ⊇ member. Catalog is structurally valid.
+- `packages/types/src/workspace-permissions.test.ts` — every permission referenced in `WORKSPACE_ROLE_DEFINITIONS` exists in `WORKSPACE_PERMISSION_SCOPES`; `owner ⊇ admin ⊇ member`; member has `bots:create:personal` but not `bots:create:shared` or `bots:manage`; admin has all three bot slugs; member has `attachments:write`. Catalog is structurally valid.
 - Update existing tests asserting `"user"` role strings → `"member"`.
 
 **Verification.**
@@ -290,7 +312,7 @@ Regional side:
   - `routes.ts:299-313` (invitations) → `requireWorkspacePermission("members:write")`.
   - `routes.ts:331` (AI budget) → `requireWorkspacePermission("workspace:admin")`.
   - `routes.ts:387-399` (integrations) → `requireWorkspacePermission("workspace:admin")`.
-  - `routes.ts:415-466` (bots) → see PR-6 + PR #482 coordination; for now `requireWorkspacePermission("workspace:admin")` for shared-bot endpoints; personal-bot endpoints stay open and use handler-side `authorizeBotManagement` (PR #482).
+  - `routes.ts:415-466` (bots) → coordinated with PR-6 + PR #482. Create-shared-bot endpoint gates on `bots:create:shared`; create-personal-bot endpoint gates on `bots:create:personal`; management endpoints (`PATCH`, archive, restore, list/create keys) gate on `bots:manage` *or* handler-side ownership check via `authorizeBotManagement` (PR #482). Until PR #482 lands, all manage routes fall back to `bots:manage` only (over-restrictive, but personal bots don't exist in production yet).
 - `apps/backend/src/features/workspace-integrations/service.ts:191` — replace inline role check with `permissionsRepo.hasPermission(...)` or the upstream session check.
 - `apps/backend/src/features/workspaces/handlers.ts:194-196` (bootstrap inviting flag) — `viewerPermissions.includes("members:write")`.
 - `apps/backend/src/features/streams/handlers.ts:772` — same pattern.
@@ -499,7 +521,8 @@ Invitations role_slug (CP):
 **Coordination with PR #482.** PR #482 introduces `bots.type` and handler-side `authorizeBotManagement`. Phase 2 PR-6 ships:
 - The role-picker UI.
 - A `BOT_TYPES` / `BOT_TRAITS` re-export from `@threa/types` (if PR #482 hasn't landed, PR-6 introduces these constants; if it has, PR-6 imports them).
-- Bot management endpoints use `authorizeBotManagement(pool, workspaceId, botId, actor)` from PR #482 *or*, if PR #482 hasn't landed, a stub that delegates to `requireWorkspacePermission("workspace:admin")` for shared bots and a TODO for personal bots that PR #482 will fill in.
+- Bot creation routes gated on `bots:create:shared` (shared bots) or `bots:create:personal` (personal bots) per decision 1b. Bot management routes gated on `bots:manage` *OR* the per-resource `authorizeBotManagement(pool, workspaceId, botId, actor)` ownership check from PR #482 — either grant authorizes the action. If PR #482 hasn't landed, the ownership check is stubbed to always-deny and only `bots:manage` works (over-restrictive but personal bots don't exist yet).
+- Frontend "New bot" entry point: button is rendered only if `viewerPermissions.includes("bots:create:personal") || viewerPermissions.includes("bots:create:shared")`. The bot-type picker inside the create form filters its options the same way — a member with only `bots:create:personal` doesn't see the "shared bot" option at all.
 
 **Migration.** None.
 
@@ -536,7 +559,9 @@ Socket helper:
 4. Log in as member → users tab shows badges only, no picker.
 5. Last-owner guard surfaces a `LAST_OWNER` toast when an owner tries to demote themselves and no other owner exists.
 6. Invite link creation: members tab admins see `admin`/`member` options; owners also see `owner`.
-7. PR #482 personal-bot creation: any member can create; only the bot's owner (or a workspace admin/owner) can manage.
+7. PR #482 personal-bot creation: member with `bots:create:personal` can create; only the bot's owner or a user with `bots:manage` can manage.
+8. Lock-down test (enterprise scenario): in WorkOS dashboard remove `bots:create:personal` from `member` role → wait ≤ 5 min for next session refresh → "New bot" button disappears for members; admins still see it; existing personal bots keep working but a member trying to hit `POST /bots` directly gets 403.
+9. `bots:create:shared` guard: member tries to create a shared bot via API → 403; admin can.
 
 **Does NOT.** Add SCIM. Add per-stream permissions.
 
@@ -551,7 +576,7 @@ Socket helper:
 - **Backoffice scaffolding:** PR-5's write endpoints reuse `requirePlatformAdmin` + `BackofficeService` from Phase 1's PR C.
 - **WorkOS SDK methods:** `updateOrganizationMembership` and `deleteOrganizationMembership` exist on `userManagement` — verified at `node_modules/.bun/@workos-inc+node@7.82.0+.../lib/user-management/user-management.d.ts:99-105`.
 - **Stub services:** `StubWorkosOrgService` already provides `pushMirrorEvent` and `setOrganizationMemberships` test seams from Phase 1; extended with mutation seams in PR-5.
-- **PR #388 scope set:** the 9-permission catalog is ported wholesale (decision 1).
+- **PR #388 scope set:** the 9-permission catalog is ported wholesale (decision 1), then extended with `attachments:write` (decision 1a) and three bot slugs (decision 1b) and `workspace:owner` (decision 7) for a 14-slug catalog.
 - **PR #482 bot constants:** `BOT_TYPES`, `BOT_TRAITS`, `authorizeBotManagement` — coordinated in PR-6.
 
 ---
@@ -574,7 +599,7 @@ If all six pass, Phase 2 is done. Phase 3 (out of scope) would tackle SCIM, per-
 **Confirmed product calls (resolved during planning):**
 
 1. **Roles:** Three real WorkOS roles — `owner`, `admin`, `member`. Owner is its own role with a `workspace:owner` permission (decisions 1 and 7). ✅
-2. **Permission slugs:** PR #388's 9-slug catalog plus `workspace:owner` (decision 1). ✅
+2. **Permission slugs:** 14-slug catalog — PR #388's 9 + `workspace:owner` + `attachments:write` + `bots:create:personal` / `bots:create:shared` / `bots:manage` (decisions 1, 1a, 1b, 7). ✅
 3. **Naming:** Hard cutover `user` → `member` (decision 2). No public-API consumers. ✅
 4. **Workspace admins can remove admins/members; owners can remove anyone:** Yes (decision 7). ✅
 5. **Inactive members denied at the middleware:** Yes (decision 6). ✅
