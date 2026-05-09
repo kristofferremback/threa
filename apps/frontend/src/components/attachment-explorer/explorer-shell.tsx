@@ -145,7 +145,7 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => update({ selectedAttachmentId: null })}
+            onClick={() => window.history.back()}
             aria-label="Back to file list"
             className="h-7 w-7"
           >
@@ -189,7 +189,15 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
             isFetchingNextPage={search.isFetchingNextPage}
             fetchNextPage={search.fetchNextPage}
             selectedId={filters.selectedAttachmentId}
-            onSelect={(id) => update({ selectedAttachmentId: id })}
+            onSelect={(id) =>
+              update(
+                { selectedAttachmentId: id },
+                // On mobile, tapping a row swaps the layout to preview-only —
+                // push history so hardware Back returns to the list instead
+                // of closing the explorer entirely.
+                { history: isMobile ? "push" : "replace" }
+              )
+            }
             hasFilters={hasFilters}
             onClearFilters={clearFilters}
             onWidenScope={widenScope}

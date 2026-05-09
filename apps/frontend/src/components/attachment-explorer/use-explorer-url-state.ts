@@ -146,9 +146,9 @@ export function useExplorerUrlState() {
   }, [searchParams, setSearchParams])
 
   const update = useCallback(
-    (overrides: Partial<ExplorerFilters>) => {
+    (overrides: Partial<ExplorerFilters>, options: { history?: "push" | "replace" } = {}) => {
       const next = writeExplorerFiltersToParams(searchParams, overrides)
-      setSearchParams(next, { replace: true })
+      setSearchParams(next, { replace: options.history !== "push" })
     },
     [searchParams, setSearchParams]
   )
