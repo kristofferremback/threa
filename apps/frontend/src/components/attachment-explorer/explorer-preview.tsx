@@ -5,6 +5,7 @@ import { Download, ExternalLink, Hash } from "lucide-react"
 import { attachmentsApi, type AttachmentSearchItem } from "@/api/attachments"
 import { Button } from "@/components/ui/button"
 import { useFormattedDate } from "@/hooks"
+import { stripMarkdownToInline } from "@/lib/markdown"
 import { CATEGORY_META } from "./category"
 import { formatFileSize } from "./format"
 
@@ -119,7 +120,9 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
         {item.extraction?.summary ? (
           <div className="space-y-1">
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Extract</div>
-            <p className="line-clamp-5 text-xs leading-relaxed text-foreground/80">{item.extraction.summary}</p>
+            <p className="line-clamp-5 text-xs leading-relaxed text-foreground/80">
+              {stripMarkdownToInline(item.extraction.summary)}
+            </p>
           </div>
         ) : null}
 

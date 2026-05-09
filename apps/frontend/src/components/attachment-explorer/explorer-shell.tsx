@@ -48,23 +48,29 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
     return search.items.find((item) => item.id === filters.selectedAttachmentId) ?? null
   }, [filters.selectedAttachmentId, search.items])
 
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
   // Auto-select the first item on desktop so the preview pane has content.
-  // On mobile selecting auto would hide the list immediately, so we wait for
-  // an explicit tap.
+  // Also reselects when the current selection drops out of the result set
+  // (e.g. after a filter change), otherwise the preview pane goes blank.
+  // On mobile we never auto-select — that would hide the list immediately.
   useEffect(() => {
     if (!enabled || isMobile) return
-    if (filters.selectedAttachmentId) return
-    const first = search.items[0]
-    if (first) update({ selectedAttachmentId: first.id })
+    if (search.items.length === 0) return
+    const stillVisible = search.items.some((item) => item.id === filters.selectedAttachmentId)
+    if (stillVisible) return
+    update({ selectedAttachmentId: search.items[0]!.id })
   }, [enabled, isMobile, filters.selectedAttachmentId, search.items, update])
 
-  const containerRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!enabled) return
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return
-      const target = e.target as HTMLElement | null
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+      const target = e.target instanceof HTMLElement ? e.target : null
+      // Stay scoped to the explorer; on /files the shell shares window with
+      // the sidebar/header, where ArrowUp/Down should keep their default behavior.
+      if (!target || !containerRef.current?.contains(target)) return
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
         return
       }
       if (!search.items.length) return
