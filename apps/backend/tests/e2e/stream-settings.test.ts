@@ -177,7 +177,7 @@ describe("Stream Settings E2E", () => {
       workspaceId = workspace.id
 
       const memberUser = await loginAs(memberClient, testEmail("add-member"), "Add Member")
-      await joinWorkspace(memberClient, workspaceId, "user")
+      await joinWorkspace(memberClient, workspaceId, "member")
       memberUserId = await getUserId(memberClient, workspaceId, memberUser.id)
     })
 
@@ -258,7 +258,7 @@ describe("Stream Settings E2E", () => {
       adminUserId = await getUserId(adminClient, workspaceId, adminUser.id)
 
       const memberUser = await loginAs(memberClient, testEmail("rm-member"), "Remove Member")
-      await joinWorkspace(memberClient, workspaceId, "user")
+      await joinWorkspace(memberClient, workspaceId, "member")
       memberUserId = await getUserId(memberClient, workspaceId, memberUser.id)
     })
 

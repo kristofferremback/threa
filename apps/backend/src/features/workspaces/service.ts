@@ -182,7 +182,7 @@ export class WorkspaceService {
         workosUserId: params.workosUserId,
         email: params.email,
         name: params.name,
-        role: params.role ?? "user",
+        role: params.role ?? "member",
         setupCompleted: params.setupCompleted,
       })
     })

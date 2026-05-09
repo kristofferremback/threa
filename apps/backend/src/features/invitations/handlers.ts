@@ -20,11 +20,11 @@ const sendInvitationsSchema = z.object({
     .array(z.string().email("Invalid email address"))
     .min(1, "At least one email is required")
     .max(20, "Maximum 20 emails per request"),
-  role: z.enum(["admin", "user"]).optional().default("user"),
+  role: z.enum(["admin", "member"]).optional().default("member"),
 })
 
 const createLinkSchema = z.object({
-  role: z.enum(["admin", "user"]),
+  role: z.enum(["admin", "member"]),
   note: z.string().trim().max(200).optional(),
 })
 

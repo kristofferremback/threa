@@ -20,7 +20,7 @@ describe("InvitationService.acceptInvitation", () => {
     id: "inv_1",
     workspaceId: "ws_1",
     email: "test@example.com",
-    role: "user",
+    role: "member",
     invitedBy: "usr_owner",
     status: "pending",
   }
@@ -62,7 +62,7 @@ describe("InvitationService.acceptInvitation", () => {
       workosUserId: "workos_user_1",
       email: "test@example.com",
       name: "Test User",
-      role: "user",
+      role: "member",
       setupCompleted: false,
     })
   })
@@ -156,7 +156,7 @@ describe("InvitationService.sendInvitations", () => {
       workspaceId: "ws_1",
       invitedBy: "usr_1",
       emails: ["test@example.com"],
-      role: "user",
+      role: "member",
     })
 
     const sentCall = mockInsertOutbox.mock.calls.find((call) => call[1] === "invitation:sent")
@@ -164,7 +164,7 @@ describe("InvitationService.sendInvitations", () => {
     expect(sentCall![2]).toMatchObject({
       workspaceId: "ws_1",
       email: "test@example.com",
-      role: "user",
+      role: "member",
       inviterWorkosUserId: "workos_user_1",
     })
   })
@@ -176,7 +176,7 @@ describe("InvitationService.sendInvitations", () => {
       workspaceId: "ws_1",
       invitedBy: "usr_1",
       emails: ["existing@example.com", "new@example.com"],
-      role: "user",
+      role: "member",
     })
 
     expect(result.skipped).toEqual([{ email: "existing@example.com", reason: "already_user" }])
@@ -191,7 +191,7 @@ describe("InvitationService.sendInvitations", () => {
       workspaceId: "ws_1",
       invitedBy: "usr_1",
       emails: ["pending@example.com"],
-      role: "user",
+      role: "member",
     })
 
     expect(result.skipped).toEqual([{ email: "pending@example.com", reason: "pending_invitation" }])
@@ -203,7 +203,7 @@ describe("InvitationService.acceptPendingForEmail", () => {
   let service: InvitationService
 
   const pendingInvitations = [
-    { id: "inv_1", workspaceId: "ws_1", email: "test@example.com", role: "user", status: "pending" },
+    { id: "inv_1", workspaceId: "ws_1", email: "test@example.com", role: "member", status: "pending" },
     { id: "inv_2", workspaceId: "ws_2", email: "test@example.com", role: "admin", status: "pending" },
   ]
 
@@ -389,7 +389,7 @@ describe("InvitationService.createLink", () => {
     const { token, invitation } = await service.createLink({
       workspaceId: "ws_1",
       invitedBy: "usr_admin",
-      role: "user",
+      role: "member",
       note: "for Simon",
     })
 
@@ -403,7 +403,7 @@ describe("InvitationService.createLink", () => {
     expect(insertCall[1].tokenHash).toMatch(/^[a-f0-9]{64}$/)
     expect(insertCall[1].tokenHash).not.toBe(token)
     expect(insertCall[1].note).toBe("for Simon")
-    expect(insertCall[1].role).toBe("user")
+    expect(insertCall[1].role).toBe("member")
   })
 
   test("emits invitation:link-created outbox event", async () => {
@@ -433,7 +433,7 @@ describe("InvitationService.claimLinkByToken", () => {
     workspaceId: "ws_1",
     kind: "link",
     email: null,
-    role: "user",
+    role: "member",
     invitedBy: "usr_admin",
     workosInvitationId: null,
     tokenHash: "deadbeef",
@@ -473,7 +473,7 @@ describe("InvitationService.claimLinkByToken", () => {
       workspaceId: "ws_1",
       invitationId: "inv_link_1",
       email: "simon@example.com",
-      role: "user",
+      role: "member",
     })
   })
 

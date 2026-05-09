@@ -112,7 +112,7 @@ export async function addTestMember(
   db: Querier,
   workspaceId: string,
   workosUserId: string,
-  role: "owner" | "admin" | "user" = "user"
+  role: "owner" | "admin" | "member" = "member"
 ) {
   const id = userId()
   const normalizedWorkosUserId = workosUserId.toLowerCase()

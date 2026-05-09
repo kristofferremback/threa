@@ -99,7 +99,7 @@ export async function createAdditionalUser(
       email: userEmail,
       slug: `eval-user-${timestamp}`,
       name: userName,
-      role: "user",
+      role: "member",
       timezone: options.timezone,
     })
 

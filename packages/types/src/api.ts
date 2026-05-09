@@ -464,7 +464,7 @@ export interface PendingInvitation {
 
 export interface SendInvitationsInput {
   emails: string[]
-  role?: "admin" | "user"
+  role?: "admin" | "member"
 }
 
 export type InvitationSkipReason = "already_user" | "pending_invitation"
@@ -477,7 +477,7 @@ export interface SendInvitationsResponse {
 // Link-based invitations
 
 export interface CreateInvitationLinkInput {
-  role: "admin" | "user"
+  role: "admin" | "member"
   /** Admin-only memo, e.g. "for Simon — sent via Signal". Optional. */
   note?: string
 }

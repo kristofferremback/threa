@@ -14,7 +14,7 @@ import type { InvitationService } from "../features/invitations"
 import { HttpError } from "../lib/errors"
 
 const workspaceJoinSchema = z.object({
-  role: z.enum(["user", "admin"]).optional(),
+  role: z.enum(["member", "admin"]).optional(),
   name: z.string().optional(),
 })
 
@@ -94,7 +94,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
       workosUserId,
       email: authUser.email,
       name,
-      role: role ?? "user",
+      role: role ?? "member",
     })
     res.json({ user })
   }

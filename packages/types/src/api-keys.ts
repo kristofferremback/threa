@@ -1,65 +1,29 @@
-export const API_KEY_SCOPES = {
-  MESSAGES_SEARCH: "messages:search",
-  STREAMS_READ: "streams:read",
-  MESSAGES_READ: "messages:read",
-  MESSAGES_WRITE: "messages:write",
-  USERS_READ: "users:read",
-  MEMOS_READ: "memos:read",
-  ATTACHMENTS_READ: "attachments:read",
-} as const
-
-export type ApiKeyScope = (typeof API_KEY_SCOPES)[keyof typeof API_KEY_SCOPES]
-
-export interface ApiKeyPermission {
-  slug: ApiKeyScope
-  name: string
-  description: string
-}
+import {
+  WORKSPACE_PERMISSION_SCOPES,
+  WORKSPACE_PERMISSIONS,
+  type WorkspacePermission,
+  type WorkspacePermissionSlug,
+} from "./workspace-permissions"
 
 /**
- * Human-readable permission definitions for API keys.
- * Used in the UI and as the source of truth for WorkOS dashboard configuration.
+ * API-key scopes are a subset of the unified workspace permission catalog
+ * (`packages/types/src/workspace-permissions.ts`). Persisted API keys store a
+ * subset of these slugs and are clamped at request time against the owner's
+ * current workspace permissions in the regional middleware.
+ */
+export const API_KEY_SCOPES = WORKSPACE_PERMISSION_SCOPES
+
+export type ApiKeyScope = WorkspacePermissionSlug
+
+export type ApiKeyPermission = WorkspacePermission
+
+/**
+ * Human-readable permission definitions used by the WorkOS sync script and the
+ * API-key UI. Re-exported from the unified catalog so the two cannot drift.
  *
  * WorkOS setup: Authorization > Configuration > Organization API key permissions
  */
-export const API_KEY_PERMISSIONS: ApiKeyPermission[] = [
-  {
-    slug: API_KEY_SCOPES.MESSAGES_SEARCH,
-    name: "Search messages",
-    description:
-      "Grants access to search messages in public streams in a workspace. Application level stream grants can extend permissions to private streams.",
-  },
-  {
-    slug: API_KEY_SCOPES.STREAMS_READ,
-    name: "Read streams",
-    description: "Grants access to list and search accessible streams in a workspace.",
-  },
-  {
-    slug: API_KEY_SCOPES.MESSAGES_READ,
-    name: "Read messages",
-    description: "Grants access to read messages in accessible streams.",
-  },
-  {
-    slug: API_KEY_SCOPES.MESSAGES_WRITE,
-    name: "Write messages",
-    description: "Grants access to send, update, and delete messages in accessible streams.",
-  },
-  {
-    slug: API_KEY_SCOPES.USERS_READ,
-    name: "Read users",
-    description: "Grants access to list and search workspace users.",
-  },
-  {
-    slug: API_KEY_SCOPES.MEMOS_READ,
-    name: "Read memos",
-    description: "Grants access to search preserved workspace memos and inspect their provenance.",
-  },
-  {
-    slug: API_KEY_SCOPES.ATTACHMENTS_READ,
-    name: "Read attachments",
-    description: "Grants access to search accessible attachments, inspect extracted content, and fetch download URLs.",
-  },
-]
+export const API_KEY_PERMISSIONS: ApiKeyPermission[] = WORKSPACE_PERMISSIONS
 
 // --- User-scoped API keys ---
 

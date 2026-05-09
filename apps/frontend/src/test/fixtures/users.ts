@@ -7,7 +7,7 @@ export function createMockUser(overrides: Partial<User> & { id: string; workosUs
   return {
     workspaceId: "workspace_1",
     email: `${overrides.workosUserId}@test.com`,
-    role: "user",
+    role: "member",
     slug: overrides.workosUserId.replace("workos_", ""),
     name: "Test User",
     description: null,
@@ -38,7 +38,7 @@ export const mockUsers = {
   kate: createMockUser({
     id: "member_2",
     workosUserId: "workos_user_2",
-    role: "user",
+    role: "member",
     slug: "kate",
     name: "Kate",
     email: "kate@test.com",
@@ -46,7 +46,7 @@ export const mockUsers = {
   alice: createMockUser({
     id: "member_3",
     workosUserId: "workos_user_3",
-    role: "user",
+    role: "member",
     slug: "alice",
     name: "Alice",
     email: "alice@test.com",

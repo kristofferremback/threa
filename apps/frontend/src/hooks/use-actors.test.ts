@@ -25,7 +25,7 @@ function createMember(overrides: Partial<User> & { _cachedAt?: number } = {}): C
     workspaceId: "ws_123",
     workosUserId: "workos_user_123",
     email: "test@example.com",
-    role: "user",
+    role: "member",
     slug: "test-user",
     name: "Test User",
     description: null,

@@ -46,7 +46,7 @@ export function CreateInviteLinkDialog({
   onSuccess,
   onTokenCreated,
 }: CreateInviteLinkDialogProps) {
-  const [role, setRole] = useState<"admin" | "user">("user")
+  const [role, setRole] = useState<"admin" | "member">("member")
   const [note, setNote] = useState("")
   const [copied, setCopied] = useState(false)
   const [createdToken, setCreatedToken] = useState<string | null>(null)
@@ -65,7 +65,7 @@ export function CreateInviteLinkDialog({
   })
 
   const handleClose = () => {
-    setRole("user")
+    setRole("member")
     setNote("")
     setCopied(false)
     setCreatedToken(null)
@@ -203,8 +203,8 @@ function CreateFormView({
   onCancel,
   onSubmit,
 }: {
-  role: "admin" | "user"
-  onRoleChange: (role: "admin" | "user") => void
+  role: "admin" | "member"
+  onRoleChange: (role: "admin" | "member") => void
   note: string
   onNoteChange: (note: string) => void
   isSubmitting: boolean
@@ -223,12 +223,12 @@ function CreateFormView({
         <ToggleGroup
           type="single"
           value={role}
-          onValueChange={(v) => v && onRoleChange(v as "admin" | "user")}
+          onValueChange={(v) => v && onRoleChange(v as "admin" | "member")}
           variant="outline"
           className="w-full"
         >
-          <ToggleGroupItem value="user" className="flex-1">
-            User
+          <ToggleGroupItem value="member" className="flex-1">
+            Member
           </ToggleGroupItem>
           <ToggleGroupItem value="admin" className="flex-1">
             Admin

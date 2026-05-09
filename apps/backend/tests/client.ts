@@ -569,7 +569,7 @@ export interface StreamMember {
 export async function joinWorkspace(
   client: TestClient,
   workspaceId: string,
-  role: "user" | "admin" = "user"
+  role: "member" | "admin" = "member"
 ): Promise<WorkspaceUser> {
   const { status, data } = await client.post<{ user: WorkspaceUser }>(`/api/dev/workspaces/${workspaceId}/join`, {
     role,

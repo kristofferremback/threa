@@ -175,7 +175,7 @@ describe("Real-time Events", () => {
 
       const otherClient = new TestClient()
       await loginAs(otherClient, `public-room-member-${Date.now()}@example.com`, "Public Room Member")
-      await joinWorkspace(otherClient, workspaceId, "user")
+      await joinWorkspace(otherClient, workspaceId, "member")
 
       // HTTP bootstrap already uses validateStreamAccess, so this should succeed.
       const bootstrap = await getBootstrap(otherClient, workspaceId, stream.id)

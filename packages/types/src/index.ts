@@ -476,6 +476,19 @@ export {
   type CreateBotApiKeyResponse,
 } from "./api-keys"
 
+// Workspace permissions (Phase 2 authz catalog)
+export {
+  WORKSPACE_PERMISSION_SCOPES,
+  WORKSPACE_PERMISSIONS,
+  WORKSPACE_ROLE_SLUGS,
+  WORKSPACE_ROLE_DEFINITIONS,
+  permissionsForRole,
+  type WorkspacePermission,
+  type WorkspacePermissionSlug,
+  type WorkspaceRoleSlug,
+  type WorkspaceRoleDefinition,
+} from "./workspace-permissions"
+
 // Context bag primitive
 export {
   ContextIntents,

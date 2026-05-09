@@ -25,13 +25,13 @@ interface SendInvitationsParams {
   workspaceId: string
   invitedBy: string // user_id
   emails: string[]
-  role: "admin" | "user"
+  role: "admin" | "member"
 }
 
 interface CreateLinkParams {
   workspaceId: string
   invitedBy: string
-  role: "admin" | "user"
+  role: "admin" | "member"
   note: string | null
 }
 

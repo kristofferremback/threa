@@ -29,7 +29,7 @@ export interface CachedWorkspaceUser {
   workspaceId: string
   workosUserId: string
   email: string
-  role: "owner" | "admin" | "user"
+  role: "owner" | "admin" | "member"
   slug: string
   name: string
   description: string | null

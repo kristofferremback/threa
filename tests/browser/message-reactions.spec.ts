@@ -219,7 +219,7 @@ test.describe("Message Reactions", () => {
       // User B: join workspace + channel, open in browser
       ctxB = await loginInNewContext(browser, userBEmail, userBName)
       const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "user" },
+        data: { role: "member" },
       })
       expect(joinWsRes.ok()).toBeTruthy()
 
@@ -287,7 +287,7 @@ test.describe("Message Reactions", () => {
       // User B: join workspace + channel
       ctxB = await loginInNewContext(browser, userBEmail, userBName)
       const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "user" },
+        data: { role: "member" },
       })
       expect(joinWsRes.ok()).toBeTruthy()
       const joinStreamRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)

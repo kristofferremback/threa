@@ -14,7 +14,7 @@
 
 import * as fs from "fs"
 import * as path from "path"
-import { API_KEY_PERMISSIONS } from "../packages/types/src"
+import { WORKSPACE_PERMISSIONS, WORKSPACE_ROLE_DEFINITIONS } from "../packages/types/src"
 
 const WORKOS_BASE = "https://api.workos.com"
 
@@ -93,9 +93,10 @@ async function updatePermission(
 }
 
 // --- Role definitions ---
-// Roles required for widget and API key management.
-// The "admin" role needs the system permission "widgets:api-keys:manage" to
-// render the API Keys Widget. The "member" role is the default for regular users.
+// Sourced from `WORKSPACE_ROLE_DEFINITIONS` in `@threa/types` so the sync script,
+// the regional middleware, and the API-key picker share one source of truth.
+// The "admin" role additionally gets the WorkOS system permission
+// `widgets:api-keys:manage` so admins can render the API Keys widget.
 
 interface RoleDefinition {
   slug: string
@@ -104,20 +105,14 @@ interface RoleDefinition {
   permissions: string[]
 }
 
-const REQUIRED_ROLES: RoleDefinition[] = [
-  {
-    slug: "admin",
-    name: "Admin",
-    description: "Full workspace administration including API key management",
-    permissions: ["widgets:api-keys:manage"],
-  },
-  {
-    slug: "member",
-    name: "Member",
-    description: "Default workspace member",
-    permissions: [],
-  },
-]
+const ADMIN_SYSTEM_PERMISSIONS = ["widgets:api-keys:manage"]
+
+const REQUIRED_ROLES: RoleDefinition[] = WORKSPACE_ROLE_DEFINITIONS.map((role) => ({
+  slug: role.slug,
+  name: role.name,
+  description: role.description,
+  permissions: role.slug === "admin" ? [...role.permissions, ...ADMIN_SYSTEM_PERMISSIONS] : [...role.permissions],
+}))
 
 // --- Role API client ---
 
@@ -157,19 +152,19 @@ async function setRolePermissions(apiKey: string, roleSlug: string, permissions:
 // --- Drift detection ---
 
 interface DriftReport {
-  missing: typeof API_KEY_PERMISSIONS
+  missing: typeof WORKSPACE_PERMISSIONS
   stale: { slug: string; fields: string[] }[]
   orphans: WorkOSPermission[]
 }
 
 function detectDrift(remote: WorkOSPermission[]): DriftReport {
   const remoteBySlug = new Map(remote.filter((p) => !p.system).map((p) => [p.slug, p]))
-  const localSlugs = new Set<string>(API_KEY_PERMISSIONS.map((p) => p.slug))
+  const localSlugs = new Set<string>(WORKSPACE_PERMISSIONS.map((p) => p.slug))
 
-  const missing = API_KEY_PERMISSIONS.filter((p) => !remoteBySlug.has(p.slug))
+  const missing = WORKSPACE_PERMISSIONS.filter((p) => !remoteBySlug.has(p.slug))
 
   const stale: DriftReport["stale"] = []
-  for (const local of API_KEY_PERMISSIONS) {
+  for (const local of WORKSPACE_PERMISSIONS) {
     const existing = remoteBySlug.get(local.slug)
     if (!existing) continue
     const fields: string[] = []
@@ -345,13 +340,13 @@ async function sync(dryRun: boolean) {
   const drift = detectDrift(remote)
 
   console.log(`Found ${remote.length} permissions in WorkOS (${remote.filter((p) => !p.system).length} non-system)`)
-  console.log(`Local definitions: ${API_KEY_PERMISSIONS.length}\n`)
+  console.log(`Local definitions: ${WORKSPACE_PERMISSIONS.length}\n`)
 
   let created = 0
   let updated = 0
   let unchanged = 0
 
-  for (const local of API_KEY_PERMISSIONS) {
+  for (const local of WORKSPACE_PERMISSIONS) {
     const isMissing = drift.missing.some((p) => p.slug === local.slug)
     const staleEntry = drift.stale.find((p) => p.slug === local.slug)
 

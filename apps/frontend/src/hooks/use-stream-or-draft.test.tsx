@@ -279,7 +279,7 @@ describe("useStreamOrDraft draft DM send", () => {
           workspaceId: "ws_1",
           workosUserId: "workos_2",
           email: "invitee@example.com",
-          role: "user",
+          role: "member",
           slug: "invitee",
           name: "Invitee",
           description: null,
