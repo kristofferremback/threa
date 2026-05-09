@@ -500,7 +500,7 @@ export const AttachmentRepository = {
         e.content_type AS extraction_content_type,
         e.summary AS extraction_summary,
         s.slug AS stream_slug,
-        s.name AS stream_name,
+        s.display_name AS stream_name,
         s.type AS stream_type,
         u.slug AS uploader_slug,
         u.name AS uploader_name,
