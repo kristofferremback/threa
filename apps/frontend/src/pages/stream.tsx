@@ -16,13 +16,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { SidebarActionDrawer, type SidebarActionItem } from "@/components/layout/sidebar/sidebar-actions"
+  SidebarActionDrawer,
+  SidebarActionMenu,
+  type SidebarActionItem,
+} from "@/components/layout/sidebar/sidebar-actions"
 import { cn } from "@/lib/utils"
 import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId, useTypeToFocus } from "@/hooks"
 import { useWorkspaceDmPeers } from "@/stores/workspace-store"
@@ -347,55 +344,15 @@ export function StreamPage() {
                 />
               </>
             ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+              <SidebarActionMenu
+                actions={streamMenuActions}
+                ariaLabel="Stream actions"
+                trigger={
+                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Stream actions">
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuItem onClick={() => openStreamSettings(streamId)}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                  {/* Hide "Move messages…" entirely on archived/system streams
-                    to match the mobile drawer (which builds via
-                    `streamMenuActions` and skips the entry in both cases).
-                    A disabled menu item would just confuse — there's no path
-                    to enable it without unarchiving first, and system streams
-                    can never be a valid source. */}
-                  {!isArchived && !isSystem && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleSelectMessages}>
-                        <CornerDownRight className="mr-2 h-4 w-4" />
-                        Move messages…
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  {isScratchpad && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleStartRename}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        Rename
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      {isArchived ? (
-                        <DropdownMenuItem onClick={handleUnarchive}>
-                          <Archive className="mr-2 h-4 w-4" />
-                          Unarchive
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-                          <Archive className="mr-2 h-4 w-4" />
-                          Archive
-                        </DropdownMenuItem>
-                      )}
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                }
+              />
             ))}
         </div>
       </header>

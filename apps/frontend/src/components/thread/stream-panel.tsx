@@ -11,13 +11,10 @@ import {
 } from "@/components/ui/side-panel"
 import { Button } from "@/components/ui/button"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { SidebarActionDrawer, type SidebarActionItem } from "@/components/layout/sidebar/sidebar-actions"
+  SidebarActionDrawer,
+  SidebarActionMenu,
+  type SidebarActionItem,
+} from "@/components/layout/sidebar/sidebar-actions"
 import {
   useStreamBootstrap,
   useDraftComposer,
@@ -436,28 +433,15 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
               />
             </>
           ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <SidebarActionMenu
+              actions={panelMenuActions}
+              ariaLabel="Stream actions"
+              trigger={
                 <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" aria-label="Stream actions">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem
-                  onClick={() => {
-                    if (panelId) openStreamSettings(panelId)
-                  }}
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSelectMessages} disabled={!!stream.archivedAt}>
-                  <CornerDownRight className="mr-2 h-4 w-4" />
-                  Move messages…
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           ))}
         {/* Hide X close button on mobile (back button used instead) */}
         {!isMobile && <SidePanelClose onClose={onClose} />}

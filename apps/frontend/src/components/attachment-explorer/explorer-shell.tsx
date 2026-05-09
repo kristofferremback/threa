@@ -1,14 +1,20 @@
-import { useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ArrowLeft, Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useResizeDrag } from "@/hooks/use-resize-drag"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
+import { PanelResizeHandle } from "@/components/layout/panel-resize-handle"
 import { useExplorerUrlState } from "./use-explorer-url-state"
 import { useAttachmentSearch } from "./use-attachment-search"
 import { ExplorerFilters } from "./explorer-filters"
 import { ExplorerList } from "./explorer-list"
 import { ExplorerPreview } from "./explorer-preview"
+
+const DEFAULT_PREVIEW_WIDTH = 420
+const MIN_PREVIEW_WIDTH = 280
+const MIN_LIST_WIDTH = 280
 
 interface ExplorerShellProps {
   workspaceId: string
@@ -101,6 +107,37 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
 
   const showPreviewOnly = isMobile && Boolean(selectedItem)
 
+  const splitContainerRef = useRef<HTMLDivElement | null>(null)
+  const [previewWidth, setPreviewWidth] = useState(DEFAULT_PREVIEW_WIDTH)
+
+  const handlePreviewWidthChange = useCallback((next: number) => {
+    const containerWidth = splitContainerRef.current?.offsetWidth ?? 0
+    const max = Math.max(MIN_PREVIEW_WIDTH, containerWidth - MIN_LIST_WIDTH)
+    setPreviewWidth(Math.max(MIN_PREVIEW_WIDTH, Math.min(max, next)))
+  }, [])
+
+  const { isResizing, handleResizeStart } = useResizeDrag({
+    width: previewWidth,
+    onWidthChange: handlePreviewWidthChange,
+    direction: "left",
+  })
+
+  const handleResizeKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const step = e.shiftKey ? 50 : 10
+      if (e.key === "ArrowLeft") {
+        e.preventDefault()
+        handlePreviewWidthChange(previewWidth + step)
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault()
+        handlePreviewWidthChange(previewWidth - step)
+      }
+    },
+    [previewWidth, handlePreviewWidthChange]
+  )
+
+  const maxPreviewWidth = Math.max(MIN_PREVIEW_WIDTH, (splitContainerRef.current?.offsetWidth ?? 0) - MIN_LIST_WIDTH)
+
   return (
     <div ref={containerRef} className="flex h-full flex-col" data-testid="attachment-explorer">
       <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -141,8 +178,8 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
         />
       )}
 
-      <div className="flex flex-1 overflow-hidden border-t">
-        <div className={showPreviewOnly ? "hidden" : "flex w-full flex-col overflow-y-auto sm:w-[55%] sm:border-r"}>
+      <div ref={splitContainerRef} className="flex flex-1 overflow-hidden border-t">
+        <div className={showPreviewOnly ? "hidden" : "flex w-full min-w-0 flex-1 flex-col overflow-y-auto"}>
           <ExplorerList
             workspaceId={workspaceId}
             items={search.items}
@@ -158,7 +195,21 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
             onWidenScope={widenScope}
           />
         </div>
-        <div className={showPreviewOnly ? "flex w-full flex-1" : "hidden flex-1 sm:flex"}>
+        {!showPreviewOnly && !isMobile && (
+          <PanelResizeHandle
+            isResizing={isResizing}
+            panelWidth={previewWidth}
+            minWidth={MIN_PREVIEW_WIDTH}
+            maxWidth={maxPreviewWidth}
+            onMouseDown={handleResizeStart}
+            onKeyDown={handleResizeKeyDown}
+            ariaLabel="Resize preview pane"
+          />
+        )}
+        <div
+          className={showPreviewOnly ? "flex w-full flex-1" : "hidden flex-shrink-0 sm:flex"}
+          style={!showPreviewOnly && !isMobile ? { width: previewWidth } : undefined}
+        >
           <ExplorerPreview workspaceId={workspaceId} item={selectedItem} />
         </div>
       </div>
