@@ -9,6 +9,7 @@ import {
   ArchiveX,
   Search,
   CornerDownRight,
+  Paperclip,
   Settings,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -28,6 +29,7 @@ import { useWorkspaceDmPeers } from "@/stores/workspace-store"
 import { usePanel, useSidebar } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
 import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
+import { useExplorerUrlState } from "@/components/attachment-explorer"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ThreadPanelSlot, SidebarToggle } from "@/components/layout"
@@ -95,6 +97,7 @@ export function StreamPage() {
 
   const { openUserProfile } = useUserProfile()
   const { openStreamSettings } = useStreamSettings()
+  const { open: openExplorer } = useExplorerUrlState()
   const dmPeers = useWorkspaceDmPeers(workspaceId ?? "")
   const workspaceUsers = useWorkspaceUsers(workspaceId)
 
@@ -189,6 +192,12 @@ export function StreamPage() {
       separatorBefore: true,
     })
   }
+  streamMenuActions.push({
+    id: "browse-files",
+    label: "Browse files…",
+    icon: Paperclip,
+    onSelect: () => openExplorer({ scope: { kind: "stream", streamId } }),
+  })
   if (isScratchpad) {
     streamMenuActions.push({
       id: "rename",
