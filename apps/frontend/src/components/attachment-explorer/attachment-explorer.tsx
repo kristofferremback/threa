@@ -44,13 +44,18 @@ export function AttachmentExplorer({ workspaceId }: AttachmentExplorerProps) {
   useEffect(() => {
     if (!isOpen) return
     const handler = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return
+      }
       if (!search.items.length) return
       const index = search.items.findIndex((item) => item.id === filters.selectedAttachmentId)
       if (e.key === "ArrowDown") {
         e.preventDefault()
         const next = search.items[Math.min(index + 1, search.items.length - 1)]
         if (next) update({ selectedAttachmentId: next.id })
-      } else if (e.key === "ArrowUp") {
+      } else {
         e.preventDefault()
         const prev = search.items[Math.max(index - 1, 0)]
         if (prev) update({ selectedAttachmentId: prev.id })

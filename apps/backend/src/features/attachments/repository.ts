@@ -533,7 +533,6 @@ export const AttachmentRepository = {
         AND (
           ${!useIlike}
           OR a.filename ILIKE ${ilikePattern}
-          OR a.search_vector::text ILIKE ${ilikePattern}
           OR e.summary ILIKE ${ilikePattern}
           OR e.full_text ILIKE ${ilikePattern}
         )

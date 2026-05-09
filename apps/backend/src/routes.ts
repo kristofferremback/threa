@@ -283,7 +283,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Attachments (workspace-scoped upload, stream assigned on message creation)
   app.post("/api/workspaces/:workspaceId/attachments", ...authed, rateLimits.upload, upload, attachment.upload)
-  app.post("/api/workspaces/:workspaceId/attachments/search", ...authed, attachment.search)
+  app.post("/api/workspaces/:workspaceId/attachments/search", ...authed, rateLimits.search, attachment.search)
   app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
   app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
 
