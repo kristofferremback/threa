@@ -46,11 +46,29 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
   const [queryDraft, setQueryDraft] = useState(filters.queryText)
   const queryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // The latest URL value we wrote ourselves. Lets the URL→draft sync
+  // distinguish our own debounced echo (skip — would clobber newer
+  // keystrokes typed during React Router's render delay) from external
+  // changes like Clear filters or back/forward (apply — cancel pending
+  // debounce so it can't resurrect stale typing).
+  const lastWrittenRef = useRef(filters.queryText)
+
+  // Always call the freshest `update` from the timer. Without this, a
+  // pending debounce captures an older `update` that closes over older
+  // searchParams; firing after another filter changed would write back
+  // a stale snapshot and revert that change.
+  const updateRef = useRef(update)
   useEffect(() => {
+    updateRef.current = update
+  }, [update])
+
+  useEffect(() => {
+    if (filters.queryText === lastWrittenRef.current) return
     if (queryDebounceRef.current) {
       clearTimeout(queryDebounceRef.current)
       queryDebounceRef.current = null
     }
+    lastWrittenRef.current = filters.queryText
     setQueryDraft(filters.queryText)
   }, [filters.queryText])
 
@@ -60,17 +78,15 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
     }
   }, [])
 
-  const handleQueryChange = useCallback(
-    (value: string) => {
-      setQueryDraft(value)
-      if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current)
-      queryDebounceRef.current = setTimeout(() => {
-        queryDebounceRef.current = null
-        update({ queryText: value })
-      }, QUERY_DEBOUNCE_MS)
-    },
-    [update]
-  )
+  const handleQueryChange = useCallback((value: string) => {
+    setQueryDraft(value)
+    if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current)
+    queryDebounceRef.current = setTimeout(() => {
+      queryDebounceRef.current = null
+      lastWrittenRef.current = value
+      updateRef.current({ queryText: value })
+    }, QUERY_DEBOUNCE_MS)
+  }, [])
 
   const parentStreamId = useMemo(() => {
     // Surface a single parent only when exactly one stream is filtered to —
