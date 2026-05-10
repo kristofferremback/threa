@@ -3,6 +3,7 @@ import { X, Filter as FilterIcon, Hash, User as UserIcon, Calendar, FileType, Fi
 import { StreamTypes, type AttachmentCategory } from "@threa/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
@@ -47,7 +48,7 @@ function FilterChip({ icon: Icon, label, removeLabel, onRemove, labelMaxWidth }:
       <span className={labelMaxWidth ? `${labelMaxWidth} truncate` : undefined}>{label}</span>
       <button
         type="button"
-        className="rounded-full p-0.5 hover:bg-background/60"
+        className="rounded-full p-0.5 transition-colors hover:bg-foreground/10 hover:text-foreground"
         onClick={onRemove}
         aria-label={removeLabel}
       >
@@ -234,16 +235,9 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
                     key={stream.id}
                     type="button"
                     onClick={() => toggleStream(stream.id)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent/50"
+                    className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-item px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted"
                   >
-                    <span
-                      className={`flex h-4 w-4 items-center justify-center rounded border ${
-                        checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
-                      }`}
-                      aria-hidden
-                    >
-                      {checked ? <span className="text-[10px] leading-none">✓</span> : null}
-                    </span>
+                    <Checkbox checked={checked} tabIndex={-1} aria-hidden className="pointer-events-none" />
                     <Icon className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="flex-1 truncate">{labelForStream(stream)}</span>
                   </button>

@@ -89,9 +89,15 @@ export function ExplorerList({
 
   if (isLoading && items.length === 0) {
     return (
-      <div className="flex flex-col gap-1 p-3" data-testid="explorer-skeleton">
+      <div className="flex flex-col gap-0.5 px-2 pt-1 pb-3" data-testid="explorer-skeleton">
         {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+          <div key={i} className="flex items-center gap-3 rounded-item px-3 py-2">
+            <Skeleton className="h-8 w-8 flex-none rounded-md" />
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <Skeleton className="h-3 w-1/2" />
+              <Skeleton className="h-2.5 w-2/3" />
+            </div>
+          </div>
         ))}
       </div>
     )
@@ -115,10 +121,8 @@ export function ExplorerList({
     <div className="flex flex-col gap-2 px-2 pb-3 pt-1" role="list">
       {buckets.map((bucket) => (
         <section key={bucket.label} aria-label={bucket.label}>
-          <div className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {bucket.label}
-          </div>
-          <div className="flex flex-col gap-0.5 group" role="presentation">
+          <div className="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground">{bucket.label}</div>
+          <div className="flex flex-col gap-0.5" role="presentation">
             {bucket.items.map((item) => (
               <div key={item.id} role="listitem" data-attachment-id={item.id}>
                 <ExplorerRow

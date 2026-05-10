@@ -47,8 +47,8 @@ export function ExplorerRow({ workspaceId, item, isSelected, onSelect }: Explore
       type="button"
       onClick={() => onSelect(item.id)}
       className={cn(
-        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
-        "hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group/row flex w-full items-center gap-3 rounded-item px-3 py-2 text-left transition-colors",
+        "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         isSelected && "bg-muted"
       )}
       aria-pressed={isSelected}
@@ -92,7 +92,7 @@ export function ExplorerRow({ workspaceId, item, isSelected, onSelect }: Explore
         <Link
           to={sourceUrl}
           onClick={(e) => e.stopPropagation()}
-          className="flex-none rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+          className="flex-none rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover/row:opacity-100 focus-visible:opacity-100"
           aria-label={`Open in #${item.streamSlug ?? "stream"}`}
           title={`Open in #${item.streamSlug ?? "stream"}`}
         >
