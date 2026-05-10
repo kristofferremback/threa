@@ -33,7 +33,7 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   const fullExtraction = useQuery<AttachmentExtractionContent>({
     queryKey: ["attachment-extraction", workspaceId, item?.id],
     queryFn: () => attachmentsApi.getExtraction(workspaceId, item!.id),
-    enabled: Boolean(item?.id) && (expanded || copied),
+    enabled: Boolean(item?.id) && expanded,
     staleTime: 5 * 60_000,
   })
 
