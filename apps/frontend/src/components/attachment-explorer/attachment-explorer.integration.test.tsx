@@ -1,7 +1,7 @@
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, waitFor } from "@/test"
+import { render, screen, userEvent, waitFor } from "@/test"
 import { AttachmentExplorer } from "./attachment-explorer"
 import * as attachmentsApiModule from "@/api/attachments"
 import * as workspaceStoreModule from "@/stores/workspace-store"
@@ -115,6 +115,23 @@ describe("AttachmentExplorer", () => {
 
     await waitFor(() => expect(searchSpy).toHaveBeenCalled())
     expect(searchSpy.mock.calls[0]![1]).toMatchObject({ queryText: "q2 roadmap", exact: true })
+  })
+
+  it("reflects typed search text in the input synchronously, independent of URL state", async () => {
+    // Regression: when the input was driven directly by `useSearchParams`,
+    // mobile autocorrect's two-step word replacement saw a stale value
+    // mid-replacement and concatenated the suggestion ("gurl" -> "Guelirl")
+    // instead of substituting it. The input must update synchronously per
+    // keystroke; URL sync is debounced.
+    vi.spyOn(attachmentsApiModule.attachmentsApi, "search").mockResolvedValue({ items: [], nextCursor: null })
+
+    renderExplorer("/w/ws_1?explorer=")
+
+    const input = (await screen.findByLabelText("Search attachments")) as HTMLInputElement
+    const user = userEvent.setup()
+    await user.type(input, "girl")
+
+    expect(input.value).toBe("girl")
   })
 
   it("renders the filtered-empty state when filters are active and results are empty", async () => {

@@ -27,12 +27,50 @@ interface ExplorerShellProps {
   enabled: boolean
 }
 
+const QUERY_DEBOUNCE_MS = 200
+
 export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps) {
   const { filters, close, update } = useExplorerUrlState()
   const streams = useWorkspaceStreams(workspaceId)
   const isMobile = useIsMobile()
 
   const search = useAttachmentSearch(workspaceId, filters, { enabled })
+
+  // The query input is locally controlled and debounced into URL state.
+  // Driving `value` directly off `filters.queryText` (which comes from
+  // `useSearchParams`) makes the input lag a tick behind keystrokes, and
+  // mobile autocorrect — which replaces the misspelled word in two DOM
+  // steps — sees a stale value mid-replacement and concatenates the
+  // suggestion onto the original ("gurl" + "girl" -> "Guelirl") instead
+  // of substituting it.
+  const [queryDraft, setQueryDraft] = useState(filters.queryText)
+  const queryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (queryDebounceRef.current) {
+      clearTimeout(queryDebounceRef.current)
+      queryDebounceRef.current = null
+    }
+    setQueryDraft(filters.queryText)
+  }, [filters.queryText])
+
+  useEffect(() => {
+    return () => {
+      if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current)
+    }
+  }, [])
+
+  const handleQueryChange = useCallback(
+    (value: string) => {
+      setQueryDraft(value)
+      if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current)
+      queryDebounceRef.current = setTimeout(() => {
+        queryDebounceRef.current = null
+        update({ queryText: value })
+      }, QUERY_DEBOUNCE_MS)
+    },
+    [update]
+  )
 
   const parentStreamId = useMemo(() => {
     // Surface a single parent only when exactly one stream is filtered to —
@@ -165,8 +203,8 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
           // moment the explorer mounts, which is jarring for a surface the
           // user often opens just to browse.
           autoFocus={mode === "modal" && !isMobile}
-          value={filters.queryText}
-          onChange={(e) => update({ queryText: e.target.value })}
+          value={queryDraft}
+          onChange={(e) => handleQueryChange(e.target.value)}
           placeholder="Search filename, content, or use “quoted phrase” for exact"
           className="h-8 border-none px-1 shadow-none focus-visible:ring-0"
           aria-label="Search attachments"
