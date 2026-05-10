@@ -24,6 +24,7 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   const [copied, setCopied] = useState(false)
   const [isTruncated, setIsTruncated] = useState(false)
   const previewRef = useRef<HTMLPreElement | null>(null)
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Reset per-item UI state so a fresh selection never inherits the previous
   // item's expanded view or "Copied" badge.
@@ -31,7 +32,17 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
     setExpanded(false)
     setCopied(false)
     setIsTruncated(false)
+    if (copyResetTimerRef.current) {
+      clearTimeout(copyResetTimerRef.current)
+      copyResetTimerRef.current = null
+    }
   }, [item?.id])
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+    }
+  }, [])
 
   // Hide the Expand button when the line-clamped preview already fits the
   // full content — toggling it would just rerender the same text. Re-measures
@@ -47,10 +58,14 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
     return () => ro.disconnect()
   }, [expanded, item?.id, item?.extraction?.summary])
 
+  const attachmentId = item?.id
   const fullExtraction = useQuery<AttachmentExtractionContent>({
-    queryKey: ["attachment-extraction", workspaceId, item?.id],
-    queryFn: () => attachmentsApi.getExtraction(workspaceId, item!.id),
-    enabled: Boolean(item?.id) && expanded,
+    queryKey: ["attachment-extraction", workspaceId, attachmentId],
+    queryFn: () => {
+      if (!attachmentId) throw new Error("Missing attachment id")
+      return attachmentsApi.getExtraction(workspaceId, attachmentId)
+    },
+    enabled: Boolean(attachmentId) && expanded,
     staleTime: 5 * 60_000,
   })
 
@@ -61,7 +76,11 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
       const text = data.fullText ?? data.summary
       await navigator.clipboard.writeText(text)
       setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+      copyResetTimerRef.current = setTimeout(() => {
+        setCopied(false)
+        copyResetTimerRef.current = null
+      }, 2000)
     } catch {
       // Clipboard API unavailable or fetch failed — silent: the user can still
       // open the original via the Download button if they need the contents.
@@ -272,13 +291,12 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   )
 }
 
-function ExpandedExtract({
-  item,
-  query,
-}: {
+interface ExpandedExtractProps {
   item: AttachmentSearchItem
   query: UseQueryResult<AttachmentExtractionContent>
-}) {
+}
+
+function ExpandedExtract({ item, query }: ExpandedExtractProps) {
   if (query.isLoading) {
     return <p className="text-xs leading-relaxed text-muted-foreground">Loading…</p>
   }
