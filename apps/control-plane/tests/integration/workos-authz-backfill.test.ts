@@ -29,8 +29,12 @@ describe("WorkosAuthzBackfill.run", () => {
   })
 
   beforeEach(async () => {
-    await pool.query("DELETE FROM workspace_registry WHERE workos_organization_id = $1", [ORG_ID])
-    await pool.query("DELETE FROM workos_organization_memberships WHERE workos_organization_id = $1", [ORG_ID])
+    // Backfill scans every workspace_registry row with a non-null
+    // workos_organization_id, so this test owns the entire row set for the run
+    // — otherwise rows seeded by earlier e2e tests (workspace creation +
+    // seedMembership) pollute `orgsScanned`/`membershipsUpserted` counters and
+    // reconcile-delete cleanly-seeded mirror rows for unrelated orgs.
+    await pool.query("TRUNCATE workspace_registry, workos_organization_memberships CASCADE")
     await cleanupAuthzOutbox(pool, ORG_ID)
     await pool.query(
       `INSERT INTO workspace_registry (id, name, slug, region, created_by_workos_user_id, workos_organization_id)
