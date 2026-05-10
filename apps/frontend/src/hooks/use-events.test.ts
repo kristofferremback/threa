@@ -4,6 +4,7 @@ import {
   filterEventsForDisplay,
   getCachedWindowFloor,
   getDisplayFloor,
+  getEffectiveEvents,
   getMinimumSequence,
   getNextBootstrapFloorState,
   getOldestSequence,
@@ -144,5 +145,32 @@ describe("computeTimelineLoadState", () => {
         idbResolveTimedOut: false,
       })
     ).toEqual({ isLoading: false, isConfirmedEmpty: false })
+  })
+})
+
+describe("getEffectiveEvents", () => {
+  it("returns nothing while IDB is unresolved", () => {
+    expect(getEffectiveEvents(false, [], [{ sequence: "100" }])).toEqual([])
+  })
+
+  it("prefers IDB events once IDB has resolved with content", () => {
+    const idbEvents = [{ sequence: "200", _status: "pending" as const }]
+    const bootstrapEvents = [{ sequence: "100" }]
+    expect(getEffectiveEvents(true, idbEvents, bootstrapEvents)).toBe(idbEvents)
+  })
+
+  it("falls back to bootstrap events when IDB resolved empty but bootstrap has events", () => {
+    // The blank-render bug: bootstrap query has finished, applyStreamBootstrap
+    // has written events, but useLiveQuery hasn't re-emitted yet (typical on
+    // cold load with empty IDB and on the rekey transient when the bootstrap
+    // floor flips). Without the fallback, the timeline goes blank with no
+    // skeleton and no empty state — neither isLoading nor isConfirmedEmpty
+    // fires because the (now-stale) hasAnyEvents check trusts bootstrap.
+    const bootstrapEvents = [{ sequence: "100" }, { sequence: "120" }]
+    expect(getEffectiveEvents(true, [], bootstrapEvents)).toBe(bootstrapEvents)
+  })
+
+  it("returns empty when IDB resolved empty and bootstrap has no events", () => {
+    expect(getEffectiveEvents(true, [], [])).toEqual([])
   })
 })
