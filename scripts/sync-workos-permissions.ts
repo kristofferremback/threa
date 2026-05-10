@@ -65,6 +65,19 @@ class WorkOSHttpError extends Error {
   }
 }
 
+// WorkOS 409 bodies include a machine-readable `code` like
+// `permission_slug_conflict` (observed; the role API uses the same convention).
+// Narrowing the reconcile path to slug-conflict keeps unrelated 409s loud.
+function isSlugConflict(err: WorkOSHttpError): boolean {
+  if (err.status !== 409) return false
+  try {
+    const parsed = JSON.parse(err.body) as { code?: unknown }
+    return typeof parsed.code === "string" && parsed.code.includes("slug_conflict")
+  } catch {
+    return false
+  }
+}
+
 async function workosRequest<T>(apiKey: string, method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${WORKOS_BASE}${path}`, {
     method,
@@ -395,7 +408,7 @@ async function sync(dryRun: boolean) {
         } catch (err) {
           // Concurrent run or stale list: slug already exists remotely. Reconcile
           // by updating instead of failing the sync.
-          if (err instanceof WorkOSHttpError && err.status === 409) {
+          if (err instanceof WorkOSHttpError && isSlugConflict(err)) {
             await updatePermission(apiKey, local.slug, { name: local.name, description: local.description })
             console.log(`  [RECONCILED] ${local.slug} — already existed, updated name/description`)
             updated++
@@ -446,7 +459,7 @@ async function sync(dryRun: boolean) {
         } catch (err) {
           // Concurrent run or stale list: role slug already exists. Fall through to
           // updateRole + setRolePermissions so we still reconcile.
-          if (err instanceof WorkOSHttpError && err.status === 409) {
+          if (err instanceof WorkOSHttpError && isSlugConflict(err)) {
             await updateRole(apiKey, local.slug, { name: local.name, description: local.description })
             reconciled = true
           } else {
