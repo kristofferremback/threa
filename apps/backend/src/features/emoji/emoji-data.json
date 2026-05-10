@@ -8343,20 +8343,20 @@
     {
       "emoji": "🩷",
       "shortcodes": ["pink_heart", "heart_pink"],
-      "group": "symbols",
-      "order": 308
+      "group": "smileys",
+      "order": 195
     },
     {
       "emoji": "🩵",
       "shortcodes": ["light_blue_heart", "heart_light_blue"],
-      "group": "symbols",
-      "order": 309
+      "group": "smileys",
+      "order": 196
     },
     {
       "emoji": "🩶",
       "shortcodes": ["grey_heart", "heart_grey", "gray_heart", "heart_gray"],
-      "group": "symbols",
-      "order": 310
+      "group": "smileys",
+      "order": 197
     },
     {
       "emoji": "🐦‍🔥",

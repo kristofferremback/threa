@@ -156,6 +156,22 @@ describe("Emoji Library", () => {
       const empty = emojiData.emojis.filter((e) => e.shortcodes.length === 0).map((e) => e.emoji)
       expect(empty).toEqual([])
     })
+
+    test("primary shortcode is canonical for toShortcode()", () => {
+      // shortcodes[0] is the wire-format primary that toShortcode() returns
+      // and is what gets persisted, displayed in tooltips, and rendered into
+      // markdown. Reordering aliases (e.g. swapping a synonym to first) would
+      // silently rewrite normalized output and break message-history parity.
+      const mismatches = emojiData.emojis
+        .map(({ emoji, shortcodes }) => ({
+          emoji,
+          expected: `:${shortcodes[0]}:`,
+          actual: toShortcode(emoji),
+        }))
+        .filter(({ expected, actual }) => actual !== expected)
+        .map(({ emoji, expected, actual }) => `${emoji}: expected ${expected}, got ${actual}`)
+      expect(mismatches).toEqual([])
+    })
   })
 
   describe("Unicode version coverage", () => {
