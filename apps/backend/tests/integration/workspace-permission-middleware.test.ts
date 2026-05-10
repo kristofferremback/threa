@@ -4,7 +4,7 @@ import type { Pool } from "pg"
 import { WORKSPACE_PERMISSION_SCOPES, WORKSPACE_ROLE_SLUGS } from "@threa/types"
 import { HttpError } from "../../src/lib/errors"
 import { createRequireWorkspacePermission } from "../../src/middleware/workspace-permission"
-import { WorkspaceUserPermissionsRepository } from "../../src/features/workspace-authz"
+import { WorkspaceAuthzService, WorkspaceUserPermissionsRepository } from "../../src/features/workspace-authz"
 import { setupTestDatabase } from "./setup"
 
 const WORKSPACE_ID = "ws_authz_mw_test"
@@ -39,7 +39,9 @@ describe("requireWorkspacePermission", () => {
 
   beforeAll(async () => {
     pool = await setupTestDatabase()
-    requireWorkspacePermission = createRequireWorkspacePermission({ pool })
+    requireWorkspacePermission = createRequireWorkspacePermission({
+      workspaceAuthzService: new WorkspaceAuthzService({ pool }),
+    })
   })
 
   afterAll(async () => {

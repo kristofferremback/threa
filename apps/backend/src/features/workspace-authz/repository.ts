@@ -1,9 +1,3 @@
-import {
-  permissionsForRole,
-  WORKSPACE_USER_ROLES,
-  type WorkspacePermissionSlug,
-  type WorkspaceRoleSlug,
-} from "@threa/types"
 import type { Querier } from "../../db"
 
 export interface WorkspaceUserPermissionsRow {
@@ -41,28 +35,6 @@ const SELECT_FIELDS = `
   created_at,
   updated_at
 `
-
-const KNOWN_ROLE_SLUGS: ReadonlySet<string> = new Set(WORKSPACE_USER_ROLES)
-
-function isWorkspaceRoleSlug(value: string): value is WorkspaceRoleSlug {
-  return KNOWN_ROLE_SLUGS.has(value)
-}
-
-/**
- * Union the permission set granted by every recognized role on a mirror row.
- * Unknown role slugs are skipped so a WorkOS dashboard role added ahead of a
- * code release degrades gracefully (caller falls through to 403).
- */
-export function expandRoleSlugs(roleSlugs: readonly string[]): WorkspacePermissionSlug[] {
-  const union = new Set<WorkspacePermissionSlug>()
-  for (const slug of roleSlugs) {
-    if (!isWorkspaceRoleSlug(slug)) continue
-    for (const perm of permissionsForRole(slug)) {
-      union.add(perm)
-    }
-  }
-  return [...union]
-}
 
 function mapRow(row: WorkspaceUserPermissionsRow): WorkspaceUserPermissions {
   return {

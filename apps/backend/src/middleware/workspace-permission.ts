@@ -1,11 +1,10 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express"
-import type { Pool } from "pg"
 import { permissionsForRole, type WorkspacePermissionSlug } from "@threa/types"
 import { HttpError } from "../lib/errors"
-import { expandRoleSlugs, WorkspaceUserPermissionsRepository } from "../features/workspace-authz"
+import type { WorkspaceAuthzService } from "../features/workspace-authz"
 
 interface Dependencies {
-  pool: Pool
+  workspaceAuthzService: WorkspaceAuthzService
 }
 
 const unauthenticated = () => new HttpError("Not authenticated", { status: 401, code: "UNAUTHENTICATED" })
@@ -35,12 +34,12 @@ const ownerInactive = () =>
  *     workspace-owned in today's model; personal bots arrive in a later PR
  *     and will route through the user-key clamp path.
  */
-export function createRequireWorkspacePermission({ pool }: Dependencies) {
+export function createRequireWorkspacePermission({ workspaceAuthzService }: Dependencies) {
   return function requireWorkspacePermission(slug: WorkspacePermissionSlug): RequestHandler {
     return async function handler(req: Request, _res: Response, next: NextFunction): Promise<void> {
       if (req.authUser) {
         const claim = req.authUser.permissions
-        if (claim !== null) {
+        if (claim != null) {
           if (claim.includes(slug)) {
             next()
             return
@@ -62,17 +61,12 @@ export function createRequireWorkspacePermission({ pool }: Dependencies) {
           return
         }
 
-        const mirror = await WorkspaceUserPermissionsRepository.getByWorkspaceAndUser(
-          pool,
-          workspaceId,
-          ownerWorkosUserId
-        )
-        if (!mirror || mirror.status !== "active") {
+        const ownerPermissions = await workspaceAuthzService.resolveActivePermissions(workspaceId, ownerWorkosUserId)
+        if (ownerPermissions === null) {
           next(ownerInactive())
           return
         }
 
-        const ownerPermissions = expandRoleSlugs(mirror.roleSlugs)
         if (req.userApiKey.scopes.has(slug) && ownerPermissions.includes(slug)) {
           next()
           return

@@ -144,8 +144,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceUser]
 
-  const requireWorkspacePermission = createRequireWorkspacePermission({ pool })
   const workspaceAuthzService = new WorkspaceAuthzService({ pool })
+  const requireWorkspacePermission = createRequireWorkspacePermission({ workspaceAuthzService })
   const workspaceAuthz = createWorkspaceAuthzHandlers({ workspaceAuthzService })
 
   const rateLimits = createRateLimiters(rateLimiterConfig)
@@ -258,7 +258,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", ...authed, stream.archive)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/unarchive", ...authed, stream.unarchive)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/members", ...authed, stream.addMember)
-  app.delete("/api/workspaces/:workspaceId/streams/:streamId/members/:memberId", ...authed, stream.removeMember)
+  app.delete(
+    "/api/workspaces/:workspaceId/streams/:streamId/members/:memberId",
+    ...authed,
+    requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE),
+    stream.removeMember
+  )
 
   app.get("/api/workspaces/:workspaceId/streams/:streamId/events", ...authed, stream.listEvents)
   app.get("/api/workspaces/:workspaceId/streams/:streamId/events/around", ...authed, stream.listEventsAround)
@@ -289,7 +294,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Attachments (workspace-scoped upload, stream assigned on message creation)
   app.post("/api/workspaces/:workspaceId/attachments", ...authed, rateLimits.upload, upload, attachment.upload)
+  app.post("/api/workspaces/:workspaceId/attachments/search", ...authed, rateLimits.search, attachment.search)
   app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
+  app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/extraction", ...authed, attachment.getExtraction)
   app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
 
   // Conversations
@@ -481,7 +488,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   )
 
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
-  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool })
+  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, workspaceAuthzService, pool })
   const publicApi = createPublicApiHandlers({
     searchService,
     memoExplorerService,
