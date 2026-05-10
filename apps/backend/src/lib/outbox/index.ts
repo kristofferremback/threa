@@ -30,6 +30,7 @@ export {
   type StreamArchivedOutboxPayload,
   type StreamUnarchivedOutboxPayload,
   type AttachmentUploadedOutboxPayload,
+  type AttachmentExtractionCompletedOutboxPayload,
   type WorkspaceUserAddedOutboxPayload,
   type WorkspaceUserRemovedOutboxPayload,
   type WorkspaceUserUpdatedOutboxPayload,
