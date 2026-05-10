@@ -95,6 +95,7 @@ interface Dependencies {
   botChannelService: BotChannelService
   linkPreviewService: LinkPreviewService
   workspaceIntegrationService: WorkspaceIntegrationService
+  workspaceAuthzService: WorkspaceAuthzService
   workosOrgService: WorkosOrgService
   userApiKeyService: UserApiKeyService
   botApiKeyService: BotApiKeyService
@@ -131,6 +132,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     botChannelService,
     linkPreviewService,
     workspaceIntegrationService,
+    workspaceAuthzService,
     workosOrgService,
     userApiKeyService,
     botApiKeyService,
@@ -144,7 +146,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceUser]
 
-  const workspaceAuthzService = new WorkspaceAuthzService({ pool })
   const requireWorkspacePermission = createRequireWorkspacePermission({ workspaceAuthzService })
   const workspaceAuthz = createWorkspaceAuthzHandlers({ workspaceAuthzService })
 

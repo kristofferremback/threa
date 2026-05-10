@@ -5,7 +5,7 @@ import { HttpError } from "../../lib/errors"
 import { workspaceIntegrationId } from "../../lib/id"
 import type { GitHubAppConfig } from "../../lib/env"
 import { UserRepository } from "../workspaces"
-import { expandRoleSlugs, WorkspaceUserPermissionsRepository } from "../workspace-authz"
+import type { WorkspaceAuthzService } from "../workspace-authz"
 import {
   WORKSPACE_PERMISSION_SCOPES,
   WorkspaceIntegrationProviders,
@@ -111,6 +111,7 @@ export class GitHubClient {
 interface WorkspaceIntegrationServiceDeps {
   pool: Pool
   github: GitHubAppConfig
+  workspaceAuthzService: WorkspaceAuthzService
 }
 
 export class WorkspaceIntegrationService {
@@ -192,18 +193,15 @@ export class WorkspaceIntegrationService {
     }
     // The GitHub install callback (`GET /api/integrations/github/callback`) runs
     // with `auth` only — no `requireWorkspacePermission` upstream — so this is
-    // the sole authorization gate on this path. Check the regional mirror
-    // (PR-3) rather than the locally-cached role so a freshly-demoted admin
-    // can't complete an install with a stale browser session.
-    const mirror = await WorkspaceUserPermissionsRepository.getByWorkspaceAndUser(
-      this.deps.pool,
+    // the sole authorization gate on this path. Route through the authz service
+    // so the mirror lookup, active-status check, and role expansion stay on one
+    // shared path (INV-35, INV-37).
+    const hasAdmin = await this.deps.workspaceAuthzService.hasPermission(
       workspaceId,
-      params.workosUserId
+      params.workosUserId,
+      WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN
     )
-    if (!mirror || mirror.status !== "active") {
-      throw new HttpError("Not a member of this workspace", { status: 403, code: "FORBIDDEN" })
-    }
-    if (!expandRoleSlugs(mirror.roleSlugs).includes(WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN)) {
+    if (!hasAdmin) {
       throw new HttpError("Only admins can connect GitHub", { status: 403, code: "FORBIDDEN" })
     }
 

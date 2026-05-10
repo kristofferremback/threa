@@ -28,7 +28,7 @@ interface InviteResult {
 
 /**
  * /invite @slug1 @slug2 ... — invite users or bots to a channel or a thread
- * rooted in a channel. Bots may only be invited by workspace owners/admins.
+ * rooted in a channel. Bot invitations require the `bots:manage` permission.
  */
 export class InviteCommand implements Command {
   name = "invite"
@@ -59,7 +59,7 @@ export class InviteCommand implements Command {
     const canInviteBots =
       actor != null && permissionsForRole(actor.role).includes(WORKSPACE_PERMISSION_SCOPES.BOTS_MANAGE)
     if (bots.length > 0 && !canInviteBots) {
-      return { success: false, error: "Only admins and owners can invite bots" }
+      return { success: false, error: "Insufficient permissions to invite bots" }
     }
 
     const entities: Entity[] = [
