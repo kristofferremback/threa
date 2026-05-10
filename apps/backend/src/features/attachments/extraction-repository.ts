@@ -25,6 +25,10 @@ interface AttachmentExtractionRow {
   text_metadata: unknown | null
   word_metadata: unknown | null
   excel_metadata: unknown | null
+  // SELECT paths project `(summary_embedding IS NOT NULL)` to avoid shipping
+  // the 30KB-ish vector literal on every read; callers only ever need a
+  // presence check.
+  summary_embedding: boolean
   created_at: Date
   updated_at: Date
 }
@@ -56,6 +60,13 @@ export interface AttachmentExtraction {
   textMetadata: TextMetadata | null
   wordMetadata: WordMetadata | null
   excelMetadata: ExcelMetadata | null
+  /**
+   * Whether the summary embedding has been generated. Surfaced as a boolean so
+   * callers can route around an in-flight backfill without parsing the vector
+   * literal. The vector itself is never read by the application — semantic
+   * search runs as a SQL distance comparison against the column directly.
+   */
+  hasSummaryEmbedding: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -89,15 +100,20 @@ function mapRowToExtraction(row: AttachmentExtractionRow): AttachmentExtraction 
     textMetadata: row.text_metadata as TextMetadata | null,
     wordMetadata: row.word_metadata as WordMetadata | null,
     excelMetadata: row.excel_metadata as ExcelMetadata | null,
+    hasSummaryEmbedding: row.summary_embedding,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
 }
 
+// `summary_embedding IS NOT NULL` is cheaper to ship than the vector literal,
+// which can be 30KB of text per row, and the application never reads the
+// embedding itself — only its presence.
 const SELECT_FIELDS = `
   id, attachment_id, workspace_id,
   content_type, summary, full_text, structured_data,
   source_type, pdf_metadata, text_metadata, word_metadata, excel_metadata,
+  (summary_embedding IS NOT NULL) AS summary_embedding,
   created_at, updated_at
 `
 
@@ -183,6 +199,23 @@ export const AttachmentExtractionRepository = {
   async deleteByAttachmentId(client: Querier, attachmentId: string): Promise<boolean> {
     const result = await client.query(sql`
       DELETE FROM attachment_extractions WHERE attachment_id = ${attachmentId}
+    `)
+    return (result.rowCount ?? 0) > 0
+  },
+
+  /**
+   * Persist the summary embedding for an extraction. Idempotent — re-running
+   * the embedding worker overwrites the column without further coordination.
+   * Returns `true` if a row was matched (the extraction may have been deleted
+   * between enqueue and execution).
+   */
+  async updateSummaryEmbedding(client: Querier, attachmentId: string, embedding: number[]): Promise<boolean> {
+    const embeddingLiteral = `[${embedding.join(",")}]`
+    const result = await client.query(sql`
+      UPDATE attachment_extractions
+      SET summary_embedding = ${embeddingLiteral}::vector,
+          updated_at = NOW()
+      WHERE attachment_id = ${attachmentId}
     `)
     return (result.rowCount ?? 0) > 0
   },

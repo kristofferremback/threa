@@ -89,7 +89,7 @@ import { ActivityService, ActivityFeedHandler } from "./features/activity"
 import { SavedMessagesService, createSavedReminderWorker } from "./features/saved-messages"
 import { ScheduledMessagesService, createScheduledMessageSendWorker } from "./features/scheduled-messages"
 import { PushService, PushNotificationHandler, createPushSessionCleanup } from "./features/push"
-import { AttachmentUploadedHandler } from "./features/attachments"
+import { AttachmentUploadedHandler, AttachmentEmbeddingHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, InviteCommand, createCommandWorker, CommandHandler } from "./features/commands"
 import {
@@ -102,6 +102,7 @@ import {
   createExcelProcessingWorker,
   createVideoTranscodeSubmitWorker,
   createVideoTranscodeCheckWorker,
+  createAttachmentEmbeddingWorker,
   ImageCaptionService,
   StubImageCaptionService,
   PdfProcessingService,
@@ -595,6 +596,14 @@ export async function startServer(): Promise<ServerInstance> {
     fairness: QueueFairness.NONE,
   })
 
+  // Attachment summary embeddings — same tier as message embeddings (LIGHT,
+  // single network call to the embedding provider, no heavy local work).
+  const attachmentEmbeddingWorker = createAttachmentEmbeddingWorker({ pool, embeddingService })
+  jobQueue.registerHandler(JobQueues.ATTACHMENT_EMBED, attachmentEmbeddingWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
+
   // Boundary extraction
   const boundaryExtractor = config.useStubBoundaryExtraction
     ? new StubBoundaryExtractor()
@@ -845,6 +854,7 @@ export async function startServer(): Promise<ServerInstance> {
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
   const agentMessageMutationHandler = new AgentMessageMutationHandler(pool, jobQueue, eventService)
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
+  const attachmentEmbeddingHandler = new AttachmentEmbeddingHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
   const pushNotificationHandler = pushService.isEnabled()
@@ -868,6 +878,7 @@ export async function startServer(): Promise<ServerInstance> {
     mentionInvokeHandler,
     agentMessageMutationHandler,
     attachmentUploadedHandler,
+    attachmentEmbeddingHandler,
     systemMessageOutboxHandler,
     activityFeedHandler,
     linkPreviewOutboxHandler,

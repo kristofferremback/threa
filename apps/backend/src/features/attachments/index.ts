@@ -39,8 +39,15 @@ export type { CreateAttachmentParams } from "./service"
 // Handlers
 export { createAttachmentHandlers } from "./handlers"
 
-// Outbox handler
+// Outbox handlers
 export { AttachmentUploadedHandler } from "./uploaded-outbox-handler"
+export { AttachmentEmbeddingHandler } from "./embedding-outbox-handler"
+export type { AttachmentEmbeddingHandlerConfig } from "./embedding-outbox-handler"
+
+// Embedding worker
+export { createAttachmentEmbeddingWorker } from "./embedding-worker"
+export type { AttachmentEmbeddingWorkerDeps } from "./embedding-worker"
+export { isContentTypeEmbeddable, MIN_SUMMARY_LENGTH } from "./embedding-config"
 
 // Await processing
 export { awaitAttachmentProcessing, hasPendingAttachmentProcessing } from "./await-processing"

@@ -34,6 +34,7 @@ export type OutboxEventType =
   | "stream:read_all"
   | "stream:activity"
   | "attachment:uploaded"
+  | "attachment:extraction_completed"
   | "workspace_user:added"
   | "workspace_user:removed"
   | "workspace_user:updated"
@@ -103,6 +104,7 @@ export type WorkspaceScopedEventType =
   | "stream:archived"
   | "stream:unarchived"
   | "attachment:uploaded"
+  | "attachment:extraction_completed"
   | "workspace_user:added"
   | "workspace_user:removed"
   | "workspace_user:updated"
@@ -250,6 +252,19 @@ export interface AttachmentTranscodedOutboxPayload extends WorkspaceScopedPayloa
   processingStatus: string
   streamId?: string
   messageId?: string
+}
+
+/**
+ * Fired in the same transaction as the `attachment_extractions` insert,
+ * across all extraction pipelines (text/word/image-caption via
+ * `processAttachment`, plus the PDF assemble path). The
+ * `AttachmentEmbeddingHandler` consumes it to enqueue summary-embedding
+ * jobs; carries `contentType` so the handler can short-circuit ineligible
+ * extractions (`photo`, `other`) before paying for an enqueue.
+ */
+export interface AttachmentExtractionCompletedOutboxPayload extends WorkspaceScopedPayload {
+  attachmentId: string
+  contentType: import("@threa/types").ExtractionContentType
 }
 
 export interface WorkspaceUserAddedOutboxPayload extends WorkspaceScopedPayload {
@@ -528,6 +543,7 @@ export interface OutboxEventPayloadMap {
   "link_preview:ready": LinkPreviewReadyOutboxPayload
   "link_preview:dismissed": LinkPreviewDismissedOutboxPayload
   "attachment:transcoded": AttachmentTranscodedOutboxPayload
+  "attachment:extraction_completed": AttachmentExtractionCompletedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]

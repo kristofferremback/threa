@@ -31,6 +31,7 @@ export const JobQueues = {
   TEXT_PROCESS: "text.process",
   WORD_PROCESS: "word.process",
   EXCEL_PROCESS: "excel.process",
+  ATTACHMENT_EMBED: "attachment.embed",
   AVATAR_PROCESS: "avatar.process",
   LINK_PREVIEW_EXTRACT: "link_preview.extract",
   VIDEO_TRANSCODE_SUBMIT: "video.transcode_submit",
@@ -145,6 +146,21 @@ export interface ExcelProcessJobData {
   storagePath: string
 }
 
+/**
+ * Attachment summary embedding job — generates a vector embedding for an
+ * extraction's `summary` so attachments become semantically searchable.
+ *
+ * Enqueued by `AttachmentEmbeddingHandler` once an
+ * `attachment:extraction_completed` outbox event lands. The worker fetches
+ * the latest extraction state, applies the eligibility check (skips
+ * `photo`/`other` content types), and updates `summary_embedding` in place.
+ * Idempotent: a re-run for the same attachment overwrites the column.
+ */
+export interface AttachmentEmbeddingJobData {
+  attachmentId: string
+  workspaceId: string
+}
+
 /** Avatar processing job - resizes raw upload into WebP variants */
 export interface AvatarProcessJobData {
   workspaceId: string
@@ -231,6 +247,7 @@ export interface JobDataMap {
   [JobQueues.TEXT_PROCESS]: TextProcessJobData
   [JobQueues.WORD_PROCESS]: WordProcessJobData
   [JobQueues.EXCEL_PROCESS]: ExcelProcessJobData
+  [JobQueues.ATTACHMENT_EMBED]: AttachmentEmbeddingJobData
   [JobQueues.AVATAR_PROCESS]: AvatarProcessJobData
   [JobQueues.LINK_PREVIEW_EXTRACT]: LinkPreviewExtractJobData
   [JobQueues.VIDEO_TRANSCODE_SUBMIT]: VideoTranscodeSubmitJobData

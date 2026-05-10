@@ -16,6 +16,7 @@ import { AttachmentRepository, type Attachment } from "./repository"
 import { AttachmentExtractionRepository, type InsertAttachmentExtractionParams } from "./extraction-repository"
 import { ProcessingStatuses } from "@threa/types"
 import { logger } from "../../lib/logger"
+import { OutboxRepository } from "../../lib/outbox"
 
 export type ExtractionData = Omit<InsertAttachmentExtractionParams, "id" | "attachmentId" | "workspaceId">
 
@@ -80,6 +81,15 @@ export async function processAttachment(
     })
 
     await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
+
+    // Outbox-driven follow-up: AttachmentEmbeddingHandler enqueues a summary
+    // embedding job. Writing the event in the same transaction keeps the
+    // extraction insert and the embedding trigger atomic (INV-7).
+    await OutboxRepository.insert(client, "attachment:extraction_completed", {
+      workspaceId: attachment.workspaceId,
+      attachmentId,
+      contentType: extractionData.contentType,
+    })
   })
 
   log.info("Attachment extraction saved successfully")
