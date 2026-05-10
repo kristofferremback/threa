@@ -4,6 +4,7 @@ import {
   WORKSPACE_PERMISSIONS,
   WORKSPACE_ROLE_DEFINITIONS,
   WORKSPACE_ROLE_SLUGS,
+  parseJwtPermissions,
   permissionsForRole,
 } from "./workspace-permissions"
 
@@ -105,5 +106,33 @@ describe("permissionsForRole", () => {
 
   test("throws on unknown slug", () => {
     expect(() => permissionsForRole("ghost" as never)).toThrow(/Unknown workspace role/)
+  })
+})
+
+describe("parseJwtPermissions", () => {
+  test("returns an empty array for empty input", () => {
+    expect(parseJwtPermissions([])).toEqual([])
+  })
+
+  test("preserves catalog slugs in their original order", () => {
+    const input = [
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+      WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE,
+      WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER,
+    ]
+    expect(parseJwtPermissions(input)).toEqual(input)
+  })
+
+  test("drops unknown slugs without throwing (forward-compat with WorkOS rollout drift)", () => {
+    const input = [
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+      "future:permission",
+      WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE,
+      "",
+    ]
+    expect(parseJwtPermissions(input)).toEqual([
+      WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+      WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE,
+    ])
   })
 })

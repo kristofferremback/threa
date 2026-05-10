@@ -9,8 +9,17 @@ export interface AuthResult {
     email: string
     firstName: string | null
     lastName: string | null
-    /** Workspace permission slugs from the WorkOS session JWT. */
-    permissions: string[]
+    /**
+     * Workspace permission slugs from the WorkOS session JWT.
+     *
+     * `null` means the JWT carried no `permissions` claim (older tokens issued
+     * before WorkOS authz rollout, or the OAuth callback path). Callers should
+     * fall back to a role-derived permission set in that case.
+     *
+     * An empty array (`[]`) means WorkOS explicitly granted no permissions —
+     * do **not** fall back, treat as the literal empty set.
+     */
+    permissions: string[] | null
   }
   sealedSession?: string
   refreshed: boolean
@@ -83,7 +92,7 @@ export class WorkosAuthService implements AuthService {
           email: authRes.user.email,
           firstName: authRes.user.firstName,
           lastName: authRes.user.lastName,
-          permissions: authRes.permissions ?? [],
+          permissions: authRes.permissions ?? null,
         },
         refreshed: false,
       }
@@ -103,7 +112,7 @@ export class WorkosAuthService implements AuthService {
               email: refreshResult.user.email,
               firstName: refreshResult.user.firstName,
               lastName: refreshResult.user.lastName,
-              permissions: refreshResult.permissions ?? [],
+              permissions: refreshResult.permissions ?? null,
             },
             sealedSession: refreshResult.sealedSession,
             refreshed: true,
@@ -138,9 +147,10 @@ export class WorkosAuthService implements AuthService {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
-          // OAuth callback response has no permissions claim; the next
+          // OAuth callback response has no permissions claim; downstream
+          // callers fall back to role-derived permissions until the next
           // authenticated request through authenticateSession populates them.
-          permissions: [],
+          permissions: null,
         },
         sealedSession: sealedSession!,
         refreshed: false,

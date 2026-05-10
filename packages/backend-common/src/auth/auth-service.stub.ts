@@ -3,8 +3,9 @@ import type { AuthResult, AuthService } from "./auth-service"
 
 // Stub sessions grant the full owner permission set so admin/owner-gated
 // features stay reachable in local dev and integration tests without per-test
-// permission seeding.
-const STUB_PERMISSIONS = permissionsForRole(WORKSPACE_ROLE_SLUGS.OWNER)
+// permission seeding. Frozen so an accidental mutation by a caller surfaces
+// as an error instead of corrupting subsequent sessions in the same process.
+const STUB_PERMISSIONS: readonly string[] = Object.freeze(permissionsForRole(WORKSPACE_ROLE_SLUGS.OWNER))
 
 export interface DevLoginResult {
   user: { id: string; email: string; name: string }
@@ -95,7 +96,7 @@ export class StubAuthService implements AuthService {
 
     return {
       success: true,
-      user: { ...user, permissions: STUB_PERMISSIONS },
+      user: { ...user, permissions: [...STUB_PERMISSIONS] },
       refreshed: false,
     }
   }
@@ -115,7 +116,7 @@ export class StubAuthService implements AuthService {
 
     return {
       success: true,
-      user: { ...user, permissions: STUB_PERMISSIONS },
+      user: { ...user, permissions: [...STUB_PERMISSIONS] },
       sealedSession: `test_session_${userId}`,
       refreshed: false,
     }

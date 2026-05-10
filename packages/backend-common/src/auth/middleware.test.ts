@@ -75,11 +75,13 @@ describe("createAuthMiddleware", () => {
     })
 
     expect(nextCalled).toBe(true)
-    expect(req.authUser?.permissions.slice().sort()).toEqual(["members:write", "messages:read"])
+    expect(req.authUser?.permissions?.slice().sort()).toEqual(["members:write", "messages:read"])
     expect(req.workosUserId).toBe("user_123")
   })
 
-  test("empty permission claim yields an empty array, not undefined", async () => {
+  test("empty permission claim is preserved as empty array (not coerced to null)", async () => {
+    // Bootstrap callers rely on this distinction: `[]` means "WorkOS sent an
+    // empty grant" (no fallback), `null` means "no claim — fall back to role".
     const middleware = createAuthMiddleware({
       authService: new FakeAuthService({
         success: true,
@@ -98,5 +100,26 @@ describe("createAuthMiddleware", () => {
     await middleware(req, makeRes(), () => {})
 
     expect(req.authUser?.permissions).toEqual([])
+  })
+
+  test("absent permission claim surfaces as null so callers can fall back", async () => {
+    const middleware = createAuthMiddleware({
+      authService: new FakeAuthService({
+        success: true,
+        refreshed: false,
+        user: {
+          id: "user_123",
+          email: "u@example.com",
+          firstName: null,
+          lastName: null,
+          permissions: null,
+        },
+      }),
+    })
+
+    const req = { cookies: { [sessionCookieName]: "session" } } as unknown as Request
+    await middleware(req, makeRes(), () => {})
+
+    expect(req.authUser?.permissions).toBeNull()
   })
 })

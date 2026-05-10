@@ -17,9 +17,13 @@ import {
   DISCUSS_WITH_ARIADNE_COMMAND,
   parseJwtPermissions,
   permissionsForRole,
+  roleRank,
+  WORKSPACE_ROLE_SLUGS,
   type CommandInfo,
   type WorkspacePermissionSlug,
 } from "@threa/types"
+
+const ADMIN_RANK = roleRank(WORKSPACE_ROLE_SLUGS.ADMIN)
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -199,12 +203,17 @@ export function createWorkspaceHandlers({
 
       // Include invitations for admin+ members
       const userRole = req.user!.role
-      const isAdmin = userRole === "admin" || userRole === "owner"
+      const isAdmin = roleRank(userRole) >= ADMIN_RANK
       const invitations = isAdmin ? await invitationService.listInvitations(workspaceId) : undefined
 
-      const jwtPermissions = parseJwtPermissions(req.authUser!.permissions)
+      // The WorkOS JWT carries `permissions` once authz rollout is active.
+      // Distinguish "claim absent" (older tokens / OAuth callback path) from
+      // "claim present but empty" — only the former triggers the role-derived
+      // fallback. An empty array means WorkOS deliberately granted nothing,
+      // and falling back would silently escalate privilege.
+      const rawPermissions = req.authUser!.permissions
       const viewerPermissions: WorkspacePermissionSlug[] =
-        jwtPermissions.length > 0 ? jwtPermissions : permissionsForRole(userRole)
+        rawPermissions === null ? permissionsForRole(userRole) : parseJwtPermissions(rawPermissions)
 
       res.json({
         data: {
