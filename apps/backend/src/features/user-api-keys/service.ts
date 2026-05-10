@@ -5,13 +5,13 @@ import { UserApiKeyRepository, type UserApiKeyRow } from "./repository"
 import { userApiKeyId } from "../../lib/id"
 import { HttpError } from "../../lib/errors"
 import type { WorkspacePermissionSlug } from "@threa/types"
-import { WORKSPACE_PERMISSION_SCOPES } from "@threa/types"
+import { API_KEY_ELIGIBLE_SCOPES } from "@threa/types"
 
 const KEY_PREFIX = "threa_uk_"
 const KEY_BYTE_LENGTH = 32 // 256-bit random key
 const STORED_PREFIX_LENGTH = 8 // chars stored for identification (after threa_uk_)
 
-const ALL_SCOPES = new Set(Object.values(WORKSPACE_PERMISSION_SCOPES))
+const ELIGIBLE_SCOPES = new Set<WorkspacePermissionSlug>(API_KEY_ELIGIBLE_SCOPES)
 const MAX_ACTIVE_KEYS_PER_USER = 25
 
 function hashKey(value: string): string {
@@ -46,7 +46,7 @@ export class UserApiKeyService {
   }): Promise<{ row: UserApiKeyRow; value: string }> {
     // Validate scopes
     for (const scope of params.scopes) {
-      if (!ALL_SCOPES.has(scope)) {
+      if (!ELIGIBLE_SCOPES.has(scope)) {
         throw new HttpError(`Invalid scope: ${scope}`, { status: 400, code: "INVALID_SCOPE" })
       }
     }

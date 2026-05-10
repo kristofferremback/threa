@@ -1,8 +1,27 @@
-import type { WorkspacePermissionSlug } from "./workspace-permissions"
+import { WORKSPACE_PERMISSION_SCOPES, type WorkspacePermissionSlug } from "./workspace-permissions"
 
 // API-key scopes draw from the same catalog as workspace permissions; persisted
 // keys are clamped at request time against the owner's effective workspace
 // permissions in the regional middleware.
+
+/**
+ * Slugs that may be selected when creating a user or bot API key. This is a
+ * subset of the workspace permission catalog: admin/owner-gated slugs
+ * (`workspace:*`, `members:write`, `bots:manage`, `bots:create:shared`) are
+ * deliberately excluded until request-time clamping is wired up — without the
+ * clamp, a member could persist a key that names a scope they don't actually
+ * hold. Once the regional clamp ships, this subset can grow (or be removed
+ * entirely in favor of the full catalog).
+ */
+export const API_KEY_ELIGIBLE_SCOPES: readonly [WorkspacePermissionSlug, ...WorkspacePermissionSlug[]] = [
+  WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
+  WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
+  WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+  WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
+  WORKSPACE_PERMISSION_SCOPES.USERS_READ,
+  WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
+  WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
+]
 
 // --- User-scoped API keys ---
 

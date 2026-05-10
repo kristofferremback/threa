@@ -464,6 +464,7 @@ export {
   SENT_VIA_API_PREFIX,
   sentViaApiKey,
   isSentViaApi,
+  API_KEY_ELIGIBLE_SCOPES,
   type UserApiKey,
   type CreateUserApiKeyResponse,
   BOT_KEY_PREFIX,
