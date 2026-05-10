@@ -21,17 +21,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
-import { API_KEY_ELIGIBLE_SCOPES, WORKSPACE_PERMISSIONS, type WorkspacePermissionSlug } from "@threa/types"
+import { API_KEY_ELIGIBLE_PICKER_SCOPES, WORKSPACE_PERMISSIONS, type WorkspacePermissionSlug } from "@threa/types"
 import { Check, ChevronDown, Copy, Key, Plus, Trash2, Eye, EyeOff } from "lucide-react"
 
+// Full catalog drives SCOPE_LABELS so previously-issued keys with scopes
+// outside the eligible picker subset still render a human-readable name.
 const SCOPE_LABELS: Record<string, string> = Object.fromEntries(WORKSPACE_PERMISSIONS.map((p) => [p.slug, p.name]))
-
-// Picker offers the request-time-clamp-safe subset of the catalog. The full
-// catalog is kept around for SCOPE_LABELS so previously-issued keys with
-// scopes outside this subset still render a human-readable name.
-const ELIGIBLE_PICKER_SCOPES = WORKSPACE_PERMISSIONS.filter((p) =>
-  (API_KEY_ELIGIBLE_SCOPES as readonly WorkspacePermissionSlug[]).includes(p.slug)
-)
 
 interface UserApiKeysSectionProps {
   workspaceId: string
@@ -206,7 +201,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
           <div className="space-y-1.5">
             <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Permissions</Label>
             <div className="rounded-md border divide-y">
-              {ELIGIBLE_PICKER_SCOPES.map((perm) => (
+              {API_KEY_ELIGIBLE_PICKER_SCOPES.map((perm) => (
                 <label
                   key={perm.slug}
                   className="block px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors first:rounded-t-md last:rounded-b-md"

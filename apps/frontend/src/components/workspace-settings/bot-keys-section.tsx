@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
 import {
-  API_KEY_ELIGIBLE_SCOPES,
+  API_KEY_ELIGIBLE_PICKER_SCOPES,
   WORKSPACE_PERMISSIONS,
   BOT_KEY_PREFIX,
   type WorkspacePermissionSlug,
@@ -31,10 +31,6 @@ import {
 import { Check, ChevronDown, Copy, Eye, EyeOff, Key, Plus, Trash2 } from "lucide-react"
 
 const SCOPE_LABELS: Record<string, string> = Object.fromEntries(WORKSPACE_PERMISSIONS.map((p) => [p.slug, p.name]))
-
-const ELIGIBLE_PICKER_SCOPES = WORKSPACE_PERMISSIONS.filter((p) =>
-  (API_KEY_ELIGIBLE_SCOPES as readonly WorkspacePermissionSlug[]).includes(p.slug)
-)
 
 interface BotKeysSectionProps {
   workspaceId: string
@@ -188,7 +184,7 @@ export function BotKeysSection({ workspaceId, botId, isArchived }: BotKeysSectio
           <div className="space-y-1.5">
             <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Permissions</Label>
             <div className="rounded-md border divide-y">
-              {ELIGIBLE_PICKER_SCOPES.map((perm) => (
+              {API_KEY_ELIGIBLE_PICKER_SCOPES.map((perm) => (
                 <label
                   key={perm.slug}
                   className="block px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors first:rounded-t-md last:rounded-b-md"

@@ -1,4 +1,9 @@
-import { WORKSPACE_PERMISSION_SCOPES, type WorkspacePermissionSlug } from "./workspace-permissions"
+import {
+  WORKSPACE_PERMISSION_SCOPES,
+  WORKSPACE_PERMISSIONS,
+  type WorkspacePermission,
+  type WorkspacePermissionSlug,
+} from "./workspace-permissions"
 
 // API-key scopes draw from the same catalog as workspace permissions; persisted
 // keys are clamped at request time against the owner's effective workspace
@@ -22,6 +27,17 @@ export const API_KEY_ELIGIBLE_SCOPES: readonly [WorkspacePermissionSlug, ...Work
   WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
   WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
 ]
+
+const ELIGIBLE_SCOPE_SET: ReadonlySet<WorkspacePermissionSlug> = new Set(API_KEY_ELIGIBLE_SCOPES)
+
+/**
+ * `WorkspacePermission` records (slug + name + description) for the eligible
+ * subset, in catalog order. Frontend pickers render from this so the picker UI
+ * stays a one-line consumer of the source of truth.
+ */
+export const API_KEY_ELIGIBLE_PICKER_SCOPES: readonly WorkspacePermission[] = WORKSPACE_PERMISSIONS.filter((p) =>
+  ELIGIBLE_SCOPE_SET.has(p.slug)
+)
 
 // --- User-scoped API keys ---
 

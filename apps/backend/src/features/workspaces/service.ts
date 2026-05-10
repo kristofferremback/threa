@@ -8,6 +8,7 @@ import { EmojiUsageRepository } from "../emoji"
 import { PersonaRepository, type Persona } from "../agents"
 import { workspaceId, userId as generateUserId, streamId, avatarUploadId } from "../../lib/id"
 import { generateSlug, generateUniqueSlug, serializeBigInt } from "@threa/backend-common"
+import { WORKSPACE_ROLE_SLUGS } from "@threa/types"
 import { HttpError, isUniqueViolation } from "../../lib/errors"
 import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
@@ -182,7 +183,7 @@ export class WorkspaceService {
         workosUserId: params.workosUserId,
         email: params.email,
         name: params.name,
-        role: params.role ?? "member",
+        role: params.role ?? WORKSPACE_ROLE_SLUGS.MEMBER,
         setupCompleted: params.setupCompleted,
       })
     })
