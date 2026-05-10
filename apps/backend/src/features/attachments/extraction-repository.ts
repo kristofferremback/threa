@@ -207,15 +207,26 @@ export const AttachmentExtractionRepository = {
    * Persist the summary embedding for an extraction. Idempotent — re-running
    * the embedding worker overwrites the column without further coordination.
    * Returns `true` if a row was matched (the extraction may have been deleted
-   * between enqueue and execution).
+   * between enqueue and execution, or the workspace check below may have
+   * filtered it out).
+   *
+   * The `workspace_id` predicate enforces the workspace shard boundary
+   * (INV-8) at the data layer so a future caller can't accidentally embed
+   * across workspaces even if it skips the worker's pre-check.
    */
-  async updateSummaryEmbedding(client: Querier, attachmentId: string, embedding: number[]): Promise<boolean> {
+  async updateSummaryEmbedding(
+    client: Querier,
+    workspaceId: string,
+    attachmentId: string,
+    embedding: number[]
+  ): Promise<boolean> {
     const embeddingLiteral = `[${embedding.join(",")}]`
     const result = await client.query(sql`
       UPDATE attachment_extractions
       SET summary_embedding = ${embeddingLiteral}::vector,
           updated_at = NOW()
       WHERE attachment_id = ${attachmentId}
+        AND workspace_id = ${workspaceId}
     `)
     return (result.rowCount ?? 0) > 0
   },

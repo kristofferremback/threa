@@ -60,8 +60,9 @@ describe("createAttachmentEmbeddingWorker", () => {
       functionId: "attachment-summary-embedding",
     })
     expect(updateSpy).toHaveBeenCalledTimes(1)
-    expect(updateSpy.mock.calls[0]?.[1]).toBe("attach_1")
-    expect(updateSpy.mock.calls[0]?.[2]).toHaveLength(1536)
+    expect(updateSpy.mock.calls[0]?.[1]).toBe("ws_1")
+    expect(updateSpy.mock.calls[0]?.[2]).toBe("attach_1")
+    expect(updateSpy.mock.calls[0]?.[3]).toHaveLength(1536)
   })
 
   it("skips when the extraction is missing", async () => {

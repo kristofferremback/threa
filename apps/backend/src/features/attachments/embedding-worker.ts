@@ -64,7 +64,12 @@ export function createAttachmentEmbeddingWorker(
       functionId: "attachment-summary-embedding",
     })
 
-    const updated = await AttachmentExtractionRepository.updateSummaryEmbedding(pool, attachmentId, embedding)
+    const updated = await AttachmentExtractionRepository.updateSummaryEmbedding(
+      pool,
+      workspaceId,
+      attachmentId,
+      embedding
+    )
     if (!updated) {
       log.info("Extraction was deleted between fetch and write, embedding discarded")
       return
