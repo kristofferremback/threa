@@ -215,13 +215,13 @@ No CP migration in this PR — the CP mirror already speaks `member`.
 
 - `packages/backend-common/src/auth/auth-service.ts` — extend `AuthResult.user` with `permissions: string[] | null`. Null when WorkOS did not include the `permissions` claim on the response (legacy tokens, code-exchange responses without it); empty array when WorkOS explicitly granted no permissions. `authenticateSession` reads it off `authRes` (already on `AuthenticateWithSessionCookieSuccessResponse`); `authenticateWithCode` reads it off the `authenticateWithCode` response. `status` is NOT exposed — the WorkOS SDK does not surface it on session responses, and inactive-member enforcement on the session path is implicit via failed token refresh (decision 6).
 - `packages/backend-common/src/auth/types.ts` — extend the `AuthUser` shape (already attached to `req.authUser`) with `permissions: string[] | null`. No new top-level `req.workosPermissions` / `req.workosStatus` properties — keep the surface minimal.
-- `apps/backend/src/middleware/auth.ts` — propagate `permissions` from the auth result onto `req.authUser`. For local-dev stub auth, return the full member permission set (frozen + spread per call) so admin features remain testable.
+- `apps/backend/src/middleware/auth.ts` — propagate `permissions` from the auth result onto `req.authUser`. For local-dev stub auth, return the full owner permission set (frozen + spread per call to avoid mutation across requests) so every gated path — including owner-only operations — remains testable without WorkOS.
 - `apps/control-plane/src/middleware/auth.ts` — same treatment for the CP side; backoffice handlers already gate on `requirePlatformAdmin`, so this is mostly for parity.
 - `apps/backend/src/features/workspaces/handlers.ts` `bootstrap` handler (around line 118) — derive `viewerPermissions` from `req.authUser.permissions`:
   - If `permissions === null` (claim absent): fall back to expanding `req.user.role` via `WORKSPACE_ROLE_DEFINITIONS` so legacy tokens still render a populated UI during the rollout window.
   - If `permissions` is an array (including `[]`): trust it verbatim — do NOT fall back to role, or an explicit empty-grant becomes role-expanded permissions and silently re-grants access to a just-demoted admin.
 - `packages/types/src/api.ts` `WorkspaceBootstrap` — `viewerPermissions: WorkspacePermissionSlug[]`.
-- `packages/types/src/workspace-permissions.ts` — add `parseJwtPermissions(raw: unknown): string[] | null` (treats arrays verbatim, everything else → null) so the auth service and any future consumer share the null-vs-empty contract.
+- `packages/types/src/workspace-permissions.ts` — add `parseJwtPermissions(raw: readonly string[]): WorkspacePermissionSlug[]`: filters the input to entries that exist in `WORKSPACE_PERMISSION_SCOPES` (unknown slugs from a future WorkOS catalog drop out rather than leak into bootstrap). The null-vs-empty distinction lives in the caller: `req.authUser.permissions: string[] | null` carries the raw shape, and the bootstrap handler branches `rawPermissions === null ? permissionsForRole(role) : parseJwtPermissions(rawPermissions)` (so the function itself never has to encode null).
 - `apps/frontend/src/api/workspaces.ts` — type the new field.
 - `apps/frontend/src/lib/permissions.ts` — new helper `hasPermission(viewerPermissions, slug)` for readable callsites.
 
@@ -232,8 +232,8 @@ No CP migration in this PR — the CP mirror already speaks `member`.
 **Tests.**
 - `apps/backend/src/middleware/auth.test.ts` — JWT carrying `permissions: [...]` populates `req.authUser.permissions` verbatim; missing claim → `null`; empty array → `[]` (must not be collapsed with `null`).
 - Bootstrap snapshot test: `viewerPermissions` populated for admin and member roles when JWT carries permissions; matches `WORKSPACE_ROLE_DEFINITIONS` when `permissions === null` (legacy token); is `[]` when JWT carries `permissions: []` (no role fallback).
-- `packages/types/src/workspace-permissions.test.ts` — `parseJwtPermissions` returns the array for arrays (including `[]`) and `null` for everything else.
-- Stub auth path returns the admin permission set so existing tests keep passing.
+- `packages/types/src/workspace-permissions.test.ts` — `parseJwtPermissions` preserves `[]`, returns known slugs unchanged, and drops unknown slugs from a mixed-input array.
+- Stub auth path returns the owner permission set so existing tests (including those that exercise admin-gated paths) keep passing.
 
 **Verification.**
 1. Log in locally → DevTools → bootstrap response includes `viewerPermissions` matching the user's role.
