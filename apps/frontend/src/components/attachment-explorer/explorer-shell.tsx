@@ -221,7 +221,7 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
           />
         )}
         <div
-          className={showPreviewOnly ? "flex w-full flex-1" : "hidden flex-shrink-0 sm:flex"}
+          className={showPreviewOnly ? "w-full flex-1" : "hidden flex-shrink-0 sm:block"}
           style={!showPreviewOnly && !isMobile ? { width: previewWidth } : undefined}
         >
           <ExplorerPreview workspaceId={workspaceId} item={selectedItem} />

@@ -81,10 +81,10 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
       )
     }
     if (category === "image") {
-      return <img src={rawUrl} alt={selected.filename} className="max-h-full max-w-full object-contain" />
+      return <img src={rawUrl} alt={selected.filename} className="max-h-[50vh] max-w-full object-contain" />
     }
     if (category === "video") {
-      return <video src={playbackUrl ?? undefined} controls className="max-h-full max-w-full" />
+      return <video src={playbackUrl ?? undefined} controls className="max-h-[50vh] max-w-full" />
     }
     if (category === "audio") {
       return (
@@ -112,7 +112,7 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="flex max-h-[60vh] min-h-[240px] items-center justify-center bg-muted/30 px-4 py-6">
+      <div className="flex min-h-[200px] items-center justify-center overflow-hidden bg-muted/30 px-4 py-6">
         {renderMedia()}
       </div>
 
