@@ -6,6 +6,7 @@ import { MediaGallery, type GalleryItem } from "@/components/image-gallery"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
 import { downloadImage, copyImage, triggerDownload } from "@/lib/image-utils"
+import { formatFileSize } from "@/lib/file-size"
 import { useAttachmentContext } from "@/lib/markdown/attachment-context"
 import { useMediaGallery } from "@/contexts"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -43,12 +44,6 @@ function getFileIcon(mimeType: string) {
     return FileText
   }
   return File
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function ImageActionDrawer({

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef } from "react"
 import type { AttachmentSearchItem } from "@/api/attachments"
-import { useFormattedDate } from "@/hooks"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ExplorerRow } from "./explorer-row"
 import { ExplorerEmpty } from "./explorer-empty"
@@ -70,7 +69,6 @@ export function ExplorerList({
   onWidenScope,
   hasFilters,
 }: ExplorerListProps) {
-  const { formatDate } = useFormattedDate()
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -122,12 +120,7 @@ export function ExplorerList({
           </div>
           <div className="flex flex-col gap-0.5 group" role="presentation">
             {bucket.items.map((item) => (
-              <div
-                key={item.id}
-                role="listitem"
-                data-attachment-id={item.id}
-                title={`${item.filename} · ${formatDate(new Date(item.createdAt))}`}
-              >
+              <div key={item.id} role="listitem" data-attachment-id={item.id}>
                 <ExplorerRow
                   workspaceId={workspaceId}
                   item={item}

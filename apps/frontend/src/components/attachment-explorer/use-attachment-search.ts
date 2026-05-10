@@ -39,8 +39,8 @@ export interface UseAttachmentSearchResult {
   isError: boolean
   isFetchingNextPage: boolean
   hasNextPage: boolean
-  fetchNextPage: () => void
-  refetch: () => void
+  fetchNextPage: () => Promise<unknown>
+  refetch: () => Promise<unknown>
 }
 
 export function useAttachmentSearch(
@@ -72,7 +72,7 @@ export function useAttachmentSearch(
     isError: query.isError,
     isFetchingNextPage: query.isFetchingNextPage,
     hasNextPage: Boolean(query.hasNextPage),
-    fetchNextPage: () => query.fetchNextPage(),
-    refetch: () => query.refetch(),
+    fetchNextPage: query.fetchNextPage,
+    refetch: query.refetch,
   }
 }

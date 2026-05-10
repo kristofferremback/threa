@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link } from "react-router-dom"
 import { categoryFromMime } from "@threa/types"
 import { Hash, ExternalLink } from "lucide-react"
 import { attachmentsApi, type AttachmentSearchItem } from "@/api/attachments"
 import { useFormattedDate } from "@/hooks"
+import { formatFileSize } from "@/lib/file-size"
 import { cn } from "@/lib/utils"
 import { CATEGORY_META } from "./category"
-import { formatFileSize } from "./format"
 
 interface ExplorerRowProps {
   workspaceId: string
@@ -17,7 +17,6 @@ interface ExplorerRowProps {
 
 export function ExplorerRow({ workspaceId, item, isSelected, onSelect }: ExplorerRowProps) {
   const { formatTime, formatRelative } = useFormattedDate()
-  const navigate = useNavigate()
   const category = categoryFromMime(item.mimeType)
   const meta = CATEGORY_META[category]
   const Icon = meta.icon
@@ -90,19 +89,15 @@ export function ExplorerRow({ workspaceId, item, isSelected, onSelect }: Explore
         </div>
       </div>
       {sourceUrl ? (
-        <a
-          href={sourceUrl}
-          onClick={(e) => {
-            e.stopPropagation()
-            e.preventDefault()
-            navigate(sourceUrl)
-          }}
+        <Link
+          to={sourceUrl}
+          onClick={(e) => e.stopPropagation()}
           className="flex-none rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
           aria-label={`Open in #${item.streamSlug ?? "stream"}`}
           title={`Open in #${item.streamSlug ?? "stream"}`}
         >
           <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+        </Link>
       ) : null}
     </button>
   )

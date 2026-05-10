@@ -6,8 +6,8 @@ import { attachmentsApi, type AttachmentSearchItem } from "@/api/attachments"
 import { Button } from "@/components/ui/button"
 import { useFormattedDate } from "@/hooks"
 import { stripMarkdownToInline } from "@/lib/markdown"
+import { formatFileSize } from "@/lib/file-size"
 import { CATEGORY_META } from "./category"
-import { formatFileSize } from "./format"
 
 interface ExplorerPreviewProps {
   workspaceId: string
@@ -61,6 +61,9 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
     )
   }
 
+  // Bind a non-null narrowing of `item` so the inner `renderMedia` closure
+  // doesn't have to re-prove that `item` is still non-null after the early
+  // return — TS can't propagate narrowing into nested function bodies.
   const selected = item
   const meta = CATEGORY_META[category]
   const Icon = meta.icon

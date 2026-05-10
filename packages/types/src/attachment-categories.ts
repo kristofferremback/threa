@@ -28,19 +28,6 @@ export const ATTACHMENT_CATEGORIES = [
 
 export type AttachmentCategory = (typeof ATTACHMENT_CATEGORIES)[number]
 
-export const AttachmentCategories = {
-  IMAGE: "image",
-  VIDEO: "video",
-  AUDIO: "audio",
-  PDF: "pdf",
-  DOC: "doc",
-  SHEET: "sheet",
-  SLIDE: "slide",
-  CODE: "code",
-  ARCHIVE: "archive",
-  OTHER: "other",
-} as const satisfies Record<string, AttachmentCategory>
-
 const EXACT_MIME_TO_CATEGORY: Record<string, AttachmentCategory> = {
   "application/pdf": "pdf",
 
@@ -127,71 +114,36 @@ export function categoryFromMime(mime: string | null | undefined): AttachmentCat
 }
 
 /**
- * Mime prefixes used by SQL LIKE queries to match a category. Returning a
- * list rather than a single string lets the repo OR-combine prefixes in a
- * `mime_type ILIKE ANY ($prefixes)` clause.
- *
- * For categories like "code" / "doc" / "archive" — where membership is
- * decided by exact mime equality rather than a prefix — we return the full
- * mime strings (LIKE without wildcards behaves as equality). The repo
- * augments this with explicit equality checks for completeness.
+ * Mime prefixes used by SQL LIKE queries to match a category. Built once
+ * from `EXACT_MIME_TO_CATEGORY` plus a small per-category set of "extras"
+ * — wildcard prefixes for media (`image/%`, etc.) and the `text/*` mimes
+ * that `categoryFromMime` resolves via fallback rules. Single source of
+ * truth keeps SQL filtering aligned with frontend categorisation.
  */
-export function mimePrefixesForCategory(category: AttachmentCategory): string[] {
-  switch (category) {
-    case "image":
-      return ["image/%"]
-    case "video":
-      return ["video/%"]
-    case "audio":
-      return ["audio/%"]
-    case "pdf":
-      return ["application/pdf"]
-    case "doc":
-      return [
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.oasis.opendocument.text",
-        "application/rtf",
-        "text/rtf",
-        "text/plain",
-      ]
-    case "sheet":
-      return [
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "application/vnd.oasis.opendocument.spreadsheet",
-        "text/csv",
-        "text/tab-separated-values",
-      ]
-    case "slide":
-      return [
-        "application/vnd.ms-powerpoint",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "application/vnd.oasis.opendocument.presentation",
-      ]
-    case "code":
-      return [
-        "application/json",
-        "application/xml",
-        "application/x-yaml",
-        "application/x-sh",
-        "application/javascript",
-        "application/typescript",
-        ...CODE_TEXT_SUFFIXES.map((suffix) => `text/${suffix}`),
-      ]
-    case "archive":
-      return [
-        "application/zip",
-        "application/x-zip-compressed",
-        "application/x-tar",
-        "application/gzip",
-        "application/x-gzip",
-        "application/x-bzip2",
-        "application/x-7z-compressed",
-        "application/x-rar-compressed",
-        "application/vnd.rar",
-      ]
-    case "other":
-      return []
+const CATEGORY_PREFIX_EXTRAS: Record<AttachmentCategory, string[]> = {
+  image: ["image/%"],
+  video: ["video/%"],
+  audio: ["audio/%"],
+  pdf: [],
+  doc: ["text/plain"],
+  sheet: [],
+  slide: [],
+  code: CODE_TEXT_SUFFIXES.map((suffix) => `text/${suffix}`),
+  archive: [],
+  other: [],
+}
+
+const CATEGORY_TO_PREFIXES: Record<AttachmentCategory, string[]> = (() => {
+  const map = Object.fromEntries(ATTACHMENT_CATEGORIES.map((c) => [c, [...CATEGORY_PREFIX_EXTRAS[c]]])) as Record<
+    AttachmentCategory,
+    string[]
+  >
+  for (const [mime, category] of Object.entries(EXACT_MIME_TO_CATEGORY)) {
+    map[category].push(mime)
   }
+  return map
+})()
+
+export function mimePrefixesForCategory(category: AttachmentCategory): string[] {
+  return CATEGORY_TO_PREFIXES[category]
 }

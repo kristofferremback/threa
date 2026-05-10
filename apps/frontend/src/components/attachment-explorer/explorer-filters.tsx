@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react"
 import { X, Filter as FilterIcon, Hash, User as UserIcon, Calendar, FileType, FileText } from "lucide-react"
 import { StreamTypes, type AttachmentCategory } from "@threa/types"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +29,32 @@ interface ExplorerFiltersProps {
    *  caller can offer a one-click "Include #parent" expansion. */
   parentStreamId: string | null
   onUpdate: (next: Partial<ExplorerFilters>) => void
+}
+
+interface FilterChipProps {
+  icon: ComponentType<{ className?: string }>
+  label: ReactNode
+  removeLabel: string
+  onRemove: () => void
+  /** When set, applies `${labelMaxWidth} truncate` so long labels clip. */
+  labelMaxWidth?: string
+}
+
+function FilterChip({ icon: Icon, label, removeLabel, onRemove, labelMaxWidth }: FilterChipProps) {
+  return (
+    <Badge variant="secondary" className="gap-1 pr-1">
+      <Icon className="h-3 w-3" />
+      <span className={labelMaxWidth ? `${labelMaxWidth} truncate` : undefined}>{label}</span>
+      <button
+        type="button"
+        className="rounded-full p-0.5 hover:bg-background/60"
+        onClick={onRemove}
+        aria-label={removeLabel}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </Badge>
+  )
 }
 
 export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate }: ExplorerFiltersProps) {
@@ -108,10 +134,6 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
     onUpdate({ streamIds: Array.from(set) })
   }
 
-  const removeStream = (id: string) => {
-    onUpdate({ streamIds: filters.streamIds.filter((s) => s !== id) })
-  }
-
   const includeParent = () => {
     if (!parentStream) return
     if (filters.streamIds.includes(parentStream.id)) return
@@ -120,101 +142,66 @@ export function ExplorerFilters({ workspaceId, filters, parentStreamId, onUpdate
 
   return (
     <div className="flex flex-wrap items-center gap-2 px-3 pb-3 pt-1">
-      {selectedStreams.map(({ id, stream }) => {
-        const Icon = stream ? STREAM_ICONS[stream.type] : Hash
-        const label = stream ? labelForStream(stream) : "stream"
-        return (
-          <Badge key={id} variant="secondary" className="gap-1 pr-1">
-            <Icon className="h-3 w-3" />
-            <span className="max-w-[140px] truncate">{label}</span>
-            <button
-              type="button"
-              className="rounded-full p-0.5 hover:bg-background/60"
-              onClick={() => removeStream(id)}
-              aria-label="Remove stream filter"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
-        )
-      })}
+      {selectedStreams.map(({ id, stream }) => (
+        <FilterChip
+          key={id}
+          icon={stream ? STREAM_ICONS[stream.type] : Hash}
+          label={stream ? labelForStream(stream) : "stream"}
+          labelMaxWidth="max-w-[140px]"
+          removeLabel="Remove stream filter"
+          onRemove={() => onUpdate({ streamIds: filters.streamIds.filter((s) => s !== id) })}
+        />
+      ))}
 
       {filters.categories.map((cat) => (
-        <Badge key={cat} variant="secondary" className="gap-1 pr-1">
-          <FileType className="h-3 w-3" />
-          <span>{cat}</span>
-          <button
-            type="button"
-            className="rounded-full p-0.5 hover:bg-background/60"
-            onClick={() => toggleCategory(cat)}
-            aria-label={`Remove ${cat} filter`}
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
+        <FilterChip
+          key={cat}
+          icon={FileType}
+          label={cat}
+          removeLabel={`Remove ${cat} filter`}
+          onRemove={() => toggleCategory(cat)}
+        />
       ))}
 
       {uploaderUser ? (
-        <Badge variant="secondary" className="gap-1 pr-1">
-          <UserIcon className="h-3 w-3" />
-          <span className="max-w-[120px] truncate">{uploaderUser.name || uploaderUser.slug}</span>
-          <button
-            type="button"
-            className="rounded-full p-0.5 hover:bg-background/60"
-            onClick={() => onUpdate({ uploadedBy: null })}
-            aria-label="Remove uploader filter"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
+        <FilterChip
+          icon={UserIcon}
+          label={uploaderUser.name || uploaderUser.slug}
+          labelMaxWidth="max-w-[120px]"
+          removeLabel="Remove uploader filter"
+          onRemove={() => onUpdate({ uploadedBy: null })}
+        />
       ) : null}
 
       {filters.nameSubstring ? (
-        <Badge variant="secondary" className="gap-1 pr-1">
-          <FileText className="h-3 w-3" />
-          <span className="max-w-[140px] truncate">name: {filters.nameSubstring}</span>
-          <button
-            type="button"
-            className="rounded-full p-0.5 hover:bg-background/60"
-            onClick={() => {
-              setNameDraft("")
-              onUpdate({ nameSubstring: null })
-            }}
-            aria-label="Remove name filter"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
+        <FilterChip
+          icon={FileText}
+          label={`name: ${filters.nameSubstring}`}
+          labelMaxWidth="max-w-[140px]"
+          removeLabel="Remove name filter"
+          onRemove={() => {
+            setNameDraft("")
+            onUpdate({ nameSubstring: null })
+          }}
+        />
       ) : null}
 
       {filters.before ? (
-        <Badge variant="secondary" className="gap-1 pr-1">
-          <Calendar className="h-3 w-3" />
-          <span>before {filters.before.slice(0, 10)}</span>
-          <button
-            type="button"
-            className="rounded-full p-0.5 hover:bg-background/60"
-            onClick={() => onUpdate({ before: null })}
-            aria-label="Remove before filter"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
+        <FilterChip
+          icon={Calendar}
+          label={`before ${filters.before.slice(0, 10)}`}
+          removeLabel="Remove before filter"
+          onRemove={() => onUpdate({ before: null })}
+        />
       ) : null}
 
       {filters.after ? (
-        <Badge variant="secondary" className="gap-1 pr-1">
-          <Calendar className="h-3 w-3" />
-          <span>after {filters.after.slice(0, 10)}</span>
-          <button
-            type="button"
-            className="rounded-full p-0.5 hover:bg-background/60"
-            onClick={() => onUpdate({ after: null })}
-            aria-label="Remove after filter"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
+        <FilterChip
+          icon={Calendar}
+          label={`after ${filters.after.slice(0, 10)}`}
+          removeLabel="Remove after filter"
+          onRemove={() => onUpdate({ after: null })}
+        />
       ) : null}
 
       <Popover>
