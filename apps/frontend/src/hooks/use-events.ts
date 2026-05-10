@@ -132,6 +132,37 @@ export function filterEventsForDisplay<T extends DisplayableEvent>(events: T[], 
   })
 }
 
+/**
+ * Pick the source of events to render in the timeline.
+ *
+ * IDB is the primary read model — once it has events, it always wins because
+ * it carries socket-arrived events and optimistic pending/failed rows that
+ * the bootstrap snapshot doesn't.
+ *
+ * The bootstrap fallback closes a narrow but visible race on cold load: the
+ * bootstrap query writes events to IDB inside its queryFn, then resolves and
+ * triggers a re-render. `useLiveQuery` only refreshes once Dexie's change
+ * notifications propagate, which can land one or more renders later (and on
+ * mobile Safari has been observed to miss the change entirely until the next
+ * page-resume). Without the fallback, that interim render computes
+ * `hasAnyEvents=true` from `bootstrap.events` while the rendered array stays
+ * empty — neither the skeleton nor the empty state fires and the user sees
+ * a blank scroll area.
+ *
+ * Falling back to bootstrap is safe specifically because IDB is empty: there
+ * are no socket-arrived or pending events to hide. As soon as `useLiveQuery`
+ * picks up the bootstrap writes, control flips back to IDB seamlessly.
+ */
+export function getEffectiveEvents<T extends DisplayableEvent>(
+  idbResolved: boolean,
+  idbEvents: T[],
+  bootstrapEvents: T[]
+): T[] {
+  if (!idbResolved) return []
+  if (idbEvents.length > 0) return idbEvents
+  return bootstrapEvents
+}
+
 export function getOldestSequence(events: SequencedEvent[] | null | undefined): string | null {
   if (!events || events.length === 0) return null
 
@@ -344,12 +375,14 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const hasIdbEvents = idbResolved && idbEvents.length > 0
   const suppressBootstrapError = shouldSuppressBootstrapError(error, hasIdbEvents)
 
-  // IDB is the primary read model. While useLiveQuery resolves (typically <10ms),
-  // treat it as a brief loading state rather than falling back to stale bootstrap
-  // events. The bootstrap cache only contains the original snapshot and would hide
-  // messages sent or received via socket after the first bootstrap.
-  const effectiveEvents: DisplayableEvent[] = idbResolved ? idbEvents : []
-  const hasAnyEvents = effectiveEvents.length > 0 || (bootstrap?.events ?? []).length > 0
+  // IDB is the primary read model. When useLiveQuery resolves with content,
+  // we always use it — it carries socket-arrived events and optimistic
+  // pending/failed rows the bootstrap snapshot doesn't. The bootstrap-events
+  // fallback only fires when IDB is genuinely empty, closing the cold-load
+  // race where bootstrap has finished but Dexie change events haven't yet
+  // propagated to useLiveQuery (see getEffectiveEvents docstring).
+  const effectiveEvents: DisplayableEvent[] = getEffectiveEvents(idbResolved, idbEvents ?? [], bootstrap?.events ?? [])
+  const hasAnyEvents = effectiveEvents.length > 0
 
   const cachedWindowFloor = useMemo(() => getCachedWindowFloor(effectiveEvents, EVENT_PAGE_SIZE), [effectiveEvents])
   const displayFloor = useMemo(() => {
