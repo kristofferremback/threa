@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { useQuery, type UseQueryResult } from "@tanstack/react-query"
 import { categoryFromMime } from "@threa/types"
@@ -22,13 +22,30 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [isTruncated, setIsTruncated] = useState(false)
+  const previewRef = useRef<HTMLPreElement | null>(null)
 
   // Reset per-item UI state so a fresh selection never inherits the previous
   // item's expanded view or "Copied" badge.
   useEffect(() => {
     setExpanded(false)
     setCopied(false)
+    setIsTruncated(false)
   }, [item?.id])
+
+  // Hide the Expand button when the line-clamped preview already fits the
+  // full content — toggling it would just rerender the same text. Re-measures
+  // on resize so the panel-resize handle keeps the button in sync.
+  useLayoutEffect(() => {
+    if (expanded) return
+    const el = previewRef.current
+    if (!el) return
+    const measure = () => setIsTruncated(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [expanded, item?.id, item?.extraction?.summary])
 
   const fullExtraction = useQuery<AttachmentExtractionContent>({
     queryKey: ["attachment-extraction", workspaceId, item?.id],
@@ -171,25 +188,27 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-medium text-muted-foreground">Extract</div>
                 <div className="flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setExpanded((v) => !v)}
-                    aria-expanded={expanded}
-                  >
-                    {expanded ? (
-                      <>
-                        <ChevronUp className="h-3 w-3" />
-                        Collapse
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown className="h-3 w-3" />
-                        Expand
-                      </>
-                    )}
-                  </Button>
+                  {isTruncated || expanded ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setExpanded((v) => !v)}
+                      aria-expanded={expanded}
+                    >
+                      {expanded ? (
+                        <>
+                          <ChevronUp className="h-3 w-3" />
+                          Collapse
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-3 w-3" />
+                          Expand
+                        </>
+                      )}
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -205,9 +224,12 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
               {expanded ? (
                 <ExpandedExtract item={item} query={fullExtraction} />
               ) : (
-                <p className="line-clamp-5 text-xs leading-relaxed text-foreground/80">
+                <pre
+                  ref={previewRef}
+                  className="line-clamp-5 whitespace-pre-wrap rounded-card bg-muted/40 p-3 text-xs leading-relaxed text-foreground/80"
+                >
                   {stripMarkdownToInline(item.extraction.summary)}
-                </p>
+                </pre>
               )}
             </div>
           ) : null}
