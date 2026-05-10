@@ -12,7 +12,7 @@ export function AttachmentExplorer({ workspaceId }: AttachmentExplorerProps) {
   return (
     <ResponsiveDialog open={isOpen} onOpenChange={(open) => (open ? null : close())}>
       <ResponsiveDialogContent
-        desktopClassName="overflow-hidden p-0 gap-0 shadow-lg sm:!fixed sm:!top-[12%] sm:!translate-y-0 sm:max-w-[920px] sm:rounded-2xl sm:!h-[76vh]"
+        desktopClassName="overflow-hidden p-0 gap-0 shadow-lg sm:!fixed sm:!top-[12%] sm:!translate-y-0 sm:!flex sm:!flex-col sm:max-w-[920px] sm:rounded-2xl sm:!h-[76vh]"
         drawerClassName="overflow-hidden p-0 h-[92dvh]"
         hideCloseButton
       >
