@@ -130,30 +130,30 @@ describe("Emoji Library", () => {
       // shortcode and the emojis fighting over it.
       const owners = new Map<string, string[]>()
       for (const { emoji, shortcodes } of emojiData.emojis) {
-        for (const sc of shortcodes) {
-          const list = owners.get(sc) ?? []
+        for (const shortcode of shortcodes) {
+          const list = owners.get(shortcode) ?? []
           if (!list.includes(emoji)) list.push(emoji)
-          owners.set(sc, list)
+          owners.set(shortcode, list)
         }
       }
       const collisions = Array.from(owners.entries())
         .filter(([, emojis]) => emojis.length > 1)
-        .map(([sc, emojis]) => `${sc} -> ${emojis.join(", ")}`)
+        .map(([shortcode, emojis]) => `${shortcode} -> ${emojis.join(", ")}`)
       expect(collisions).toEqual([])
     })
 
     test("every shortcode satisfies the wire-format regex", () => {
       const invalid: string[] = []
       for (const { emoji, shortcodes } of emojiData.emojis) {
-        for (const sc of shortcodes) {
-          if (!SHORTCODE_BODY.test(sc)) invalid.push(`${emoji} -> "${sc}"`)
+        for (const shortcode of shortcodes) {
+          if (!SHORTCODE_BODY.test(shortcode)) invalid.push(`${emoji} -> "${shortcode}"`)
         }
       }
       expect(invalid).toEqual([])
     })
 
     test("every emoji has at least one shortcode", () => {
-      const empty = emojiData.emojis.filter((e) => e.shortcodes.length === 0).map((e) => e.emoji)
+      const empty = emojiData.emojis.filter((entry) => entry.shortcodes.length === 0).map((entry) => entry.emoji)
       expect(empty).toEqual([])
     })
 
@@ -183,12 +183,12 @@ describe("Emoji Library", () => {
     // the dataset, not the exact version. If a label is slightly off
     // (some borderline characters move between 14.0 and 15.0 in different
     // sources), the test still passes as long as the emoji is present.
-    const dataset = new Set(emojiData.emojis.map((e) => e.emoji))
-    const has = (emojis: string[]) => emojis.filter((e) => !dataset.has(e))
+    const dataset = new Set(emojiData.emojis.map((entry) => entry.emoji))
+    const findMissing = (emojis: string[]) => emojis.filter((emoji) => !dataset.has(emoji))
 
     // Emoji 14.0 (Sept 2021)
     test("supports Emoji 14.0 (2021)", () => {
-      const set = [
+      const expected = [
         // Faces
         "🥹",
         "🫠",
@@ -234,12 +234,12 @@ describe("Emoji Library", () => {
         "🟰",
         "🫧",
       ]
-      expect(has(set)).toEqual([])
+      expect(findMissing(expected)).toEqual([])
     })
 
     // Emoji 15.0 (Sept 2022)
     test("supports Emoji 15.0 (2022)", () => {
-      const set = [
+      const expected = [
         // Faces
         "🫨",
         // Hands
@@ -262,31 +262,32 @@ describe("Emoji Library", () => {
         "🪇",
         // Objects
         "🪭",
-        // Symbols
+        // Hearts & symbols
         "🛜",
         "🩷",
         "🩵",
         "🩶",
       ]
-      expect(has(set)).toEqual([])
+      expect(findMissing(expected)).toEqual([])
     })
 
     // Emoji 15.1 (Sept 2023) — small release of ZWJ sequences
     test("supports Emoji 15.1 (2023)", () => {
-      const set = ["🐦‍🔥", "🍋‍🟩", "🍄‍🟫", "⛓️‍💥"]
-      expect(has(set)).toEqual([])
+      const expected = ["🐦‍🔥", "🍋‍🟩", "🍄‍🟫", "⛓️‍💥"]
+      expect(findMissing(expected)).toEqual([])
     })
 
     // Emoji 16.0 (Sept 2024)
     test("supports Emoji 16.0 (2024)", () => {
-      const set = ["🫩", "🫆", "🪾", "🫜", "🪉", "🪏", "🫟"]
-      expect(has(set)).toEqual([])
+      const expected = ["🫩", "🫆", "🪾", "🫜", "🪉", "🪏", "🫟"]
+      expect(findMissing(expected)).toEqual([])
     })
 
-    // Sanity: the user's reported gap that triggered this expansion.
-    // Keep this regardless of version groupings above.
+    // Explicit guard for the rightwards-hand family. The version blocks
+    // above could be reorganized or split; this test pins the specific
+    // hand emojis and their canonical/aliased shortcode lookups.
     test("supports the rightwards-hand family (regression guard)", () => {
-      expect(has(["🫱", "🫲", "🫳", "🫴", "🫵", "🫶"])).toEqual([])
+      expect(findMissing(["🫱", "🫲", "🫳", "🫴", "🫵", "🫶"])).toEqual([])
       expect(toEmoji(":rightwards_hand:")).toBe("🫱")
       expect(toEmoji(":open_hand_right:")).toBe("🫱")
     })
