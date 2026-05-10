@@ -12,7 +12,18 @@ import { getEffectiveLevel } from "../streams"
 import { BotRepository, serializeBot } from "../public-api"
 import { displayNameFromWorkos, type WorkosOrgService } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
-import { CommandKinds, DISCUSS_WITH_ARIADNE_COMMAND, type CommandInfo } from "@threa/types"
+import {
+  CommandKinds,
+  DISCUSS_WITH_ARIADNE_COMMAND,
+  parseJwtPermissions,
+  permissionsForRole,
+  roleRank,
+  WORKSPACE_ROLE_SLUGS,
+  type CommandInfo,
+  type WorkspacePermissionSlug,
+} from "@threa/types"
+
+const ADMIN_RANK = roleRank(WORKSPACE_ROLE_SLUGS.ADMIN)
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -192,8 +203,17 @@ export function createWorkspaceHandlers({
 
       // Include invitations for admin+ members
       const userRole = req.user!.role
-      const isAdmin = userRole === "admin" || userRole === "owner"
+      const isAdmin = roleRank(userRole) >= ADMIN_RANK
       const invitations = isAdmin ? await invitationService.listInvitations(workspaceId) : undefined
+
+      // The WorkOS JWT carries `permissions` once authz rollout is active.
+      // Distinguish "claim absent" (older tokens / OAuth callback path) from
+      // "claim present but empty" — only the former triggers the role-derived
+      // fallback. An empty array means WorkOS deliberately granted nothing,
+      // and falling back would silently escalate privilege.
+      const rawPermissions = req.authUser!.permissions
+      const viewerPermissions: WorkspacePermissionSlug[] =
+        rawPermissions === null ? permissionsForRole(userRole) : parseJwtPermissions(rawPermissions)
 
       res.json({
         data: {
@@ -214,6 +234,7 @@ export function createWorkspaceHandlers({
           dmPeers,
           userPreferences,
           invitations,
+          viewerPermissions,
         },
       })
     },

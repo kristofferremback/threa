@@ -72,7 +72,9 @@ This is a hard cut. There's no public-API consumer of the `role` field outside o
 
 The WorkOS session cookie is a sealed JWT. After `loadSealedSession({ sessionData, cookiePassword }).authenticate()`, the `AuthenticateWithSessionCookieSuccessResponse` already carries `permissions: string[]` (verified at `node_modules/.bun/@workos-inc+node@7.82.0+.../lib/user-management/interfaces/authenticate-with-session-cookie.interface.d.ts:35`). When an admin's WorkOS role is updated, the **next** session refresh (≤ access-token TTL, currently 5 min) issues a JWT carrying the new permission set. No mirror lookup, no fan-out latency, no cache invalidation problem.
 
-Phase 2's hot-path middleware (`requireWorkspacePermission`) reads `req.workosPermissions: Set<string>` populated by the auth middleware directly from `authRes.permissions`. Zero DB calls on the joy path.
+Phase 2's hot-path middleware (`requireWorkspacePermission`) reads `req.authUser.permissions: string[] | null` populated by the auth middleware directly from `authRes.permissions`. Zero DB calls on the joy path.
+
+The shape is `string[] | null`, not `Set<string>`, deliberately: `null` means the JWT did not include a `permissions` claim (legacy token issued before this rollout) and the middleware falls back to role-derived permissions via `WORKSPACE_ROLE_DEFINITIONS`. An *empty* array `[]` means WorkOS explicitly granted the user no permissions and the middleware must NOT fall back to role — collapsing the two into a `Set` would silently turn an explicit zero-grant into role-expanded permissions and cause privilege escalation during role demotions.
 
 The cost is staleness bounded by the access-token TTL. That's fine: a demoted admin loses access within ~5 minutes regardless. For *immediate* revocation we'd need session invalidation, which is out of scope. The WorkOS event poller still updates the mirror, so non-session paths (API keys, write-path validation) see the change immediately.
 
@@ -90,9 +92,13 @@ Phase 1 added a poller that writes the CP mirror. Phase 2 adds outbox events emi
 
 Fan-out only feeds the API-key path's mirror, not user sessions. So fan-out latency only impacts API-key clients seeing post-demotion permission shrinkage; user-session clients see it on next refresh regardless of fan-out.
 
-### 6. Inactive members are denied at the middleware
+### 6. Inactive members are denied at the middleware (API-key path) and via session invalidation (session path)
 
-`status` is mirrored verbatim from WorkOS as `"active" | "inactive" | "pending"`. `requireWorkspacePermission` denies any non-`active` status. For session paths, the auth middleware reads `status` from the JWT (also surfaced in `AuthenticateWithSessionCookieSuccessResponse`) and short-circuits to 401 before reaching permission checks. For API-key paths, the mirror's `status` column drives the same gate.
+`status` is mirrored verbatim from WorkOS as `"active" | "inactive" | "pending"` on the CP `workos_organization_memberships` table and fanned out to the regional `workspace_user_permissions.status` column.
+
+For **API-key paths** the mirror's `status` column drives the gate: `public-api-auth` returns 401 if the owner row is missing or `status !== "active"` (decision 4), so `requireWorkspacePermission` never sees an inactive owner via this path.
+
+For **session paths**, `status` is **not** on the WorkOS JWT — `AuthenticateWithSessionCookieSuccessResponse` exposes `permissions`, `role`, `roles`, `entitlements`, `featureFlags`, and `organizationId` but no `status` field (verified at `node_modules/.bun/@workos-inc+node@7.82.0+.../lib/user-management/interfaces/authenticate-with-session-cookie.interface.d.ts`). Inactive-member enforcement on the session path is therefore *implicit* in the auth/refresh layer: when WorkOS marks a membership inactive, the next session refresh fails with `INVALID_GRANT` and the auth middleware returns 401 before `requireWorkspacePermission` runs. There is no separate `req.workosStatus` gate. Worst-case staleness is bounded by the access-token TTL (~5 min), matching the staleness story for permission demotions in decision 3.
 
 ### 7. Workspace admins manage members; owners manage admins; operators recover everything
 
@@ -199,7 +205,7 @@ No CP migration in this PR — the CP mirror already speaks `member`.
 
 ### PR-2 — Surface WorkOS permissions on the request
 
-**Goal.** The auth middleware exposes `req.workosPermissions: Set<string>` and `req.workosStatus: string` populated from the session JWT. The bootstrap response carries `viewerPermissions: WorkspacePermissionSlug[]`. Nothing enforces using these yet — purely observational, like Phase 1's CP mirror was.
+**Goal.** The auth middleware exposes `req.authUser.permissions: string[] | null` populated from the session JWT (null when the claim is absent, e.g. legacy tokens issued before this rollout; empty array when WorkOS explicitly granted no permissions). The bootstrap response carries `viewerPermissions: WorkspacePermissionSlug[]`. Nothing enforces using these yet — purely observational, like Phase 1's CP mirror was.
 
 **Depends on.** PR-1 (catalog).
 
@@ -207,24 +213,27 @@ No CP migration in this PR — the CP mirror already speaks `member`.
 
 **Modified files.**
 
-- `packages/backend-common/src/auth/auth-service.ts` — extend `AuthResult.user` with `permissions: string[]` and `status: string`. `authenticateSession` reads them off `authRes` (already on `AuthenticateWithSessionCookieSuccessResponse`); `authenticateWithCode` reads them off the `authenticateWithCode` response.
-- `packages/backend-common/src/auth/types.ts` — extend the request-augmentation types to include the two new fields.
-- `apps/backend/src/middleware/auth.ts` — populate `req.workosPermissions` and `req.workosStatus` from the auth result. (For local-dev stub auth, return the full member set so admin features remain testable.)
+- `packages/backend-common/src/auth/auth-service.ts` — extend `AuthResult.user` with `permissions: string[] | null`. Null when WorkOS did not include the `permissions` claim on the response (legacy tokens, code-exchange responses without it); empty array when WorkOS explicitly granted no permissions. `authenticateSession` reads it off `authRes` (already on `AuthenticateWithSessionCookieSuccessResponse`); `authenticateWithCode` reads it off the `authenticateWithCode` response. `status` is NOT exposed — the WorkOS SDK does not surface it on session responses, and inactive-member enforcement on the session path is implicit via failed token refresh (decision 6).
+- `packages/backend-common/src/auth/types.ts` — extend the `AuthUser` shape (already attached to `req.authUser`) with `permissions: string[] | null`. No new top-level `req.workosPermissions` / `req.workosStatus` properties — keep the surface minimal.
+- `apps/backend/src/middleware/auth.ts` — propagate `permissions` from the auth result onto `req.authUser`. For local-dev stub auth, return the full owner permission set (frozen + spread per call to avoid mutation across requests) so every gated path — including owner-only operations — remains testable without WorkOS.
 - `apps/control-plane/src/middleware/auth.ts` — same treatment for the CP side; backoffice handlers already gate on `requirePlatformAdmin`, so this is mostly for parity.
-- `apps/backend/src/features/workspaces/handlers.ts` `bootstrap` handler (around line 118) — add `viewerPermissions: Array.from(req.workosPermissions ?? [])`. If empty (e.g. token issued before this rollout), fall back to expanding `req.user.role` via `WORKSPACE_ROLE_DEFINITIONS` so the UI is never empty during the rollout window.
+- `apps/backend/src/features/workspaces/handlers.ts` `bootstrap` handler (around line 118) — derive `viewerPermissions` from `req.authUser.permissions`:
+  - If `permissions === null` (claim absent): fall back to expanding `req.user.role` via `WORKSPACE_ROLE_DEFINITIONS` so legacy tokens still render a populated UI during the rollout window.
+  - If `permissions` is an array (including `[]`): trust it verbatim — do NOT fall back to role, or an explicit empty-grant becomes role-expanded permissions and silently re-grants access to a just-demoted admin.
 - `packages/types/src/api.ts` `WorkspaceBootstrap` — `viewerPermissions: WorkspacePermissionSlug[]`.
+- `packages/types/src/workspace-permissions.ts` — add `parseJwtPermissions(raw: readonly string[]): WorkspacePermissionSlug[]`: filters the input to entries that exist in `WORKSPACE_PERMISSION_SCOPES` (unknown slugs from a future WorkOS catalog drop out rather than leak into bootstrap). The null-vs-empty distinction lives in the caller: `req.authUser.permissions: string[] | null` carries the raw shape, and the bootstrap handler branches `rawPermissions === null ? permissionsForRole(role) : parseJwtPermissions(rawPermissions)` (so the function itself never has to encode null).
 - `apps/frontend/src/api/workspaces.ts` — type the new field.
 - `apps/frontend/src/lib/permissions.ts` — new helper `hasPermission(viewerPermissions, slug)` for readable callsites.
 
 **Public API surface.**
 - `WorkspaceBootstrap.viewerPermissions: WorkspacePermissionSlug[]` (additive).
-- `req.workosPermissions: Set<string> | undefined` (internal).
-- `req.workosStatus: "active" | "inactive" | "pending" | undefined` (internal).
+- `req.authUser.permissions: string[] | null` (internal). `null` = JWT claim absent → role fallback; `[]` = explicit empty grant → no fallback.
 
 **Tests.**
-- `apps/backend/src/middleware/auth.test.ts` — JWT carrying `permissions: [...]` populates `req.workosPermissions`; missing field → empty set; `status` propagated.
-- Bootstrap snapshot test: `viewerPermissions` populated for admin and member roles; matches `WORKSPACE_ROLE_DEFINITIONS`.
-- Stub auth path returns the admin permission set so existing tests keep passing.
+- `apps/backend/src/middleware/auth.test.ts` — JWT carrying `permissions: [...]` populates `req.authUser.permissions` verbatim; missing claim → `null`; empty array → `[]` (must not be collapsed with `null`).
+- Bootstrap snapshot test: `viewerPermissions` populated for admin and member roles when JWT carries permissions; matches `WORKSPACE_ROLE_DEFINITIONS` when `permissions === null` (legacy token); is `[]` when JWT carries `permissions: []` (no role fallback).
+- `packages/types/src/workspace-permissions.test.ts` — `parseJwtPermissions` preserves `[]`, returns known slugs unchanged, and drops unknown slugs from a mixed-input array.
+- Stub auth path returns the owner permission set so existing tests (including those that exercise admin-gated paths) keep passing.
 
 **Verification.**
 1. Log in locally → DevTools → bootstrap response includes `viewerPermissions` matching the user's role.
@@ -239,7 +248,7 @@ No CP migration in this PR — the CP mirror already speaks `member`.
 
 **Goal.** Stand up the regional `workspace_user_permissions` table fed by CP fan-out. Implement `requireWorkspacePermission` for both session paths (read JWT) and API-key paths (read mirror, intersect). Migrate every existing `requireRole` callsite within this PR.
 
-**Depends on.** PR-2 (`req.workosPermissions` exists).
+**Depends on.** PR-2 (`req.authUser.permissions` exists).
 
 **Migrations.**
 
@@ -289,10 +298,11 @@ Regional feature module (INV-51):
 - `apps/backend/src/features/workspace-authz/handlers.ts` — `POST /internal/authz/memberships` Zod-validated (INV-55), discriminated union on `kind: "upsert" | "remove"`.
 - `apps/backend/src/features/workspace-authz/index.ts` — barrel (INV-52).
 - `apps/backend/src/middleware/workspace-permission.ts` — `requireWorkspacePermission(slug)`. Logic:
-  1. If `req.workosStatus !== "active"` → 401.
-  2. If `req.workosPermissions?.has(slug)` → next (session path, JWT-only).
-  3. Else if `req.apiKey` (API-key path): intersect `req.apiKey.scopes` with `repo.getByWorkspaceAndUser(...).permissionSlugs`; if `slug` in result → next. (Owner row missing is impossible here — `public-api-auth` returns 401 in that case before this middleware runs.)
-  4. Otherwise 403.
+  1. **Session path** (`req.authUser` present, no `req.apiKey`):
+     - If `req.authUser.permissions === null` (legacy token, claim absent): derive the effective permission set from `req.authUser.role` via `WORKSPACE_ROLE_DEFINITIONS`. If `slug` is in the derived set → next; else 403. Status enforcement is handled in the auth layer — an inactive member's session refresh fails with 401 before this middleware runs (decision 6).
+     - Else (`permissions` is an array, including `[]`): if `permissions.includes(slug)` → next; else 403. **Do not fall back to role** — an explicit empty grant must remain empty.
+  2. **API-key path** (`req.apiKey` present): intersect `req.apiKey.scopes` with `repo.getByWorkspaceAndUser(...).permissionSlugs`; if `slug` in result → next; else 403. (Owner row missing or `status !== "active"` is impossible here — `public-api-auth` returns 401 in those cases before this middleware runs.)
+  3. Otherwise (no auth) 401.
 
   **Status code rule for permission denial.** This middleware always returns 403 on permission failure. That is correct because the gate is workspace-level: an authenticated session/key for `:workspaceId` already proves the caller has standing in this workspace, so workspace existence is not a secret to protect. The "404 to avoid leaking existence" pattern applies *per-resource* (e.g. `GET /streams/:id` for a private stream the caller isn't a member of) and lives in the route handler, not in `requireWorkspacePermission`. New write/action endpoints (e.g. `POST /attachments`, `PATCH /members/:id/role`) gate via this middleware and 403 is the right code; new per-resource read endpoints keep their existing handler-level 404-on-not-a-member behavior even though they may *also* gate on a read-permission slug at the workspace level.
 
@@ -306,7 +316,7 @@ CP side:
 - `apps/control-plane/src/server.ts` — extend `dispatchEvent` switch with two new cases. Construct `RegionalAuthzFanOut` in `startServer`.
 
 Regional side:
-- `apps/backend/src/middleware/public-api-auth.ts` — after authenticating the API key, look up the owner via `WorkspaceUserPermissionsRepository.getByWorkspaceAndUser(workspaceId, key.ownerWorkosUserId)`; intersect `key.scopes` with `permissionSlugs`; populate `req.workosPermissions = new Set(intersected)`. If owner row missing or `status !== "active"` → 401.
+- `apps/backend/src/middleware/public-api-auth.ts` — after authenticating the API key, look up the owner via `WorkspaceUserPermissionsRepository.getByWorkspaceAndUser(workspaceId, key.ownerWorkosUserId)`; intersect `key.scopes` with `permissionSlugs`; expose the intersected list to `requireWorkspacePermission` via `req.apiKey.effectivePermissions: string[]` (read in step 2 of the middleware pseudocode above). If owner row missing or `status !== "active"` → 401.
 - `apps/backend/src/middleware/authorization.ts` — `requireRole(minimumRole)` is rewritten to compute the equivalent permission slug from the catalog and delegate to `requireWorkspacePermission` (e.g. `"admin"` → `workspace:admin`, `"owner"` → `workspace:owner`). **No flag.** This is the dual-read shim that lets PR-3's per-route migration land incrementally without flag-flipping.
 - `apps/backend/src/routes.ts` — register `app.post("/internal/authz/memberships", internalAuth, authz.handle)` and migrate per-route gates:
   - `routes.ts:299-313` (invitations) → `requireWorkspacePermission("members:write")`.
@@ -584,7 +594,7 @@ Socket helper:
 ## End-to-End Verification (post-merge of all six PRs)
 
 1. **Catalog and naming (PR-1):** Every codebase reference to `"user"` as a role string is gone. `bun workos:check` reports zero drift after a clean sync. Existing members render their badge as "Member".
-2. **Hot-path permissions (PR-2):** Bootstrap response carries `viewerPermissions`. Auth middleware exposes `req.workosPermissions`.
+2. **Hot-path permissions (PR-2):** Bootstrap response carries `viewerPermissions`. Auth middleware exposes `req.authUser.permissions: string[] | null` (null when JWT lacks the claim → role fallback; empty array when WorkOS explicitly granted no permissions → no role fallback).
 3. **Enforcement (PR-3):** WorkOS dashboard role change → user-session permissions update on next refresh (~5 min); API-key permissions update via fan-out in ~10s. Inactive members get 401. Per-route gates work.
 4. **Cleanup (PR-4):** No `requireRole` callers remain. The hierarchy table is gone.
 5. **Write paths (PR-5):** Admin demotes another admin via the new regional endpoint → WorkOS dashboard shows the change → fan-out closes the loop. Last-owner guard refuses to leave a workspace ownerless. Owner-action gate refuses an admin's attempt to touch ownership. Owner backfill upgrades historical creators admin → owner. Invitations carry `role_slug` end-to-end.

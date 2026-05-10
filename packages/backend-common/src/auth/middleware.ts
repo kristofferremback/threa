@@ -7,6 +7,12 @@ interface AuthenticatedUser {
   email: string
   firstName: string | null
   lastName: string | null
+  /**
+   * Permission slugs from the WorkOS session JWT, or `null` when the token
+   * carried no `permissions` claim (older tokens / OAuth-callback path).
+   * Bootstrap handlers fall back to role-derived permissions when `null`.
+   */
+  permissions: string[] | null
 }
 
 declare global {
