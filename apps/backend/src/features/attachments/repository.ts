@@ -2,10 +2,13 @@ import { sql, type Querier } from "../../db"
 import {
   AttachmentSafetyStatuses,
   ProcessingStatuses,
+  Visibilities,
+  mimePrefixesForCategory,
   type StorageProvider,
   type ProcessingStatus,
   type ExtractionContentType,
   type AttachmentSafetyStatus,
+  type AttachmentCategory,
 } from "@threa/types"
 
 // Internal row type (snake_case, not exported)
@@ -405,4 +408,210 @@ export const AttachmentRepository = {
 
     return result.rows.map(mapRowToAttachmentWithExtraction)
   },
+
+  /**
+   * Explorer search. One round trip combining:
+   *   - readable-stream gating for `userId` (mirrors `listAccessibleStreamIds`
+   *     so the predicate stays consistent with `checkStreamAccess`)
+   *   - thread-descendant expansion when `streamIds` is supplied (callers
+   *     pass channel/DM ids and the repo finds files in those streams *and*
+   *     their threads via `root_stream_id`)
+   *   - filename/extract FTS via `websearch_to_tsquery('english', ...)`
+   *     against the combined `attachments.search_vector` and
+   *     `attachment_extractions.search_vector`
+   *   - exact substring match (ILIKE) when `exact = true`
+   *   - filename-only substring match via `nameSubstring`
+   *   - mime-category filter resolved through `mimePrefixesForCategory`
+   *   - keyset cursor on `(created_at DESC, id DESC)`
+   *
+   * Returns `limit + 1` rows when more pages are available; the caller
+   * trims the trailing row and uses it to mint the next cursor.
+   */
+  async search(client: Querier, opts: AttachmentSearchParams): Promise<AttachmentSearchRow[]> {
+    const {
+      workspaceId,
+      userId,
+      streamIds,
+      categories,
+      uploadedBy,
+      before,
+      after,
+      queryText,
+      exact = false,
+      nameSubstring,
+      cursor,
+      limit,
+    } = opts
+
+    const fetchLimit = limit + 1
+    const hasStreamScope = streamIds !== undefined && streamIds.length > 0
+    const scopedStreamIds = hasStreamScope ? streamIds : []
+    const hasCategories = Boolean(categories?.length)
+    const mimePatterns = hasCategories
+      ? Array.from(new Set(categories!.flatMap((c) => mimePrefixesForCategory(c))))
+      : []
+    const trimmedQuery = queryText?.trim()
+    const hasQueryText = Boolean(trimmedQuery)
+    const ilikePattern = hasQueryText ? `%${trimmedQuery}%` : ""
+    const nameLikePattern = nameSubstring ? `%${nameSubstring}%` : ""
+    const useFts = hasQueryText && !exact
+    const useIlike = hasQueryText && exact
+    const cursorCreatedAt = cursor?.createdAt ?? null
+    const cursorId = cursor?.id ?? ""
+
+    const result = await client.query<AttachmentSearchRowDb>(sql`
+      WITH accessible_streams AS (
+        SELECT s.id
+        FROM streams s
+        LEFT JOIN streams root ON root.id = s.root_stream_id
+        WHERE s.workspace_id = ${workspaceId}
+          AND (
+            (s.root_stream_id IS NULL AND (
+              s.visibility = ${Visibilities.PUBLIC}
+              OR EXISTS (
+                SELECT 1 FROM stream_members
+                WHERE stream_id = s.id AND member_id = ${userId}
+              )
+            ))
+            OR
+            (s.root_stream_id IS NOT NULL AND root.id IS NOT NULL AND (
+              root.visibility = ${Visibilities.PUBLIC}
+              OR EXISTS (
+                SELECT 1 FROM stream_members
+                WHERE stream_id = s.root_stream_id AND member_id = ${userId}
+              )
+            ))
+          )
+      ),
+      scoped_streams AS (
+        SELECT acc.id
+        FROM accessible_streams acc
+        LEFT JOIN streams s ON s.id = acc.id
+        WHERE
+          ${!hasStreamScope}
+          OR acc.id = ANY(${scopedStreamIds})
+          OR s.root_stream_id = ANY(${scopedStreamIds})
+      )
+      SELECT
+        a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
+        a.filename, a.mime_type, a.size_bytes,
+        a.storage_provider, a.storage_path, a.processing_status, a.safety_status,
+        a.created_at,
+        e.content_type AS extraction_content_type,
+        e.summary AS extraction_summary,
+        s.slug AS stream_slug,
+        s.display_name AS stream_name,
+        s.type AS stream_type,
+        u.slug AS uploader_slug,
+        u.name AS uploader_name,
+        COALESCE(ref_count.count, 0)::int AS reference_count
+      FROM attachments a
+      JOIN scoped_streams ss ON ss.id = a.stream_id
+      LEFT JOIN attachment_extractions e ON e.attachment_id = a.id
+      LEFT JOIN streams s ON s.id = a.stream_id
+      LEFT JOIN users u ON u.id = a.uploaded_by
+      LEFT JOIN (
+        SELECT attachment_id, COUNT(*)::int AS count
+        FROM attachment_references
+        WHERE workspace_id = ${workspaceId}
+        GROUP BY attachment_id
+      ) ref_count ON ref_count.attachment_id = a.id
+      WHERE a.workspace_id = ${workspaceId}
+        AND a.message_id IS NOT NULL
+        AND a.safety_status = ${AttachmentSafetyStatuses.CLEAN}
+        AND (${!hasCategories} OR a.mime_type ILIKE ANY(${mimePatterns}))
+        AND (${uploadedBy === undefined} OR a.uploaded_by = ${uploadedBy ?? ""})
+        AND (${before === undefined} OR a.created_at < ${before ?? new Date(0)})
+        AND (${after === undefined} OR a.created_at >= ${after ?? new Date(0)})
+        AND (
+          ${!useFts}
+          OR (
+            a.search_vector @@ websearch_to_tsquery('english', ${trimmedQuery ?? ""})
+            OR e.search_vector @@ websearch_to_tsquery('english', ${trimmedQuery ?? ""})
+          )
+        )
+        AND (
+          ${!useIlike}
+          OR a.filename ILIKE ${ilikePattern}
+          OR e.summary ILIKE ${ilikePattern}
+          OR e.full_text ILIKE ${ilikePattern}
+        )
+        AND (${nameSubstring === undefined} OR a.filename ILIKE ${nameLikePattern})
+        AND (
+          ${cursorCreatedAt === null}
+          OR (a.created_at, a.id) < (${cursorCreatedAt ?? new Date(0)}::timestamptz, ${cursorId}::text)
+        )
+      ORDER BY a.created_at DESC, a.id DESC
+      LIMIT ${fetchLimit}
+    `)
+
+    return result.rows.map(mapRowToSearchRow)
+  },
+}
+
+export interface AttachmentSearchParams {
+  workspaceId: string
+  /** Identity of the caller, used to apply readable-stream gating. */
+  userId: string
+  /**
+   * Optional channel/DM/scratchpad ids to narrow to. Threads are included
+   * automatically when their root is in this list.
+   * `undefined` = workspace-wide (still gated by readable-stream access).
+   */
+  streamIds?: string[]
+  categories?: AttachmentCategory[]
+  uploadedBy?: string
+  before?: Date
+  after?: Date
+  /** Free-text query — FTS by default, ILIKE when `exact` is true. */
+  queryText?: string
+  exact?: boolean
+  /** Filename-only substring match (used by the `name:"..."` chip). */
+  nameSubstring?: string
+  cursor?: AttachmentSearchCursor
+  limit: number
+}
+
+export interface AttachmentSearchCursor {
+  createdAt: Date
+  id: string
+}
+
+export interface AttachmentSearchRow extends Attachment {
+  extraction: { contentType: ExtractionContentType; summary: string } | null
+  streamSlug: string | null
+  streamName: string | null
+  streamType: string | null
+  uploaderSlug: string | null
+  uploaderName: string | null
+  referenceCount: number
+}
+
+interface AttachmentSearchRowDb extends AttachmentRow {
+  extraction_content_type: string | null
+  extraction_summary: string | null
+  stream_slug: string | null
+  stream_name: string | null
+  stream_type: string | null
+  uploader_slug: string | null
+  uploader_name: string | null
+  reference_count: number
+}
+
+function mapRowToSearchRow(row: AttachmentSearchRowDb): AttachmentSearchRow {
+  return {
+    ...mapRowToAttachment(row),
+    extraction: row.extraction_content_type
+      ? {
+          contentType: row.extraction_content_type as ExtractionContentType,
+          summary: row.extraction_summary ?? "",
+        }
+      : null,
+    streamSlug: row.stream_slug,
+    streamName: row.stream_name,
+    streamType: row.stream_type,
+    uploaderSlug: row.uploader_slug,
+    uploaderName: row.uploader_name,
+    referenceCount: row.reference_count,
+  }
 }

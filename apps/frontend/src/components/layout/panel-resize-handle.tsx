@@ -8,6 +8,7 @@ interface PanelResizeHandleProps {
   maxWidth: number
   onMouseDown: (e: React.MouseEvent) => void
   onKeyDown: (e: React.KeyboardEvent) => void
+  ariaLabel?: string
 }
 
 export function PanelResizeHandle({
@@ -17,6 +18,7 @@ export function PanelResizeHandle({
   maxWidth,
   onMouseDown,
   onKeyDown,
+  ariaLabel = "Resize thread panel",
 }: PanelResizeHandleProps) {
   return (
     <div
@@ -35,7 +37,7 @@ export function PanelResizeHandle({
       aria-valuenow={panelWidth}
       aria-valuemin={minWidth}
       aria-valuemax={maxWidth}
-      aria-label="Resize thread panel"
+      aria-label={ariaLabel}
     >
       <div className="z-10 flex h-4 w-3 items-center justify-center rounded-sm border bg-border">
         <GripVertical className="h-2.5 w-2.5" />

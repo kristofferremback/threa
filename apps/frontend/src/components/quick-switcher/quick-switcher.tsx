@@ -13,6 +13,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { useSettings } from "@/contexts"
 import { useUser } from "@/auth"
 import { useCreateChannel } from "@/components/create-channel"
+import { useExplorerUrlState } from "@/components/attachment-explorer"
 import { useStreamItems } from "./use-stream-items"
 import { useCommandItems } from "./use-command-items"
 import { useSearchItems } from "./use-search-items"
@@ -72,6 +73,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const { createDraft } = useDraftScratchpads(workspaceId)
   const { openSettings } = useSettings()
   const { openCreateChannel } = useCreateChannel()
+  const { open: openExplorer } = useExplorerUrlState()
 
   const streams = useWorkspaceStreams(workspaceId)
   const streamMemberships = useWorkspaceStreamMemberships(workspaceId)
@@ -142,8 +144,19 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       setMode,
       requestInput,
       openSettings,
+      openExplorer,
     }),
-    [workspaceId, navigate, handleClose, createDraft, openCreateChannel, setMode, requestInput, openSettings]
+    [
+      workspaceId,
+      navigate,
+      handleClose,
+      createDraft,
+      openCreateChannel,
+      setMode,
+      requestInput,
+      openSettings,
+      openExplorer,
+    ]
   )
 
   // Get items based on current mode

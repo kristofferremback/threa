@@ -1,7 +1,8 @@
 import type { NavigateFunction } from "react-router-dom"
-import { Brain, FileText, Hash, Search, FileEdit, Settings } from "lucide-react"
+import { Brain, FileText, Hash, Paperclip, Search, FileEdit, Settings } from "lucide-react"
 import { toast } from "sonner"
 import type { SettingsTab } from "@threa/types"
+import type { ExplorerFilters } from "@/components/attachment-explorer"
 
 /**
  * Commands can request an input prompt via this interface.
@@ -23,6 +24,7 @@ export interface CommandContext {
   setMode?: (mode: "stream" | "command" | "search") => void
   requestInput: (request: InputRequest) => void
   openSettings: (tab?: SettingsTab) => void
+  openExplorer: (overrides?: Partial<ExplorerFilters>) => void
 }
 
 export interface Command {
@@ -87,6 +89,16 @@ export const commands: Command[] = [
     action: ({ workspaceId, navigate, closeDialog }) => {
       closeDialog()
       navigate(`/w/${workspaceId}/memory`)
+    },
+  },
+  {
+    id: "browse-files",
+    label: "Browse files",
+    icon: Paperclip,
+    keywords: ["attachments", "uploads", "media", "files", "explorer"],
+    action: ({ closeDialog, openExplorer }) => {
+      closeDialog()
+      openExplorer({ streamIds: [] })
     },
   },
   {

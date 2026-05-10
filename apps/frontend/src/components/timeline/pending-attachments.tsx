@@ -2,17 +2,12 @@ import type { ReactNode } from "react"
 import { Loader2, FileText, Image as ImageIcon, File as FileIcon, AlertCircle } from "lucide-react"
 import { AttachmentPill, type AttachmentPillStatus } from "@/components/composer/attachment-pill"
 import type { PendingAttachment } from "@/hooks/use-attachments"
+import { formatFileSize } from "@/lib/file-size"
 
 function getFileIcon(mimeType: string): typeof FileIcon {
   if (mimeType.startsWith("image/")) return ImageIcon
   if (mimeType.startsWith("text/") || mimeType === "application/pdf") return FileText
   return FileIcon
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 const STATUS_MAP: Record<PendingAttachment["status"], AttachmentPillStatus> = {

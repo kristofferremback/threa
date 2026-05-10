@@ -225,7 +225,7 @@ Navigation uses links; actions use buttons (INV-40):
 
 Socket subscriptions must always pair with bootstrap fetches, and bootstrap must be invalidated on reconnect/resubscribe to close event gaps (INV-53).
 
-User-facing dates must use user timezone resolution via `formatDate(date, timezone, format)` from `lib/temporal.ts` (INV-42).
+User-facing dates render in the device's local time (INV-42). Use the helpers in `apps/frontend/src/lib/dates.ts` (`formatDate`, `formatTime`, `formatRelative`, `formatFull`) — they fall through to the browser's locale and timezone, which is what users expect to see in the UI. The `prefs?: TimePrefs` argument these helpers accept is for non-UI contexts (background jobs, server-side prompt rendering, scheduled notifications) where there is no device — in those contexts `prefs.timezone` is the source of truth. Do not force `prefs.timezone` into UI surfaces; it overrides what the user's actual device shows and creates drift across the app.
 
 Multi-view pages (tabs, sub-sections, filter states) must derive their active view from the URL, not from `useState` — a refresh, back/forward, or shared link must land the user on the same view they were looking at (INV-59). Use distinct route segments like `/saved`, `/saved/done`, `/saved/archived` rather than a query string when there's a small fixed set of views so the URLs read naturally. Tab onChange handlers should `navigate(...)` to the new segment; the view hook reads `useParams()` (or a route-level loader) and falls through to a sensible default for the unsegmented path.
 

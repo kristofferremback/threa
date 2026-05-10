@@ -62,6 +62,7 @@ import { SettingsDialog } from "@/components/settings"
 import { WorkspaceSettingsDialog } from "@/components/workspace-settings/workspace-settings-dialog"
 import { StreamSettingsDialog } from "@/components/stream-settings/stream-settings-dialog"
 import { CreateChannelDialog } from "@/components/create-channel"
+import { AttachmentExplorer, useExplorerUrlState } from "@/components/attachment-explorer"
 import { TraceDialog } from "@/components/trace"
 import { useQueryClient } from "@tanstack/react-query"
 import { ApiError } from "@/api/client"
@@ -69,17 +70,23 @@ import { SyncStatusStore, SyncStatusContext } from "@/sync/sync-status"
 
 interface WorkspaceKeyboardHandlerProps {
   onOpenSwitcher: (mode: QuickSwitcherMode) => void
+  currentStreamId: string | undefined
   children: ReactNode
 }
 
-function WorkspaceKeyboardHandler({ onOpenSwitcher, children }: WorkspaceKeyboardHandlerProps) {
+function WorkspaceKeyboardHandler({ onOpenSwitcher, currentStreamId, children }: WorkspaceKeyboardHandlerProps) {
   const { openSettings } = useSettings()
+  const { open: openExplorer } = useExplorerUrlState()
 
   useKeyboardShortcuts({
     openQuickSwitcher: () => onOpenSwitcher("stream"),
     openSearch: () => onOpenSwitcher("search"),
     openCommands: () => onOpenSwitcher("command"),
     openSettings: () => openSettings(),
+    openAttachmentExplorer: () =>
+      openExplorer({
+        streamIds: currentStreamId ? [currentStreamId] : [],
+      }),
   })
 
   return <>{children}</>
@@ -350,7 +357,7 @@ export function WorkspaceLayout() {
                     <WorkspaceEmojiProvider workspaceId={workspaceId}>
                       <PreferencesProvider workspaceId={workspaceId}>
                         <SettingsProvider>
-                          <WorkspaceKeyboardHandler onOpenSwitcher={openSwitcher}>
+                          <WorkspaceKeyboardHandler onOpenSwitcher={openSwitcher} currentStreamId={streamId}>
                             <QuickSwitcherProvider openSwitcher={openSwitcher}>
                               <PanelProvider>
                                 <MediaGalleryProvider>
@@ -375,6 +382,7 @@ export function WorkspaceLayout() {
                                     <WorkspaceSettingsDialog workspaceId={workspaceId} />
                                     <StreamSettingsDialog workspaceId={workspaceId} />
                                     <CreateChannelDialog workspaceId={workspaceId} />
+                                    <AttachmentExplorer workspaceId={workspaceId} />
                                     <TraceDialogContainer />
                                     <Toaster />
                                   </TraceProvider>
