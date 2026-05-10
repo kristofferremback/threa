@@ -96,19 +96,14 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
       )
     }
     return (
-      <div className="flex flex-col items-center gap-3">
-        <div className={`flex h-16 w-16 items-center justify-center rounded-2xl ${meta.accent}`}>
+      <a href={rawUrl} target="_blank" rel="noreferrer" className="group flex flex-col items-center gap-3">
+        <div
+          className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-opacity group-hover:opacity-80 ${meta.accent}`}
+        >
           <Icon className="h-8 w-8" />
         </div>
-        <a
-          href={rawUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs text-primary underline-offset-4 hover:underline"
-        >
-          Open original
-        </a>
-      </div>
+        <span className="text-xs text-primary underline-offset-4 group-hover:underline">Open original</span>
+      </a>
     )
   }
 
