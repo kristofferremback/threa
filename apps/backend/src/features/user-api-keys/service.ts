@@ -4,14 +4,14 @@ import { withTransaction, sql } from "../../db"
 import { UserApiKeyRepository, type UserApiKeyRow } from "./repository"
 import { userApiKeyId } from "../../lib/id"
 import { HttpError } from "../../lib/errors"
-import type { ApiKeyScope } from "@threa/types"
-import { API_KEY_SCOPES } from "@threa/types"
+import type { WorkspacePermissionSlug } from "@threa/types"
+import { WORKSPACE_PERMISSION_SCOPES } from "@threa/types"
 
 const KEY_PREFIX = "threa_uk_"
 const KEY_BYTE_LENGTH = 32 // 256-bit random key
 const STORED_PREFIX_LENGTH = 8 // chars stored for identification (after threa_uk_)
 
-const ALL_SCOPES = new Set(Object.values(API_KEY_SCOPES))
+const ALL_SCOPES = new Set(Object.values(WORKSPACE_PERMISSION_SCOPES))
 const MAX_ACTIVE_KEYS_PER_USER = 25
 
 function hashKey(value: string): string {
@@ -41,7 +41,7 @@ export class UserApiKeyService {
     workspaceId: string
     userId: string
     name: string
-    scopes: ApiKeyScope[]
+    scopes: WorkspacePermissionSlug[]
     expiresAt: Date | null
   }): Promise<{ row: UserApiKeyRow; value: string }> {
     // Validate scopes

@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { invitationsApi } from "@/api/invitations"
-import type { SendInvitationsResponse } from "@threa/types"
+import { WORKSPACE_ROLE_SLUGS, type SendInvitationsResponse, type WorkspaceInvitableRole } from "@threa/types"
 
 interface InviteDialogProps {
   workspaceId: string
@@ -23,7 +23,7 @@ interface InviteDialogProps {
 
 export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: InviteDialogProps) {
   const [emailsText, setEmailsText] = useState("")
-  const [role, setRole] = useState<"admin" | "member">("member")
+  const [role, setRole] = useState<WorkspaceInvitableRole>(WORKSPACE_ROLE_SLUGS.MEMBER)
   const [result, setResult] = useState<SendInvitationsResponse | null>(null)
 
   const sendMutation = useMutation({
@@ -43,7 +43,7 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
 
   const handleClose = () => {
     setEmailsText("")
-    setRole("member")
+    setRole(WORKSPACE_ROLE_SLUGS.MEMBER)
     setResult(null)
     onOpenChange(false)
   }
@@ -102,7 +102,7 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
 
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as "admin" | "member")}>
+              <Select value={role} onValueChange={(v) => setRole(v as WorkspaceInvitableRole)}>
                 <SelectTrigger id="role">
                   <SelectValue />
                 </SelectTrigger>

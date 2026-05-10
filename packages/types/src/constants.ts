@@ -76,7 +76,7 @@ export type CommandEventType = (typeof COMMAND_EVENT_TYPES)[number]
 
 // Workspace user roles — re-exported from workspace-permissions so the catalog
 // (`WORKSPACE_ROLE_DEFINITIONS`) and the User.role union cannot drift.
-export { WORKSPACE_USER_ROLES, type WorkspaceUserRole } from "./workspace-permissions"
+export { WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "./workspace-permissions"
 
 // Notification levels (per-stream member preference)
 export const NOTIFICATION_LEVELS = ["everything", "activity", "mentions", "muted"] as const

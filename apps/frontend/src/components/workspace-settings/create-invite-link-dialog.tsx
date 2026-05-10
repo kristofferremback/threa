@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { invitationsApi } from "@/api/invitations"
+import { WORKSPACE_ROLE_SLUGS, type WorkspaceInvitableRole } from "@threa/types"
 
 function resolveErrorMessage(isError: boolean, err: unknown): string | null {
   if (!isError) return null
@@ -46,7 +47,7 @@ export function CreateInviteLinkDialog({
   onSuccess,
   onTokenCreated,
 }: CreateInviteLinkDialogProps) {
-  const [role, setRole] = useState<"admin" | "member">("member")
+  const [role, setRole] = useState<WorkspaceInvitableRole>(WORKSPACE_ROLE_SLUGS.MEMBER)
   const [note, setNote] = useState("")
   const [copied, setCopied] = useState(false)
   const [createdToken, setCreatedToken] = useState<string | null>(null)
@@ -65,7 +66,7 @@ export function CreateInviteLinkDialog({
   })
 
   const handleClose = () => {
-    setRole("member")
+    setRole(WORKSPACE_ROLE_SLUGS.MEMBER)
     setNote("")
     setCopied(false)
     setCreatedToken(null)
@@ -203,8 +204,8 @@ function CreateFormView({
   onCancel,
   onSubmit,
 }: {
-  role: "admin" | "member"
-  onRoleChange: (role: "admin" | "member") => void
+  role: WorkspaceInvitableRole
+  onRoleChange: (role: WorkspaceInvitableRole) => void
   note: string
   onNoteChange: (note: string) => void
   isSubmitting: boolean
@@ -223,7 +224,7 @@ function CreateFormView({
         <ToggleGroup
           type="single"
           value={role}
-          onValueChange={(v) => v && onRoleChange(v as "admin" | "member")}
+          onValueChange={(v) => v && onRoleChange(v as WorkspaceInvitableRole)}
           variant="outline"
           className="w-full"
         >

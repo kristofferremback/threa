@@ -8,7 +8,7 @@ import type {
   PendingInvitation,
   UserApiKey,
   CreateUserApiKeyResponse,
-  ApiKeyScope,
+  WorkspacePermissionSlug,
 } from "@threa/types"
 
 export type { WorkspaceBootstrap, CreateWorkspaceInput }
@@ -122,7 +122,7 @@ export const workspacesApi = {
 
   async createUserApiKey(
     workspaceId: string,
-    params: { name: string; scopes: ApiKeyScope[]; expiresAt?: string | null }
+    params: { name: string; scopes: WorkspacePermissionSlug[]; expiresAt?: string | null }
   ): Promise<CreateUserApiKeyResponse> {
     return api.post<CreateUserApiKeyResponse>(`/api/workspaces/${workspaceId}/user-api-keys`, params)
   },

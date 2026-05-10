@@ -6,7 +6,7 @@ import { UserRepository, type WorkspaceService } from "../workspaces"
 import { OutboxRepository } from "../../lib/outbox"
 import { invitationId } from "../../lib/id"
 import { logger } from "../../lib/logger"
-import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
+import type { InvitationSkipReason, InvitationStatus, WorkspaceInvitableRole } from "@threa/types"
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 const LINK_TOKEN_BYTES = 32 // 256 bits → ~43 base64url chars
@@ -25,13 +25,13 @@ interface SendInvitationsParams {
   workspaceId: string
   invitedBy: string // user_id
   emails: string[]
-  role: "admin" | "member"
+  role: WorkspaceInvitableRole
 }
 
 interface CreateLinkParams {
   workspaceId: string
   invitedBy: string
-  role: "admin" | "member"
+  role: WorkspaceInvitableRole
   note: string | null
 }
 

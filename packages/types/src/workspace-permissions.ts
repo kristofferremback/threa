@@ -118,6 +118,12 @@ export const WORKSPACE_ROLE_SLUGS = {
 
 export type WorkspaceRoleSlug = (typeof WORKSPACE_ROLE_SLUGS)[keyof typeof WORKSPACE_ROLE_SLUGS]
 
+/**
+ * Roles that can be granted via invitation. Owner promotion is an explicit
+ * post-join action, never an invite role, so it's excluded here.
+ */
+export type WorkspaceInvitableRole = Exclude<WorkspaceRoleSlug, typeof WORKSPACE_ROLE_SLUGS.OWNER>
+
 export interface WorkspaceRoleDefinition {
   readonly slug: WorkspaceRoleSlug
   readonly name: string
@@ -174,7 +180,16 @@ export const WORKSPACE_ROLE_DEFINITIONS: readonly WorkspaceRoleDefinition[] = Ob
 
 export const WORKSPACE_USER_ROLES = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug) as readonly WorkspaceRoleSlug[]
 
-export type WorkspaceUserRole = WorkspaceRoleSlug
+/**
+ * Roles that can be granted via invitation (everything except `owner`, which
+ * is reached via post-join promotion). Declared as a non-empty tuple so it
+ * works with `z.enum(...)` directly, and type-checked against
+ * `WorkspaceInvitableRole` so any catalog change forces a deliberate update.
+ */
+export const WORKSPACE_INVITABLE_ROLES: readonly [WorkspaceInvitableRole, ...WorkspaceInvitableRole[]] = [
+  WORKSPACE_ROLE_SLUGS.MEMBER,
+  WORKSPACE_ROLE_SLUGS.ADMIN,
+]
 
 const ROLE_RANK: Record<WorkspaceRoleSlug, number> = Object.fromEntries(
   WORKSPACE_ROLE_DEFINITIONS.map((r, idx) => [r.slug, idx])

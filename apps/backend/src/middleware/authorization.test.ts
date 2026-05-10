@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { NextFunction, Request, Response } from "express"
+import type { WorkspaceRoleSlug } from "@threa/types"
 import { requireRole } from "./authorization"
 
 interface MockResponse {
@@ -7,7 +8,7 @@ interface MockResponse {
   body: unknown
 }
 
-function createReq(role?: "owner" | "admin" | "member"): Request {
+function createReq(role?: WorkspaceRoleSlug): Request {
   return {
     user: role
       ? ({

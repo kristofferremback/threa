@@ -21,10 +21,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
-import { API_KEY_PERMISSIONS, BOT_KEY_PREFIX, type ApiKeyScope, type BotApiKey } from "@threa/types"
+import { WORKSPACE_PERMISSIONS, BOT_KEY_PREFIX, type WorkspacePermissionSlug, type BotApiKey } from "@threa/types"
 import { Check, ChevronDown, Copy, Eye, EyeOff, Key, Plus, Trash2 } from "lucide-react"
 
-const SCOPE_LABELS: Record<string, string> = Object.fromEntries(API_KEY_PERMISSIONS.map((p) => [p.slug, p.name]))
+const SCOPE_LABELS: Record<string, string> = Object.fromEntries(WORKSPACE_PERMISSIONS.map((p) => [p.slug, p.name]))
 
 interface BotKeysSectionProps {
   workspaceId: string
@@ -44,7 +44,7 @@ export function BotKeysSection({ workspaceId, botId, isArchived }: BotKeysSectio
 
   const [showKeyForm, setShowKeyForm] = useState(false)
   const [keyName, setKeyName] = useState("")
-  const [keyScopes, setKeyScopes] = useState<Set<ApiKeyScope>>(new Set())
+  const [keyScopes, setKeyScopes] = useState<Set<WorkspacePermissionSlug>>(new Set())
   const [createdKeyValue, setCreatedKeyValue] = useState<string | null>(null)
   const [showKeyValue, setShowKeyValue] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -73,7 +73,7 @@ export function BotKeysSection({ workspaceId, botId, isArchived }: BotKeysSectio
     onError: () => setRevokeTarget(null),
   })
 
-  const toggleScope = (scope: ApiKeyScope) => {
+  const toggleScope = (scope: WorkspacePermissionSlug) => {
     setKeyScopes((prev) => {
       const next = new Set(prev)
       if (next.has(scope)) next.delete(scope)
@@ -178,7 +178,7 @@ export function BotKeysSection({ workspaceId, botId, isArchived }: BotKeysSectio
           <div className="space-y-1.5">
             <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Permissions</Label>
             <div className="rounded-md border divide-y">
-              {API_KEY_PERMISSIONS.map((perm) => (
+              {WORKSPACE_PERMISSIONS.map((perm) => (
                 <label
                   key={perm.slug}
                   className="block px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors first:rounded-t-md last:rounded-b-md"

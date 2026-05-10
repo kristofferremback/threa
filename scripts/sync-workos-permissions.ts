@@ -14,7 +14,7 @@
 
 import * as fs from "fs"
 import * as path from "path"
-import { WORKSPACE_PERMISSIONS, WORKSPACE_ROLE_DEFINITIONS } from "../packages/types/src"
+import { WORKSPACE_PERMISSION_SCOPES, WORKSPACE_PERMISSIONS, WORKSPACE_ROLE_DEFINITIONS } from "../packages/types/src"
 
 const WORKOS_BASE = "https://api.workos.com"
 
@@ -103,13 +103,14 @@ interface RoleDefinition {
 // catalog slug) that gates rendering of the API Keys widget in AuthKit.
 const ADMIN_OR_HIGHER_SYSTEM_PERMISSIONS = ["widgets:api-keys:manage"]
 
-const ROLES_WITH_API_KEY_WIDGET = new Set(["admin", "owner"])
-
+// Roles that hold workspace:admin (or higher) automatically gain the AuthKit
+// API-keys widget. Tying this to a catalog permission instead of a role-slug
+// allowlist means any future role with admin scope inherits the widget.
 const REQUIRED_ROLES: RoleDefinition[] = WORKSPACE_ROLE_DEFINITIONS.map((role) => ({
   slug: role.slug,
   name: role.name,
   description: role.description,
-  permissions: ROLES_WITH_API_KEY_WIDGET.has(role.slug)
+  permissions: role.permissions.includes(WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN)
     ? [...role.permissions, ...ADMIN_OR_HIGHER_SYSTEM_PERMISSIONS]
     : [...role.permissions],
 }))

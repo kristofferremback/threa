@@ -15,9 +15,9 @@ import { withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { HttpError } from "@threa/backend-common"
 import { isUniqueViolation } from "../../lib/errors"
-import { API_KEY_SCOPES, type ApiKeyScope, type BotApiKey } from "@threa/types"
+import { WORKSPACE_PERMISSION_SCOPES, type WorkspacePermissionSlug, type BotApiKey } from "@threa/types"
 
-const ALL_SCOPES = Object.values(API_KEY_SCOPES)
+const ALL_SCOPES = Object.values(WORKSPACE_PERMISSION_SCOPES)
 
 const createBotSchema = z.object({
   name: z.string().min(1).max(100),
@@ -52,7 +52,7 @@ function serializeBotKey(row: BotApiKeyRow): BotApiKey {
     botId: row.botId,
     name: row.name,
     keyPrefix: row.keyPrefix,
-    scopes: row.scopes as ApiKeyScope[],
+    scopes: row.scopes as WorkspacePermissionSlug[],
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     revokedAt: row.revokedAt?.toISOString() ?? null,
@@ -274,7 +274,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
         workspaceId,
         botId: id,
         name: result.data.name,
-        scopes: result.data.scopes as ApiKeyScope[],
+        scopes: result.data.scopes as WorkspacePermissionSlug[],
         expiresAt: result.data.expiresAt ? new Date(result.data.expiresAt) : null,
       })
 

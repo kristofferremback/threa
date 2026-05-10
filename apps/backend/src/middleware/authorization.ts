@@ -1,7 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express"
-import { roleRank, type WorkspaceUserRole } from "@threa/types"
+import { roleRank, type WorkspaceRoleSlug } from "@threa/types"
 
-export function requireRole(minimumRole: WorkspaceUserRole): RequestHandler {
+export function requireRole(minimumRole: WorkspaceRoleSlug): RequestHandler {
   const minimumLevel = roleRank(minimumRole)
 
   return function requireRoleMiddleware(req: Request, res: Response, next: NextFunction): void {

@@ -15,7 +15,7 @@ import type {
   CompanionMode,
   AuthorType,
   EventType,
-  WorkspaceUserRole,
+  WorkspaceRoleSlug,
   InvitationStatus,
   NotificationLevel,
   PersonaManagedBy,
@@ -58,7 +58,7 @@ export interface User {
   workspaceId: string
   workosUserId: string
   email: string
-  role: WorkspaceUserRole
+  role: WorkspaceRoleSlug
   slug: string
   name: string
   description: string | null
@@ -134,7 +134,7 @@ export interface WorkspaceInvitation {
   kind: WorkspaceInvitationKind
   /** Null until a `'link'` invite is claimed by a recipient. */
   email: string | null
-  role: WorkspaceUserRole
+  role: WorkspaceRoleSlug
   invitedBy: string
   status: InvitationStatus
   /** Admin-only memo. Only set on `'link'` invites; never returned by public surfaces. */

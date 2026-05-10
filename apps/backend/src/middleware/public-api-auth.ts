@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express"
 import type { Pool } from "pg"
 import { HttpError } from "@threa/backend-common"
-import type { ApiKeyScope } from "@threa/types"
+import type { WorkspacePermissionSlug } from "@threa/types"
 import { BOT_KEY_PREFIX } from "@threa/types"
 import { UserRepository } from "../features/workspaces"
 import type { UserApiKeyService, ValidatedUserApiKey } from "../features/user-api-keys"
@@ -90,7 +90,7 @@ export function createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyServ
   }
 }
 
-export function requireApiKeyScope(...scopes: ApiKeyScope[]) {
+export function requireApiKeyScope(...scopes: WorkspacePermissionSlug[]) {
   return function requireScope(req: Request, _res: Response, next: NextFunction): void {
     // User-scoped keys: check scopes from the key
     if (req.userApiKey) {

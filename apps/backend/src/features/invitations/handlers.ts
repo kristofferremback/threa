@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
+import { WORKSPACE_INVITABLE_ROLES, WORKSPACE_ROLE_SLUGS } from "@threa/types"
 import { HttpError } from "../../lib/errors"
 import type { Invitation } from "./repository"
 import type { InvitationService, InvitationLinkErrorCode } from "./service"
@@ -15,16 +16,18 @@ function toWire(invitation: Invitation) {
   return wire
 }
 
+const invitableRoleSchema = z.enum(WORKSPACE_INVITABLE_ROLES)
+
 const sendInvitationsSchema = z.object({
   emails: z
     .array(z.string().email("Invalid email address"))
     .min(1, "At least one email is required")
     .max(20, "Maximum 20 emails per request"),
-  role: z.enum(["admin", "member"]).optional().default("member"),
+  role: invitableRoleSchema.optional().default(WORKSPACE_ROLE_SLUGS.MEMBER),
 })
 
 const createLinkSchema = z.object({
-  role: z.enum(["admin", "member"]),
+  role: invitableRoleSchema,
   note: z.string().trim().max(200).optional(),
 })
 

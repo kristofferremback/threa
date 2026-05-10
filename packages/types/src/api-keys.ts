@@ -1,20 +1,8 @@
-import {
-  WORKSPACE_PERMISSION_SCOPES,
-  WORKSPACE_PERMISSIONS,
-  type WorkspacePermission,
-  type WorkspacePermissionSlug,
-} from "./workspace-permissions"
+import type { WorkspacePermissionSlug } from "./workspace-permissions"
 
 // API-key scopes draw from the same catalog as workspace permissions; persisted
 // keys are clamped at request time against the owner's effective workspace
 // permissions in the regional middleware.
-export const API_KEY_SCOPES = WORKSPACE_PERMISSION_SCOPES
-
-export type ApiKeyScope = WorkspacePermissionSlug
-
-export type ApiKeyPermission = WorkspacePermission
-
-export const API_KEY_PERMISSIONS: readonly ApiKeyPermission[] = WORKSPACE_PERMISSIONS
 
 // --- User-scoped API keys ---
 
@@ -36,7 +24,7 @@ export interface UserApiKey {
   id: string
   name: string
   keyPrefix: string
-  scopes: ApiKeyScope[]
+  scopes: WorkspacePermissionSlug[]
   lastUsedAt: string | null
   expiresAt: string | null
   revokedAt: string | null
@@ -60,7 +48,7 @@ export interface BotApiKey {
   botId: string
   name: string
   keyPrefix: string
-  scopes: ApiKeyScope[]
+  scopes: WorkspacePermissionSlug[]
   lastUsedAt: string | null
   expiresAt: string | null
   revokedAt: string | null

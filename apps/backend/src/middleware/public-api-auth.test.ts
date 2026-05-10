@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { NextFunction, Request, Response } from "express"
 import { createPublicApiAuthMiddleware, requireApiKeyScope } from "./public-api-auth"
-import { API_KEY_SCOPES } from "@threa/types"
+import { WORKSPACE_PERMISSION_SCOPES } from "@threa/types"
 
 function createPoolStub() {
   return {
@@ -222,7 +222,7 @@ describe("createPublicApiAuthMiddleware", () => {
 
 describe("requireApiKeyScope", () => {
   test("should pass when user key has required scope", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
     req.userApiKey = {
       id: "uak_1",
@@ -245,7 +245,7 @@ describe("requireApiKeyScope", () => {
   })
 
   test("should pass when bot key has required scope", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE)
     const req = createReq()
     req.botApiKey = {
       id: "bak_1",
@@ -268,7 +268,7 @@ describe("requireApiKeyScope", () => {
   })
 
   test("should return 404 when scope is missing from user key", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
     req.userApiKey = {
       id: "uak_1",
@@ -289,7 +289,7 @@ describe("requireApiKeyScope", () => {
   })
 
   test("should return 404 when scope is missing from bot key", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE)
     const req = createReq()
     req.botApiKey = {
       id: "bak_1",
@@ -310,7 +310,7 @@ describe("requireApiKeyScope", () => {
   })
 
   test("should return 401 when no key context on request", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
 
     let error: any = null

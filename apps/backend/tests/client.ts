@@ -5,7 +5,12 @@
 
 import type { Socket } from "socket.io-client"
 import { INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
-import type { MoveMessagesToThreadResponse, ValidateMoveMessagesToThreadResponse } from "@threa/types"
+import {
+  WORKSPACE_ROLE_SLUGS,
+  type MoveMessagesToThreadResponse,
+  type ValidateMoveMessagesToThreadResponse,
+  type WorkspaceInvitableRole,
+} from "@threa/types"
 
 function getBaseUrl(): string {
   // Read at call time, not import time, so setup.ts can set it
@@ -569,7 +574,7 @@ export interface StreamMember {
 export async function joinWorkspace(
   client: TestClient,
   workspaceId: string,
-  role: "member" | "admin" = "member"
+  role: WorkspaceInvitableRole = WORKSPACE_ROLE_SLUGS.MEMBER
 ): Promise<WorkspaceUser> {
   const { status, data } = await client.post<{ user: WorkspaceUser }>(`/api/dev/workspaces/${workspaceId}/join`, {
     role,
