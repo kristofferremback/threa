@@ -6,7 +6,7 @@
  * handlers.ts and routes.ts.
  */
 import { z } from "zod"
-import { STREAM_TYPES, MEMO_TYPES, KNOWLEDGE_TYPES, EXTRACTION_CONTENT_TYPES } from "@threa/types"
+import { BOT_TRAITS, STREAM_TYPES, MEMO_TYPES, KNOWLEDGE_TYPES, EXTRACTION_CONTENT_TYPES } from "@threa/types"
 import { messageMetadataSchema, messageMetadataFilterSchema } from "../messaging"
 
 const PUBLIC_SEARCH_MAX_LIMIT = 50
@@ -91,4 +91,9 @@ export const listUsersSchema = z.object({
   query: z.string().optional(),
   after: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+})
+
+export const listMyBotsSchema = z.object({
+  /** Optional capability filter — currently only `interactive` is defined. */
+  traits: z.enum(BOT_TRAITS).optional(),
 })

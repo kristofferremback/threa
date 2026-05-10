@@ -202,6 +202,7 @@ describe("Public API v1 — Knowledge Retrieval", () => {
     })
 
     const botRes = await client.post(`/api/workspaces/${workspace.id}/bots`, {
+      type: "shared",
       name: `Knowledge Bot ${testRunId}`,
       slug: `knowledge-bot-${testRunId}`,
     })

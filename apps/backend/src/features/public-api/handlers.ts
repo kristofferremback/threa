@@ -26,7 +26,6 @@ import {
 } from "../attachments"
 import { BotRepository, type Bot } from "./bot-repository"
 import { AttachmentSafetyStatuses, AuthorTypes, sentViaApiKey, type AuthorType } from "@threa/types"
-import type { Bot as WireBot } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
 import { collectAttachmentReferenceIds, parseMarkdown } from "@threa/prosemirror"
@@ -39,6 +38,8 @@ import type {
   WireMessage,
   WireSearchResult,
   WireUser,
+  WireBot,
+  WirePrincipal,
   WireMember,
   WireMemoSearchResult,
   WireMemoDetail,
@@ -54,6 +55,7 @@ import {
   updateMessageSchema,
   listMembersSchema,
   listUsersSchema,
+  listMyBotsSchema,
   searchMemosSchema,
   searchAttachmentsSchema,
   findMessagesByMetadataSchema,
@@ -115,9 +117,10 @@ function serializeMessage(
 }
 
 export function serializeBot(bot: Bot): WireBot {
-  return {
+  const common = {
     id: bot.id,
     workspaceId: bot.workspaceId,
+    traits: bot.traits,
     slug: bot.slug,
     name: bot.name,
     description: bot.description,
@@ -127,6 +130,10 @@ export function serializeBot(bot: Bot): WireBot {
     createdAt: bot.createdAt.toISOString(),
     updatedAt: bot.updatedAt.toISOString(),
   }
+  if (bot.type === "personal") {
+    return { ...common, type: "personal", ownerUserId: bot.ownerUserId }
+  }
+  return { ...common, type: "shared", ownerUserId: null }
 }
 
 function serializeUser(user: {
@@ -277,7 +284,7 @@ async function resolveAuthorDisplayNames(
   }
   if (byType.bot.size > 0) {
     fetches.push(
-      BotRepository.findByIds(pool, [...byType.bot]).then((bots) => {
+      BotRepository.findByIds(pool, workspaceId, [...byType.bot]).then((bots) => {
         for (const b of bots) nameMap.set(b.id, b.name)
       })
     )
@@ -372,7 +379,7 @@ export function createPublicApiHandlers({
       if (message.authorType !== AuthorTypes.BOT || message.authorId !== req.botApiKey.botId) {
         throw new HttpError("Cannot modify messages created by another bot", { status: 403, code: "FORBIDDEN" })
       }
-      const bot = await BotRepository.findById(pool, message.authorId)
+      const bot = await BotRepository.findById(pool, req.workspaceId!, message.authorId)
       if (!bot) {
         throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
       }
@@ -869,7 +876,7 @@ export function createPublicApiHandlers({
 
       // Bot-scoped key: send as the bot directly (no upsert needed)
       if (req.botApiKey) {
-        const bot = await BotRepository.findById(pool, req.botApiKey.botId)
+        const bot = await BotRepository.findById(pool, workspaceId, req.botApiKey.botId)
         if (!bot || bot.archivedAt) {
           throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
         }
@@ -976,6 +983,79 @@ export function createPublicApiHandlers({
      *
      * GET /api/v1/workspaces/:workspaceId/users
      */
+    /**
+     * GET /api/v1/workspaces/:workspaceId/me
+     *
+     * Returns the authenticated principal. Used by clients (e.g. the OpenClaw
+     * channel plugin) to verify their key and discover their identity after
+     * pairing. No scope required — being authenticated is sufficient.
+     */
+    async getMe(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+
+      if (req.userApiKey) {
+        const user = req.user!
+        res.json({
+          data: {
+            kind: "user",
+            workspaceId,
+            userId: user.id,
+          },
+        })
+        return
+      }
+
+      if (req.botApiKey) {
+        const bot = await BotRepository.findById(pool, workspaceId, req.botApiKey.botId)
+        if (!bot) {
+          throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+        }
+        res.json({
+          data: {
+            kind: "bot",
+            workspaceId,
+            botId: bot.id,
+            botType: bot.type,
+            traits: bot.traits,
+            ownerUserId: bot.ownerUserId,
+          },
+        })
+        return
+      }
+
+      throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
+    },
+
+    /**
+     * GET /api/v1/workspaces/:workspaceId/me/bots
+     *
+     * For user-scoped keys: returns the authenticated user's personal bots,
+     * optionally filtered by trait. Frontend uses this to enumerate
+     * "New scratchpad with <bot>" quick-switcher commands.
+     *
+     * Bot-scoped keys get 403 — bots don't own bots.
+     */
+    async listMyBots(req: Request, res: Response) {
+      if (req.botApiKey) {
+        throw new HttpError("Bot keys cannot list personal bots", { status: 403, code: "FORBIDDEN" })
+      }
+      if (!req.userApiKey) {
+        throw new HttpError("No API key context", { status: 401, code: "UNAUTHORIZED" })
+      }
+
+      const workspaceId = req.workspaceId!
+      const userId = req.user!.id
+
+      const result = listMyBotsSchema.safeParse(req.query)
+      if (!result.success) {
+        throw new HttpError("Invalid query parameters", { status: 400, code: "VALIDATION_FAILED" })
+      }
+      const traits = result.data.traits ? [result.data.traits] : []
+
+      const bots = await BotRepository.listByOwner(pool, workspaceId, userId, { traits })
+      res.json({ data: bots.map(serializeBot) })
+    },
+
     async listUsers(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
 

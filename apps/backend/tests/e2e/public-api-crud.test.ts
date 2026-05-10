@@ -100,6 +100,7 @@ async function setupTestWorkspace(): Promise<TestContext> {
 
   // Create primary bot with keys at various scope levels
   const bot1Res = await client.post(`/api/workspaces/${workspace.id}/bots`, {
+    type: "shared",
     name: BOT_NAME,
     slug: `crud-bot-${testRunId}`,
   })
@@ -119,6 +120,7 @@ async function setupTestWorkspace(): Promise<TestContext> {
 
   // Create second bot for cross-bot ownership tests
   const bot2Res = await client.post(`/api/workspaces/${workspace.id}/bots`, {
+    type: "shared",
     name: SECOND_BOT_NAME,
     slug: `second-bot-${testRunId}`,
   })
