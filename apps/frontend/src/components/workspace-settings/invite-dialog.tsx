@@ -107,8 +107,8 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="member">Member</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value={WORKSPACE_ROLE_SLUGS.MEMBER}>Member</SelectItem>
+                  <SelectItem value={WORKSPACE_ROLE_SLUGS.ADMIN}>Admin</SelectItem>
                 </SelectContent>
               </Select>
             </div>

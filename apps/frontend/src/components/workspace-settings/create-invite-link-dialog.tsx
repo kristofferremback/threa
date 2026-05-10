@@ -228,10 +228,10 @@ function CreateFormView({
           variant="outline"
           className="w-full"
         >
-          <ToggleGroupItem value="member" className="flex-1">
+          <ToggleGroupItem value={WORKSPACE_ROLE_SLUGS.MEMBER} className="flex-1">
             Member
           </ToggleGroupItem>
-          <ToggleGroupItem value="admin" className="flex-1">
+          <ToggleGroupItem value={WORKSPACE_ROLE_SLUGS.ADMIN} className="flex-1">
             Admin
           </ToggleGroupItem>
         </ToggleGroup>

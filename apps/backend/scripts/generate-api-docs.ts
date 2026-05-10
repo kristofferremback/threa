@@ -11,7 +11,7 @@ import { resolve, dirname } from "path"
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import * as prettier from "prettier"
 import { PUBLIC_API_ROUTES, errorSchema } from "../src/features/public-api/routes"
-import { WORKSPACE_PERMISSIONS } from "@threa/types"
+import { API_KEY_ELIGIBLE_PICKER_SCOPES } from "@threa/types"
 
 const REPO_ROOT = resolve(import.meta.dirname!, "../../..")
 const OUTPUT_PATH = resolve(REPO_ROOT, "docs/public-api/openapi.json")
@@ -176,7 +176,7 @@ function buildSpec() {
         "",
         "API keys are granted specific scopes that control access:",
         "",
-        ...WORKSPACE_PERMISSIONS.map((p) => `- \`${p.slug}\` — ${p.description}`),
+        ...API_KEY_ELIGIBLE_PICKER_SCOPES.map((p) => `- \`${p.slug}\` — ${p.description}`),
         "",
         "## Rate Limits",
         "",
