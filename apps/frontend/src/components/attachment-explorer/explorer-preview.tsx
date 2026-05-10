@@ -81,10 +81,12 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
       )
     }
     if (category === "image") {
-      return <img src={rawUrl} alt={selected.filename} className="max-h-[50vh] max-w-full object-contain" />
+      return (
+        <img src={rawUrl} alt={selected.filename} className="block max-h-[50vh] min-w-0 max-w-full object-contain" />
+      )
     }
     if (category === "video") {
-      return <video src={playbackUrl ?? undefined} controls className="max-h-[50vh] max-w-full" />
+      return <video src={playbackUrl ?? undefined} controls className="block max-h-[50vh] min-w-0 max-w-full" />
     }
     if (category === "audio") {
       return (
@@ -111,65 +113,67 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="flex min-h-[200px] items-center justify-center overflow-hidden bg-muted/30 px-4 py-6">
-        {renderMedia()}
-      </div>
-
-      <div className="space-y-3 border-t p-4">
-        <div className="space-y-1">
-          <div className="break-all text-sm font-medium">{item.filename}</div>
-          <div className="text-xs text-muted-foreground">
-            {item.uploaderName ? <span>{item.uploaderName} · </span> : null}
-            {item.streamSlug ? (
-              <>
-                <Hash className="mr-0.5 inline h-3 w-3 align-[-2px]" />
-                {item.streamSlug} ·{" "}
-              </>
-            ) : null}
-            <span title={formatFull(new Date(item.createdAt))}>{formatFull(new Date(item.createdAt))}</span>
-            <span> · {formatFileSize(item.sizeBytes)}</span>
-          </div>
+    <div className="flex h-full flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex min-h-[200px] items-center justify-center overflow-hidden bg-muted/30 px-4 py-6">
+          {renderMedia()}
         </div>
 
-        {item.extraction?.summary ? (
+        <div className="space-y-3 border-t p-4">
           <div className="space-y-1">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Extract</div>
-            <p className="line-clamp-5 text-xs leading-relaxed text-foreground/80">
-              {stripMarkdownToInline(item.extraction.summary)}
-            </p>
+            <div className="break-all text-sm font-medium">{item.filename}</div>
+            <div className="text-xs text-muted-foreground">
+              {item.uploaderName ? <span>{item.uploaderName} · </span> : null}
+              {item.streamSlug ? (
+                <>
+                  <Hash className="mr-0.5 inline h-3 w-3 align-[-2px]" />
+                  {item.streamSlug} ·{" "}
+                </>
+              ) : null}
+              <span title={formatFull(new Date(item.createdAt))}>{formatFull(new Date(item.createdAt))}</span>
+              <span> · {formatFileSize(item.sizeBytes)}</span>
+            </div>
           </div>
-        ) : null}
 
-        {item.referenceCount > 0 ? (
-          <div className="text-xs text-muted-foreground">
-            Referenced by {item.referenceCount} message{item.referenceCount === 1 ? "" : "s"}
+          {item.extraction?.summary ? (
+            <div className="space-y-1">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Extract</div>
+              <p className="line-clamp-5 text-xs leading-relaxed text-foreground/80">
+                {stripMarkdownToInline(item.extraction.summary)}
+              </p>
+            </div>
+          ) : null}
+
+          {item.referenceCount > 0 ? (
+            <div className="text-xs text-muted-foreground">
+              Referenced by {item.referenceCount} message{item.referenceCount === 1 ? "" : "s"}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            {sourceUrl ? (
+              <Button size="sm" variant="outline" onClick={() => navigate(sourceUrl)} className="gap-1">
+                <ExternalLink className="h-3.5 w-3.5" />
+                Show message
+              </Button>
+            ) : null}
+            {rawUrl ? (
+              <Button size="sm" variant="ghost" asChild>
+                <a href={rawUrl} download={item.filename} className="gap-1">
+                  <Download className="h-3.5 w-3.5" />
+                  {processedUrl ? "Original" : "Download"}
+                </a>
+              </Button>
+            ) : null}
+            {processedUrl ? (
+              <Button size="sm" variant="ghost" asChild>
+                <a href={processedUrl} download={item.filename.replace(/\.[^.]+$/, ".mp4")} className="gap-1">
+                  <Download className="h-3.5 w-3.5" />
+                  Processed (.mp4)
+                </a>
+              </Button>
+            ) : null}
           </div>
-        ) : null}
-
-        <div className="flex flex-wrap gap-2 pt-1">
-          {sourceUrl ? (
-            <Button size="sm" variant="outline" onClick={() => navigate(sourceUrl)} className="gap-1">
-              <ExternalLink className="h-3.5 w-3.5" />
-              Show message
-            </Button>
-          ) : null}
-          {rawUrl ? (
-            <Button size="sm" variant="ghost" asChild>
-              <a href={rawUrl} download={item.filename} className="gap-1">
-                <Download className="h-3.5 w-3.5" />
-                {processedUrl ? "Original" : "Download"}
-              </a>
-            </Button>
-          ) : null}
-          {processedUrl ? (
-            <Button size="sm" variant="ghost" asChild>
-              <a href={processedUrl} download={item.filename.replace(/\.[^.]+$/, ".mp4")} className="gap-1">
-                <Download className="h-3.5 w-3.5" />
-                Processed (.mp4)
-              </a>
-            </Button>
-          ) : null}
         </div>
       </div>
     </div>
