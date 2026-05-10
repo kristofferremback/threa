@@ -25,10 +25,15 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   const [isTruncated, setIsTruncated] = useState(false)
   const previewRef = useRef<HTMLPreElement | null>(null)
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Tracks which attachment is currently selected so handleCopy can drop
+  // post-await state writes (setCopied, timer) when the user switched items
+  // mid-flight.
+  const currentAttachmentIdRef = useRef<string | null>(item?.id ?? null)
 
   // Reset per-item UI state so a fresh selection never inherits the previous
   // item's expanded view or "Copied" badge.
   useEffect(() => {
+    currentAttachmentIdRef.current = item?.id ?? null
     setExpanded(false)
     setCopied(false)
     setIsTruncated(false)
@@ -71,10 +76,15 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
 
   const handleCopy = useCallback(async () => {
     if (!item) return
+    const copiedAttachmentId = item.id
     try {
       const data = fullExtraction.data ?? (await attachmentsApi.getExtraction(workspaceId, item.id))
       const text = data.fullText ?? data.summary
       await navigator.clipboard.writeText(text)
+      // Drop the result if the user switched attachments while we were awaiting
+      // the fetch or the clipboard write — otherwise the badge and reset timer
+      // would attach to the newly selected item.
+      if (currentAttachmentIdRef.current !== copiedAttachmentId) return
       setCopied(true)
       if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
       copyResetTimerRef.current = setTimeout(() => {
