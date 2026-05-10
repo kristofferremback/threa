@@ -51,7 +51,7 @@ function relativeDayLabel(date: Date, now = new Date()): string {
   if (diffDays === 1) return "Yesterday"
   if (diffDays <= 6) return "This week"
   if (diffDays <= 30) return "This month"
-  if (diffDays <= 365) return "Earlier this year"
+  if (date.getFullYear() === now.getFullYear()) return "Earlier this year"
   return "Older"
 }
 

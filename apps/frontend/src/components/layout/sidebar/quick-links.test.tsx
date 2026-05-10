@@ -51,6 +51,7 @@ describe("SidebarQuickLinks", () => {
 
     expect(screen.getByText("Drafts")).toBeInTheDocument()
     expect(screen.getByText("Threads")).toBeInTheDocument()
+    expect(screen.getByText("Files")).toBeInTheDocument()
     expect(screen.getByText("Memory")).toBeInTheDocument()
     expect(screen.getByText("Activity")).toBeInTheDocument()
   })
