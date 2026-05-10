@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { toShortcode, toEmoji, isValidShortcode, getShortcodeNames, normalizeMessage } from "./emoji"
+import emojiData from "./emoji-data.json"
 
 describe("Emoji Library", () => {
   describe("toShortcode", () => {
@@ -112,6 +113,167 @@ describe("Emoji Library", () => {
         expect(toEmoji(shortcode)).toBe(emoji)
       })
     }
+  })
+
+  describe("dataset integrity", () => {
+    // The shortcode regex used everywhere a shortcode crosses the wire
+    // (composer input rule, toShortcode/toEmoji APIs). If a shortcode in
+    // the JSON doesn't satisfy this, it cannot round-trip through the
+    // system — catch it here rather than at runtime.
+    const SHORTCODE_BODY = /^[a-z0-9_+-]+$/
+
+    test("no shortcode collisions across emojis", () => {
+      // Every shortcode (primary or alias) must map to exactly one emoji.
+      // Without this, toEmoji() becomes ambiguous and which mapping wins
+      // depends on JSON insertion order — a silent footgun when expanding
+      // aliases. If this fails, the failure message lists every offending
+      // shortcode and the emojis fighting over it.
+      const owners = new Map<string, string[]>()
+      for (const { emoji, shortcodes } of emojiData.emojis) {
+        for (const sc of shortcodes) {
+          const list = owners.get(sc) ?? []
+          if (!list.includes(emoji)) list.push(emoji)
+          owners.set(sc, list)
+        }
+      }
+      const collisions = Array.from(owners.entries())
+        .filter(([, emojis]) => emojis.length > 1)
+        .map(([sc, emojis]) => `${sc} -> ${emojis.join(", ")}`)
+      expect(collisions).toEqual([])
+    })
+
+    test("every shortcode satisfies the wire-format regex", () => {
+      const invalid: string[] = []
+      for (const { emoji, shortcodes } of emojiData.emojis) {
+        for (const sc of shortcodes) {
+          if (!SHORTCODE_BODY.test(sc)) invalid.push(`${emoji} -> "${sc}"`)
+        }
+      }
+      expect(invalid).toEqual([])
+    })
+
+    test("every emoji has at least one shortcode", () => {
+      const empty = emojiData.emojis.filter((e) => e.shortcodes.length === 0).map((e) => e.emoji)
+      expect(empty).toEqual([])
+    })
+  })
+
+  describe("Unicode version coverage", () => {
+    // Guards against silently falling behind Unicode releases. When a new
+    // Emoji version ships, add a block below for it AND add the emojis to
+    // emoji-data.json — this test fails on either half being missing.
+    //
+    // Version labels are best-effort; the test only asserts presence in
+    // the dataset, not the exact version. If a label is slightly off
+    // (some borderline characters move between 14.0 and 15.0 in different
+    // sources), the test still passes as long as the emoji is present.
+    const dataset = new Set(emojiData.emojis.map((e) => e.emoji))
+    const has = (emojis: string[]) => emojis.filter((e) => !dataset.has(e))
+
+    // Emoji 14.0 (Sept 2021)
+    test("supports Emoji 14.0 (2021)", () => {
+      const set = [
+        // Faces
+        "🥹",
+        "🫠",
+        "🫡",
+        "🫢",
+        "🫣",
+        "🫤",
+        "🫥",
+        // Hands
+        "🫰",
+        "🫱",
+        "🫲",
+        "🫳",
+        "🫴",
+        "🫵",
+        "🫶",
+        // Person
+        "🫅",
+        "🫃",
+        "🫄",
+        // Animals & nature
+        "🪺",
+        "🪹",
+        "🪷",
+        "🪸",
+        // Food & drink
+        "🫘",
+        "🫗",
+        "🫙",
+        // Travel
+        "🛞",
+        // Objects
+        "🩼",
+        "🩻",
+        "🪪",
+        "🪫",
+        "🪩",
+        "🛟",
+        "🪬",
+        "🪮",
+        "🪯",
+        // Symbols
+        "🟰",
+        "🫧",
+      ]
+      expect(has(set)).toEqual([])
+    })
+
+    // Emoji 15.0 (Sept 2022)
+    test("supports Emoji 15.0 (2022)", () => {
+      const set = [
+        // Faces
+        "🫨",
+        // Hands
+        "🫷",
+        "🫸",
+        // Animals
+        "🐦‍⬛",
+        "🪿",
+        "🪼",
+        "🪽",
+        "🫎",
+        "🫏",
+        // Plants
+        "🪻",
+        // Food
+        "🫚",
+        "🫛",
+        // Activities
+        "🪈",
+        "🪇",
+        // Objects
+        "🪭",
+        // Symbols
+        "🛜",
+        "🩷",
+        "🩵",
+        "🩶",
+      ]
+      expect(has(set)).toEqual([])
+    })
+
+    // Emoji 15.1 (Sept 2023) — small release of ZWJ sequences
+    test("supports Emoji 15.1 (2023)", () => {
+      const set = ["🐦‍🔥", "🍋‍🟩", "🍄‍🟫", "⛓️‍💥"]
+      expect(has(set)).toEqual([])
+    })
+
+    // Emoji 16.0 (Sept 2024)
+    test("supports Emoji 16.0 (2024)", () => {
+      const set = ["🫩", "🫆", "🪾", "🫜", "🪉", "🪏", "🫟"]
+      expect(has(set)).toEqual([])
+    })
+
+    // Sanity: the user's reported gap that triggered this expansion.
+    // Keep this regardless of version groupings above.
+    test("supports the rightwards-hand family (regression guard)", () => {
+      expect(has(["🫱", "🫲", "🫳", "🫴", "🫵", "🫶"])).toEqual([])
+      expect(toEmoji(":rightwards_hand:")).toBe("🫱")
+      expect(toEmoji(":open_hand_right:")).toBe("🫱")
+    })
   })
 
   describe("normalizeMessage", () => {
