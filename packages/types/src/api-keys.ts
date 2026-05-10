@@ -14,7 +14,7 @@ export type ApiKeyScope = WorkspacePermissionSlug
 
 export type ApiKeyPermission = WorkspacePermission
 
-export const API_KEY_PERMISSIONS: ApiKeyPermission[] = WORKSPACE_PERMISSIONS
+export const API_KEY_PERMISSIONS: readonly ApiKeyPermission[] = WORKSPACE_PERMISSIONS
 
 // --- User-scoped API keys ---
 

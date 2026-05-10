@@ -24,16 +24,16 @@ export const WORKSPACE_PERMISSION_SCOPES = {
 export type WorkspacePermissionSlug = (typeof WORKSPACE_PERMISSION_SCOPES)[keyof typeof WORKSPACE_PERMISSION_SCOPES]
 
 export interface WorkspacePermission {
-  slug: WorkspacePermissionSlug
-  name: string
-  description: string
+  readonly slug: WorkspacePermissionSlug
+  readonly name: string
+  readonly description: string
 }
 
 /**
  * The full permission catalog. Order is the wire ordering used by the WorkOS
  * sync script and the frontend scope picker.
  */
-export const WORKSPACE_PERMISSIONS: WorkspacePermission[] = [
+export const WORKSPACE_PERMISSIONS: readonly WorkspacePermission[] = Object.freeze([
   {
     slug: WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
     name: "Search messages",
@@ -108,7 +108,7 @@ export const WORKSPACE_PERMISSIONS: WorkspacePermission[] = [
     description:
       "Grants access to ownership-only operations: promoting or demoting an owner, transferring ownership, and deleting the workspace.",
   },
-]
+])
 
 export const WORKSPACE_ROLE_SLUGS = {
   OWNER: "owner",
@@ -119,13 +119,13 @@ export const WORKSPACE_ROLE_SLUGS = {
 export type WorkspaceRoleSlug = (typeof WORKSPACE_ROLE_SLUGS)[keyof typeof WORKSPACE_ROLE_SLUGS]
 
 export interface WorkspaceRoleDefinition {
-  slug: WorkspaceRoleSlug
-  name: string
-  description: string
-  permissions: WorkspacePermissionSlug[]
+  readonly slug: WorkspaceRoleSlug
+  readonly name: string
+  readonly description: string
+  readonly permissions: readonly WorkspacePermissionSlug[]
 }
 
-const READ_AND_SELF_SERVE: WorkspacePermissionSlug[] = [
+const READ_AND_SELF_SERVE: readonly WorkspacePermissionSlug[] = Object.freeze([
   WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
   WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
   WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
@@ -135,38 +135,42 @@ const READ_AND_SELF_SERVE: WorkspacePermissionSlug[] = [
   WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
   WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_WRITE,
   WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_PERSONAL,
-]
+])
 
-const ADMIN_ADDITIONS: WorkspacePermissionSlug[] = [
+const ADMIN_ADDITIONS: readonly WorkspacePermissionSlug[] = Object.freeze([
   WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_SHARED,
   WORKSPACE_PERMISSION_SCOPES.BOTS_MANAGE,
   WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE,
   WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN,
-]
+])
 
 // Order is the canonical role hierarchy: index = privilege rank
 // (member < admin < owner). `roleRank()` and `WORKSPACE_USER_ROLES` derive
 // from this order so adding a role only requires editing this array.
-export const WORKSPACE_ROLE_DEFINITIONS: WorkspaceRoleDefinition[] = [
+export const WORKSPACE_ROLE_DEFINITIONS: readonly WorkspaceRoleDefinition[] = Object.freeze([
   {
     slug: WORKSPACE_ROLE_SLUGS.MEMBER,
     name: "Member",
     description: "Default workspace member: read access plus self-serve writes (messages, attachments, personal bots).",
-    permissions: [...READ_AND_SELF_SERVE],
+    permissions: Object.freeze([...READ_AND_SELF_SERVE]),
   },
   {
     slug: WORKSPACE_ROLE_SLUGS.ADMIN,
     name: "Admin",
     description: "Manage members, bots, integrations, and workspace settings. Cannot transfer ownership.",
-    permissions: [...READ_AND_SELF_SERVE, ...ADMIN_ADDITIONS],
+    permissions: Object.freeze([...READ_AND_SELF_SERVE, ...ADMIN_ADDITIONS]),
   },
   {
     slug: WORKSPACE_ROLE_SLUGS.OWNER,
     name: "Owner",
     description: "Full workspace administration including ownership transfer and workspace deletion.",
-    permissions: [...READ_AND_SELF_SERVE, ...ADMIN_ADDITIONS, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER],
+    permissions: Object.freeze([
+      ...READ_AND_SELF_SERVE,
+      ...ADMIN_ADDITIONS,
+      WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER,
+    ]),
   },
-]
+])
 
 export const WORKSPACE_USER_ROLES = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug) as readonly WorkspaceRoleSlug[]
 

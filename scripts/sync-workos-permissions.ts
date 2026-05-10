@@ -1,9 +1,9 @@
 /**
  * Sync WorkOS authorization config from code definitions.
  *
- * Reads API_KEY_PERMISSIONS from @threa/types and ensures they exist in WorkOS.
- * Creates missing permissions, updates name/description on existing ones.
- * Also ensures required roles exist with the correct permissions.
+ * Reads WORKSPACE_PERMISSIONS and WORKSPACE_ROLE_DEFINITIONS from @threa/types
+ * and ensures they exist in WorkOS. Creates missing permissions, updates
+ * name/description on existing ones, and ensures roles match the catalog.
  *
  * Usage:
  *   bun scripts/sync-workos-permissions.ts              # sync (create/update)

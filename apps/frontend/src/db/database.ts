@@ -7,6 +7,7 @@ import type {
   NotificationLevel,
   StreamContextBagPayload,
   StreamType,
+  WorkspaceRoleSlug,
 } from "@threa/types"
 import type { DraftContextRef } from "@/lib/context-bag/types"
 
@@ -29,7 +30,7 @@ export interface CachedWorkspaceUser {
   workspaceId: string
   workosUserId: string
   email: string
-  role: "owner" | "admin" | "member"
+  role: WorkspaceRoleSlug
   slug: string
   name: string
   description: string | null

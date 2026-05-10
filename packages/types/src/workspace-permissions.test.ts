@@ -40,9 +40,9 @@ describe("WORKSPACE_PERMISSIONS catalog", () => {
 })
 
 describe("WORKSPACE_ROLE_DEFINITIONS", () => {
-  test("defines exactly owner, admin, member", () => {
-    const slugs = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug).sort()
-    expect(slugs).toEqual(["admin", "member", "owner"])
+  test("declared in privilege order: member, admin, owner (ROLE_RANK depends on this)", () => {
+    const slugs = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug)
+    expect(slugs).toEqual([WORKSPACE_ROLE_SLUGS.MEMBER, WORKSPACE_ROLE_SLUGS.ADMIN, WORKSPACE_ROLE_SLUGS.OWNER])
   })
 
   test("owner ⊇ admin ⊇ member", () => {
