@@ -1,4 +1,16 @@
+import {
+  permissionsForRole,
+  WORKSPACE_USER_ROLES,
+  type WorkspacePermissionSlug,
+  type WorkspaceRoleSlug,
+} from "@threa/types"
 import type { Querier } from "../../db"
+
+const KNOWN_ROLE_SLUGS: ReadonlySet<string> = new Set(WORKSPACE_USER_ROLES)
+
+function isWorkspaceRoleSlug(value: string): value is WorkspaceRoleSlug {
+  return KNOWN_ROLE_SLUGS.has(value)
+}
 
 export interface WorkspaceUserPermissionsRow {
   workspace_id: string
@@ -114,5 +126,32 @@ export const WorkspaceUserPermissionsRepository = {
       [workspaceId]
     )
     return result.rows.map(mapRow)
+  },
+
+  /**
+   * Permission check that pushes the role-expansion into the DB read so callers
+   * can gate domain operations without going through the service. Returns
+   * `false` for missing rows, inactive status, and unrecognized roles (a
+   * dashboard role added ahead of a code release degrades to deny).
+   */
+  async hasPermission(
+    db: Querier,
+    workspaceId: string,
+    workosUserId: string,
+    slug: WorkspacePermissionSlug
+  ): Promise<boolean> {
+    const result = await db.query<{ role_slugs: string[]; status: string }>(
+      `SELECT role_slugs, status
+       FROM workspace_user_permissions
+       WHERE workspace_id = $1 AND workos_user_id = $2`,
+      [workspaceId, workosUserId]
+    )
+    const row = result.rows[0]
+    if (!row || row.status !== "active") return false
+    for (const role of row.role_slugs) {
+      if (!isWorkspaceRoleSlug(role)) continue
+      if (permissionsForRole(role).includes(slug)) return true
+    }
+    return false
   },
 }

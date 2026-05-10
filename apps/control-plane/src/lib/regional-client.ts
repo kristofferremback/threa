@@ -100,35 +100,14 @@ export class RegionalClient {
       lastEventAt: Date
     }
   ): Promise<void> {
-    const url = `${this.getRegionUrl(region)}/internal/authz/memberships`
-    let res: Response
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
-        },
-        body: JSON.stringify({
-          kind: "upsert",
-          workspaceId: data.workspaceId,
-          workosUserId: data.workosUserId,
-          roleSlugs: data.roleSlugs,
-          status: data.status,
-          lastEventAt: data.lastEventAt.toISOString(),
-        }),
-        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
-      })
-    } catch (err) {
-      logger.error({ err, region, url }, "Regional authz membership sync request failed")
-      throw err
-    }
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => "")
-      logger.error({ region, status: res.status, body }, "Regional authz membership sync failed")
-      throw new Error(`Regional backend returned ${res.status}: ${body}`)
-    }
+    await this.postToAuthzMemberships(region, "sync", {
+      kind: "upsert",
+      workspaceId: data.workspaceId,
+      workosUserId: data.workosUserId,
+      roleSlugs: data.roleSlugs,
+      status: data.status,
+      lastEventAt: data.lastEventAt.toISOString(),
+    })
   }
 
   /**
@@ -140,6 +119,24 @@ export class RegionalClient {
     region: string,
     data: { workspaceId: string; workosUserId: string; eventCreatedAt: Date }
   ): Promise<void> {
+    await this.postToAuthzMemberships(region, "removal", {
+      kind: "remove",
+      workspaceId: data.workspaceId,
+      workosUserId: data.workosUserId,
+      eventCreatedAt: data.eventCreatedAt.toISOString(),
+    })
+  }
+
+  /**
+   * Shared transport for `POST /internal/authz/memberships`. The two callers
+   * differ only in the discriminated-union body and the log verb, so headers,
+   * timeout, error normalization, and HTTP plumbing live here once.
+   */
+  private async postToAuthzMemberships(
+    region: string,
+    op: "sync" | "removal",
+    body: Record<string, unknown>
+  ): Promise<void> {
     const url = `${this.getRegionUrl(region)}/internal/authz/memberships`
     let res: Response
     try {
@@ -149,23 +146,18 @@ export class RegionalClient {
           "Content-Type": "application/json",
           [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
         },
-        body: JSON.stringify({
-          kind: "remove",
-          workspaceId: data.workspaceId,
-          workosUserId: data.workosUserId,
-          eventCreatedAt: data.eventCreatedAt.toISOString(),
-        }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
       })
     } catch (err) {
-      logger.error({ err, region, url }, "Regional authz membership removal request failed")
+      logger.error({ err, region, url }, `Regional authz membership ${op} request failed`)
       throw err
     }
 
     if (!res.ok) {
-      const body = await res.text().catch(() => "")
-      logger.error({ region, status: res.status, body }, "Regional authz membership removal failed")
-      throw new Error(`Regional backend returned ${res.status}: ${body}`)
+      const responseBody = await res.text().catch(() => "")
+      logger.error({ region, status: res.status, body: responseBody }, `Regional authz membership ${op} failed`)
+      throw new Error(`Regional backend returned ${res.status}: ${responseBody}`)
     }
   }
 

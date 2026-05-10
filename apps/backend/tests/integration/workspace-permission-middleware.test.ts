@@ -1,14 +1,8 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
+import { describe, test, expect } from "bun:test"
 import type { NextFunction, Request, Response } from "express"
-import type { Pool } from "pg"
-import { WORKSPACE_PERMISSION_SCOPES, WORKSPACE_ROLE_SLUGS } from "@threa/types"
+import { WORKSPACE_PERMISSION_SCOPES } from "@threa/types"
 import { HttpError } from "../../src/lib/errors"
 import { createRequireWorkspacePermission } from "../../src/middleware/workspace-permission"
-import { WorkspaceAuthzService, WorkspaceUserPermissionsRepository } from "../../src/features/workspace-authz"
-import { setupTestDatabase } from "./setup"
-
-const WORKSPACE_ID = "ws_authz_mw_test"
-const USER_ID = "workos_user_authz_mw_test"
 
 async function runMiddleware(
   middleware: ReturnType<ReturnType<typeof createRequireWorkspacePermission>>,
@@ -34,23 +28,7 @@ async function runMiddleware(
 }
 
 describe("requireWorkspacePermission", () => {
-  let pool: Pool
-  let requireWorkspacePermission: ReturnType<typeof createRequireWorkspacePermission>
-
-  beforeAll(async () => {
-    pool = await setupTestDatabase()
-    requireWorkspacePermission = createRequireWorkspacePermission({
-      workspaceAuthzService: new WorkspaceAuthzService({ pool }),
-    })
-  })
-
-  afterAll(async () => {
-    await pool.end()
-  })
-
-  beforeEach(async () => {
-    await pool.query("DELETE FROM workspace_user_permissions WHERE workspace_id = $1", [WORKSPACE_ID])
-  })
+  const requireWorkspacePermission = createRequireWorkspacePermission()
 
   test("session path: JWT permission grants access without DB lookup", async () => {
     const middleware = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
@@ -73,98 +51,28 @@ describe("requireWorkspacePermission", () => {
     expect(result.error?.status).toBe(403)
   })
 
-  test("user API key: granted when key scope ∩ owner permissions includes slug", async () => {
-    await WorkspaceUserPermissionsRepository.upsert(pool, {
-      workspaceId: WORKSPACE_ID,
-      workosUserId: USER_ID,
-      roleSlugs: [WORKSPACE_ROLE_SLUGS.ADMIN],
-      status: "active",
-      lastEventAt: new Date(),
-    })
+  test("user API key: granted when slug is in pre-clamped key scopes", async () => {
+    // `public-api-auth.ts` clamps `req.userApiKey.scopes` against the owner
+    // permission mirror at auth time, so this middleware checks the
+    // pre-intersected set directly — no second mirror lookup.
     const middleware = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
     const req = {
       userApiKey: { scopes: new Set([WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE]) },
-      user: { workosUserId: USER_ID },
-      workspaceId: WORKSPACE_ID,
     } as unknown as Request
 
     const result = await runMiddleware(middleware, req)
     expect(result.allowed).toBe(true)
   })
 
-  test("user API key: denied when slug is in mirror but not key scopes", async () => {
-    await WorkspaceUserPermissionsRepository.upsert(pool, {
-      workspaceId: WORKSPACE_ID,
-      workosUserId: USER_ID,
-      roleSlugs: [WORKSPACE_ROLE_SLUGS.ADMIN],
-      status: "active",
-      lastEventAt: new Date(),
-    })
+  test("user API key: denied with 403 when slug is missing from clamped scopes", async () => {
     const middleware = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
     const req = {
       userApiKey: { scopes: new Set([WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ]) },
-      user: { workosUserId: USER_ID },
-      workspaceId: WORKSPACE_ID,
     } as unknown as Request
 
     const result = await runMiddleware(middleware, req)
     expect(result.allowed).toBe(false)
     expect(result.error?.status).toBe(403)
-  })
-
-  test("user API key: denied when slug is in key scopes but owner role does not grant it", async () => {
-    await WorkspaceUserPermissionsRepository.upsert(pool, {
-      workspaceId: WORKSPACE_ID,
-      workosUserId: USER_ID,
-      roleSlugs: [WORKSPACE_ROLE_SLUGS.MEMBER],
-      status: "active",
-      lastEventAt: new Date(),
-    })
-    const middleware = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
-    const req = {
-      userApiKey: { scopes: new Set([WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE]) },
-      user: { workosUserId: USER_ID },
-      workspaceId: WORKSPACE_ID,
-    } as unknown as Request
-
-    const result = await runMiddleware(middleware, req)
-    expect(result.allowed).toBe(false)
-    expect(result.error?.status).toBe(403)
-  })
-
-  test("user API key: 401 when owner mirror row is missing", async () => {
-    const middleware = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
-    const req = {
-      userApiKey: { scopes: new Set([WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE]) },
-      user: { workosUserId: USER_ID },
-      workspaceId: WORKSPACE_ID,
-    } as unknown as Request
-
-    const result = await runMiddleware(middleware, req)
-    expect(result.allowed).toBe(false)
-    expect(result.error?.status).toBe(401)
-    expect(result.error?.code).toBe("OWNER_INACTIVE")
-  })
-
-  test("user API key: 401 when owner mirror row is inactive", async () => {
-    await WorkspaceUserPermissionsRepository.upsert(pool, {
-      workspaceId: WORKSPACE_ID,
-      workosUserId: USER_ID,
-      roleSlugs: [WORKSPACE_ROLE_SLUGS.ADMIN],
-      status: "inactive",
-      lastEventAt: new Date(),
-    })
-    const middleware = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
-    const req = {
-      userApiKey: { scopes: new Set([WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE]) },
-      user: { workosUserId: USER_ID },
-      workspaceId: WORKSPACE_ID,
-    } as unknown as Request
-
-    const result = await runMiddleware(middleware, req)
-    expect(result.allowed).toBe(false)
-    expect(result.error?.status).toBe(401)
-    expect(result.error?.code).toBe("OWNER_INACTIVE")
   })
 
   test("bot API key: granted when slug is in stored scopes", async () => {

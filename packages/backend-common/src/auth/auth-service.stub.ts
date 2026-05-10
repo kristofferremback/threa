@@ -1,10 +1,15 @@
 import type { AuthResult, AuthService } from "./auth-service"
 
-// Stub sessions surface no JWT permission claim — production OAuth-callback
-// sessions also start out with `permissions: null` until the next refresh, and
-// downstream gates already fall back to the workspace user's role. Returning
-// `null` lets role-based RBAC tests differentiate member/admin/owner; returning
-// an inflated owner set used to silently elevate every test session.
+// Stub sessions deliberately surface no JWT permission claim
+// (`permissions: null`). Production OAuth-callback sessions also start with
+// `permissions: null` until the next refresh, so this exercises a real
+// production code path — the role-derived fallback inside
+// `requireWorkspacePermission`. Returning the owner permission set here would
+// short-circuit the JWT-claim branch and silently elevate every test session,
+// which would break the role-based e2e tests in `apps/backend/tests/e2e/rbac.test.ts`
+// (member/admin/owner differentiation depends on the role-derived path).
+// The JWT-claim-present branch is exercised by
+// `apps/backend/tests/integration/workspace-permission-middleware.test.ts`.
 export interface DevLoginResult {
   user: { id: string; email: string; name: string }
   session: string

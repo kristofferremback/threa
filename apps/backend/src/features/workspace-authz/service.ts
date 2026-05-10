@@ -91,9 +91,4 @@ export class WorkspaceAuthzService {
     if (!mirror || mirror.status !== "active") return null
     return expandRoleSlugs(mirror.roleSlugs)
   }
-
-  async hasPermission(workspaceId: string, workosUserId: string, slug: WorkspacePermissionSlug): Promise<boolean> {
-    const permissions = await this.resolveActivePermissions(workspaceId, workosUserId)
-    return permissions !== null && permissions.includes(slug)
-  }
 }

@@ -27,6 +27,15 @@ export interface AuthzMembershipRemovedPayload extends Record<string, unknown> {
 interface Dependencies {
   pool: Pool
   regionalClient: RegionalClient
+  /** Memoize `workspace_registry` lookups for this many ms during burst drains. */
+  workspaceLookupTtlMs?: number
+}
+
+type WorkspaceRow = { id: string; region: string }
+
+interface CachedLookup {
+  expiresAt: number
+  rows: WorkspaceRow[]
 }
 
 function parseIsoTimestamp(value: string, fieldName: string): Date {
@@ -40,83 +49,82 @@ function parseIsoTimestamp(value: string, fieldName: string): Date {
 export class RegionalAuthzFanOut {
   private pool: Pool
   private regionalClient: RegionalClient
+  private readonly workspaceLookupTtlMs: number
+  // Burst drains after backfill produce N outbox events for the same org in
+  // quick succession; each one would otherwise hit `workspace_registry` for an
+  // identical indexed read. A short TTL collapses those without changing
+  // semantics — eventual consistency is fine since `workspace_user_permissions`
+  // upserts are idempotent and last-event-wins.
+  private readonly workspaceLookupCache = new Map<string, CachedLookup>()
 
-  constructor({ pool, regionalClient }: Dependencies) {
+  constructor({ pool, regionalClient, workspaceLookupTtlMs = 1_000 }: Dependencies) {
     this.pool = pool
     this.regionalClient = regionalClient
+    this.workspaceLookupTtlMs = workspaceLookupTtlMs
   }
 
   async handleMembershipChanged(payload: AuthzMembershipChangedPayload): Promise<void> {
-    const workspaces = await WorkspaceRegistryRepository.listByWorkosOrganizationId(
-      this.pool,
-      payload.workosOrganizationId
-    )
-    if (workspaces.length === 0) return
-
     const lastEventAt = parseIsoTimestamp(payload.lastEventAt, "lastEventAt")
-
-    const results = await Promise.allSettled(
-      workspaces.map((ws) =>
-        this.regionalClient.syncWorkspaceMembership(ws.region, {
-          workspaceId: ws.id,
-          workosUserId: payload.workosUserId,
-          roleSlugs: payload.roleSlugs,
-          status: payload.status,
-          lastEventAt,
-        })
-      )
+    await this.dispatchToWorkspaces(payload.workosOrganizationId, "fan-out", async (ws) =>
+      this.regionalClient.syncWorkspaceMembership(ws.region, {
+        workspaceId: ws.id,
+        workosUserId: payload.workosUserId,
+        roleSlugs: payload.roleSlugs,
+        status: payload.status,
+        lastEventAt,
+      })
     )
-
-    const errors: unknown[] = []
-    results.forEach((result, idx) => {
-      if (result.status === "rejected") {
-        const ws = workspaces[idx]
-        logger.error(
-          { err: result.reason, region: ws.region, workspaceId: ws.id, workosUserId: payload.workosUserId },
-          "Regional authz fan-out failed for workspace"
-        )
-        errors.push(result.reason)
-      }
-    })
-
-    if (errors.length > 0) {
-      throw new AggregateError(errors, "Regional authz fan-out failed for one or more workspaces")
-    }
   }
 
   async handleMembershipRemoved(payload: AuthzMembershipRemovedPayload): Promise<void> {
-    const workspaces = await WorkspaceRegistryRepository.listByWorkosOrganizationId(
-      this.pool,
-      payload.workosOrganizationId
+    const eventCreatedAt = parseIsoTimestamp(payload.eventCreatedAt, "eventCreatedAt")
+    await this.dispatchToWorkspaces(payload.workosOrganizationId, "removal fan-out", async (ws) =>
+      this.regionalClient.removeWorkspaceMembership(ws.region, {
+        workspaceId: ws.id,
+        workosUserId: payload.workosUserId,
+        eventCreatedAt,
+      })
     )
+  }
+
+  private async dispatchToWorkspaces(
+    workosOrganizationId: string,
+    op: string,
+    send: (ws: WorkspaceRow) => Promise<void>
+  ): Promise<void> {
+    const workspaces = await this.lookupWorkspaces(workosOrganizationId)
     if (workspaces.length === 0) return
 
-    const eventCreatedAt = parseIsoTimestamp(payload.eventCreatedAt, "eventCreatedAt")
-
-    const results = await Promise.allSettled(
-      workspaces.map((ws) =>
-        this.regionalClient.removeWorkspaceMembership(ws.region, {
-          workspaceId: ws.id,
-          workosUserId: payload.workosUserId,
-          eventCreatedAt,
-        })
-      )
-    )
+    const results = await Promise.allSettled(workspaces.map((ws) => send(ws)))
 
     const errors: unknown[] = []
     results.forEach((result, idx) => {
       if (result.status === "rejected") {
         const ws = workspaces[idx]
         logger.error(
-          { err: result.reason, region: ws.region, workspaceId: ws.id, workosUserId: payload.workosUserId },
-          "Regional authz removal fan-out failed for workspace"
+          { err: result.reason, region: ws.region, workspaceId: ws.id, workosOrganizationId },
+          `Regional authz ${op} failed for workspace`
         )
         errors.push(result.reason)
       }
     })
 
     if (errors.length > 0) {
-      throw new AggregateError(errors, "Regional authz removal fan-out failed for one or more workspaces")
+      throw new AggregateError(errors, `Regional authz ${op} failed for one or more workspaces`)
     }
+  }
+
+  private async lookupWorkspaces(workosOrganizationId: string): Promise<WorkspaceRow[]> {
+    const now = Date.now()
+    const cached = this.workspaceLookupCache.get(workosOrganizationId)
+    if (cached && cached.expiresAt > now) {
+      return cached.rows
+    }
+    const rows = await WorkspaceRegistryRepository.listByWorkosOrganizationId(this.pool, workosOrganizationId)
+    this.workspaceLookupCache.set(workosOrganizationId, {
+      rows,
+      expiresAt: now + this.workspaceLookupTtlMs,
+    })
+    return rows
   }
 }

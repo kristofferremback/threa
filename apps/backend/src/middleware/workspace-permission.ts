@@ -1,19 +1,9 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express"
 import { permissionsForRole, type WorkspacePermissionSlug } from "@threa/types"
 import { HttpError } from "../lib/errors"
-import type { WorkspaceAuthzService } from "../features/workspace-authz"
-
-interface Dependencies {
-  workspaceAuthzService: WorkspaceAuthzService
-}
 
 const unauthenticated = () => new HttpError("Not authenticated", { status: 401, code: "UNAUTHENTICATED" })
 const insufficient = () => new HttpError("Insufficient permissions", { status: 403, code: "FORBIDDEN" })
-const ownerInactive = () =>
-  new HttpError("API key owner is no longer an active workspace member", {
-    status: 401,
-    code: "OWNER_INACTIVE",
-  })
 
 /**
  * Gate a route on a workspace permission slug.
@@ -26,17 +16,18 @@ const ownerInactive = () =>
  *     present but empty (`[]`) it is honored verbatim (no fallback — an
  *     explicit empty grant must remain empty, or a just-demoted admin gets
  *     role-expanded permissions back).
- *  2. User-scoped API keys clamp the persisted scope set against the owner's
- *     current permissions in `workspace_user_permissions`. If the owner row is
- *     missing or `status !== "active"`, the credential is no longer usable
- *     and the request is rejected with 401, not 403.
+ *  2. User-scoped API keys gate on `req.userApiKey.scopes`, which
+ *     `public-api-auth.ts` already clamped against the owner's current
+ *     `workspace_user_permissions` row at auth time (and rejected with
+ *     `OWNER_INACTIVE` if the owner row was missing or inactive). The clamp
+ *     happens once per request, so this middleware never re-reads the mirror.
  *  3. Bot-scoped API keys gate on the key's stored scopes only. Bots are
  *     workspace-owned in today's model; personal bots arrive in a later PR
  *     and will route through the user-key clamp path.
  */
-export function createRequireWorkspacePermission({ workspaceAuthzService }: Dependencies) {
+export function createRequireWorkspacePermission() {
   return function requireWorkspacePermission(slug: WorkspacePermissionSlug): RequestHandler {
-    return async function handler(req: Request, _res: Response, next: NextFunction): Promise<void> {
+    return function handler(req: Request, _res: Response, next: NextFunction): void {
       if (req.authUser) {
         const claim = req.authUser.permissions
         if (claim != null) {
@@ -54,24 +45,10 @@ export function createRequireWorkspacePermission({ workspaceAuthzService }: Depe
       }
 
       if (req.userApiKey) {
-        const ownerWorkosUserId = req.user?.workosUserId
-        const workspaceId = req.workspaceId
-        if (!ownerWorkosUserId || !workspaceId) {
-          next(unauthenticated())
-          return
-        }
-
-        const ownerPermissions = await workspaceAuthzService.resolveActivePermissions(workspaceId, ownerWorkosUserId)
-        if (ownerPermissions === null) {
-          next(ownerInactive())
-          return
-        }
-
-        if (req.userApiKey.scopes.has(slug) && ownerPermissions.includes(slug)) {
+        if (req.userApiKey.scopes.has(slug)) {
           next()
           return
         }
-
         next(insufficient())
         return
       }

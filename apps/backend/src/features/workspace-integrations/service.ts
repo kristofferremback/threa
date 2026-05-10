@@ -5,8 +5,8 @@ import { HttpError } from "../../lib/errors"
 import { workspaceIntegrationId } from "../../lib/id"
 import type { GitHubAppConfig } from "../../lib/env"
 import { UserRepository } from "../workspaces"
-import type { WorkspaceAuthzService } from "../workspace-authz"
 import {
+  permissionsForRole,
   WORKSPACE_PERMISSION_SCOPES,
   WorkspaceIntegrationProviders,
   WorkspaceIntegrationStatuses,
@@ -111,7 +111,6 @@ export class GitHubClient {
 interface WorkspaceIntegrationServiceDeps {
   pool: Pool
   github: GitHubAppConfig
-  workspaceAuthzService: WorkspaceAuthzService
 }
 
 export class WorkspaceIntegrationService {
@@ -174,6 +173,7 @@ export class WorkspaceIntegrationService {
     state: string
     installationId: string
     workosUserId: string
+    viewerPermissions: string[] | null
   }): Promise<{ workspaceId: string }> {
     this.requireGitHubEnabled()
 
@@ -191,17 +191,11 @@ export class WorkspaceIntegrationService {
     if (!access.user) {
       throw new HttpError("Not a member of this workspace", { status: 403, code: "FORBIDDEN" })
     }
-    // The GitHub install callback (`GET /api/integrations/github/callback`) runs
-    // with `auth` only — no `requireWorkspacePermission` upstream — so this is
-    // the sole authorization gate on this path. Route through the authz service
-    // so the mirror lookup, active-status check, and role expansion stay on one
-    // shared path (INV-35, INV-37).
-    const hasAdmin = await this.deps.workspaceAuthzService.hasPermission(
-      workspaceId,
-      params.workosUserId,
-      WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN
-    )
-    if (!hasAdmin) {
+    // Session-path authz: prefer the JWT claim (no DB round-trip; immune to
+    // mirror fan-out lag); fall back to role-derived permissions when the
+    // session predates permission claims.
+    const permissions = params.viewerPermissions ?? permissionsForRole(access.user.role)
+    if (!permissions.includes(WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN)) {
       throw new HttpError("Only admins can connect GitHub", { status: 403, code: "FORBIDDEN" })
     }
 

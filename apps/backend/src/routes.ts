@@ -146,7 +146,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceUser]
 
-  const requireWorkspacePermission = createRequireWorkspacePermission({ workspaceAuthzService })
+  const requireWorkspacePermission = createRequireWorkspacePermission()
   const workspaceAuthz = createWorkspaceAuthzHandlers({ workspaceAuthzService })
 
   const rateLimits = createRateLimiters(rateLimiterConfig)
