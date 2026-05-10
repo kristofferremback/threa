@@ -89,10 +89,8 @@ describe("AttachmentExplorer", () => {
     await waitFor(() => expect(screen.getByTestId("attachment-explorer")).toBeInTheDocument())
     await waitFor(() => expect(searchSpy).toHaveBeenCalled())
 
-    const args = searchSpy.mock.calls[0]
-    expect(args[0]).toBe("ws_1")
-    expect(args[1]).toMatchObject({ limit: 30 })
-    expect(args[1]).not.toHaveProperty("streamIds")
+    expect(searchSpy.mock.calls[0]).toMatchObject(["ws_1", { limit: 30 }])
+    expect(searchSpy.mock.calls[0][1]).not.toHaveProperty("streamIds")
 
     expect(await screen.findByText("logo.png")).toBeInTheDocument()
   })

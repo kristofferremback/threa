@@ -120,7 +120,6 @@ export function categoryFromMime(mime: string | null | undefined): AttachmentCat
   if (normalized.startsWith("text/")) {
     const subtype = normalized.slice("text/".length)
     if (CODE_TEXT_SUFFIXES.includes(subtype)) return "code"
-    if (subtype === "plain") return "doc"
     return "doc"
   }
 
