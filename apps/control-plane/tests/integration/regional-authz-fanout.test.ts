@@ -26,22 +26,20 @@ interface RemoveCall {
 class RecordingRegionalClient {
   syncCalls: SyncCall[] = []
   removeCalls: RemoveCall[] = []
-  failNext = false
+  failRegions = new Set<string>()
 
   async syncWorkspaceMembership(region: string, data: Omit<SyncCall, "region">): Promise<void> {
-    if (this.failNext) {
-      this.failNext = false
-      throw new Error("regional sync failed")
-    }
     this.syncCalls.push({ region, ...data })
+    if (this.failRegions.has(region)) {
+      throw new Error(`regional sync failed for ${region}`)
+    }
   }
 
   async removeWorkspaceMembership(region: string, data: Omit<RemoveCall, "region">): Promise<void> {
-    if (this.failNext) {
-      this.failNext = false
-      throw new Error("regional remove failed")
-    }
     this.removeCalls.push({ region, ...data })
+    if (this.failRegions.has(region)) {
+      throw new Error(`regional remove failed for ${region}`)
+    }
   }
 }
 
@@ -129,9 +127,10 @@ describe("RegionalAuthzFanOut", () => {
     expect(sent.roleSlugs).toEqual(["member", "admin", "future_role_not_in_code"])
   })
 
-  test("handleMembershipChanged aggregates regional failures into AggregateError", async () => {
+  test("handleMembershipChanged aggregates regional failures into AggregateError but still attempts every workspace", async () => {
     await insertWorkspace("ws_fan_a", "us-east-1", ORG_ID)
-    regionalClient.failNext = true
+    await insertWorkspace("ws_fan_b", "eu-west-1", ORG_ID)
+    regionalClient.failRegions.add("us-east-1")
 
     await expect(
       fanOut.handleMembershipChanged({
@@ -142,6 +141,9 @@ describe("RegionalAuthzFanOut", () => {
         lastEventAt: "2026-01-01T00:00:00.000Z",
       })
     ).rejects.toBeInstanceOf(AggregateError)
+
+    const attemptedRegions = regionalClient.syncCalls.map((c) => c.region).sort()
+    expect(attemptedRegions).toEqual(["eu-west-1", "us-east-1"])
   })
 
   test("handleMembershipRemoved dispatches one removal per workspace mapped to the org", async () => {

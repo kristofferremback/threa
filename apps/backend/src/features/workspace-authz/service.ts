@@ -1,12 +1,12 @@
 import type { Pool } from "pg"
-import { logger } from "@threa/backend-common"
+import { logger, type WorkosMembershipStatus } from "@threa/backend-common"
 import { WorkspaceUserPermissionsRepository } from "./repository"
 
 export interface ApplyMembershipChangeInput {
   workspaceId: string
   workosUserId: string
   roleSlugs: string[]
-  status: string
+  status: WorkosMembershipStatus
   lastEventAt: Date
 }
 

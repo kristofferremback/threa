@@ -1,4 +1,4 @@
-import { logger, INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
+import { logger, INTERNAL_API_KEY_HEADER, type WorkosMembershipStatus } from "@threa/backend-common"
 import type { RegionConfig } from "../config"
 
 const REGIONAL_REQUEST_TIMEOUT_MS = 15_000
@@ -96,7 +96,7 @@ export class RegionalClient {
       workspaceId: string
       workosUserId: string
       roleSlugs: string[]
-      status: string
+      status: WorkosMembershipStatus
       lastEventAt: Date
     }
   ): Promise<void> {
@@ -131,6 +131,11 @@ export class RegionalClient {
     }
   }
 
+  /**
+   * Push a membership removal to the regional `workspace_user_permissions`
+   * mirror. Body matches the regional `POST /internal/authz/memberships`
+   * discriminated-union schema (`kind: "remove"`).
+   */
   async removeWorkspaceMembership(
     region: string,
     data: { workspaceId: string; workosUserId: string; eventCreatedAt: Date }

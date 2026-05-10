@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { logger } from "@threa/backend-common"
+import { logger, type WorkosMembershipStatus } from "@threa/backend-common"
 import { WorkspaceRegistryRepository } from "../workspaces"
 import type { RegionalClient } from "../../lib/regional-client"
 
@@ -12,7 +12,7 @@ export interface AuthzMembershipChangedPayload extends Record<string, unknown> {
   workosOrganizationId: string
   workosUserId: string
   roleSlugs: string[]
-  status: string
+  status: WorkosMembershipStatus
   /** ISO timestamp; deserialized to Date by the dispatcher. */
   lastEventAt: string
 }
@@ -27,6 +27,14 @@ export interface AuthzMembershipRemovedPayload extends Record<string, unknown> {
 interface Dependencies {
   pool: Pool
   regionalClient: RegionalClient
+}
+
+function parseIsoTimestamp(value: string, fieldName: string): Date {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid ${fieldName}: ${value}`)
+  }
+  return parsed
 }
 
 export class RegionalAuthzFanOut {
@@ -45,7 +53,7 @@ export class RegionalAuthzFanOut {
     )
     if (workspaces.length === 0) return
 
-    const lastEventAt = new Date(payload.lastEventAt)
+    const lastEventAt = parseIsoTimestamp(payload.lastEventAt, "lastEventAt")
 
     const results = await Promise.allSettled(
       workspaces.map((ws) =>
@@ -83,7 +91,7 @@ export class RegionalAuthzFanOut {
     )
     if (workspaces.length === 0) return
 
-    const eventCreatedAt = new Date(payload.eventCreatedAt)
+    const eventCreatedAt = parseIsoTimestamp(payload.eventCreatedAt, "eventCreatedAt")
 
     const results = await Promise.allSettled(
       workspaces.map((ws) =>

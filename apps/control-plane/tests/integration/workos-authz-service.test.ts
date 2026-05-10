@@ -126,12 +126,13 @@ describe("WorkosAuthzService.processEvent", () => {
     const events = await fetchAuthzOutbox(pool, orgId)
     expect(events).toHaveLength(1)
     expect(events[0]!.event_type).toBe(OUTBOX_AUTHZ_MEMBERSHIP_CHANGED)
-    const payload = events[0]!.payload as unknown as AuthzMembershipChangedPayload
-    expect(payload.workosOrganizationId).toBe(orgId)
-    expect(payload.workosUserId).toBe(userId)
-    expect(payload.roleSlugs).toEqual(["admin"])
-    expect(payload.status).toBe("active")
-    expect(new Date(payload.lastEventAt).toISOString()).toBe(eventTime.toISOString())
+    expect(events[0]!.payload as unknown as AuthzMembershipChangedPayload).toEqual({
+      workosOrganizationId: orgId,
+      workosUserId: userId,
+      roleSlugs: ["admin"],
+      status: "active",
+      lastEventAt: eventTime.toISOString(),
+    })
   })
 
   test("does not emit an outbox event when an upsert is rejected as stale", async () => {
@@ -177,10 +178,11 @@ describe("WorkosAuthzService.processEvent", () => {
     const events = await fetchAuthzOutbox(pool, orgId)
     expect(events).toHaveLength(1)
     expect(events[0]!.event_type).toBe(OUTBOX_AUTHZ_MEMBERSHIP_REMOVED)
-    const payload = events[0]!.payload as unknown as AuthzMembershipRemovedPayload
-    expect(payload.workosOrganizationId).toBe(orgId)
-    expect(payload.workosUserId).toBe(userId)
-    expect(new Date(payload.eventCreatedAt).toISOString()).toBe(deleteTime.toISOString())
+    expect(events[0]!.payload as unknown as AuthzMembershipRemovedPayload).toEqual({
+      workosOrganizationId: orgId,
+      workosUserId: userId,
+      eventCreatedAt: deleteTime.toISOString(),
+    })
   })
 
   test("does not emit a removal outbox event when the delete is a no-op", async () => {

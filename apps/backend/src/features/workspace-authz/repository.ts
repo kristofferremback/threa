@@ -42,7 +42,11 @@ const SELECT_FIELDS = `
   updated_at
 `
 
-const KNOWN_ROLE_SLUGS = new Set<string>(WORKSPACE_USER_ROLES)
+const KNOWN_ROLE_SLUGS: ReadonlySet<string> = new Set(WORKSPACE_USER_ROLES)
+
+function isWorkspaceRoleSlug(value: string): value is WorkspaceRoleSlug {
+  return KNOWN_ROLE_SLUGS.has(value)
+}
 
 /**
  * Union the permission set granted by every recognized role on a mirror row.
@@ -52,8 +56,8 @@ const KNOWN_ROLE_SLUGS = new Set<string>(WORKSPACE_USER_ROLES)
 export function expandRoleSlugs(roleSlugs: readonly string[]): WorkspacePermissionSlug[] {
   const union = new Set<WorkspacePermissionSlug>()
   for (const slug of roleSlugs) {
-    if (!KNOWN_ROLE_SLUGS.has(slug)) continue
-    for (const perm of permissionsForRole(slug as WorkspaceRoleSlug)) {
+    if (!isWorkspaceRoleSlug(slug)) continue
+    for (const perm of permissionsForRole(slug)) {
       union.add(perm)
     }
   }

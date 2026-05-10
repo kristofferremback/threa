@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express"
 import { z } from "zod"
+import { WORKOS_MEMBERSHIP_STATUSES } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
 import type { WorkspaceAuthzService } from "./service"
 
@@ -7,8 +8,11 @@ const upsertSchema = z.object({
   kind: z.literal("upsert"),
   workspaceId: z.string().min(1),
   workosUserId: z.string().min(1),
-  roleSlugs: z.array(z.string()),
-  status: z.string().min(1),
+  // Role slugs are not constrained: WorkOS dashboard can introduce a new role
+  // ahead of a code release, and `expandRoleSlugs` is intentionally tolerant
+  // (skips unknown slugs). Validation happens at expansion time.
+  roleSlugs: z.array(z.string().min(1)),
+  status: z.enum(WORKOS_MEMBERSHIP_STATUSES),
   lastEventAt: z.string().datetime(),
 })
 
