@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import { useQuery, type UseQueryResult } from "@tanstack/react-query"
 import { categoryFromMime } from "@threa/types"
-import { Download, ExternalLink, Hash } from "lucide-react"
-import { attachmentsApi, type AttachmentSearchItem } from "@/api/attachments"
+import { Check, ChevronDown, ChevronUp, Copy, Download, ExternalLink, Hash } from "lucide-react"
+import { attachmentsApi, type AttachmentExtractionContent, type AttachmentSearchItem } from "@/api/attachments"
 import { Button } from "@/components/ui/button"
 import { useFormattedDate } from "@/hooks"
 import { stripMarkdownToInline } from "@/lib/markdown"
@@ -19,6 +20,36 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   const [rawUrl, setRawUrl] = useState<string | null>(null)
   const [processedUrl, setProcessedUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // Reset per-item UI state so a fresh selection never inherits the previous
+  // item's expanded view or "Copied" badge.
+  useEffect(() => {
+    setExpanded(false)
+    setCopied(false)
+  }, [item?.id])
+
+  const fullExtraction = useQuery<AttachmentExtractionContent>({
+    queryKey: ["attachment-extraction", workspaceId, item?.id],
+    queryFn: () => attachmentsApi.getExtraction(workspaceId, item!.id),
+    enabled: Boolean(item?.id) && (expanded || copied),
+    staleTime: 5 * 60_000,
+  })
+
+  const handleCopy = useCallback(async () => {
+    if (!item) return
+    try {
+      const data = fullExtraction.data ?? (await attachmentsApi.getExtraction(workspaceId, item.id))
+      const text = data.fullText ?? data.summary
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API unavailable or fetch failed — silent: the user can still
+      // open the original via the Download button if they need the contents.
+    }
+  }, [item, workspaceId, fullExtraction.data])
 
   const category = item ? categoryFromMime(item.mimeType) : null
 
@@ -137,10 +168,47 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
 
           {item.extraction?.summary ? (
             <div className="space-y-1">
-              <div className="text-xs font-medium text-muted-foreground">Extract</div>
-              <p className="line-clamp-5 text-xs leading-relaxed text-foreground/80">
-                {stripMarkdownToInline(item.extraction.summary)}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-medium text-muted-foreground">Extract</div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setExpanded((v) => !v)}
+                    aria-expanded={expanded}
+                  >
+                    {expanded ? (
+                      <>
+                        <ChevronUp className="h-3 w-3" />
+                        Collapse
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-3 w-3" />
+                        Expand
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={handleCopy}
+                    aria-label="Copy full extraction"
+                  >
+                    {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+              </div>
+              {expanded ? (
+                <ExpandedExtract item={item} query={fullExtraction} />
+              ) : (
+                <p className="line-clamp-5 text-xs leading-relaxed text-foreground/80">
+                  {stripMarkdownToInline(item.extraction.summary)}
+                </p>
+              )}
             </div>
           ) : null}
 
@@ -179,5 +247,25 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
         </div>
       </div>
     </div>
+  )
+}
+
+function ExpandedExtract({
+  item,
+  query,
+}: {
+  item: AttachmentSearchItem
+  query: UseQueryResult<AttachmentExtractionContent>
+}) {
+  if (query.isLoading) {
+    return <p className="text-xs leading-relaxed text-muted-foreground">Loading…</p>
+  }
+  if (query.isError) {
+    return <p className="text-xs leading-relaxed text-muted-foreground">Couldn't load the full extract.</p>
+  }
+  return (
+    <pre className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap rounded-card bg-muted/40 p-3 text-xs leading-relaxed text-foreground/80">
+      {stripMarkdownToInline(query.data?.fullText ?? query.data?.summary ?? item.extraction?.summary ?? "")}
+    </pre>
   )
 }

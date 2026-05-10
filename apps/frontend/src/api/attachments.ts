@@ -6,6 +6,12 @@ export interface AttachmentSearchExtractionExcerpt {
   summary: string
 }
 
+export interface AttachmentExtractionContent {
+  contentType: string
+  summary: string
+  fullText: string | null
+}
+
 export interface AttachmentSearchItem extends Attachment {
   extraction: AttachmentSearchExtractionExcerpt | null
   streamSlug: string | null
@@ -130,5 +136,14 @@ export const attachmentsApi = {
    */
   search(workspaceId: string, body: AttachmentSearchRequest): Promise<AttachmentSearchResponse> {
     return api.post<AttachmentSearchResponse>(`/api/workspaces/${workspaceId}/attachments/search`, body)
+  },
+
+  /**
+   * Fetch the full extracted text for an attachment. Used by the explorer
+   * preview pane when the user expands the truncated summary or copies the
+   * full content.
+   */
+  getExtraction(workspaceId: string, attachmentId: string): Promise<AttachmentExtractionContent> {
+    return api.get<AttachmentExtractionContent>(`/api/workspaces/${workspaceId}/attachments/${attachmentId}/extraction`)
   },
 }
