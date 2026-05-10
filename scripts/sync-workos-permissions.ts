@@ -54,6 +54,30 @@ interface WorkOSPermission {
   system: boolean
 }
 
+class WorkOSHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly method: string,
+    public readonly path: string,
+    public readonly body: string
+  ) {
+    super(`WorkOS ${method} ${path} → ${status}: ${body}`)
+  }
+}
+
+// WorkOS 409 bodies include a machine-readable `code` like
+// `permission_slug_conflict` (observed; the role API uses the same convention).
+// Narrowing the reconcile path to slug-conflict keeps unrelated 409s loud.
+function isSlugConflict(err: WorkOSHttpError): boolean {
+  if (err.status !== 409) return false
+  try {
+    const parsed = JSON.parse(err.body) as { code?: unknown }
+    return typeof parsed.code === "string" && parsed.code.includes("slug_conflict")
+  } catch {
+    return false
+  }
+}
+
 async function workosRequest<T>(apiKey: string, method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${WORKOS_BASE}${path}`, {
     method,
@@ -66,15 +90,37 @@ async function workosRequest<T>(apiKey: string, method: string, path: string, bo
 
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`WorkOS ${method} ${path} → ${res.status}: ${text}`)
+    throw new WorkOSHttpError(res.status, method, path, text)
   }
 
   return res.json() as Promise<T>
 }
 
+// WorkOS list endpoints default to ~10 results per page; without pagination,
+// listings silently truncate and the drift detector marks already-remote
+// permissions as "missing", which then 409s on create.
+interface WorkOSListPage<T> {
+  data: T[]
+  list_metadata?: { before?: string | null; after?: string | null }
+  listMetadata?: { before?: string | null; after?: string | null }
+}
+
+async function listAllPages<T>(apiKey: string, basePath: string): Promise<T[]> {
+  const results: T[] = []
+  let after: string | undefined
+  for (;;) {
+    const params = new URLSearchParams({ limit: "100" })
+    if (after) params.set("after", after)
+    const sep = basePath.includes("?") ? "&" : "?"
+    const page = await workosRequest<WorkOSListPage<T>>(apiKey, "GET", `${basePath}${sep}${params.toString()}`)
+    results.push(...page.data)
+    after = page.list_metadata?.after ?? page.listMetadata?.after ?? undefined
+    if (!after) return results
+  }
+}
+
 async function listPermissions(apiKey: string): Promise<WorkOSPermission[]> {
-  const data = await workosRequest<{ data: WorkOSPermission[] }>(apiKey, "GET", "/authorization/permissions")
-  return data.data
+  return listAllPages<WorkOSPermission>(apiKey, "/authorization/permissions")
 }
 
 async function createPermission(
@@ -127,8 +173,7 @@ interface WorkOSRole {
 }
 
 async function listRoles(apiKey: string): Promise<WorkOSRole[]> {
-  const data = await workosRequest<{ data: WorkOSRole[] }>(apiKey, "GET", "/authorization/roles")
-  return data.data
+  return listAllPages<WorkOSRole>(apiKey, "/authorization/roles")
 }
 
 async function createRole(
@@ -354,11 +399,24 @@ async function sync(dryRun: boolean) {
     if (isMissing) {
       if (dryRun) {
         console.log(`  [CREATE] ${local.slug} — "${local.name}"`)
+        created++
       } else {
-        await createPermission(apiKey, { slug: local.slug, name: local.name, description: local.description })
-        console.log(`  [CREATED] ${local.slug} — "${local.name}"`)
+        try {
+          await createPermission(apiKey, { slug: local.slug, name: local.name, description: local.description })
+          console.log(`  [CREATED] ${local.slug} — "${local.name}"`)
+          created++
+        } catch (err) {
+          // Concurrent run or stale list: slug already exists remotely. Reconcile
+          // by updating instead of failing the sync.
+          if (err instanceof WorkOSHttpError && isSlugConflict(err)) {
+            await updatePermission(apiKey, local.slug, { name: local.name, description: local.description })
+            console.log(`  [RECONCILED] ${local.slug} — already existed, updated name/description`)
+            updated++
+          } else {
+            throw err
+          }
+        }
       }
-      created++
     } else if (staleEntry) {
       if (dryRun) {
         console.log(`  [UPDATE] ${local.slug} (${staleEntry.fields.join(", ")})`)
@@ -395,9 +453,22 @@ async function sync(dryRun: boolean) {
       if (dryRun) {
         console.log(`  [CREATE] role "${local.slug}" — "${local.name}"`)
       } else {
-        await createRole(apiKey, { slug: local.slug, name: local.name, description: local.description })
+        let reconciled = false
+        try {
+          await createRole(apiKey, { slug: local.slug, name: local.name, description: local.description })
+        } catch (err) {
+          // Concurrent run or stale list: role slug already exists. Fall through to
+          // updateRole + setRolePermissions so we still reconcile.
+          if (err instanceof WorkOSHttpError && isSlugConflict(err)) {
+            await updateRole(apiKey, local.slug, { name: local.name, description: local.description })
+            reconciled = true
+          } else {
+            throw err
+          }
+        }
         await setRolePermissions(apiKey, local.slug, local.permissions)
-        console.log(`  [CREATED] role "${local.slug}" with permissions: [${local.permissions.join(", ")}]`)
+        const tag = reconciled ? "RECONCILED" : "CREATED"
+        console.log(`  [${tag}] role "${local.slug}" with permissions: [${local.permissions.join(", ")}]`)
       }
       continue
     }
