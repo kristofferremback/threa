@@ -131,9 +131,6 @@ export function serializeBot(bot: Bot): WireBot {
     updatedAt: bot.updatedAt.toISOString(),
   }
   if (bot.type === "personal") {
-    if (bot.ownerUserId === null) {
-      throw new Error(`Bot ${bot.id} is personal but has no ownerUserId`)
-    }
     return { ...common, type: "personal", ownerUserId: bot.ownerUserId }
   }
   return { ...common, type: "shared", ownerUserId: null }

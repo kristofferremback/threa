@@ -9,7 +9,7 @@ import type { User } from "../workspaces"
 import type { AvatarService } from "../workspaces"
 import type { BotApiKeyService } from "./bot-api-key-service"
 import { serializeBot } from "./handlers"
-import { botId, botChannelAccessId } from "../../lib/id"
+import { botId } from "../../lib/id"
 import { generateSlug } from "@threa/backend-common"
 import { sql, withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
@@ -564,13 +564,10 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
           }
         }
 
-        await BotChannelAccessRepository.grantAccess(client, {
-          id: botChannelAccessId(),
-          workspaceId,
-          botId: id,
-          streamId,
-          grantedBy: actor.id,
-        })
+        // Delegate to the canonical add path so member_added events and the
+        // outbox notification fire (INV-4, INV-7). The thread→root redirect
+        // also happens here via resolveBotGrantStream.
+        await streamService.addBotToStreamOn(client, streamId, id, workspaceId, actor.id)
       })
 
       res.status(204).send()
