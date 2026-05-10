@@ -139,9 +139,7 @@ describe("API E2E Tests", () => {
 
       // Stub auth grants the full owner permission set so admin-gated UI is
       // reachable in tests; assert presence rather than the exact list.
-      expect(bootstrap.viewerPermissions).toBeInstanceOf(Array)
-      expect(bootstrap.viewerPermissions).toContain("members:write")
-      expect(bootstrap.viewerPermissions).toContain("workspace:owner")
+      expect(bootstrap.viewerPermissions).toEqual(expect.arrayContaining(["members:write", "workspace:owner"]))
     })
   })
 
