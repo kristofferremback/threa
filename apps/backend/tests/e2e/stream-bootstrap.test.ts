@@ -60,7 +60,7 @@ describe("Stream Bootstrap E2E", () => {
     const workspace = await createWorkspace(ownerClient, `Stream Bootstrap Append ${testRunId}`)
 
     const member = await loginAs(memberClient, testEmail("member-append"), "Member Append")
-    await joinWorkspace(memberClient, workspace.id, "user")
+    await joinWorkspace(memberClient, workspace.id, "member")
     const memberUserId = await getUserId(memberClient, workspace.id, member.id)
 
     const workspaceBootstrap = await getWorkspaceBootstrap(ownerClient, workspace.id)
@@ -108,7 +108,7 @@ describe("Stream Bootstrap E2E", () => {
     const workspace = await createWorkspace(ownerClient, `Stream Bootstrap Overflow ${testRunId}`)
 
     await loginAs(memberClient, testEmail("member-overflow"), "Member Overflow")
-    await joinWorkspace(memberClient, workspace.id, "user")
+    await joinWorkspace(memberClient, workspace.id, "member")
 
     const channel = await createChannel(ownerClient, workspace.id, `overflow-${testRunId}`, "public")
     await joinStream(memberClient, workspace.id, channel.id)

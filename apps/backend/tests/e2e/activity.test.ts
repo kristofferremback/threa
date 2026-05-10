@@ -119,7 +119,7 @@ describe("Activity Feed E2E", () => {
       workspaceId = workspace.id
 
       const alice = await loginAs(aliceClient, testEmail("alice"), "Alice User")
-      await joinWorkspace(aliceClient, workspaceId, "user")
+      await joinWorkspace(aliceClient, workspaceId, "member")
 
       ownerUserId = await getUserId(ownerClient, workspaceId, owner.id)
       aliceUserId = await getUserId(aliceClient, workspaceId, alice.id)
@@ -232,7 +232,7 @@ describe("Activity Feed E2E", () => {
       workspaceId = workspace.id
 
       const bob = await loginAs(bobClient, testEmail("read-bob"), "Bob User")
-      await joinWorkspace(bobClient, workspaceId, "user")
+      await joinWorkspace(bobClient, workspaceId, "member")
 
       const bobUserId = await getUserId(bobClient, workspaceId, bob.id)
 
@@ -311,7 +311,7 @@ describe("Activity Feed E2E", () => {
       const workspace = await createWorkspace(ownerClient, `Boot WS ${testRunId}`)
 
       const charlie = await loginAs(charlieClient, testEmail("boot-charlie"), "Charlie User")
-      await joinWorkspace(charlieClient, workspace.id, "user")
+      await joinWorkspace(charlieClient, workspace.id, "member")
 
       const charlieUserId = await getUserId(charlieClient, workspace.id, charlie.id)
 
@@ -352,7 +352,7 @@ describe("Activity Feed E2E", () => {
       const workspace = await createWorkspace(ownerClient, `Dedup WS ${testRunId}`)
 
       const dupe = await loginAs(dupeClient, testEmail("dedup-target"), "Dedup Target")
-      await joinWorkspace(dupeClient, workspace.id, "user")
+      await joinWorkspace(dupeClient, workspace.id, "member")
 
       const dupeUserId = await getUserId(dupeClient, workspace.id, dupe.id)
 

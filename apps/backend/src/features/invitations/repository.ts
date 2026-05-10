@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import { sql } from "../../db"
-import type { InvitationStatus, WorkspaceInvitationKind } from "@threa/types"
+import type { InvitationStatus, WorkspaceInvitableRole, WorkspaceInvitationKind } from "@threa/types"
 
 interface InvitationRow {
   id: string
@@ -24,7 +24,7 @@ export interface Invitation {
   workspaceId: string
   kind: WorkspaceInvitationKind
   email: string | null
-  role: "admin" | "user"
+  role: WorkspaceInvitableRole
   invitedBy: string
   workosInvitationId: string | null
   tokenHash: string | null
@@ -40,7 +40,7 @@ export interface InsertEmailInvitationParams {
   id: string
   workspaceId: string
   email: string
-  role: "admin" | "user"
+  role: WorkspaceInvitableRole
   invitedBy: string
   expiresAt: Date
 }
@@ -48,7 +48,7 @@ export interface InsertEmailInvitationParams {
 export interface InsertLinkInvitationParams {
   id: string
   workspaceId: string
-  role: "admin" | "user"
+  role: WorkspaceInvitableRole
   invitedBy: string
   tokenHash: string
   note: string | null

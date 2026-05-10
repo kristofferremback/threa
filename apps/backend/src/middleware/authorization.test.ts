@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { NextFunction, Request, Response } from "express"
+import type { WorkspaceRoleSlug } from "@threa/types"
 import { requireRole } from "./authorization"
 
 interface MockResponse {
@@ -7,7 +8,7 @@ interface MockResponse {
   body: unknown
 }
 
-function createReq(role?: "owner" | "admin" | "user"): Request {
+function createReq(role?: WorkspaceRoleSlug): Request {
   return {
     user: role
       ? ({
@@ -62,10 +63,10 @@ describe("requireRole", () => {
     expect(adminResult.nextCalled).toBe(true)
     expect(adminResult.res.statusCode).toBe(200)
 
-    const userResult = run(createReq("user"))
-    expect(userResult.nextCalled).toBe(false)
-    expect(userResult.res.statusCode).toBe(403)
-    expect(userResult.res.body).toEqual({ error: "Insufficient role" })
+    const memberResult = run(createReq("member"))
+    expect(memberResult.nextCalled).toBe(false)
+    expect(memberResult.res.statusCode).toBe(403)
+    expect(memberResult.res.body).toEqual({ error: "Insufficient role" })
 
     const noUserResult = run(createReq())
     expect(noUserResult.nextCalled).toBe(false)

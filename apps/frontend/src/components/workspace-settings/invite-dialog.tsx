@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { invitationsApi } from "@/api/invitations"
-import type { SendInvitationsResponse } from "@threa/types"
+import { WORKSPACE_ROLE_SLUGS, type SendInvitationsResponse, type WorkspaceInvitableRole } from "@threa/types"
 
 interface InviteDialogProps {
   workspaceId: string
@@ -23,7 +23,7 @@ interface InviteDialogProps {
 
 export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: InviteDialogProps) {
   const [emailsText, setEmailsText] = useState("")
-  const [role, setRole] = useState<"admin" | "user">("user")
+  const [role, setRole] = useState<WorkspaceInvitableRole>(WORKSPACE_ROLE_SLUGS.MEMBER)
   const [result, setResult] = useState<SendInvitationsResponse | null>(null)
 
   const sendMutation = useMutation({
@@ -43,7 +43,7 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
 
   const handleClose = () => {
     setEmailsText("")
-    setRole("user")
+    setRole(WORKSPACE_ROLE_SLUGS.MEMBER)
     setResult(null)
     onOpenChange(false)
   }
@@ -102,13 +102,13 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
 
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as "admin" | "user")}>
+              <Select value={role} onValueChange={(v) => setRole(v as WorkspaceInvitableRole)}>
                 <SelectTrigger id="role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value={WORKSPACE_ROLE_SLUGS.MEMBER}>Member</SelectItem>
+                  <SelectItem value={WORKSPACE_ROLE_SLUGS.ADMIN}>Admin</SelectItem>
                 </SelectContent>
               </Select>
             </div>

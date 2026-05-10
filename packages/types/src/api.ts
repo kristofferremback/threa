@@ -12,6 +12,7 @@ import type {
   AuthorType,
   ScheduledMessageStatus,
 } from "./constants"
+import type { WorkspaceInvitableRole } from "./workspace-permissions"
 import type { ContextBag, ContextIntent } from "./context-bag"
 import type { UserId } from "./ids"
 import type { JSONContent } from "./prosemirror"
@@ -464,7 +465,7 @@ export interface PendingInvitation {
 
 export interface SendInvitationsInput {
   emails: string[]
-  role?: "admin" | "user"
+  role?: WorkspaceInvitableRole
 }
 
 export type InvitationSkipReason = "already_user" | "pending_invitation"
@@ -477,7 +478,7 @@ export interface SendInvitationsResponse {
 // Link-based invitations
 
 export interface CreateInvitationLinkInput {
-  role: "admin" | "user"
+  role: WorkspaceInvitableRole
   /** Admin-only memo, e.g. "for Simon — sent via Signal". Optional. */
   note?: string
 }

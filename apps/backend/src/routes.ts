@@ -40,7 +40,7 @@ import {
   type ApiKeyService,
 } from "@threa/backend-common"
 import { createPublicApiAuthMiddleware, requireApiKeyScope } from "./middleware/public-api-auth"
-import { API_KEY_SCOPES } from "@threa/types"
+import { WORKSPACE_PERMISSION_SCOPES } from "@threa/types"
 import type { WorkspaceService } from "./features/workspaces"
 import type { StreamService } from "./features/streams"
 import type { EventService } from "./features/messaging"
@@ -484,37 +484,37 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post(
     "/api/v1/workspaces/:workspaceId/messages/search",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH),
     publicApi.searchMessages
   )
   app.post(
     "/api/v1/workspaces/:workspaceId/memos/search",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MEMOS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MEMOS_READ),
     publicApi.searchMemos
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/memos/:memoId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MEMOS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MEMOS_READ),
     publicApi.getMemo
   )
   app.post(
     "/api/v1/workspaces/:workspaceId/attachments/search",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.ATTACHMENTS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ),
     publicApi.searchAttachments
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/attachments/:attachmentId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.ATTACHMENTS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ),
     publicApi.getAttachment
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/attachments/:attachmentId/url",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.ATTACHMENTS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ),
     publicApi.getAttachmentDownloadUrl
   )
 
@@ -522,19 +522,19 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get(
     "/api/v1/workspaces/:workspaceId/streams",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.STREAMS_READ),
     publicApi.listStreams
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/streams/:streamId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.STREAMS_READ),
     publicApi.getStream
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/streams/:streamId/members",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.STREAMS_READ),
     publicApi.listMembers
   )
 
@@ -542,31 +542,31 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get(
     "/api/v1/workspaces/:workspaceId/streams/:streamId/messages",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ),
     publicApi.listMessages
   )
   app.post(
     "/api/v1/workspaces/:workspaceId/streams/:streamId/messages",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE),
     publicApi.sendMessage
   )
   app.post(
     "/api/v1/workspaces/:workspaceId/messages/find-by-metadata",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ),
     publicApi.findMessagesByMetadata
   )
   app.patch(
     "/api/v1/workspaces/:workspaceId/messages/:messageId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE),
     publicApi.updateMessage
   )
   app.delete(
     "/api/v1/workspaces/:workspaceId/messages/:messageId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE),
     publicApi.deleteMessage
   )
 
@@ -574,7 +574,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get(
     "/api/v1/workspaces/:workspaceId/users",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.USERS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.USERS_READ),
     publicApi.listUsers
   )
 

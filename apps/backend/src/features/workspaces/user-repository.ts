@@ -1,5 +1,18 @@
+import { WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
 import type { Querier } from "../../db"
 import { sql } from "../../db"
+import { HttpError } from "../../lib/errors"
+
+const KNOWN_ROLE_SLUGS: ReadonlySet<string> = new Set(WORKSPACE_USER_ROLES)
+
+function assertWorkspaceRoleSlug(value: string, userId: string): asserts value is WorkspaceRoleSlug {
+  if (!KNOWN_ROLE_SLUGS.has(value)) {
+    throw new HttpError(`User ${userId} has unrecognized role slug "${value}"`, {
+      status: 500,
+      code: "UNRECOGNIZED_ROLE_SLUG",
+    })
+  }
+}
 
 interface UserRow {
   id: string
@@ -29,7 +42,7 @@ export interface User {
   workspaceId: string
   workosUserId: string
   email: string
-  role: "owner" | "admin" | "user"
+  role: WorkspaceRoleSlug
   slug: string
   name: string
   description: string | null
@@ -49,7 +62,7 @@ export interface InsertUserParams {
   workosUserId: string
   email: string
   name: string
-  role: "owner" | "admin" | "user"
+  role: WorkspaceRoleSlug
   slug: string
   timezone?: string | null
   locale?: string | null
@@ -82,12 +95,13 @@ const SELECT_FIELDS_WITH_ALIAS = `
 `
 
 function mapRowToUser(row: UserRow): User {
+  assertWorkspaceRoleSlug(row.role, row.id)
   return {
     id: row.id,
     workspaceId: row.workspace_id,
     workosUserId: row.workos_user_id,
     email: row.email,
-    role: row.role as User["role"],
+    role: row.role,
     slug: row.slug,
     name: row.name,
     description: row.description,

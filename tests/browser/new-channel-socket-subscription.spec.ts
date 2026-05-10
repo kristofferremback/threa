@@ -98,7 +98,7 @@ test.describe("New Channel Socket Subscription", () => {
 
       // Join workspace via dev endpoint
       const joinWorkspaceRes = await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "user" },
+        data: { role: "member" },
       })
       expect(joinWorkspaceRes.ok()).toBeTruthy()
 
@@ -202,7 +202,7 @@ test.describe("New Channel Socket Subscription", () => {
       userB = await loginInNewContext(browser, userBEmail, userBName)
 
       const joinWorkspaceRes = await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "user" },
+        data: { role: "member" },
       })
       await expectApiOk(joinWorkspaceRes, "Join workspace for preview subscription test")
       await waitForWorkspaceProvisioned(userB.page, workspaceId)

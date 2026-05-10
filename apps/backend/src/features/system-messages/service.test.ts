@@ -149,7 +149,7 @@ describe("SystemMessageService", () => {
 
       spyOn(UserRepository, "listByWorkspace").mockResolvedValue([
         fakeUser({ id: USER_A, role: "owner", name: "Alice" }),
-        fakeUser({ id: USER_B, role: "user", name: "Bob" }),
+        fakeUser({ id: USER_B, role: "member", name: "Bob" }),
       ] as never)
       spyOn(StreamRepository, "list").mockResolvedValue([streamA])
 
@@ -210,7 +210,7 @@ describe("SystemMessageService", () => {
         id: INVITATION_ID,
         workspaceId: WORKSPACE_ID,
         email: "newuser@test.com",
-        role: "user",
+        role: "member",
         invitedBy: INVITER_ID,
         workosInvitationId: null,
         status: "accepted",
@@ -247,7 +247,7 @@ describe("SystemMessageService", () => {
         id: INVITATION_ID,
         workspaceId: WORKSPACE_ID,
         email: "anonymous@test.com",
-        role: "user",
+        role: "member",
         invitedBy: INVITER_ID,
         workosInvitationId: null,
         status: "accepted",

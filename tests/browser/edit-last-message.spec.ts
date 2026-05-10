@@ -120,7 +120,7 @@ test.describe("Edit last message (ArrowUp)", () => {
     // ── User B: join and send many messages via API to push A's message off screen ──
     const userB = await loginInNewContext(browser, `elm-b-${testId}@example.com`, `ELM B ${testId}`)
 
-    await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "user" } })
+    await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "member" } })
     await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
 
     // Send 20 messages via API (much faster than UI interactions)
@@ -208,7 +208,7 @@ test.describe("Edit last message (ArrowUp)", () => {
     // ── User B: join workspace + channel, flood with 60 filler messages ──
     // Fillers must come from a different user so User A's only message remains the old one.
     const userB = await loginInNewContext(browser, `elm-win-b-${testId}@example.com`, `ELM Win B ${testId}`)
-    await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "user" } })
+    await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "member" } })
     await userB.page.request.post(`/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`)
 
     const fillerText = `Filler Win ${testId}`

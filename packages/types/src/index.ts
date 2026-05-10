@@ -30,7 +30,6 @@ export {
   type CommandEventType,
   // Workspace roles
   WORKSPACE_USER_ROLES,
-  type WorkspaceUserRole,
   // Invitation statuses
   INVITATION_STATUSES,
   type InvitationStatus,
@@ -466,19 +465,33 @@ export {
 
 // API Keys
 export {
-  API_KEY_SCOPES,
-  API_KEY_PERMISSIONS,
   SENT_VIA_API_PREFIX,
   sentViaApiKey,
   isSentViaApi,
-  type ApiKeyScope,
-  type ApiKeyPermission,
+  API_KEY_ELIGIBLE_SCOPES,
+  API_KEY_ELIGIBLE_PICKER_SCOPES,
   type UserApiKey,
   type CreateUserApiKeyResponse,
   BOT_KEY_PREFIX,
   type BotApiKey,
   type CreateBotApiKeyResponse,
 } from "./api-keys"
+
+// Workspace permissions catalog
+export {
+  WORKSPACE_PERMISSION_SCOPES,
+  WORKSPACE_PERMISSIONS,
+  WORKSPACE_ROLE_SLUGS,
+  WORKSPACE_ROLE_DEFINITIONS,
+  WORKSPACE_INVITABLE_ROLES,
+  permissionsForRole,
+  roleRank,
+  type WorkspacePermission,
+  type WorkspacePermissionSlug,
+  type WorkspaceRoleSlug,
+  type WorkspaceInvitableRole,
+  type WorkspaceRoleDefinition,
+} from "./workspace-permissions"
 
 // Context bag primitive
 export {

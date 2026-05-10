@@ -212,7 +212,7 @@ test.describe("Message share — cross-stream picker modal (Slice 2)", () => {
     const otherUser = await loginInNewContext(browser, memberEmail, `Share Priv Other ${testId}`)
     try {
       await expectApiOk(
-        await otherUser.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "user" } }),
+        await otherUser.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "member" } }),
         "User B join workspace"
       )
       const memberId = await getWorkspaceUserIdByEmail(page, workspaceId, memberEmail)
@@ -305,7 +305,7 @@ test.describe("Message share — cross-stream picker modal (Slice 2)", () => {
     const otherUser = await loginInNewContext(browser, memberEmail, `Share Priv Cancel ${testId}`)
     try {
       await expectApiOk(
-        await otherUser.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "user" } }),
+        await otherUser.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "member" } }),
         "User B join workspace"
       )
       const memberId = await getWorkspaceUserIdByEmail(page, workspaceId, memberEmail)

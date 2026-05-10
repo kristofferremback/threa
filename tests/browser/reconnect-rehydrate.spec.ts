@@ -56,7 +56,7 @@ async function createChannel(
 
 async function joinWorkspaceAndChannel(page: import("@playwright/test").Page, workspaceId: string, streamId: string) {
   await expectApiOk(
-    await page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "user" } }),
+    await page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "member" } }),
     "Join workspace"
   )
   await expectApiOk(await page.request.post(`/api/workspaces/${workspaceId}/streams/${streamId}/join`), "Join channel")
@@ -297,7 +297,7 @@ test.describe("Reconnect Rehydration", () => {
     const otherUser = await loginInNewContext(browser, memberEmail, `Reconnect Access ${testId}`)
     try {
       await expectApiOk(
-        await otherUser.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "user" } }),
+        await otherUser.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, { data: { role: "member" } }),
         "Join workspace"
       )
       const memberId = await getWorkspaceUserIdByEmail(page, workspaceId, memberEmail)
