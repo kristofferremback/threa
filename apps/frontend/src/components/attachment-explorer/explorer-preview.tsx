@@ -119,7 +119,7 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
           {renderMedia()}
         </div>
 
-        <div className="space-y-3 border-t p-4">
+        <div className="space-y-3 border-t p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:pb-4">
           <div className="space-y-1">
             <div className="break-all text-sm font-medium">{item.filename}</div>
             <div className="text-xs text-muted-foreground">
