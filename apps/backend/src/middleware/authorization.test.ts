@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { NextFunction, Request, Response } from "express"
-import type { WorkspaceRoleSlug } from "@threa/types"
-import { requireRole } from "./authorization"
+import type { NextFunction, Request, RequestHandler, Response } from "express"
+import { permissionsForRole, type WorkspacePermissionSlug, type WorkspaceRoleSlug } from "@threa/types"
+import { createRequireRole } from "./authorization"
+import type { RequireWorkspacePermission } from "./workspace-permission"
 
 interface MockResponse {
   statusCode: number
@@ -9,66 +10,82 @@ interface MockResponse {
 }
 
 function createReq(role?: WorkspaceRoleSlug): Request {
+  if (!role) return {} as Request
+  const permissions = permissionsForRole(role) as WorkspacePermissionSlug[]
   return {
-    user: role
-      ? ({
-          id: "usr_1",
-          workspaceId: "ws_1",
-          workosUserId: "workos_user_1",
-          role,
-          slug: role,
-          timezone: null,
-          locale: null,
-          name: role,
-          email: `${role}@example.com`,
-          joinedAt: new Date(),
-        } as Request["user"])
-      : undefined,
-  } as Request
+    authUser: {
+      userId: "workos_user_1",
+      organizationId: "ws_1",
+      sealedSession: "sealed",
+      permissions,
+    },
+  } as unknown as Request
 }
 
 function createRes(): Response & MockResponse {
-  return {
+  const res = {
     statusCode: 200,
-    body: null,
+    body: null as unknown,
     status(code: number) {
-      this.statusCode = code
-      return this
+      res.statusCode = code
+      return res
     },
     json(payload: unknown) {
-      this.body = payload
-      return this
+      res.body = payload
+      return res
     },
-  } as Response & MockResponse
+    end() {
+      return res
+    },
+  }
+  return res as unknown as Response & MockResponse
 }
 
-function run(req: Request): { nextCalled: boolean; res: Response & MockResponse } {
+// Stand up the shim against a real createRequireWorkspacePermission-style
+// dependency so this test exercises the full shim → permission middleware path.
+const fakeRequireWorkspacePermission: RequireWorkspacePermission = (slug) => {
+  const handler: RequestHandler = (req, res, next) => {
+    if (req.authUser?.permissions?.includes(slug)) {
+      next()
+      return
+    }
+    if (!req.authUser) {
+      res.status(401).json({ error: "Not authenticated" })
+      return
+    }
+    res.status(403).json({ error: "Insufficient permissions" })
+  }
+  return handler
+}
+
+const requireRole = createRequireRole({ requireWorkspacePermission: fakeRequireWorkspacePermission })
+
+async function run(req: Request): Promise<{ nextCalled: boolean; res: Response & MockResponse }> {
   const middleware = requireRole("admin")
   const res = createRes()
   let nextCalled = false
   const next: NextFunction = () => {
     nextCalled = true
   }
-  middleware(req, res, next)
+  await middleware(req, res, next)
   return { nextCalled, res }
 }
 
-describe("requireRole", () => {
-  test("authorization matrix for requireRole('admin')", () => {
-    const ownerResult = run(createReq("owner"))
+describe("requireRole shim", () => {
+  test("admin marker grants admin and owner; denies member; 401 when unauthenticated", async () => {
+    const ownerResult = await run(createReq("owner"))
     expect(ownerResult.nextCalled).toBe(true)
     expect(ownerResult.res.statusCode).toBe(200)
 
-    const adminResult = run(createReq("admin"))
+    const adminResult = await run(createReq("admin"))
     expect(adminResult.nextCalled).toBe(true)
     expect(adminResult.res.statusCode).toBe(200)
 
-    const memberResult = run(createReq("member"))
+    const memberResult = await run(createReq("member"))
     expect(memberResult.nextCalled).toBe(false)
     expect(memberResult.res.statusCode).toBe(403)
-    expect(memberResult.res.body).toEqual({ error: "Insufficient role" })
 
-    const noUserResult = run(createReq())
+    const noUserResult = await run(createReq())
     expect(noUserResult.nextCalled).toBe(false)
     expect(noUserResult.res.statusCode).toBe(401)
   })

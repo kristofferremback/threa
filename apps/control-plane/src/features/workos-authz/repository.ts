@@ -157,23 +157,27 @@ export const WorkosAuthzRepository = {
    * An empty snapshot deletes every (non-fresher) row for the org — that's
    * intentional: a successful WorkOS list returning zero memberships means the
    * org genuinely has none.
+   *
+   * Returns the deleted rows so the caller can emit fan-out events for each
+   * removal.
    */
-  async reconcileOrganizationSnapshot(
+  async reconcileOrganizationSnapshotReturning(
     db: Querier,
     params: {
       workosOrganizationId: string
       snapshotMembershipIds: string[]
       observedAt: Date
     }
-  ): Promise<number> {
-    const result = await db.query(
+  ): Promise<WorkosOrgMembershipRow[]> {
+    const result = await db.query<WorkosOrgMembershipRow>(
       `DELETE FROM workos_organization_memberships
        WHERE workos_organization_id = $1
          AND organization_membership_id <> ALL($2::text[])
-         AND last_event_at <= $3`,
+         AND last_event_at <= $3
+       RETURNING ${SELECT_FIELDS}`,
       [params.workosOrganizationId, params.snapshotMembershipIds, params.observedAt]
     )
-    return result.rowCount ?? 0
+    return result.rows
   },
 
   async listByOrganization(db: Querier, workosOrganizationId: string): Promise<WorkosOrgMembershipRow[]> {

@@ -1,7 +1,13 @@
 import type { Pool } from "pg"
-import { logger, type WorkosOrgService } from "@threa/backend-common"
+import { logger, OutboxRepository, withTransaction, type WorkosOrgService } from "@threa/backend-common"
 import { WorkspaceRegistryRepository } from "../workspaces"
 import { WorkosAuthzRepository } from "./repository"
+import {
+  OUTBOX_AUTHZ_MEMBERSHIP_CHANGED,
+  OUTBOX_AUTHZ_MEMBERSHIP_REMOVED,
+  type AuthzMembershipChangedPayload,
+  type AuthzMembershipRemovedPayload,
+} from "./fan-out"
 import type { WorkosEventPollerLock } from "../../lib/workos-event-poller-lock"
 
 interface Dependencies {
@@ -49,25 +55,58 @@ export class WorkosAuthzBackfill {
         // survives the reconcile delete below.
         const observedAt = new Date()
         const memberships = await this.workosOrgService.listOrganizationMemberships(orgId)
-        for (const m of memberships) {
-          await WorkosAuthzRepository.upsertMembershipFromBackfill(this.pool, {
-            organizationMembershipId: m.id,
-            workosOrganizationId: m.organizationId,
-            workosUserId: m.userId,
-            status: m.status,
-            roleSlugs: m.roleSlugs,
+        const reconciled = await withTransaction(this.pool, async (client) => {
+          for (const m of memberships) {
+            await WorkosAuthzRepository.upsertMembershipFromBackfill(client, {
+              organizationMembershipId: m.id,
+              workosOrganizationId: m.organizationId,
+              workosUserId: m.userId,
+              status: m.status,
+              roleSlugs: m.roleSlugs,
+              observedAt,
+            })
+          }
+          // Reconcile inside the same tx so the regional fan-out for missing
+          // members is committed atomically with the upsert events above.
+          const removedRows = await WorkosAuthzRepository.reconcileOrganizationSnapshotReturning(client, {
+            workosOrganizationId: orgId,
+            snapshotMembershipIds: memberships.map((m) => m.id),
             observedAt,
           })
-          membershipsUpserted++
-        }
-        // Reconcile: drop mirror rows for memberships WorkOS no longer reports.
-        // Without this, a missed delete event leaves stale rows in the mirror
-        // that no rerun of backfill would ever clean up.
-        membershipsRemoved += await WorkosAuthzRepository.reconcileOrganizationSnapshot(this.pool, {
-          workosOrganizationId: orgId,
-          snapshotMembershipIds: memberships.map((m) => m.id),
-          observedAt,
+
+          const observedAtIso = observedAt.toISOString()
+          type AuthzOutboxEntry =
+            | { eventType: typeof OUTBOX_AUTHZ_MEMBERSHIP_CHANGED; payload: AuthzMembershipChangedPayload }
+            | { eventType: typeof OUTBOX_AUTHZ_MEMBERSHIP_REMOVED; payload: AuthzMembershipRemovedPayload }
+          const outboxEntries: AuthzOutboxEntry[] = [
+            ...memberships.map(
+              (m): AuthzOutboxEntry => ({
+                eventType: OUTBOX_AUTHZ_MEMBERSHIP_CHANGED,
+                payload: {
+                  workosOrganizationId: m.organizationId,
+                  workosUserId: m.userId,
+                  roleSlugs: m.roleSlugs,
+                  status: m.status,
+                  lastEventAt: observedAtIso,
+                },
+              })
+            ),
+            ...removedRows.map(
+              (removed): AuthzOutboxEntry => ({
+                eventType: OUTBOX_AUTHZ_MEMBERSHIP_REMOVED,
+                payload: {
+                  workosOrganizationId: removed.workos_organization_id,
+                  workosUserId: removed.workos_user_id,
+                  eventCreatedAt: observedAtIso,
+                },
+              })
+            ),
+          ]
+          await OutboxRepository.insertMany(client, outboxEntries)
+          return removedRows.length
         })
+        membershipsUpserted += memberships.length
+        membershipsRemoved += reconciled
       } catch (err) {
         hadErrors = true
         logger.error({ err, organizationId: orgId }, "Failed to backfill WorkOS memberships for organization")

@@ -117,6 +117,22 @@ export const WorkspaceRegistryRepository = {
   },
 
   /**
+   * Look up all workspaces registered against a WorkOS organization. The fan-out
+   * path uses this to translate a WorkOS membership event (keyed on
+   * organization id) into the set of regional backends that need a mirror update.
+   */
+  async listByWorkosOrganizationId(
+    db: Querier,
+    workosOrganizationId: string
+  ): Promise<Array<{ id: string; region: string }>> {
+    const result = await db.query<{ id: string; region: string }>(
+      `SELECT id, region FROM workspace_registry WHERE workos_organization_id = $1`,
+      [workosOrganizationId]
+    )
+    return result.rows
+  },
+
+  /**
    * List the distinct WorkOS organization ids registered for any workspace.
    * Used by the WorkOS authz backfill to enumerate orgs without paying for
    * the membership-count join in {@link listAllWithMemberCounts}.

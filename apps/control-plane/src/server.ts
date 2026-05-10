@@ -36,6 +36,11 @@ import {
   WorkosAuthzBackfill,
   WorkosAuthzPoller,
   WORKOS_EVENT_POLLER_NAME,
+  RegionalAuthzFanOut,
+  OUTBOX_AUTHZ_MEMBERSHIP_CHANGED,
+  OUTBOX_AUTHZ_MEMBERSHIP_REMOVED,
+  type AuthzMembershipChangedPayload,
+  type AuthzMembershipRemovedPayload,
 } from "./features/workos-authz"
 import { WorkosEventPollerLock } from "./lib/workos-event-poller-lock"
 
@@ -93,6 +98,8 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     batchSize: 50,
   })
 
+  const authzFanOut = new RegionalAuthzFanOut({ pool, regionalClient })
+
   const processEvents = async () => {
     await cursorLock.run(async (cursor, processedIds) => {
       const events = await OutboxRepository.fetchAfterId(pool, cursor, cursorLock.batchSize, processedIds)
@@ -102,7 +109,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
       let lastError: Error | undefined
       for (const event of events) {
         try {
-          await dispatchEvent(event, { workspaceService })
+          await dispatchEvent(event, { workspaceService, authzFanOut })
           seen.push(event.id)
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err))
@@ -250,7 +257,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
 /** Dispatch a single outbox event to the appropriate service method (INV-34) */
 async function dispatchEvent(
   event: OutboxEvent,
-  deps: { workspaceService: ControlPlaneWorkspaceService }
+  deps: { workspaceService: ControlPlaneWorkspaceService; authzFanOut: RegionalAuthzFanOut }
 ): Promise<void> {
   const payload = event.payload as unknown
   switch (event.eventType) {
@@ -259,6 +266,12 @@ async function dispatchEvent(
       break
     case OUTBOX_KV_SYNC:
       await deps.workspaceService.syncToKv(payload as KvSyncPayload)
+      break
+    case OUTBOX_AUTHZ_MEMBERSHIP_CHANGED:
+      await deps.authzFanOut.handleMembershipChanged(payload as AuthzMembershipChangedPayload)
+      break
+    case OUTBOX_AUTHZ_MEMBERSHIP_REMOVED:
+      await deps.authzFanOut.handleMembershipRemoved(payload as AuthzMembershipRemovedPayload)
       break
     default:
       logger.warn({ eventType: event.eventType }, "Unknown outbox event type")

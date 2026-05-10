@@ -86,6 +86,85 @@ export class RegionalClient {
   }
 
   /**
+   * Push a membership upsert to the regional `workspace_user_permissions`
+   * mirror used by the API-key clamp path. Body matches the regional
+   * `POST /internal/authz/memberships` discriminated-union schema.
+   */
+  async syncWorkspaceMembership(
+    region: string,
+    data: {
+      workspaceId: string
+      workosUserId: string
+      roleSlugs: string[]
+      status: string
+      lastEventAt: Date
+    }
+  ): Promise<void> {
+    const url = `${this.getRegionUrl(region)}/internal/authz/memberships`
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
+        },
+        body: JSON.stringify({
+          kind: "upsert",
+          workspaceId: data.workspaceId,
+          workosUserId: data.workosUserId,
+          roleSlugs: data.roleSlugs,
+          status: data.status,
+          lastEventAt: data.lastEventAt.toISOString(),
+        }),
+        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      logger.error({ err, region, url }, "Regional authz membership sync request failed")
+      throw err
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      logger.error({ region, status: res.status, body }, "Regional authz membership sync failed")
+      throw new Error(`Regional backend returned ${res.status}: ${body}`)
+    }
+  }
+
+  async removeWorkspaceMembership(
+    region: string,
+    data: { workspaceId: string; workosUserId: string; eventCreatedAt: Date }
+  ): Promise<void> {
+    const url = `${this.getRegionUrl(region)}/internal/authz/memberships`
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
+        },
+        body: JSON.stringify({
+          kind: "remove",
+          workspaceId: data.workspaceId,
+          workosUserId: data.workosUserId,
+          eventCreatedAt: data.eventCreatedAt.toISOString(),
+        }),
+        signal: AbortSignal.timeout(REGIONAL_REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      logger.error({ err, region, url }, "Regional authz membership removal request failed")
+      throw err
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      logger.error({ region, status: res.status, body }, "Regional authz membership removal failed")
+      throw new Error(`Regional backend returned ${res.status}: ${body}`)
+    }
+  }
+
+  /**
    * Forward a link-invitation claim from CP to the regional backend that owns
    * the row. Regional performs the atomic claim (INV-20). On 4xx, surfaces the
    * upstream error code so CP can map it to an HTTP status without parsing.

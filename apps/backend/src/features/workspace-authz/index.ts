@@ -1,0 +1,5 @@
+export { WorkspaceUserPermissionsRepository, expandRoleSlugs } from "./repository"
+export type { WorkspaceUserPermissions, UpsertParams } from "./repository"
+export { WorkspaceAuthzService } from "./service"
+export type { ApplyMembershipChangeInput, ApplyMembershipRemovalInput } from "./service"
+export { createWorkspaceAuthzHandlers } from "./handlers"

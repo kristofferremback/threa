@@ -1,21 +1,25 @@
-import type { NextFunction, Request, RequestHandler, Response } from "express"
-import { roleRank, type WorkspaceRoleSlug } from "@threa/types"
+import type { RequestHandler } from "express"
+import { WORKSPACE_PERMISSION_SCOPES, type WorkspacePermissionSlug, type WorkspaceRoleSlug } from "@threa/types"
+import type { RequireWorkspacePermission } from "./workspace-permission"
 
-export function requireRole(minimumRole: WorkspaceRoleSlug): RequestHandler {
-  const minimumLevel = roleRank(minimumRole)
+function roleGate(role: WorkspaceRoleSlug): WorkspacePermissionSlug {
+  switch (role) {
+    case "owner":
+      return WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER
+    case "admin":
+      return WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN
+    case "member":
+      // messages:read is granted to every recognized role, so it passes for any active member.
+      return WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ
+  }
+}
 
-  return function requireRoleMiddleware(req: Request, res: Response, next: NextFunction): void {
-    const user = req.user
-    if (!user) {
-      res.status(401).json({ error: "Not authenticated" })
-      return
-    }
+interface Dependencies {
+  requireWorkspacePermission: RequireWorkspacePermission
+}
 
-    if (roleRank(user.role) < minimumLevel) {
-      res.status(403).json({ error: "Insufficient role" })
-      return
-    }
-
-    next()
+export function createRequireRole({ requireWorkspacePermission }: Dependencies) {
+  return function requireRole(minimumRole: WorkspaceRoleSlug): RequestHandler {
+    return requireWorkspacePermission(roleGate(minimumRole))
   }
 }
