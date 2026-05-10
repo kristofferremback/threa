@@ -1,7 +1,7 @@
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, userEvent, waitFor } from "@/test"
+import { render, screen, fireEvent, userEvent, waitFor } from "@/test"
 import { AttachmentExplorer } from "./attachment-explorer"
 import * as attachmentsApiModule from "@/api/attachments"
 import * as workspaceStoreModule from "@/stores/workspace-store"
@@ -143,22 +143,23 @@ describe("AttachmentExplorer", () => {
   })
 
   it("autocorrect-style word replacement substitutes the word, not concatenates it", async () => {
-    // Mobile autocorrect replaces the whole word in one input event with
-    // inputType "insertReplacementText". Simulating that here would require
-    // beforeinput plumbing; instead verify the local-state contract: a
-    // single onChange that swaps the value to the corrected word leaves
-    // the input showing exactly the corrected word.
+    // Mobile autocorrect (iOS Safari, Android Chrome) replaces the misspelled
+    // word in a single input event with `inputType: "insertReplacementText"`,
+    // emitted as one onChange that swaps the whole value. Seed the input
+    // with "gurl", then fire one change to "girl" — the same shape the
+    // browser produces — and assert the local-state contract: the input
+    // shows exactly the corrected word, not the concatenated "Guelirl".
     vi.spyOn(attachmentsApiModule.attachmentsApi, "search").mockResolvedValue({ items: [], nextCursor: null })
 
     renderExplorer("/w/ws_1?explorer=")
 
     const input = (await screen.findByLabelText("Search attachments")) as HTMLInputElement
+
     const user = userEvent.setup()
     await user.type(input, "gurl")
     expect(input.value).toBe("gurl")
 
-    await user.clear(input)
-    await user.type(input, "girl")
+    fireEvent.change(input, { target: { value: "girl" } })
     expect(input.value).toBe("girl")
   })
 
