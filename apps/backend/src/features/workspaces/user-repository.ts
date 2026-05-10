@@ -1,6 +1,15 @@
-import type { WorkspaceRoleSlug } from "@threa/types"
+import { WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
 import type { Querier } from "../../db"
 import { sql } from "../../db"
+
+const KNOWN_ROLE_SLUGS: ReadonlySet<string> = new Set(WORKSPACE_USER_ROLES)
+
+function assertWorkspaceRoleSlug(value: string, userId: string): WorkspaceRoleSlug {
+  if (!KNOWN_ROLE_SLUGS.has(value)) {
+    throw new Error(`User ${userId} has unrecognized role slug "${value}"`)
+  }
+  return value as WorkspaceRoleSlug
+}
 
 interface UserRow {
   id: string
@@ -88,7 +97,7 @@ function mapRowToUser(row: UserRow): User {
     workspaceId: row.workspace_id,
     workosUserId: row.workos_user_id,
     email: row.email,
-    role: row.role as User["role"],
+    role: assertWorkspaceRoleSlug(row.role, row.id),
     slug: row.slug,
     name: row.name,
     description: row.description,
