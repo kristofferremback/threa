@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
+import { useQuery, type UseQueryResult } from "@tanstack/react-query"
 import { categoryFromMime } from "@threa/types"
-import { Download, ExternalLink, Hash } from "lucide-react"
-import { attachmentsApi, type AttachmentSearchItem } from "@/api/attachments"
+import { Check, ChevronDown, ChevronUp, Copy, Download, ExternalLink, Hash } from "lucide-react"
+import { attachmentsApi, type AttachmentExtractionContent, type AttachmentSearchItem } from "@/api/attachments"
 import { Button } from "@/components/ui/button"
 import { useFormattedDate } from "@/hooks"
 import { stripMarkdownToInline } from "@/lib/markdown"
@@ -19,6 +20,82 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
   const [rawUrl, setRawUrl] = useState<string | null>(null)
   const [processedUrl, setProcessedUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [isTruncated, setIsTruncated] = useState(false)
+  const previewRef = useRef<HTMLPreElement | null>(null)
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Tracks which attachment is currently selected so handleCopy can drop
+  // post-await state writes (setCopied, timer) when the user switched items
+  // mid-flight.
+  const currentAttachmentIdRef = useRef<string | null>(item?.id ?? null)
+
+  // Reset per-item UI state so a fresh selection never inherits the previous
+  // item's expanded view or "Copied" badge.
+  useEffect(() => {
+    currentAttachmentIdRef.current = item?.id ?? null
+    setExpanded(false)
+    setCopied(false)
+    setIsTruncated(false)
+    if (copyResetTimerRef.current) {
+      clearTimeout(copyResetTimerRef.current)
+      copyResetTimerRef.current = null
+    }
+  }, [item?.id])
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+    }
+  }, [])
+
+  // Hide the Expand button when the line-clamped preview already fits the
+  // full content — toggling it would just rerender the same text. Re-measures
+  // on resize so the panel-resize handle keeps the button in sync.
+  useLayoutEffect(() => {
+    if (expanded) return
+    const el = previewRef.current
+    if (!el) return
+    const measure = () => setIsTruncated(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [expanded, item?.id, item?.extraction?.summary])
+
+  const attachmentId = item?.id
+  const fullExtraction = useQuery<AttachmentExtractionContent>({
+    queryKey: ["attachment-extraction", workspaceId, attachmentId],
+    queryFn: () => {
+      if (!attachmentId) throw new Error("Missing attachment id")
+      return attachmentsApi.getExtraction(workspaceId, attachmentId)
+    },
+    enabled: Boolean(attachmentId) && expanded,
+    staleTime: 5 * 60_000,
+  })
+
+  const handleCopy = useCallback(async () => {
+    if (!item) return
+    const copiedAttachmentId = item.id
+    try {
+      const data = fullExtraction.data ?? (await attachmentsApi.getExtraction(workspaceId, item.id))
+      const text = data.fullText ?? data.summary
+      await navigator.clipboard.writeText(text)
+      // Drop the result if the user switched attachments while we were awaiting
+      // the fetch or the clipboard write — otherwise the badge and reset timer
+      // would attach to the newly selected item.
+      if (currentAttachmentIdRef.current !== copiedAttachmentId) return
+      setCopied(true)
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+      copyResetTimerRef.current = setTimeout(() => {
+        setCopied(false)
+        copyResetTimerRef.current = null
+      }, 2000)
+    } catch {
+      // Clipboard API unavailable or fetch failed — silent: the user can still
+      // open the original via the Download button if they need the contents.
+    }
+  }, [item, workspaceId, fullExtraction.data])
 
   const category = item ? categoryFromMime(item.mimeType) : null
 
@@ -137,10 +214,52 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
 
           {item.extraction?.summary ? (
             <div className="space-y-1">
-              <div className="text-xs font-medium text-muted-foreground">Extract</div>
-              <p className="line-clamp-5 text-xs leading-relaxed text-foreground/80">
-                {stripMarkdownToInline(item.extraction.summary)}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-medium text-muted-foreground">Extract</div>
+                <div className="flex items-center gap-1">
+                  {isTruncated || expanded ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setExpanded((v) => !v)}
+                      aria-expanded={expanded}
+                    >
+                      {expanded ? (
+                        <>
+                          <ChevronUp className="h-3 w-3" />
+                          Collapse
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-3 w-3" />
+                          Expand
+                        </>
+                      )}
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={handleCopy}
+                    aria-label="Copy full extraction"
+                  >
+                    {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+              </div>
+              {expanded ? (
+                <ExpandedExtract item={item} query={fullExtraction} />
+              ) : (
+                <pre
+                  ref={previewRef}
+                  className="line-clamp-5 whitespace-pre-wrap rounded-card bg-muted/40 p-3 text-xs leading-relaxed text-foreground/80"
+                >
+                  {stripMarkdownToInline(item.extraction.summary)}
+                </pre>
+              )}
             </div>
           ) : null}
 
@@ -179,5 +298,24 @@ export function ExplorerPreview({ workspaceId, item }: ExplorerPreviewProps) {
         </div>
       </div>
     </div>
+  )
+}
+
+interface ExpandedExtractProps {
+  item: AttachmentSearchItem
+  query: UseQueryResult<AttachmentExtractionContent>
+}
+
+function ExpandedExtract({ item, query }: ExpandedExtractProps) {
+  if (query.isLoading) {
+    return <p className="text-xs leading-relaxed text-muted-foreground">Loading…</p>
+  }
+  if (query.isError) {
+    return <p className="text-xs leading-relaxed text-muted-foreground">Couldn't load the full extract.</p>
+  }
+  return (
+    <pre className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap rounded-card bg-muted/40 p-3 text-xs leading-relaxed text-foreground/80">
+      {stripMarkdownToInline(query.data?.fullText ?? query.data?.summary ?? item.extraction?.summary ?? "")}
+    </pre>
   )
 }

@@ -161,7 +161,10 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
           <Search className="h-4 w-4 flex-none text-muted-foreground" aria-hidden />
         )}
         <Input
-          autoFocus={mode === "modal"}
+          // Skip autoFocus on mobile — it pops the on-screen keyboard the
+          // moment the explorer mounts, which is jarring for a surface the
+          // user often opens just to browse.
+          autoFocus={mode === "modal" && !isMobile}
           value={filters.queryText}
           onChange={(e) => update({ queryText: e.target.value })}
           placeholder="Search filename, content, or use “quoted phrase” for exact"

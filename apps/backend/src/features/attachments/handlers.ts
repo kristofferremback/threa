@@ -4,6 +4,7 @@ import type { Pool } from "pg"
 import { buildContentDisposition, type AttachmentService } from "./service"
 import { isAttachmentReadableViaShareOrReference } from "./access"
 import { AttachmentRepository, type AttachmentSearchCursor, type AttachmentSearchRow } from "./repository"
+import { AttachmentExtractionRepository } from "./extraction-repository"
 import type { StreamService } from "../streams"
 import { VideoTranscodeJobRepository } from "./video"
 import type { StorageProvider } from "../../lib/storage/s3-client"
@@ -148,6 +149,44 @@ export function createAttachmentHandlers({ attachmentService, streamService, sto
 
       await attachmentService.delete(attachmentId)
       res.status(204).send()
+    },
+
+    /**
+     * Return the full extracted text for an attachment so the explorer
+     * preview pane can show the complete content (and copy it). Reuses the
+     * same access fast-path as `getDownloadUrl` — direct stream access first,
+     * then share-grant + inline-reference fallback.
+     */
+    async getExtraction(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+      const { attachmentId } = req.params
+
+      const attachment = await attachmentService.getById(attachmentId)
+      if (!attachment || attachment.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Attachment not found" })
+      }
+
+      if (attachment.streamId) {
+        const accessible = await streamService.tryAccess(attachment.streamId, workspaceId, userId)
+        if (!accessible) {
+          const granted = await isAttachmentReadableViaShareOrReference(pool, attachment, workspaceId, userId)
+          if (!granted) {
+            return res.status(403).json({ error: "Access denied" })
+          }
+        }
+      }
+
+      const extraction = await AttachmentExtractionRepository.findByAttachmentId(pool, attachmentId)
+      if (!extraction) {
+        return res.status(404).json({ error: "Extraction not found" })
+      }
+
+      res.json({
+        contentType: extraction.contentType,
+        summary: extraction.summary,
+        fullText: extraction.fullText,
+      })
     },
 
     /**
