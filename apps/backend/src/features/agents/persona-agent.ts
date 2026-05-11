@@ -33,7 +33,7 @@ import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
 import { resolveBagForStream, persistSnapshot, appendBagToSystemPrompt, type ResolvedBag } from "./context-bag"
-import { createMemoizedGithubClient } from "./tools"
+import { createMemoizedGithubClient, createMemoizedLinearClient } from "./tools"
 import { AgentRuntime, SessionTraceObserver, OtelObserver, type NewMessageInfo } from "./runtime"
 import {
   SUPERSEDE_RESPONSE_VALIDATOR_MAX_TOKENS,
@@ -436,6 +436,9 @@ export class PersonaAgent {
         const githubDeps = workspaceIntegrationService
           ? { workspaceId, getClient: createMemoizedGithubClient(workspaceIntegrationService, workspaceId) }
           : undefined
+        const linearDeps = workspaceIntegrationService
+          ? { workspaceId, getClient: createMemoizedLinearClient(workspaceIntegrationService, workspaceId) }
+          : undefined
 
         const tools = buildToolSet({
           enabledTools: persona.enabledTools,
@@ -445,6 +448,7 @@ export class PersonaAgent {
           runWorkspaceAgent,
           workspace: workspaceDeps,
           github: githubDeps,
+          linear: linearDeps,
           supportsVision: modelRegistry.supportsVision(persona.model),
         })
 

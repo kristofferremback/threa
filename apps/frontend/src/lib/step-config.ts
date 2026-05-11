@@ -12,6 +12,7 @@ import {
   FileText,
   Building2,
   Github,
+  CircleDot,
   MessageSquare,
   Wrench,
   AlertTriangle,
@@ -89,6 +90,14 @@ export const STEP_DISPLAY_CONFIG: Record<AgentStepType, StepDisplayConfig> = {
     hue: 210,
     saturation: 10,
     lightness: 25,
+  },
+  linear_access: {
+    label: "Linear",
+    inlineLabel: "Reading Linear...",
+    icon: CircleDot,
+    hue: 238,
+    saturation: 56,
+    lightness: 60,
   },
   message_sent: {
     label: "Response",
