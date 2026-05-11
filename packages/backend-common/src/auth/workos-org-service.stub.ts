@@ -117,10 +117,61 @@ export class StubWorkosOrgService implements WorkosOrgService {
     userId: string
     roleSlug: string
   }): Promise<void> {
+    const memberships = this.membershipsByOrg.get(params.organizationId) ?? []
+    const existing = memberships.find((m) => m.userId === params.userId)
+    if (existing) {
+      existing.roleSlugs = [params.roleSlug]
+      existing.updatedAt = new Date()
+    } else {
+      memberships.push({
+        id: `om_stub_${ulid()}`,
+        organizationId: params.organizationId,
+        userId: params.userId,
+        status: "active",
+        roleSlugs: [params.roleSlug],
+        updatedAt: new Date(),
+      })
+      this.membershipsByOrg.set(params.organizationId, memberships)
+    }
     logger.info(
       { organizationId: params.organizationId, userId: params.userId, roleSlug: params.roleSlug },
       "Stub: Ensured organization membership"
     )
+  }
+
+  async changeOrganizationMembershipRole(params: {
+    organizationMembershipId: string
+    roleSlug: string
+  }): Promise<void> {
+    for (const memberships of this.membershipsByOrg.values()) {
+      const existing = memberships.find((m) => m.id === params.organizationMembershipId)
+      if (existing) {
+        existing.roleSlugs = [params.roleSlug]
+        existing.updatedAt = new Date()
+        logger.info(
+          { organizationMembershipId: params.organizationMembershipId, roleSlug: params.roleSlug },
+          "Stub: Changed organization membership role"
+        )
+        return
+      }
+    }
+    logger.warn(
+      { organizationMembershipId: params.organizationMembershipId },
+      "Stub: changeOrganizationMembershipRole called with unknown id"
+    )
+  }
+
+  async removeOrganizationMembership(organizationMembershipId: string): Promise<void> {
+    for (const [orgId, memberships] of this.membershipsByOrg) {
+      const idx = memberships.findIndex((m) => m.id === organizationMembershipId)
+      if (idx >= 0) {
+        memberships.splice(idx, 1)
+        if (memberships.length === 0) this.membershipsByOrg.delete(orgId)
+        logger.info({ organizationMembershipId }, "Stub: Removed organization membership")
+        return
+      }
+    }
+    logger.warn({ organizationMembershipId }, "Stub: removeOrganizationMembership called with unknown id")
   }
 
   async getWidgetToken(_params: { organizationId: string; userId: string; scopes: string[] }): Promise<string> {

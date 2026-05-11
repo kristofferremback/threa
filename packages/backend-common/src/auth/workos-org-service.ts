@@ -117,6 +117,13 @@ export interface WorkosOrgService {
   listOrganizationUsers(organizationId: string): Promise<WorkosUserSummary[]>
   getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null>
   ensureOrganizationMembership(params: { organizationId: string; userId: string; roleSlug: string }): Promise<void>
+  /**
+   * Update an existing membership's role. Targets `userManagement.updateOrganizationMembership`.
+   * Caller resolves `organization_membership_id` from the mirror; we don't repeat that lookup here.
+   */
+  changeOrganizationMembershipRole(params: { organizationMembershipId: string; roleSlug: string }): Promise<void>
+  /** Remove a membership. Targets `userManagement.deleteOrganizationMembership`. */
+  removeOrganizationMembership(organizationMembershipId: string): Promise<void>
   getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string>
   /**
    * List WorkOS events for the authz mirror. Returns a normalized, mirror-shaped
@@ -347,6 +354,24 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
       }
       throw error
     }
+  }
+
+  async changeOrganizationMembershipRole(params: {
+    organizationMembershipId: string
+    roleSlug: string
+  }): Promise<void> {
+    await this.workos.userManagement.updateOrganizationMembership(params.organizationMembershipId, {
+      roleSlug: params.roleSlug,
+    })
+    logger.info(
+      { organizationMembershipId: params.organizationMembershipId, roleSlug: params.roleSlug },
+      "Changed WorkOS organization membership role"
+    )
+  }
+
+  async removeOrganizationMembership(organizationMembershipId: string): Promise<void> {
+    await this.workos.userManagement.deleteOrganizationMembership(organizationMembershipId)
+    logger.info({ organizationMembershipId }, "Removed WorkOS organization membership")
   }
 
   async getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string> {
