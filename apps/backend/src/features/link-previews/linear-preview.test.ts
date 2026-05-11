@@ -86,23 +86,19 @@ describe("fetchLinearPreview", () => {
       "https://linear.app/threa/issue/ENG-123/title#comment-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       makeService({
         handler: (_query, variables) => {
-          expect(variables).toEqual({ issueId: "ENG-123" })
+          expect(variables).toEqual({ id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890" })
           return {
-            issue: {
-              identifier: "ENG-123",
-              title: "Ship the thing",
-              team: { key: "ENG", name: "Engineering" },
-              state: { name: "In Progress", type: "started", color: "#f2c94c" },
-              comments: {
-                nodes: [
-                  {
-                    id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                    url: "https://linear.app/threa/issue/ENG-123/title#comment-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                    body: "Agree, let's merge after review.",
-                    createdAt: "2026-04-10T12:00:00.000Z",
-                    user: { id: "u_1", name: "Kris", displayName: "Kris", avatarUrl: null },
-                  },
-                ],
+            comment: {
+              id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+              url: "https://linear.app/threa/issue/ENG-123/title#comment-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+              body: "Agree, let's merge after review.",
+              createdAt: "2026-04-10T12:00:00.000Z",
+              user: { id: "u_1", name: "Kris", displayName: "Kris", avatarUrl: null },
+              issue: {
+                identifier: "ENG-123",
+                title: "Ship the thing",
+                team: { key: "ENG", name: "Engineering" },
+                state: { name: "In Progress", type: "started", color: "#f2c94c" },
               },
             },
           }
@@ -133,6 +129,7 @@ describe("fetchLinearPreview", () => {
       "https://linear.app/threa/issue/ENG-123/title#comment-a1b2c3d4",
       makeService({
         handler: (_query, variables) => {
+          if ("id" in variables) return { comment: null }
           expect(variables).toEqual({ issueId: "ENG-123" })
           return {
             issue: {
@@ -169,25 +166,26 @@ describe("fetchLinearPreview", () => {
       "ws_123",
       "https://linear.app/threa/issue/ENG-5/title#comment-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       makeService({
-        handler: () => ({
-          issue: {
-            identifier: "ENG-5",
-            title: "Long",
-            team: { key: "ENG", name: "Engineering" },
-            state: { name: "Backlog", type: "backlog", color: "#bbb" },
-            comments: {
-              nodes: [
-                {
-                  id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                  url: "https://linear.app/threa/issue/ENG-5/title#comment-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                  body,
-                  createdAt: "2026-04-10T12:00:00.000Z",
-                  user: null,
+        handler: (query) => {
+          if (query.includes("comment(id:")) {
+            return {
+              comment: {
+                id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                url: "https://linear.app/threa/issue/ENG-5/title#comment-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                body,
+                createdAt: "2026-04-10T12:00:00.000Z",
+                user: null,
+                issue: {
+                  identifier: "ENG-5",
+                  title: "Long",
+                  team: { key: "ENG", name: "Engineering" },
+                  state: { name: "Backlog", type: "backlog", color: "#bbb" },
                 },
-              ],
-            },
-          },
-        }),
+              },
+            }
+          }
+          throw new Error("direct comment lookup should resolve full comment ids")
+        },
       })
     )
 

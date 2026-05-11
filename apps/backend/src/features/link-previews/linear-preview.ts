@@ -165,8 +165,38 @@ async function fetchIssuePreview(
 
 // ── Comment ─────────────────────────────────────────────────────────────
 
-const COMMENT_QUERY = /* GraphQL */ `
-  query ThreaCommentPreview($issueId: String!) {
+const COMMENT_BY_ID_QUERY = /* GraphQL */ `
+  query ThreaCommentByIdPreview($id: String!) {
+    comment(id: $id) {
+      id
+      url
+      body
+      createdAt
+      user {
+        id
+        name
+        displayName
+        avatarUrl
+      }
+      issue {
+        identifier
+        title
+        team {
+          key
+          name
+        }
+        state {
+          name
+          type
+          color
+        }
+      }
+    }
+  }
+`
+
+const COMMENT_BY_ISSUE_QUERY = /* GraphQL */ `
+  query ThreaCommentByIssuePreview($issueId: String!) {
     issue(id: $issueId) {
       identifier
       title
@@ -179,7 +209,7 @@ const COMMENT_QUERY = /* GraphQL */ `
         type
         color
       }
-      comments(first: 50) {
+      comments(first: 100) {
         nodes {
           id
           url
@@ -204,26 +234,21 @@ async function fetchCommentPreview(
   parsed: Extract<LinearUrlMatch, { type: "linear_comment" }>,
   fetchedAt: string
 ): Promise<UpdateLinkPreviewParams | null> {
-  const { issue } = await client.request<{ issue: LinearCommentIssueNode | null }>(COMMENT_QUERY, {
-    issueId: parsed.identifier,
-  })
-  if (!issue) return null
+  const resolved = await resolveLinearComment(client, parsed)
+  if (!resolved) return null
 
-  const comment = findLinearComment(issue.comments?.nodes ?? [], parsed.commentId)
-  if (!comment) return null
-
-  const body = typeof comment.body === "string" ? comment.body : ""
+  const body = typeof resolved.comment.body === "string" ? resolved.comment.body : ""
   const truncated = body.length > COMMENT_PREVIEW_MAX_LENGTH
   const data: LinearCommentPreviewData = {
     body: truncated ? `${body.slice(0, COMMENT_PREVIEW_MAX_LENGTH)}…` : body,
     truncated,
-    author: toLinearActor(comment.user),
-    createdAt: comment.createdAt,
+    author: toLinearActor(resolved.comment.user),
+    createdAt: resolved.comment.createdAt,
     parent: {
-      identifier: issue.identifier,
-      title: issue.title,
-      team: toLinearTeam(issue.team),
-      state: toLinearIssueState(issue.state),
+      identifier: resolved.issue.identifier,
+      title: resolved.issue.title,
+      team: toLinearTeam(resolved.issue.team),
+      state: toLinearIssueState(resolved.issue.state),
     },
   }
 
@@ -447,11 +472,18 @@ interface LinearCommentNode {
   user: LinearUserNode | null
 }
 
-interface LinearCommentIssueNode {
+interface LinearCommentIssueSummaryNode {
   identifier: string
   title: string
   team: LinearTeamNode
   state: LinearStateNode
+}
+
+interface LinearCommentWithIssueNode extends LinearCommentNode {
+  issue: LinearCommentIssueSummaryNode | null
+}
+
+interface LinearCommentIssueNode extends LinearCommentIssueSummaryNode {
   comments?: { nodes?: LinearCommentNode[] } | null
 }
 
@@ -517,6 +549,38 @@ function buildIssueDescription(data: LinearIssuePreviewData): string {
   if (data.priority) parts.push(data.priority.label)
   if (data.assignee) parts.push(`@${data.assignee.displayName}`)
   return parts.join(" · ")
+}
+
+async function resolveLinearComment(
+  client: LinearClientLike,
+  parsed: Extract<LinearUrlMatch, { type: "linear_comment" }>
+): Promise<{ comment: LinearCommentNode; issue: LinearCommentIssueSummaryNode } | null> {
+  const direct = await fetchCommentById(client, parsed.commentId)
+  if (direct?.issue) {
+    return { comment: direct, issue: direct.issue }
+  }
+
+  const { issue } = await client.request<{ issue: LinearCommentIssueNode | null }>(COMMENT_BY_ISSUE_QUERY, {
+    issueId: parsed.identifier,
+  })
+  if (!issue) return null
+
+  const comment = findLinearComment(issue.comments?.nodes ?? [], parsed.commentId)
+  return comment ? { comment, issue } : null
+}
+
+async function fetchCommentById(
+  client: LinearClientLike,
+  commentId: string
+): Promise<LinearCommentWithIssueNode | null> {
+  try {
+    const { comment } = await client.request<{ comment: LinearCommentWithIssueNode | null }>(COMMENT_BY_ID_QUERY, {
+      id: commentId,
+    })
+    return comment
+  } catch {
+    return null
+  }
 }
 
 async function fetchProjectNode(client: LinearClientLike, slugId: string): Promise<LinearProjectNode | null> {
