@@ -28,20 +28,20 @@ const insufficient = () => new HttpError("Insufficient permissions", { status: 4
 export function createRequireWorkspacePermission() {
   return function requireWorkspacePermission(slug: WorkspacePermissionSlug): RequestHandler {
     return function handler(req: Request, _res: Response, next: NextFunction): void {
+      // Session and API-key auth chains are mutually exclusive in the current
+      // wiring (`...authed` never sets `req.userApiKey`/`req.botApiKey`). Treat
+      // the session path as authoritative when `req.authUser` is set so a future
+      // composition that threads both chains can't silently grant via API-key
+      // scopes after the JWT explicitly denied.
       if (req.authUser) {
         const claim = req.authUser.permissions
-        if (claim != null) {
-          if (claim.includes(slug)) {
-            next()
-            return
-          }
-        } else if (req.user) {
-          const roleDerived: readonly string[] = permissionsForRole(req.user.role)
-          if (roleDerived.includes(slug)) {
-            next()
-            return
-          }
-        }
+        const allowed =
+          claim != null
+            ? claim.includes(slug)
+            : req.user != null && (permissionsForRole(req.user.role) as readonly string[]).includes(slug)
+        if (allowed) next()
+        else next(insufficient())
+        return
       }
 
       if (req.userApiKey) {

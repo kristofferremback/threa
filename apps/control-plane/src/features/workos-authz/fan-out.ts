@@ -120,6 +120,12 @@ export class RegionalAuthzFanOut {
     if (cached && cached.expiresAt > now) {
       return cached.rows
     }
+    // Sweep stale entries on every miss so a backfill burst (one distinct org id
+    // per event) doesn't leave permanent residue in the Map for the lifetime
+    // of the process. Bounded by the live org count, not the historical one.
+    for (const [orgId, entry] of this.workspaceLookupCache) {
+      if (entry.expiresAt <= now) this.workspaceLookupCache.delete(orgId)
+    }
     const rows = await WorkspaceRegistryRepository.listByWorkosOrganizationId(this.pool, workosOrganizationId)
     this.workspaceLookupCache.set(workosOrganizationId, {
       rows,
