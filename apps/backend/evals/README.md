@@ -82,7 +82,7 @@ suites:
 
   # Same suite, different provider
   - name: companion
-    title: "GPT-4.1-mini"
+    title: "gpt-5.4-nano"
     components:
       companion:
         model: openrouter:openai/gpt-5.4-nano
@@ -118,7 +118,7 @@ suites:
         temperature: 0.7
 
   - name: companion
-    title: "GPT-4.1-mini"
+    title: "gpt-5.4-nano"
     components:
       companion:
         model: openrouter:openai/gpt-5.4-nano

@@ -24,7 +24,7 @@ export interface LLMJudgeOptions {
   name?: string
   /** Criteria to evaluate against */
   criteria: string
-  /** Model to use for judging (default: uses context's AI wrapper) */
+  /** Model to use for judging (default: "openrouter:openai/gpt-5.4-nano") */
   model?: string
   /** Pass threshold (default: 0.7) */
   passThreshold?: number
