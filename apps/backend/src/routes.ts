@@ -5,7 +5,8 @@ import { createWorkspaceUserMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware, createAvatarUploadMiddleware } from "./middleware/upload"
 import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-limit"
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
-import { requireRole } from "./middleware/authorization"
+import { createRequireWorkspacePermission } from "./middleware/workspace-permission"
+import { createWorkspaceAuthzHandlers, WorkspaceAuthzService } from "./features/workspace-authz"
 import { createAuthHandlers } from "./auth/handlers"
 import { createWorkspaceHandlers, WorkspaceRepository } from "./features/workspaces"
 import { createStreamHandlers } from "./features/streams"
@@ -94,6 +95,7 @@ interface Dependencies {
   botChannelService: BotChannelService
   linkPreviewService: LinkPreviewService
   workspaceIntegrationService: WorkspaceIntegrationService
+  workspaceAuthzService: WorkspaceAuthzService
   workosOrgService: WorkosOrgService
   userApiKeyService: UserApiKeyService
   botApiKeyService: BotApiKeyService
@@ -130,6 +132,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     botChannelService,
     linkPreviewService,
     workspaceIntegrationService,
+    workspaceAuthzService,
     workosOrgService,
     userApiKeyService,
     botApiKeyService,
@@ -142,6 +145,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceUser]
+
+  const requireWorkspacePermission = createRequireWorkspacePermission()
+  const workspaceAuthz = createWorkspaceAuthzHandlers({ workspaceAuthzService })
 
   const rateLimits = createRateLimiters(rateLimiterConfig)
   const opsAccess = createOpsAccessMiddleware()
@@ -195,6 +201,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     app.post("/internal/workspaces", internalAuth, internal.createWorkspace)
     app.post("/internal/invitations/:id/accept", internalAuth, internal.acceptInvitation)
     app.post("/internal/invitations/claim-link", internalAuth, invitation.claimLink)
+    app.post("/internal/authz/memberships", internalAuth, workspaceAuthz.syncMembership)
   }
 
   // Global baseline rate limit
@@ -252,7 +259,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", ...authed, stream.archive)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/unarchive", ...authed, stream.unarchive)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/members", ...authed, stream.addMember)
-  app.delete("/api/workspaces/:workspaceId/streams/:streamId/members/:memberId", ...authed, stream.removeMember)
+  app.delete(
+    "/api/workspaces/:workspaceId/streams/:streamId/members/:memberId",
+    ...authed,
+    requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE),
+    stream.removeMember
+  )
 
   app.get("/api/workspaces/:workspaceId/streams/:streamId/events", ...authed, stream.listEvents)
   app.get("/api/workspaces/:workspaceId/streams/:streamId/events/around", ...authed, stream.listEventsAround)
@@ -297,20 +309,21 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/commands/dispatch", ...authed, rateLimits.commandDispatch, command.dispatch)
   app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
 
-  // Invitations (admin+ only)
-  app.get("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.list)
-  app.post("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.send)
-  app.post("/api/workspaces/:workspaceId/invitations/links", ...authed, requireRole("admin"), invitation.createLink)
+  // Invitations — gated on members:write
+  const requireMembersWrite = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
+  app.get("/api/workspaces/:workspaceId/invitations", ...authed, requireMembersWrite, invitation.list)
+  app.post("/api/workspaces/:workspaceId/invitations", ...authed, requireMembersWrite, invitation.send)
+  app.post("/api/workspaces/:workspaceId/invitations/links", ...authed, requireMembersWrite, invitation.createLink)
   app.post(
     "/api/workspaces/:workspaceId/invitations/:invitationId/revoke",
     ...authed,
-    requireRole("admin"),
+    requireMembersWrite,
     invitation.revoke
   )
   app.post(
     "/api/workspaces/:workspaceId/invitations/:invitationId/resend",
     ...authed,
-    requireRole("admin"),
+    requireMembersWrite,
     invitation.resend
   )
 
@@ -330,7 +343,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
-  app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, requireRole("admin"), aiUsage.updateBudget)
+  app.put(
+    "/api/workspaces/:workspaceId/ai-budget",
+    ...authed,
+    requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN),
+    aiUsage.updateBudget
+  )
 
   // Activity feed
   app.get("/api/workspaces/:workspaceId/activity", ...authed, activity.list)
@@ -382,23 +400,24 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     linkPreview.resolveMessageLink
   )
 
-  // Workspace integrations (admin-only)
+  // Workspace integrations — gated on workspace:admin
+  const requireWorkspaceAdmin = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN)
   app.get(
     "/api/workspaces/:workspaceId/integrations/github",
     ...authed,
-    requireRole("admin"),
+    requireWorkspaceAdmin,
     workspaceIntegration.getGithub
   )
   app.get(
     "/api/workspaces/:workspaceId/integrations/github/connect",
     ...authed,
-    requireRole("admin"),
+    requireWorkspaceAdmin,
     workspaceIntegration.connectGithub
   )
   app.delete(
     "/api/workspaces/:workspaceId/integrations/github",
     ...authed,
-    requireRole("admin"),
+    requireWorkspaceAdmin,
     workspaceIntegration.disconnectGithub
   )
 
@@ -411,66 +430,66 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/user-api-keys", ...authed, userApiKeys.create)
   app.post("/api/workspaces/:workspaceId/user-api-keys/:keyId/revoke", ...authed, userApiKeys.revoke)
 
-  // Bot management (admin-only)
+  // Bot management. Today every bot is shared (workspace-owned), so create gates
+  // on bots:create:shared. Personal bots arrive in a later PR and will introduce
+  // a sibling endpoint gated on bots:create:personal. Manage endpoints gate on
+  // bots:manage until per-bot ownership checks land via PR #482.
   const botHandlers = createBotHandlers({ botApiKeyService, avatarService, streamService, pool })
+  const requireBotsCreateShared = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_SHARED)
+  const requireBotsManage = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.BOTS_MANAGE)
   app.get("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.list)
-  app.post("/api/workspaces/:workspaceId/bots", ...authed, requireRole("admin"), botHandlers.create)
+  app.post("/api/workspaces/:workspaceId/bots", ...authed, requireBotsCreateShared, botHandlers.create)
   app.get("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.get)
-  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, requireRole("admin"), botHandlers.update)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, requireRole("admin"), botHandlers.archive)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, requireRole("admin"), botHandlers.restore)
-  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.listKeys)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.createKey)
+  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, requireBotsManage, botHandlers.update)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, requireBotsManage, botHandlers.archive)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, requireBotsManage, botHandlers.restore)
+  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireBotsManage, botHandlers.listKeys)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireBotsManage, botHandlers.createKey)
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/keys/:keyId/revoke",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.revokeKey
   )
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/avatar",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     avatarUpload,
     botHandlers.uploadAvatar
   )
-  app.delete(
-    "/api/workspaces/:workspaceId/bots/:botId/avatar",
-    ...authed,
-    requireRole("admin"),
-    botHandlers.removeAvatar
-  )
+  app.delete("/api/workspaces/:workspaceId/bots/:botId/avatar", ...authed, requireBotsManage, botHandlers.removeAvatar)
   // Bot avatar serving (unauthenticated — S3 keys contain unguessable ULIDs)
   app.get("/api/workspaces/:workspaceId/bots/:botId/avatar/:file", botHandlers.serveAvatarFile)
-  // Bot channel access grants (admin-only)
+  // Bot channel access grants
   app.get(
     "/api/workspaces/:workspaceId/bots/:botId/streams",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.listStreamGrants
   )
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.grantStreamAccess
   )
   app.delete(
     "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.revokeStreamAccess
   )
-  // Stream → bots reverse lookup (admin-only)
+  // Stream → bots reverse lookup
   app.get(
     "/api/workspaces/:workspaceId/streams/:streamId/bots",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.listStreamBots
   )
 
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
-  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool })
+  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, workspaceAuthzService, pool })
   const publicApi = createPublicApiHandlers({
     searchService,
     memoExplorerService,

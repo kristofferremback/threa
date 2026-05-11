@@ -1,12 +1,15 @@
-import { permissionsForRole, WORKSPACE_ROLE_SLUGS } from "@threa/types"
 import type { AuthResult, AuthService } from "./auth-service"
 
-// Stub sessions grant the full owner permission set so admin/owner-gated
-// features stay reachable in local dev and integration tests without per-test
-// permission seeding. Frozen so an accidental mutation by a caller surfaces
-// as an error instead of corrupting subsequent sessions in the same process.
-const STUB_PERMISSIONS: readonly string[] = Object.freeze(permissionsForRole(WORKSPACE_ROLE_SLUGS.OWNER))
-
+// Stub sessions deliberately surface no JWT permission claim
+// (`permissions: null`). Production OAuth-callback sessions also start with
+// `permissions: null` until the next refresh, so this exercises a real
+// production code path — the role-derived fallback inside
+// `requireWorkspacePermission`. Returning the owner permission set here would
+// short-circuit the JWT-claim branch and silently elevate every test session,
+// which would break the role-based e2e tests in `apps/backend/tests/e2e/rbac.test.ts`
+// (member/admin/owner differentiation depends on the role-derived path).
+// The JWT-claim-present branch is exercised by
+// `apps/backend/tests/integration/workspace-permission-middleware.test.ts`.
 export interface DevLoginResult {
   user: { id: string; email: string; name: string }
   session: string
@@ -96,7 +99,7 @@ export class StubAuthService implements AuthService {
 
     return {
       success: true,
-      user: { ...user, permissions: [...STUB_PERMISSIONS] },
+      user: { ...user, permissions: null },
       refreshed: false,
     }
   }
@@ -116,7 +119,7 @@ export class StubAuthService implements AuthService {
 
     return {
       success: true,
-      user: { ...user, permissions: [...STUB_PERMISSIONS] },
+      user: { ...user, permissions: null },
       sealedSession: `test_session_${userId}`,
       refreshed: false,
     }

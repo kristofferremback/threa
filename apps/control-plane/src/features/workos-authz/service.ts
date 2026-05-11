@@ -1,21 +1,22 @@
 import type { Pool } from "pg"
-import { logger, type WorkosMembershipEvent } from "@threa/backend-common"
+import { logger, OutboxRepository, withTransaction, type WorkosMembershipEvent } from "@threa/backend-common"
 import { WorkosAuthzRepository } from "./repository"
+import {
+  OUTBOX_AUTHZ_MEMBERSHIP_CHANGED,
+  OUTBOX_AUTHZ_MEMBERSHIP_REMOVED,
+  type AuthzMembershipChangedPayload,
+  type AuthzMembershipRemovedPayload,
+} from "./fan-out"
 
 interface Dependencies {
   pool: Pool
 }
 
 /**
- * Service that applies WorkOS membership events to the local mirror.
- *
- * Phase 1 is read-only — no fan-out to regional backends, no enforcement,
- * no write paths back to WorkOS. The poller calls `processEvent` for each
- * event in order and the service routes it to the correct repo method.
- *
- * INV-6: services own transaction boundaries. Each event is one upsert/delete,
- * which is already atomic at the row level, so no explicit transaction is
- * needed here.
+ * Apply WorkOS membership events to the local mirror and emit outbox events
+ * for regional fan-out (INV-6, INV-7). The mirror upsert and the outbox insert
+ * commit together — if the upsert is rejected by the timestamp guard, no
+ * fan-out event is emitted.
  */
 export class WorkosAuthzService {
   private pool: Pool
@@ -29,15 +30,29 @@ export class WorkosAuthzService {
     switch (event.type) {
       case "organization_membership.created":
       case "organization_membership.updated": {
-        const updated = await WorkosAuthzRepository.upsertMembershipFromEvent(this.pool, {
-          organizationMembershipId: membership.id,
-          workosOrganizationId: membership.organizationId,
-          workosUserId: membership.userId,
-          status: membership.status,
-          roleSlugs: membership.roleSlugs,
-          eventId: event.id,
-          eventCreatedAt: event.createdAt,
+        const updated = await withTransaction(this.pool, async (client) => {
+          const row = await WorkosAuthzRepository.upsertMembershipFromEvent(client, {
+            organizationMembershipId: membership.id,
+            workosOrganizationId: membership.organizationId,
+            workosUserId: membership.userId,
+            status: membership.status,
+            roleSlugs: membership.roleSlugs,
+            eventId: event.id,
+            eventCreatedAt: event.createdAt,
+          })
+          if (!row) return null
+
+          const payload: AuthzMembershipChangedPayload = {
+            workosOrganizationId: membership.organizationId,
+            workosUserId: membership.userId,
+            roleSlugs: membership.roleSlugs,
+            status: membership.status,
+            lastEventAt: event.createdAt.toISOString(),
+          }
+          await OutboxRepository.insert(client, OUTBOX_AUTHZ_MEMBERSHIP_CHANGED, payload)
+          return row
         })
+
         if (!updated) {
           logger.debug(
             {
@@ -52,10 +67,20 @@ export class WorkosAuthzService {
         return
       }
       case "organization_membership.deleted": {
-        await WorkosAuthzRepository.deleteMembership(this.pool, {
-          workosOrganizationId: membership.organizationId,
-          workosUserId: membership.userId,
-          eventCreatedAt: event.createdAt,
+        await withTransaction(this.pool, async (client) => {
+          const removed = await WorkosAuthzRepository.deleteMembership(client, {
+            workosOrganizationId: membership.organizationId,
+            workosUserId: membership.userId,
+            eventCreatedAt: event.createdAt,
+          })
+          if (!removed) return
+
+          const payload: AuthzMembershipRemovedPayload = {
+            workosOrganizationId: membership.organizationId,
+            workosUserId: membership.userId,
+            eventCreatedAt: event.createdAt.toISOString(),
+          }
+          await OutboxRepository.insert(client, OUTBOX_AUTHZ_MEMBERSHIP_REMOVED, payload)
         })
         return
       }

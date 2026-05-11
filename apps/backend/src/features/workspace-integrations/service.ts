@@ -6,6 +6,8 @@ import { workspaceIntegrationId } from "../../lib/id"
 import type { GitHubAppConfig } from "../../lib/env"
 import { UserRepository } from "../workspaces"
 import {
+  permissionsForRole,
+  WORKSPACE_PERMISSION_SCOPES,
   WorkspaceIntegrationProviders,
   WorkspaceIntegrationStatuses,
   type GitHubInstalledRepository,
@@ -171,6 +173,7 @@ export class WorkspaceIntegrationService {
     state: string
     installationId: string
     workosUserId: string
+    viewerPermissions: string[] | null
   }): Promise<{ workspaceId: string }> {
     this.requireGitHubEnabled()
 
@@ -188,7 +191,11 @@ export class WorkspaceIntegrationService {
     if (!access.user) {
       throw new HttpError("Not a member of this workspace", { status: 403, code: "FORBIDDEN" })
     }
-    if (access.user.role !== "admin" && access.user.role !== "owner") {
+    // Session-path authz: prefer the JWT claim (no DB round-trip; immune to
+    // mirror fan-out lag); fall back to role-derived permissions when the
+    // session predates permission claims.
+    const permissions = params.viewerPermissions ?? permissionsForRole(access.user.role)
+    if (!permissions.includes(WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN)) {
       throw new HttpError("Only admins can connect GitHub", { status: 403, code: "FORBIDDEN" })
     }
 

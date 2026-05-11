@@ -233,7 +233,7 @@ describe("WorkosAuthzRepository", () => {
     })
   })
 
-  describe("reconcileOrganizationSnapshot", () => {
+  describe("reconcileOrganizationSnapshotReturning", () => {
     test("removes rows whose membership id is absent from the snapshot", async () => {
       const t0 = new Date("2026-01-01T00:00:00Z")
       const observedAt = new Date("2026-01-01T00:00:10Z")
@@ -255,13 +255,13 @@ describe("WorkosAuthzRepository", () => {
         observedAt: t0,
       })
 
-      const removed = await WorkosAuthzRepository.reconcileOrganizationSnapshot(pool, {
+      const removed = await WorkosAuthzRepository.reconcileOrganizationSnapshotReturning(pool, {
         workosOrganizationId: orgId,
         snapshotMembershipIds: ["om_keep"],
         observedAt,
       })
 
-      expect(removed).toBe(1)
+      expect(removed.map((r) => r.workos_user_id)).toEqual([otherUserId])
       expect(await WorkosAuthzRepository.getByOrgAndUser(pool, orgId, userId)).not.toBeNull()
       expect(await WorkosAuthzRepository.getByOrgAndUser(pool, orgId, otherUserId)).toBeNull()
     })
@@ -281,13 +281,13 @@ describe("WorkosAuthzRepository", () => {
         eventCreatedAt: tFreshEvent,
       })
 
-      const removed = await WorkosAuthzRepository.reconcileOrganizationSnapshot(pool, {
+      const removed = await WorkosAuthzRepository.reconcileOrganizationSnapshotReturning(pool, {
         workosOrganizationId: orgId,
         snapshotMembershipIds: [],
         observedAt,
       })
 
-      expect(removed).toBe(0)
+      expect(removed).toEqual([])
       expect(await WorkosAuthzRepository.getByOrgAndUser(pool, orgId, userId)).not.toBeNull()
     })
 
@@ -312,13 +312,13 @@ describe("WorkosAuthzRepository", () => {
         observedAt: t0,
       })
 
-      const removed = await WorkosAuthzRepository.reconcileOrganizationSnapshot(pool, {
+      const removed = await WorkosAuthzRepository.reconcileOrganizationSnapshotReturning(pool, {
         workosOrganizationId: orgId,
         snapshotMembershipIds: [],
         observedAt,
       })
 
-      expect(removed).toBe(2)
+      expect(removed).toHaveLength(2)
       expect(await WorkosAuthzRepository.listByOrganization(pool, orgId)).toEqual([])
     })
   })

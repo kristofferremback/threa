@@ -3,13 +3,19 @@ export { WorkosAuthService } from "./auth/auth-service"
 export type { AuthResult, AuthService } from "./auth/auth-service"
 export { StubAuthService } from "./auth/auth-service.stub"
 export type { DevLoginResult } from "./auth/auth-service.stub"
-export { WorkosOrgServiceImpl, getWorkosErrorCode, WORKOS_MIRROR_EVENT_TYPES } from "./auth/workos-org-service"
+export {
+  WorkosOrgServiceImpl,
+  getWorkosErrorCode,
+  WORKOS_MIRROR_EVENT_TYPES,
+  WORKOS_MEMBERSHIP_STATUSES,
+} from "./auth/workos-org-service"
 export type {
   WorkosOrgService,
   WorkosAppInvitation,
   WorkosUserSummary,
   WorkosMembershipEvent,
   WorkosMirrorEventType,
+  WorkosMembershipStatus,
   WorkosOrganizationMembership,
 } from "./auth/workos-org-service"
 export { StubWorkosOrgService } from "./auth/workos-org-service.stub"

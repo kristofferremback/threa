@@ -64,12 +64,25 @@ export interface WorkosMembershipEvent {
   membership: WorkosOrganizationMembership
 }
 
+/**
+ * WorkOS organization-membership lifecycle states. Sourced from the WorkOS
+ * dashboard event payload; mirrored in `workspace_user_permissions.status`
+ * and validated at the regional fan-out endpoint.
+ */
+export const WORKOS_MEMBERSHIP_STATUSES = ["active", "inactive", "pending"] as const
+
+export type WorkosMembershipStatus = (typeof WORKOS_MEMBERSHIP_STATUSES)[number]
+
+function isWorkosMembershipStatus(value: unknown): value is WorkosMembershipStatus {
+  return typeof value === "string" && (WORKOS_MEMBERSHIP_STATUSES as readonly string[]).includes(value)
+}
+
 /** Mirror-shaped membership returned from `listOrganizationMemberships`. */
 export interface WorkosOrganizationMembership {
   id: string
   organizationId: string
   userId: string
-  status: "active" | "inactive" | "pending"
+  status: WorkosMembershipStatus
   roleSlugs: string[]
   /** WorkOS-side updated_at; used as last_event_at when backfill upserts. */
   updatedAt: Date
@@ -426,7 +439,7 @@ function parseMembershipPayload(data: unknown): WorkosOrganizationMembership | n
   if (typeof m.id !== "string" || typeof m.organizationId !== "string" || typeof m.userId !== "string") {
     return null
   }
-  if (m.status !== "active" && m.status !== "inactive" && m.status !== "pending") {
+  if (!isWorkosMembershipStatus(m.status)) {
     return null
   }
   return {
@@ -456,7 +469,7 @@ function toMirrorMembership(m: {
   id: string
   organizationId: string
   userId: string
-  status: "active" | "inactive" | "pending"
+  status: WorkosMembershipStatus
   updatedAt: string
   role: { slug: string }
   roles?: Array<{ slug: string }>

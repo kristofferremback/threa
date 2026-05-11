@@ -4,6 +4,7 @@ import { HttpError } from "@threa/backend-common"
 import type { WorkspacePermissionSlug } from "@threa/types"
 import { BOT_KEY_PREFIX } from "@threa/types"
 import { UserRepository } from "../features/workspaces"
+import type { WorkspaceAuthzService } from "../features/workspace-authz"
 import type { UserApiKeyService, ValidatedUserApiKey } from "../features/user-api-keys"
 import type { BotApiKeyService, ValidatedBotApiKey } from "../features/public-api"
 
@@ -21,10 +22,16 @@ declare global {
 interface PublicApiAuthDeps {
   userApiKeyService: UserApiKeyService
   botApiKeyService: BotApiKeyService
+  workspaceAuthzService: WorkspaceAuthzService
   pool: Pool
 }
 
-export function createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool }: PublicApiAuthDeps) {
+export function createPublicApiAuthMiddleware({
+  userApiKeyService,
+  botApiKeyService,
+  workspaceAuthzService,
+  pool,
+}: PublicApiAuthDeps) {
   return async function publicApiAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -59,7 +66,31 @@ export function createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyServ
         return
       }
 
-      req.userApiKey = validated
+      // Clamp the key's stored scopes against the owner's current workspace
+      // permissions (PR-3 INV-20 mirror). A user-scoped key minted while the
+      // owner was admin must not retain admin-only scopes after demotion. If
+      // the mirror row is missing or inactive the credential is no longer
+      // usable — reject as 401 (owner-inactive), not 403, to distinguish from
+      // a normal scope shortfall.
+      const ownerPermissions = await workspaceAuthzService.resolveActivePermissions(workspaceId, user.workosUserId)
+      if (ownerPermissions === null) {
+        next(
+          new HttpError("API key owner is no longer an active workspace member", {
+            status: 401,
+            code: "OWNER_INACTIVE",
+          })
+        )
+        return
+      }
+      const ownerPermissionSet = new Set<string>(ownerPermissions)
+      const effectiveScopes = new Set<string>()
+      for (const scope of validated.scopes) {
+        if (ownerPermissionSet.has(scope)) {
+          effectiveScopes.add(scope)
+        }
+      }
+
+      req.userApiKey = { ...validated, scopes: effectiveScopes }
       req.user = user
       req.workspaceId = workspaceId
       next()
