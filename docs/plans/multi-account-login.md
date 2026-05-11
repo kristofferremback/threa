@@ -240,6 +240,65 @@ The service worker also participates: on OAuth callback completion, the SW posts
 - Cmd/Ctrl-Opt-1..N to cycle through accounts and their workspaces in switcher order.
 - Cross-account unread badges: a thin presence channel — one Socket.io connection per parked alt to a new `presence`-only namespace that emits unread/notification deltas, no message bodies. For 1–8 accounts this is fine; for higher counts we'd reconsider, but we cap at 8.
 
+## WorkOS compatibility — what's confirmed and what must be verified before implementation
+
+This entire design assumes WorkOS tolerates multiple concurrent sealed sessions per browser. The official WorkOS docs do not bless or forbid the pattern — they describe a single-session world. We've done a doc sweep to separate what's confirmed from what we must verify empirically before significant frontend work lands.
+
+### Confirmed by WorkOS docs
+
+- **Sealed sessions are opaque blobs we can store under any cookie name.** The cookie name is configurable (Threa's `SESSION_COOKIE_NAME` env, official `authkit-nextjs`'s `WORKOS_COOKIE_NAME`). WorkOS imposes no constraint on cookie names, count, or scope. Multiple `wos_session_alt_*` cookies are mechanically fine.
+- **Each sealed session refreshes independently.** Refresh tokens are per-session; "Refresh tokens may be rotated after use, so be sure to replace the old refresh token with the newly returned one." No documented "one active session per WorkOS user" rule. N sealed sessions = N independent refresh streams.
+- **`getAuthorizationUrl` accepts the OIDC `prompt` parameter** (listed in the official parameter table on the authorize endpoint).
+- **`login_hint` is supported** to pre-fill the email field. Use it for "Re-authenticate this slot" — pass the known email so the user lands on a pre-filled login form.
+- **Inactivity timeout is dashboard-configurable.** "Ends sessions if a refresh has not occurred in this length of time." `POST /api/auth/refresh-all` must run at an interval shorter than this setting, or dormant slots silently die server-side.
+
+### Not documented — must verify empirically
+
+1. **AuthKit's hosted-page session behavior on a fresh OAuth flow when a WorkOS session cookie already exists at `*.workos.com`.** This is the central unknown. Three possibilities:
+   - AuthKit recognizes the existing user and silently auto-completes OAuth as them → "Add another account" coalesces into the existing slot. We cannot actually add a different user without first logging out the WorkOS-side session.
+   - AuthKit shows an account-picker or "switch user" prompt → ideal.
+   - AuthKit honors `prompt=login` / `prompt=select_account` to force fresh credential entry → standard OIDC fix.
+2. **Which `prompt` values WorkOS actually honors.** The parameter is accepted; the value behavior is undocumented. OIDC standard values (`login`, `select_account`, `none`) are the candidates.
+3. **Whether `getLogoutUrl()` clears the WorkOS-side cookie at `*.workos.com` or only the app's sealed-session cookie.** If WorkOS-side, signing out of one slot affects subsequent interactive auth for other slots. Functionally identical to today's UX, not a blocker, but worth confirming.
+4. **Whether `screen_hint`'s undocumented values (e.g. `select-account`) exist.** Docs explicitly list only `"sign-in"` and `"sign-up"` — but the API may accept more.
+
+### Risk register
+
+| Risk                                                                        | Probability           | Fallback if it bites                                                                                                                       |
+| --------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| AuthKit auto-logs in as existing user on add-account, no prompt value helps | Medium                | Insert an explicit `getLogoutUrl()` round trip before each add-OAuth. UX cost: "you'll need to sign in again to this browser." Acceptable. |
+| `prompt=login` not honored                                                  | Medium                | Same fallback.                                                                                                                             |
+| `getLogoutUrl()` for one slot clears WorkOS-side cookie globally            | Low                   | Functionally identical to today; other slots need fresh credentials on next interactive auth. Document, ship as-is.                        |
+| Inactivity timeout shorter than our refresh interval                        | Low (we control both) | Set refresh-all interval well below the configured inactivity timeout; expose both via env config.                                         |
+| WorkOS rate-limits N parallel refreshes during `refresh-all`                | Low                   | Sequence refreshes server-side; only refresh slots within N hours of expiry.                                                               |
+
+None of these risks invalidate the cookie-jar model itself. The worst-case outcome is "Add another account" requires a brief logout-relogin dance — heavier UX but the architecture is unchanged.
+
+### Verification gate
+
+**Before any frontend work on the switcher or per-slot Dexie wrapper, run two empirical probes against the staging WorkOS environment** and document the results inline in this plan (as a follow-up commit):
+
+1. **Add-account OAuth probe.** Sign in as user A. Trigger a fresh `getAuthorizationUrl()` call with each combination:
+   - no `prompt` parameter
+   - `prompt=login`
+   - `prompt=select_account`
+   - `prompt=none`
+   - `login_hint=<unknown_email>` (force email picker)
+     Record what AuthKit's hosted page renders in each case. Outcome determines whether we can rely on `prompt` or need the pre-clear-logout fallback.
+2. **Independent refresh probe.** Sign in as A and B in the same browser (manually constructing the alt cookie if no UI exists yet). Idle B for longer than the configured inactivity timeout. Verify:
+   - A's session continues to refresh normally.
+   - B's session fails validation with the expected `authentication_failed` reason.
+   - Refreshing A does not affect B and vice versa.
+   - The error from B's failed refresh is distinguishable from "no session" — so the frontend can render "Re-authenticate" rather than treating it as a fresh logout.
+
+These probes should be cheap (an afternoon) and the answers materially shape the implementation. If probe (1) shows AuthKit refuses to authenticate as a different user even with `prompt=login`, we ship the logout-first fallback from day one. If probe (2) shows refresh tokens interact across slots, the whole design needs rethinking — but the docs give no reason to expect this.
+
+### Things we are choosing not to rely on
+
+- **`prompt=select_account`** even if it works. AuthKit isn't an identity hub like Google's account chooser — passing this value may or may not render meaningful UI. We treat `prompt=login` (force re-auth) as the primary lever and `select_account` as a nice-to-have if it works.
+- **Implicit logout via inactivity.** Even though WorkOS will eventually expire idle sessions, we proactively call `refresh-all` so dormant slots stay alive within the configured window. Relying on WorkOS's silent expiry would conflict with the "stay logged in" goal.
+- **Any undocumented WorkOS behavior** as load-bearing. If a probe outcome depends on something the docs don't say, we document it in this plan as "observed behavior, may change" and add a follow-up smoke test in CI.
+
 ## Migration
 
 1. **No data migration.** Existing single-account users keep their `wos_session` cookie as-is. It becomes the "active" session automatically. Their existing IDB database (`Threa` or whatever the current name is) is migrated lazily: on first multi-account-aware load, if the legacy DB exists, rename/copy to `threa_{workosUserId}` and delete the legacy DB. (The exact rename mechanic — Dexie doesn't support rename — is "open both, copy each table, delete legacy." A separate sub-task.)
