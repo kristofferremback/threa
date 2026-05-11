@@ -21,6 +21,24 @@ function makeGitHubPreview(overrides: Partial<LinkPreviewSummary> = {}): LinkPre
 }
 
 describe("LinkPreviewCard", () => {
+  it("renders a resilient fallback when generic metadata is empty", () => {
+    const preview = makeGitHubPreview({
+      url: "https://x.com/someone/status/1234567890",
+      title: null,
+      description: null,
+      imageUrl: null,
+      faviconUrl: null,
+      siteName: null,
+      previewType: null,
+      previewData: null,
+    })
+
+    render(<LinkPreviewCard preview={preview} />)
+
+    expect(screen.getByText("Open link:")).toBeInTheDocument()
+    expect(screen.getByText("x.com/someone/status/1234567890")).toBeInTheDocument()
+  })
+
   it("renders GitHub file preview snippets from structured preview data", () => {
     const preview = makeGitHubPreview({
       url: "https://github.com/octocat/hello-world/blob/main/README.md#L1-L2",

@@ -21,6 +21,7 @@ export {
   type MemoBatchProcessJobData,
   type CommandExecuteJobData,
   type ImageCaptionJobData,
+  type AttachmentEmbeddingJobData,
   type PdfPrepareJobData,
   type PdfProcessPageJobData,
   type PdfAssembleJobData,
@@ -32,12 +33,15 @@ export {
   type VideoTranscodeSubmitJobData,
   type VideoTranscodeCheckJobData,
   type SavedReminderFireJobData,
+  type ScheduledMessageSendJobData,
+  type ContextBagPrecomputeJobData,
 } from "./job-queue"
 export { ScheduleManager, type ScheduleManagerConfig } from "./schedule-manager"
 export { CleanupWorker, type CleanupWorkerConfig } from "./cleanup-worker"
 export { Ticker, type TickerConfig } from "@threa/backend-common"
 export { QueueRepository } from "./repository"
 export type { QueueMessage, InsertQueueMessageParams } from "./repository"
+export { enqueueQueuedJob } from "./enqueue-with-id-retry"
 export { TokenPoolRepository } from "./token-pool-repository"
 export { CronRepository } from "./cron-repository"
 export type { CronSchedule, CronTick } from "./cron-repository"

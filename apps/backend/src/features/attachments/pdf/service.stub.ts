@@ -22,6 +22,7 @@ import {
 import { logger } from "../../../lib/logger"
 import { PDF_SIZE_THRESHOLDS } from "./config"
 import type { PdfProcessingServiceLike } from "./types"
+import { OutboxRepository } from "../../../lib/outbox"
 
 export interface StubPdfProcessingServiceDeps {
   pool: Pool
@@ -133,6 +134,11 @@ export class StubPdfProcessingService implements PdfProcessingServiceLike {
 
       await PdfProcessingJobRepository.updateStatus(client, pdfJobId, PdfJobStatuses.COMPLETED)
       await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
+      await OutboxRepository.insert(client, "attachment:extraction_completed", {
+        workspaceId: attachment.workspaceId,
+        attachmentId,
+        contentType: "document",
+      })
     })
 
     log.info({ pageCount: pages.length }, "Stub PDF processing complete")

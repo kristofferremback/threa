@@ -195,6 +195,8 @@ export interface GenerateTextWithToolsOptions {
   system?: string
   messages: ModelMessage[]
   tools?: Record<string, Tool<any, any>>
+  maxTokens?: number
+  temperature?: number
   telemetry?: TelemetryConfig
   /** When provided with `modelString`, usage will be recorded to the database */
   context?: CostContext
@@ -785,6 +787,8 @@ export function createAI(config: AIConfig): AI {
         system: options.system,
         messages: options.messages,
         tools: options.tools,
+        maxOutputTokens: options.maxTokens,
+        temperature: options.temperature,
         abortSignal: options.abortSignal,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our TelemetryConfig output is compatible at runtime
         experimental_telemetry: options.telemetry

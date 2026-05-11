@@ -84,8 +84,8 @@ describe("AttachmentList", () => {
         expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "img_1")
       })
 
-      // Should show filename in overlay
-      expect(screen.getByText("photo.png")).toBeInTheDocument()
+      // Image should be present with alt text for accessibility
+      expect(screen.getByAltText("photo.png")).toBeInTheDocument()
     })
 
     it("should defer image URL hydration when requested", async () => {
@@ -119,7 +119,7 @@ describe("AttachmentList", () => {
 
       // Both should be rendered
       await waitFor(() => {
-        expect(screen.getByText("photo.jpg")).toBeInTheDocument()
+        expect(screen.getByAltText("photo.jpg")).toBeInTheDocument()
       })
       expect(screen.getByText("doc.pdf")).toBeInTheDocument()
     })
@@ -148,7 +148,7 @@ describe("AttachmentList", () => {
       })
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
-      expect(screen.getByText("clip.mov")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "clip.mov" })).toBeInTheDocument()
       await waitFor(() => {
         expect(mockGetDownloadUrl).not.toHaveBeenCalled()
       })

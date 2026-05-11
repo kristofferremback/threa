@@ -1,65 +1,43 @@
-export const API_KEY_SCOPES = {
-  MESSAGES_SEARCH: "messages:search",
-  STREAMS_READ: "streams:read",
-  MESSAGES_READ: "messages:read",
-  MESSAGES_WRITE: "messages:write",
-  USERS_READ: "users:read",
-  MEMOS_READ: "memos:read",
-  ATTACHMENTS_READ: "attachments:read",
-} as const
+import {
+  WORKSPACE_PERMISSION_SCOPES,
+  WORKSPACE_PERMISSIONS,
+  type WorkspacePermission,
+  type WorkspacePermissionSlug,
+} from "./workspace-permissions"
 
-export type ApiKeyScope = (typeof API_KEY_SCOPES)[keyof typeof API_KEY_SCOPES]
-
-export interface ApiKeyPermission {
-  slug: ApiKeyScope
-  name: string
-  description: string
-}
+// API-key scopes draw from the same catalog as workspace permissions; persisted
+// keys are clamped at request time against the owner's effective workspace
+// permissions in the regional middleware.
 
 /**
- * Human-readable permission definitions for API keys.
- * Used in the UI and as the source of truth for WorkOS dashboard configuration.
- *
- * WorkOS setup: Authorization > Configuration > Organization API key permissions
+ * Slugs that may be selected when creating a user or bot API key. This is a
+ * subset of the workspace permission catalog: admin/owner-gated slugs
+ * (`workspace:*`, `members:write`, `bots:manage`, `bots:create:shared`) are
+ * deliberately excluded until request-time clamping is wired up — without the
+ * clamp, a member could persist a key that names a scope they don't actually
+ * hold. Once the regional clamp ships, this subset can grow (or be removed
+ * entirely in favor of the full catalog).
  */
-export const API_KEY_PERMISSIONS: ApiKeyPermission[] = [
-  {
-    slug: API_KEY_SCOPES.MESSAGES_SEARCH,
-    name: "Search messages",
-    description:
-      "Grants access to search messages in public streams in a workspace. Application level stream grants can extend permissions to private streams.",
-  },
-  {
-    slug: API_KEY_SCOPES.STREAMS_READ,
-    name: "Read streams",
-    description: "Grants access to list and search accessible streams in a workspace.",
-  },
-  {
-    slug: API_KEY_SCOPES.MESSAGES_READ,
-    name: "Read messages",
-    description: "Grants access to read messages in accessible streams.",
-  },
-  {
-    slug: API_KEY_SCOPES.MESSAGES_WRITE,
-    name: "Write messages",
-    description: "Grants access to send, update, and delete messages in accessible streams.",
-  },
-  {
-    slug: API_KEY_SCOPES.USERS_READ,
-    name: "Read users",
-    description: "Grants access to list and search workspace users.",
-  },
-  {
-    slug: API_KEY_SCOPES.MEMOS_READ,
-    name: "Read memos",
-    description: "Grants access to search preserved workspace memos and inspect their provenance.",
-  },
-  {
-    slug: API_KEY_SCOPES.ATTACHMENTS_READ,
-    name: "Read attachments",
-    description: "Grants access to search accessible attachments, inspect extracted content, and fetch download URLs.",
-  },
+export const API_KEY_ELIGIBLE_SCOPES: readonly [WorkspacePermissionSlug, ...WorkspacePermissionSlug[]] = [
+  WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH,
+  WORKSPACE_PERMISSION_SCOPES.STREAMS_READ,
+  WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ,
+  WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE,
+  WORKSPACE_PERMISSION_SCOPES.USERS_READ,
+  WORKSPACE_PERMISSION_SCOPES.MEMOS_READ,
+  WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ,
 ]
+
+const ELIGIBLE_SCOPE_SET: ReadonlySet<WorkspacePermissionSlug> = new Set(API_KEY_ELIGIBLE_SCOPES)
+
+/**
+ * `WorkspacePermission` records (slug + name + description) for the eligible
+ * subset, in catalog order. Frontend pickers render from this so the picker UI
+ * stays a one-line consumer of the source of truth.
+ */
+export const API_KEY_ELIGIBLE_PICKER_SCOPES: readonly WorkspacePermission[] = WORKSPACE_PERMISSIONS.filter((p) =>
+  ELIGIBLE_SCOPE_SET.has(p.slug)
+)
 
 // --- User-scoped API keys ---
 
@@ -81,7 +59,7 @@ export interface UserApiKey {
   id: string
   name: string
   keyPrefix: string
-  scopes: ApiKeyScope[]
+  scopes: WorkspacePermissionSlug[]
   lastUsedAt: string | null
   expiresAt: string | null
   revokedAt: string | null
@@ -105,7 +83,7 @@ export interface BotApiKey {
   botId: string
   name: string
   keyPrefix: string
-  scopes: ApiKeyScope[]
+  scopes: WorkspacePermissionSlug[]
   lastUsedAt: string | null
   expiresAt: string | null
   revokedAt: string | null

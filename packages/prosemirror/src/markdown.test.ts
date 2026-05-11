@@ -130,6 +130,29 @@ describe("@threa/prosemirror markdown attachment metadata", () => {
   })
 })
 
+describe("@threa/prosemirror emoji parsing", () => {
+  it("can parse emoji shortcodes as editable text for composer surfaces", () => {
+    const parsed = parseMarkdown(":rocket: launch", undefined, (shortcode) => (shortcode === "rocket" ? "🚀" : null), {
+      emojiAsText: true,
+    })
+
+    expect(parsed.content?.[0]?.content).toEqual([
+      { type: "text", text: "🚀" },
+      { type: "text", text: " launch" },
+    ])
+    expect(serializeToMarkdown(parsed)).toBe("🚀 launch")
+  })
+
+  it("parses emoji shortcodes as atom nodes by default for wire-format round trips", () => {
+    const parsed = parseMarkdown(":rocket:", undefined, (shortcode) => (shortcode === "rocket" ? "🚀" : null))
+
+    expect(parsed.content?.[0]?.content?.[0]).toEqual({
+      type: "emoji",
+      attrs: { shortcode: "rocket", emoji: "🚀" },
+    })
+  })
+})
+
 describe("@threa/prosemirror quote reply round-trip", () => {
   it("serializes quoteReply to blockquote with attribution link", () => {
     const doc: JSONContent = {
@@ -190,6 +213,31 @@ describe("@threa/prosemirror quote reply round-trip", () => {
         snippet: "Hello world",
       },
     })
+  })
+
+  it("serializes empty authorId as the legacy two-segment form so it roundtrips", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "quoteReply",
+          attrs: {
+            messageId: "msg_01ABC",
+            streamId: "stream_01XYZ",
+            authorName: "Kristoffer",
+            authorId: "",
+            actorType: "user",
+            snippet: "Hello world",
+          },
+        },
+      ],
+    }
+
+    const markdown = serializeToMarkdown(doc)
+    expect(markdown).toBe("> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC)")
+    const reparsed = parseMarkdown(markdown)
+    expect(reparsed.content?.[0]?.type).toBe("quoteReply")
+    expect((reparsed.content?.[0]?.attrs as { authorId: string }).authorId).toBe("")
   })
 
   it("round-trips quoteReply through markdown", () => {
@@ -265,6 +313,52 @@ describe("@threa/prosemirror quote reply round-trip", () => {
         snippet: "Line one\nLine two\nLine three",
       },
     })
+  })
+
+  it("round-trips a sharedMessage node losslessly", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "sharedMessage",
+          attrs: {
+            messageId: "msg_01ABC",
+            streamId: "stream_01XYZ",
+            authorName: "Ariadne",
+            authorId: "",
+            actorType: "user",
+          },
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "FYI" }],
+        },
+      ],
+    }
+
+    const markdown = serializeToMarkdown(doc)
+    expect(markdown).toBe("Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)\n\nFYI")
+
+    const parsed = parseMarkdown(markdown)
+    expect(parsed.content?.[0]).toEqual({
+      type: "sharedMessage",
+      attrs: {
+        messageId: "msg_01ABC",
+        streamId: "stream_01XYZ",
+        authorName: "Ariadne",
+        authorId: "",
+        actorType: "user",
+      },
+    })
+    expect(parsed.content?.[1]?.type).toBe("paragraph")
+  })
+
+  it("does not match shared-message line when prefix or trailing text differs", () => {
+    const onlyParagraph = parseMarkdown("Hi! [Ariadne](shared-message:stream_01XYZ/msg_01ABC)")
+    expect(onlyParagraph.content?.[0]?.type).toBe("paragraph")
+
+    const withTrailing = parseMarkdown("Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC) extra")
+    expect(withTrailing.content?.[0]?.type).toBe("paragraph")
   })
 
   it("treats blockquote without quote: protocol as regular blockquote", () => {

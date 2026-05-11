@@ -1,21 +1,32 @@
 import { useState, useRef, useEffect } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX, Search } from "lucide-react"
+import {
+  MoreHorizontal,
+  Pencil,
+  Archive,
+  MessageCircle,
+  X,
+  ArchiveX,
+  Search,
+  CornerDownRight,
+  Paperclip,
+  Settings,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+  SidebarActionDrawer,
+  SidebarActionMenu,
+  type SidebarActionItem,
+} from "@/components/layout/sidebar/sidebar-actions"
 import { cn } from "@/lib/utils"
 import { useStreamOrDraft, useStreamError, usePanelLayout, isDmDraftId, useTypeToFocus } from "@/hooks"
 import { useWorkspaceDmPeers } from "@/stores/workspace-store"
 import { usePanel, useSidebar } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
+import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
+import { useExplorerUrlState } from "@/components/attachment-explorer"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ThreadPanelSlot, SidebarToggle } from "@/components/layout"
@@ -25,6 +36,7 @@ import { StreamTypes, type StreamType } from "@threa/types"
 import { getStreamName, resolveDmDisplayName, streamFallbackLabel } from "@/lib/streams"
 import { setPageStreamName } from "@/lib/page-title"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
+import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
 
 function getStreamTypeLabel(type: StreamType): string {
   switch (type) {
@@ -81,6 +93,8 @@ export function StreamPage() {
   }
 
   const { openUserProfile } = useUserProfile()
+  const { openStreamSettings } = useStreamSettings()
+  const { open: openExplorer } = useExplorerUrlState()
   const dmPeers = useWorkspaceDmPeers(workspaceId ?? "")
   const workspaceUsers = useWorkspaceUsers(workspaceId)
 
@@ -91,6 +105,7 @@ export function StreamPage() {
 
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
+  const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Set document title to include stream name (matching sidebar DM resolution logic)
@@ -148,6 +163,64 @@ export function StreamPage() {
 
   const handleUnarchive = async () => {
     await unarchive?.()
+  }
+
+  const handleSelectMessages = () => {
+    dispatchStartBatchSelect(streamId)
+  }
+
+  // System streams are read-only on the backend (e.g. activity/notification
+  // feeds) — surfacing "Move messages…" there would be a guaranteed dead
+  // end since the move endpoints reject the source stream.
+  const isSystem = stream?.type === StreamTypes.SYSTEM
+  const streamMenuActions: SidebarActionItem[] = []
+  streamMenuActions.push({
+    id: "stream-settings",
+    label: "Settings",
+    icon: Settings,
+    onSelect: () => openStreamSettings(streamId),
+  })
+  if (!isArchived && !isSystem) {
+    streamMenuActions.push({
+      id: "move-messages",
+      label: "Move messages…",
+      icon: CornerDownRight,
+      onSelect: handleSelectMessages,
+      separatorBefore: true,
+    })
+  }
+  streamMenuActions.push({
+    id: "browse-files",
+    label: "Browse files…",
+    icon: Paperclip,
+    onSelect: () => openExplorer({ streamIds: [streamId] }),
+  })
+  if (isScratchpad) {
+    streamMenuActions.push({
+      id: "rename",
+      label: "Rename",
+      icon: Pencil,
+      onSelect: handleStartRename,
+      separatorBefore: streamMenuActions.length > 0,
+    })
+    streamMenuActions.push(
+      isArchived
+        ? {
+            id: "unarchive",
+            label: "Unarchive",
+            icon: Archive,
+            onSelect: handleUnarchive,
+            separatorBefore: true,
+          }
+        : {
+            id: "archive",
+            label: "Archive",
+            icon: Archive,
+            onSelect: handleArchive,
+            variant: "destructive",
+            separatorBefore: true,
+          }
+    )
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -240,33 +313,47 @@ export function StreamPage() {
               <MessageCircle className="h-4 w-4" />
             </Button>
           )}
-          {isScratchpad && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
+          {stream &&
+            !isDraft &&
+            !(isArchived && !isScratchpad) &&
+            (isMobile ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label="Stream actions"
+                  onClick={() => setIsMenuDrawerOpen(true)}
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={handleStartRename}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Rename
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {isArchived ? (
-                  <DropdownMenuItem onClick={handleUnarchive}>
-                    <Archive className="mr-2 h-4 w-4" />
-                    Unarchive
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-                    <Archive className="mr-2 h-4 w-4" />
-                    {isDraft ? "Delete" : "Archive"}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+                <SidebarActionDrawer
+                  open={isMenuDrawerOpen}
+                  onOpenChange={setIsMenuDrawerOpen}
+                  actions={streamMenuActions}
+                  title="Stream actions"
+                  description="Choose an action for this stream."
+                  header={
+                    <div className="px-4 pt-2 pb-3">
+                      <p className="truncate text-base font-semibold text-foreground">{streamName}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {stream ? getStreamTypeLabel(stream.type) : "Stream"} actions
+                      </p>
+                    </div>
+                  }
+                />
+              </>
+            ) : (
+              <SidebarActionMenu
+                actions={streamMenuActions}
+                ariaLabel="Stream actions"
+                trigger={
+                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Stream actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                }
+              />
+            ))}
         </div>
       </header>
       <main className="relative flex-1 overflow-hidden" data-editor-zone="main">

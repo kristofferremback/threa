@@ -33,7 +33,7 @@ export function createAgentSessionHandlers({ pool }: Dependencies) {
         const [stream, membership, persona, steps] = await Promise.all([
           StreamRepository.findById(db, session.streamId),
           StreamMemberRepository.findByStreamAndMember(db, session.streamId, userId),
-          PersonaRepository.findById(db, session.personaId),
+          PersonaRepository.findById(db, session.personaId, workspaceId),
           AgentSessionRepository.findStepsBySession(db, sessionId),
         ])
 

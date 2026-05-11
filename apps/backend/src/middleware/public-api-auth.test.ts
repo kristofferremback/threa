@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { NextFunction, Request, Response } from "express"
 import { createPublicApiAuthMiddleware, requireApiKeyScope } from "./public-api-auth"
-import { API_KEY_SCOPES } from "@threa/types"
+import { WORKSPACE_PERMISSION_SCOPES } from "@threa/types"
 
 function createPoolStub() {
   return {
@@ -47,12 +47,28 @@ function runMiddleware(middleware: any, req: Request): Promise<{ nextCalled: boo
 }
 
 describe("createPublicApiAuthMiddleware", () => {
-  function createMiddleware(overrides: { userApiKeyService?: any; botApiKeyService?: any; pool?: any } = {}) {
+  function createMiddleware(
+    overrides: {
+      userApiKeyService?: any
+      botApiKeyService?: any
+      workspaceAuthzService?: any
+      pool?: any
+      ownerPermissions?: string[] | null
+    } = {}
+  ) {
+    const { ownerPermissions, workspaceAuthzService, ...rest } = overrides
+    const defaultAuthz =
+      workspaceAuthzService ??
+      ({
+        resolveActivePermissions: async () =>
+          ownerPermissions === undefined ? ["messages:read", "members:write", "workspace:admin"] : ownerPermissions,
+      } as any)
     return createPublicApiAuthMiddleware({
       userApiKeyService: { validateKey: async () => null } as any,
       botApiKeyService: { validateKey: async () => null } as any,
+      workspaceAuthzService: defaultAuthz,
       pool: createPoolStub(),
-      ...overrides,
+      ...rest,
     })
   }
 
@@ -89,8 +105,28 @@ describe("createPublicApiAuthMiddleware", () => {
     expect(error!.status).toBe(401)
   })
 
+  function userRow(role = "admin") {
+    return {
+      id: "user_1",
+      workspace_id: "ws_1",
+      name: "Test User",
+      email: "test@example.com",
+      role,
+      slug: "test",
+      workos_user_id: "wos_1",
+      description: null,
+      avatar_url: null,
+      timezone: null,
+      locale: null,
+      pronouns: null,
+      phone: null,
+      github_username: null,
+      setup_completed: true,
+      joined_at: new Date(),
+    }
+  }
+
   test("should authenticate valid user-scoped key", async () => {
-    const mockUser = { id: "user_1", workspaceId: "ws_1", name: "Test User" }
     const middleware = createMiddleware({
       userApiKeyService: {
         validateKey: async (token: string) =>
@@ -98,31 +134,7 @@ describe("createPublicApiAuthMiddleware", () => {
             ? { id: "uak_1", workspaceId: "ws_1", userId: "user_1", name: "My Key", scopes: new Set(["messages:read"]) }
             : null,
       },
-      pool: {
-        query: async () => ({
-          rows: [
-            {
-              id: "user_1",
-              workspace_id: "ws_1",
-              name: "Test User",
-              email: "test@example.com",
-              role: "admin",
-              slug: "test",
-              workos_user_id: "wos_1",
-              description: null,
-              avatar_url: null,
-              timezone: null,
-              locale: null,
-              pronouns: null,
-              phone: null,
-              github_username: null,
-              setup_completed: true,
-              joined_at: new Date(),
-            },
-          ],
-          rowCount: 1,
-        }),
-      } as any,
+      pool: { query: async () => ({ rows: [userRow("admin")], rowCount: 1 }) } as any,
     })
 
     const req = createReq({
@@ -135,7 +147,63 @@ describe("createPublicApiAuthMiddleware", () => {
     expect(error).toBeNull()
     expect(req.userApiKey).toBeDefined()
     expect(req.userApiKey!.id).toBe("uak_1")
+    expect(req.userApiKey!.scopes.has("messages:read")).toBe(true)
     expect(req.workspaceId).toBe("ws_1")
+  })
+
+  test("clamps user-key scopes against the workspace_user_permissions mirror", async () => {
+    const middleware = createMiddleware({
+      userApiKeyService: {
+        validateKey: async () => ({
+          id: "uak_1",
+          workspaceId: "ws_1",
+          userId: "user_1",
+          name: "My Key",
+          // Key was minted while owner was admin; persisted scopes include
+          // admin-only members:write alongside member-tier messages:read.
+          scopes: new Set(["messages:read", "members:write"]),
+        }),
+      },
+      pool: { query: async () => ({ rows: [userRow("member")], rowCount: 1 }) } as any,
+      // Owner is now a member — admin-only scopes must fall away on this request.
+      ownerPermissions: ["messages:read"],
+    })
+
+    const req = createReq({
+      headers: { authorization: "Bearer threa_uk_testkey123" } as any,
+      params: { workspaceId: "ws_1" },
+    })
+    await runMiddleware(middleware, req)
+
+    expect(req.userApiKey).toBeDefined()
+    expect(req.userApiKey!.scopes.has("messages:read")).toBe(true)
+    expect(req.userApiKey!.scopes.has("members:write")).toBe(false)
+  })
+
+  test("rejects user-key with 401 OWNER_INACTIVE when mirror row missing", async () => {
+    const middleware = createMiddleware({
+      userApiKeyService: {
+        validateKey: async () => ({
+          id: "uak_1",
+          workspaceId: "ws_1",
+          userId: "user_1",
+          name: "My Key",
+          scopes: new Set(["messages:read"]),
+        }),
+      },
+      pool: { query: async () => ({ rows: [userRow("member")], rowCount: 1 }) } as any,
+      ownerPermissions: null,
+    })
+
+    const req = createReq({
+      headers: { authorization: "Bearer threa_uk_testkey123" } as any,
+      params: { workspaceId: "ws_1" },
+    })
+    const { error } = await runMiddleware(middleware, req)
+
+    expect(error).not.toBeNull()
+    expect(error!.status).toBe(401)
+    expect(error!.code).toBe("OWNER_INACTIVE")
   })
 
   test("should return 403 for user key from wrong workspace", async () => {
@@ -222,7 +290,7 @@ describe("createPublicApiAuthMiddleware", () => {
 
 describe("requireApiKeyScope", () => {
   test("should pass when user key has required scope", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
     req.userApiKey = {
       id: "uak_1",
@@ -245,7 +313,7 @@ describe("requireApiKeyScope", () => {
   })
 
   test("should pass when bot key has required scope", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE)
     const req = createReq()
     req.botApiKey = {
       id: "bak_1",
@@ -268,7 +336,7 @@ describe("requireApiKeyScope", () => {
   })
 
   test("should return 404 when scope is missing from user key", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
     req.userApiKey = {
       id: "uak_1",
@@ -289,7 +357,7 @@ describe("requireApiKeyScope", () => {
   })
 
   test("should return 404 when scope is missing from bot key", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE)
     const req = createReq()
     req.botApiKey = {
       id: "bak_1",
@@ -310,7 +378,7 @@ describe("requireApiKeyScope", () => {
   })
 
   test("should return 401 when no key context on request", () => {
-    const middleware = requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH)
+    const middleware = requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH)
     const req = createReq()
 
     let error: any = null

@@ -4,9 +4,20 @@
  * These types define the contracts between frontend and backend.
  */
 
-import type { StreamType, Visibility, CompanionMode, SavedStatus, AuthorType } from "./constants"
+import type {
+  StreamType,
+  Visibility,
+  CompanionMode,
+  SavedStatus,
+  AuthorType,
+  ScheduledMessageStatus,
+} from "./constants"
+import type { WorkspaceInvitableRole } from "./workspace-permissions"
+import type { ContextBag, ContextIntent } from "./context-bag"
+import type { UserId } from "./ids"
 import type { JSONContent } from "./prosemirror"
 import type {
+  AttachmentSummary,
   Stream,
   StreamWithPreview,
   StreamEvent,
@@ -18,6 +29,7 @@ import type {
   Bot,
 } from "./domain"
 import type { UserPreferences } from "./preferences"
+import type { WorkspacePermissionSlug } from "./workspace-permissions"
 
 // ============================================================================
 // Streams API
@@ -34,6 +46,8 @@ export interface CreateStreamInput {
   parentStreamId?: string
   parentMessageId?: string
   memberIds?: string[]
+  /** Context bag attached to a new scratchpad (triggers summary pre-compute). */
+  contextBag?: ContextBag
 }
 
 export interface UpdateStreamInput {
@@ -50,6 +64,38 @@ export interface UpdateCompanionModeInput {
   companionPersonaId?: string | null
 }
 
+/**
+ * Per-ref source-stream metadata for a context-bag attachment. Lives next
+ * to `StreamBootstrap.contextBag` so the timeline can render a message's
+ * context-bag chip synchronously from the bootstrap payload — no separate
+ * fetch, no layout shift on first render.
+ */
+export interface StreamContextRefSource {
+  streamId: string
+  displayName: string | null
+  slug: string | null
+  type: string
+  itemCount: number
+}
+
+export interface StreamContextRef {
+  kind: "thread"
+  streamId: string
+  fromMessageId: string | null
+  toMessageId: string | null
+  /** Cosmetic deep-link anchor; resolver ignores it. See `ContextRef.originMessageId`. */
+  originMessageId: string | null
+  source: StreamContextRefSource
+}
+
+export interface StreamContextBagPayload {
+  bag: {
+    id: string
+    intent: ContextIntent
+  } | null
+  refs: StreamContextRef[]
+}
+
 export interface StreamBootstrap {
   stream: Stream
   events: StreamEvent[]
@@ -58,17 +104,78 @@ export interface StreamBootstrap {
   botMemberIds: string[]
   membership: StreamMember | null
   latestSequence: string
+  /**
+   * Server wall-clock (ISO) captured immediately before the bootstrap's
+   * parallel queries fire. The frontend uses it as a freshness watermark:
+   * any IDB row patched by a socket handler after this instant is preserved
+   * over the bootstrap's enrichment values, since the snapshot may have
+   * read stale data for that row. Optional for backwards compatibility
+   * with cached responses written before this field landed — when missing,
+   * the merge path falls through to per-field overlay only.
+   */
+  snapshotAt?: string
   hasOlderEvents: boolean
   syncMode: "append" | "replace"
   unreadCount: number
   mentionCount: number
   activityCount: number
+  /**
+   * Hydrated payload for cross-stream share-message pointers, keyed by source
+   * message id. Overlaid onto `ThreaSharedMessage` nodes at render time so
+   * clients never have to read other streams' messages directly. See
+   * docs/plans/message-sharing-streams.md D8.
+   */
+  sharedMessages?: Record<string, SharedMessageHydration>
+  /**
+   * Persisted ContextBag attached to this stream (if any). Optional on the
+   * type so older bootstrap payloads cached in the workspace store don't
+   * fail validation; the live backend always returns it as
+   * `{bag: null, refs: []}` for streams without a bag.
+   */
+  contextBag?: StreamContextBagPayload
 }
+
+/**
+ * Wire-format variants for an individual pointer's hydrated content.
+ *
+ * - `ok`: viewer has access; current source content is inlined.
+ * - `deleted`: source row exists but is tombstoned.
+ * - `missing`: source row never existed (or was hard-deleted in a way that
+ *   leaves no tombstone — defended for, shouldn't normally occur).
+ * - `private`: viewer has no read access to the source and no share-grant
+ *   reaches them. Reveals only the source stream's `kind` + `visibility`,
+ *   never the content/author/stream-name. See plan D8.
+ * - `truncated`: hydration stopped at `MAX_HYDRATION_DEPTH` for an
+ *   accessible chain; viewer can follow `streamId` to read in source.
+ */
+export type SharedMessageHydration =
+  | {
+      state: "ok"
+      messageId: string
+      streamId: string
+      authorId: string
+      authorType: string
+      contentJson: unknown
+      contentMarkdown: string
+      editedAt: string | null
+      createdAt: string
+      attachments: AttachmentSummary[]
+    }
+  | { state: "deleted"; messageId: string; deletedAt: string }
+  | { state: "missing"; messageId: string }
+  | {
+      state: "private"
+      messageId: string
+      sourceStreamKind: StreamType
+      sourceVisibility: Visibility
+    }
+  | { state: "truncated"; messageId: string; streamId: string }
 
 export interface EventsAroundResponse {
   events: StreamEvent[]
   hasOlder: boolean
   hasNewer: boolean
+  sharedMessages?: Record<string, SharedMessageHydration>
 }
 
 // ============================================================================
@@ -89,6 +196,14 @@ export interface CreateMessageInputJson {
   clientMessageId?: string
   /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
   metadata?: Record<string, string>
+  /**
+   * Set to `true` after the user has acknowledged that a share node in
+   * `contentJson` would expose its source to people outside the source
+   * stream. Required by the backend for shares that cross a privacy
+   * boundary; sends without it return 409 + code
+   * `SHARE_PRIVACY_CONFIRMATION_REQUIRED`.
+   */
+  confirmedPrivacyWarning?: boolean
 }
 
 export interface CreateDmMessageInputJson {
@@ -102,6 +217,8 @@ export interface CreateDmMessageInputJson {
   clientMessageId?: string
   /** External references as a flat string->string map. Keys under `threa.*` are reserved. */
   metadata?: Record<string, string>
+  /** Same semantics as `CreateMessageInputJson.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 /**
@@ -142,6 +259,8 @@ export type CreateDmMessageInput = CreateDmMessageInputJson | CreateDmMessageInp
 export interface UpdateMessageInputJson {
   contentJson: JSONContent
   contentMarkdown?: string
+  /** See `CreateMessageInputJson.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 /**
@@ -149,12 +268,130 @@ export interface UpdateMessageInputJson {
  */
 export interface UpdateMessageInputMarkdown {
   content: string
+  /** See `CreateMessageInputJson.confirmedPrivacyWarning`. */
+  confirmedPrivacyWarning?: boolean
 }
 
 /**
  * Union type - API accepts either JSON or Markdown for updates.
  */
 export type UpdateMessageInput = UpdateMessageInputJson | UpdateMessageInputMarkdown
+
+export interface MoveMessagesToThreadInput {
+  sourceStreamId: string
+  targetMessageId: string
+  messageIds: string[]
+  leaseKey: string
+}
+
+export interface MoveMessagesToThreadResponse {
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: Stream
+  events: StreamEvent[]
+  removedEventIds: string[]
+  /** Tombstone event inserted into the source stream that the source-side
+   *  client appends to its cache so the move leaves a visible trace. */
+  sourceTombstoneEvent: StreamEvent
+}
+
+/**
+ * Per-message preview embedded in a `messages:moved` stream event payload.
+ *
+ * Carries enough to render a clickable summary in the move drill-in
+ * drawer without an extra fetch. `contentMarkdown` is a capped raw
+ * markdown excerpt — preview surfaces are exempt from INV-58 (canonical
+ * content lives in `contentJson` on the actual message row); per INV-60
+ * they ship as markdown and the frontend strips at render via
+ * `stripMarkdownToInline`.
+ */
+export interface MovedMessagePreview {
+  id: string
+  authorId: string | null
+  authorType: AuthorType | null
+  contentMarkdown: string
+  createdAt: string
+}
+
+/**
+ * Payload for a `messages:moved` stream event. One row is inserted in the
+ * source stream and one in the destination thread on every move; the
+ * renderer collapses each row to "Actor moved N messages" and opens a
+ * drill-in drawer when clicked. The same shape serves both sides — the
+ * renderer infers role from whether `event.streamId === sourceStreamId`
+ * (outbound) vs `=== destinationStreamId` (inbound).
+ *
+ * `event.actorId` carries the mover's user ID and `event.createdAt`
+ * carries the move timestamp, so they aren't duplicated in the payload.
+ *
+ * Source/destination stream names are embedded so the tombstone can
+ * render without an extra round-trip when the linked stream isn't
+ * already cached. They're a snapshot — a later rename won't be reflected
+ * on existing tombstones, which is acceptable since tombstones are
+ * append-only history.
+ */
+export interface MessagesMovedEventPayload {
+  sourceStreamId: string
+  sourceStreamSlug: string | null
+  sourceStreamDisplayName: string | null
+  destinationStreamId: string
+  destinationStreamSlug: string | null
+  destinationStreamDisplayName: string | null
+  /**
+   * Per-message previews for the drill-in drawer.
+   * `messages.length` is the canonical count.
+   */
+  messages: MovedMessagePreview[]
+}
+
+/**
+ * Provenance stamped onto a relocated `message_created` event payload by
+ * the move flow. Surfaces a per-message origin badge in the destination
+ * timeline without a join. Re-moves overwrite earlier provenance — we
+ * surface the most recent origin, not a chain.
+ *
+ * Source-stream metadata (slug + display name) is snapshotted alongside
+ * the IDs so the badge can render the origin name without a separate
+ * lookup. Like the tombstone payload, this snapshot is intentional —
+ * later renames don't reflect on existing badges.
+ */
+export interface MovedFromProvenance {
+  sourceStreamId: string
+  sourceStreamSlug: string | null
+  sourceStreamDisplayName: string | null
+  movedAt: string
+  movedBy: UserId
+  /**
+   * Author type of `movedBy`. Today the move handler is gated to user
+   * actors, so this is always `"user"` — but persisting the type alongside
+   * the id avoids silently mislabelling bot/agent movers if the move flow
+   * is ever reused.
+   */
+  movedByType: AuthorType
+  /**
+   * `event.id` of the destination-side `messages:moved` tombstone. The
+   * destination doesn't render the tombstone inline — it shows a small
+   * origin badge per message instead — so a per-message context-menu
+   * action ("Show move details") looks the tombstone up by id from IDB
+   * to populate the drill-in drawer.
+   */
+  moveTombstoneId: string
+}
+
+export interface ValidateMoveMessagesToThreadInput {
+  sourceStreamId: string
+  targetMessageId: string
+  messageIds: string[]
+}
+
+export interface ValidateMoveMessagesToThreadResponse {
+  leaseKey: string
+  expiresAt: string
+  destinationStreamId: string | null
+  messageCount: number
+}
 
 // ============================================================================
 // Workspaces API
@@ -176,9 +413,24 @@ export interface EmojiEntry {
   aliases: string[]
 }
 
+export const CommandKinds = {
+  /** Server-executed: dispatched through POST /commands. */
+  SERVER: "server",
+  /**
+   * Client-action: the frontend recognizes the `id` and performs a local
+   * action (navigation, mutation) instead of round-tripping to the backend.
+   */
+  CLIENT_ACTION: "client-action",
+} as const
+export type CommandKind = (typeof CommandKinds)[keyof typeof CommandKinds]
+
 export interface CommandInfo {
   name: string
   description: string
+  /** Omitted for backwards compat = "server" (previous behaviour). */
+  kind?: CommandKind
+  /** For `kind: "client-action"`, the stable id the frontend dispatches on. */
+  clientActionId?: string
 }
 
 export interface WorkspaceBootstrap {
@@ -199,6 +451,12 @@ export interface WorkspaceBootstrap {
   mutedStreamIds: string[]
   userPreferences: UserPreferences
   invitations?: WorkspaceInvitation[]
+  /**
+   * Effective workspace permissions for the viewer. Sourced from the WorkOS
+   * session JWT when the rollout is active, with a role-derived fallback for
+   * older tokens. Frontend uses this to gate UI affordances.
+   */
+  viewerPermissions: WorkspacePermissionSlug[]
 }
 
 // ============================================================================
@@ -214,7 +472,7 @@ export interface PendingInvitation {
 
 export interface SendInvitationsInput {
   emails: string[]
-  role?: "admin" | "user"
+  role?: WorkspaceInvitableRole
 }
 
 export type InvitationSkipReason = "already_user" | "pending_invitation"
@@ -222,6 +480,36 @@ export type InvitationSkipReason = "already_user" | "pending_invitation"
 export interface SendInvitationsResponse {
   sent: WorkspaceInvitation[]
   skipped: Array<{ email: string; reason: InvitationSkipReason }>
+}
+
+// Link-based invitations
+
+export interface CreateInvitationLinkInput {
+  role: WorkspaceInvitableRole
+  /** Admin-only memo, e.g. "for Simon — sent via Signal". Optional. */
+  note?: string
+}
+
+export interface CreateInvitationLinkResponse {
+  invitation: WorkspaceInvitation
+  /** The plaintext claim token. Returned exactly once at create time; never retrievable again. */
+  token: string
+}
+
+export interface InvitationLinkLookupResponse {
+  workspaceName: string
+  expiresAt: string
+}
+
+export interface ClaimInvitationLinkInput {
+  token: string
+  email: string
+}
+
+export interface ClaimInvitationLinkResponse {
+  ok: true
+  /** Set when the email already belongs to a workspace member; frontend can deep-link to login. */
+  alreadyMember?: { workspaceId: string }
 }
 
 export interface CompleteUserSetupInput {
@@ -503,4 +791,123 @@ export interface SavedReminderFiredPayload {
   messageId: string
   streamId: string
   saved: SavedMessageView
+}
+
+// ============================================================================
+// Scheduled Messages API
+// ============================================================================
+
+/**
+ * Wire shape for a scheduled-message row. Mirrors the table columns minus the
+ * lock fields the user doesn't care about; lock state is exposed only on the
+ * `/claim` response.
+ */
+export interface ScheduledMessageView {
+  id: string
+  workspaceId: string
+  userId: string
+  streamId: string
+  parentMessageId: string | null
+  contentJson: JSONContent
+  contentMarkdown: string
+  attachmentIds: string[]
+  metadata: Record<string, string> | null
+  scheduledFor: string
+  status: ScheduledMessageStatus
+  sentMessageId: string | null
+  lastError: string | null
+  /**
+   * Worker fence — the worker won't fire while this is in the future. Bumped
+   * by `claim` / heartbeat. Anonymous: any editor session keeps the worker
+   * out; first save still wins via the `updatedAt` optimistic CAS, not via
+   * this fence. ISO string; null when no editor session is active.
+   */
+  editActiveUntil: string | null
+  /**
+   * Idempotency key the original `POST /scheduled` carried. Echoed back so
+   * the frontend can match a server-issued row against an optimistic
+   * placeholder waiting in IDB and swap them in one transaction.
+   */
+  clientMessageId: string | null
+  /**
+   * Optimistic-concurrency version. Starts at 1; every state-changing
+   * server-side UPDATE increments it. The client sends this back as
+   * `expectedVersion` on PATCH; mismatch → 409 STALE_VERSION.
+   */
+  version: number
+  createdAt: string
+  updatedAt: string
+  statusChangedAt: string
+}
+
+export interface ScheduleMessageInput {
+  streamId: string
+  parentMessageId?: string | null
+  contentJson: JSONContent
+  contentMarkdown: string
+  attachmentIds?: string[]
+  metadata?: Record<string, string>
+  scheduledFor: string
+  /** Idempotency key for optimistic create retries (mirrors message create). */
+  clientMessageId?: string
+}
+
+/**
+ * Optimistic-concurrency update payload. The client sends `expectedVersion`
+ * — the `version` integer it last saw on the row — and the server CAS rejects
+ * with 409 STALE_VERSION when the row has moved on (someone else saved, the
+ * worker fired, etc). Any number of editors can coexist; first save wins.
+ */
+export interface UpdateScheduledMessageInput {
+  contentJson?: JSONContent
+  contentMarkdown?: string
+  attachmentIds?: string[]
+  metadata?: Record<string, string> | null
+  scheduledFor?: string
+  /** Row's `version` integer at the time the editor opened. */
+  expectedVersion: number
+}
+
+/**
+ * Response from `POST /scheduled/:id/lock`. The caller pauses the worker
+ * from sending while the user has the edit dialog open. Anonymous fence —
+ * no per-device owner, multiple devices/tabs can hold it concurrently.
+ *
+ * Echoes the current row so the dialog can refresh `expectedVersion` from
+ * an authoritative source, even when the IDB-cached row that triggered
+ * the open was stale (e.g. created before the version migration shipped).
+ */
+export interface LockScheduledMessageResponse {
+  scheduled: ScheduledMessageView
+  /** ISO of when the worker fence expires. Generous TTL; no heartbeat. */
+  editActiveUntil: string
+}
+
+export interface ScheduledMessageListResponse {
+  scheduled: ScheduledMessageView[]
+  nextCursor: string | null
+}
+
+/** Wire payload broadcast on `scheduled_message:upserted` socket events. */
+export interface ScheduledMessageUpsertedPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+/** Wire payload broadcast on `scheduled_message:sent` socket events. */
+export interface ScheduledMessageSentPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduledId: string
+  sentMessageId: string
+  streamId: string
+  scheduled: ScheduledMessageView
+}
+
+/** Wire payload broadcast on `scheduled_message:cancelled` socket events. */
+export interface ScheduledMessageCancelledPayload {
+  workspaceId: string
+  targetUserId: string
+  scheduledId: string
 }

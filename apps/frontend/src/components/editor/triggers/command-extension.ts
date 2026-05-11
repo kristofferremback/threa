@@ -6,6 +6,15 @@ export const CommandPluginKey = new PluginKey("slashCommand")
 
 export interface CommandNodeAttrs {
   name: string
+  /**
+   * Opaque discriminator for client-action commands — routed locally by the
+   * composer instead of dispatched to the backend `commandsApi`. `null` for
+   * regular server-side commands. Stored on the node so the composer-side
+   * send handler can branch on `clientActionId` rather than hardcoding
+   * per-command `name === "…"` checks. Stays in sync with `CommandInfo`
+   * from the workspace bootstrap metadata.
+   */
+  clientActionId: string | null
 }
 
 export type CommandOptions = TriggerExtensionOptions<CommandItem>
@@ -21,10 +30,12 @@ export const CommandExtension = createTriggerExtension<CommandItem, CommandNodeA
   startOfLine: true,
   attributes: {
     name: { dataAttr: "data-name" },
+    clientActionId: { dataAttr: "data-client-action-id", default: null },
   },
   getClassName: () => "font-mono font-bold bg-muted text-primary text-sm",
   getText: (attrs) => `/${attrs.name}`,
   mapPropsToAttrs: (c) => ({
     name: c.name,
+    clientActionId: c.clientActionId ?? null,
   }),
 })

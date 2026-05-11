@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react"
-import { Check, ChevronsUpDown } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useCallback, useMemo } from "react"
+import { Check } from "lucide-react"
+import { CommandItem } from "@/components/ui/command"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { cn } from "@/lib/utils"
 
 /**
@@ -52,50 +51,50 @@ interface TimezonePickerProps {
 }
 
 export function TimezonePicker({ value, onChange }: TimezonePickerProps) {
-  const [open, setOpen] = useState(false)
   const detectedTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
   const timezones = useMemo(() => getAvailableTimezones(), [])
-
-  function handleSelect(selectedTimezone: string) {
-    onChange(selectedTimezone)
-    setOpen(false)
-  }
+  // Precompute the formatted label for every timezone once. formatTimezoneLabel
+  // spins up a fresh Intl.DateTimeFormat per call, and this list has 400+
+  // entries — caching keeps every keystroke during search cheap.
+  const labelByTz = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const tz of timezones) map.set(tz, formatTimezoneLabel(tz))
+    return map
+  }, [timezones])
+  const labelFor = useCallback((tz: string) => labelByTz.get(tz) ?? formatTimezoneLabel(tz), [labelByTz])
 
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={false}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between">
-          <span className="truncate font-mono">{formatTimezoneLabel(value)}</span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0" align="start" onWheel={(e) => e.stopPropagation()}>
-        <Command>
-          <CommandInput placeholder="Search timezone..." />
-          <CommandList>
-            <CommandEmpty>No timezone found.</CommandEmpty>
-            <CommandGroup>
-              {detectedTimezone !== value && (
-                <CommandItem
-                  value={`device-${detectedTimezone}`}
-                  onSelect={() => handleSelect(detectedTimezone)}
-                  className="font-medium"
-                >
-                  <Check className={cn("mr-2 h-4 w-4", value === detectedTimezone ? "opacity-100" : "opacity-0")} />
-                  <span className="font-mono">{formatTimezoneLabel(detectedTimezone)}</span>
-                  <span className="ml-2 text-muted-foreground">(device)</span>
-                </CommandItem>
-              )}
-              {timezones.map((tz) => (
-                <CommandItem key={tz} value={tz} onSelect={() => handleSelect(tz)}>
-                  <Check className={cn("mr-2 h-4 w-4", value === tz ? "opacity-100" : "opacity-0")} />
-                  <span className="font-mono">{formatTimezoneLabel(tz)}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <SearchableSelect
+      items={timezones}
+      value={value}
+      onChange={onChange}
+      getKey={(tz) => tz}
+      getKeywords={(tz) => [tz, tz.replace(/_/g, " "), labelFor(tz)]}
+      searchPlaceholder="Search timezone..."
+      emptyMessage="No timezone found."
+      renderSelected={(tz) => <span className="font-mono">{labelFor(tz)}</span>}
+      renderItem={(tz, isSelected) => (
+        <>
+          <Check className={cn("mr-2 h-4 w-4", isSelected ? "opacity-100" : "opacity-0")} />
+          <span className="font-mono">{labelFor(tz)}</span>
+        </>
+      )}
+      prefixContent={({ close }) =>
+        detectedTimezone !== value ? (
+          <CommandItem
+            value={`device-${detectedTimezone}`}
+            onSelect={() => {
+              onChange(detectedTimezone)
+              close()
+            }}
+            className="font-medium"
+          >
+            <Check className="mr-2 h-4 w-4 opacity-0" aria-hidden="true" />
+            <span className="font-mono">{labelFor(detectedTimezone)}</span>
+            <span className="ml-2 text-muted-foreground">(device)</span>
+          </CommandItem>
+        ) : null
+      }
+    />
   )
 }

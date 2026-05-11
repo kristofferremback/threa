@@ -1,4 +1,4 @@
-import { api, API_BASE } from "./client"
+import { api, API_BASE, parseApiError } from "./client"
 import type {
   Workspace,
   WorkspaceBootstrap,
@@ -8,7 +8,7 @@ import type {
   PendingInvitation,
   UserApiKey,
   CreateUserApiKeyResponse,
-  ApiKeyScope,
+  WorkspacePermissionSlug,
 } from "@threa/types"
 
 export type { WorkspaceBootstrap, CreateWorkspaceInput }
@@ -96,9 +96,7 @@ export const workspacesApi = {
     })
 
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      const errorMessage = typeof body.error === "string" ? body.error : body.error?.message || "Upload failed"
-      throw new Error(errorMessage)
+      throw await parseApiError(response, { code: "AVATAR_UPLOAD_ERROR", message: "Avatar upload failed" })
     }
 
     const body = await response.json()
@@ -124,7 +122,7 @@ export const workspacesApi = {
 
   async createUserApiKey(
     workspaceId: string,
-    params: { name: string; scopes: ApiKeyScope[]; expiresAt?: string | null }
+    params: { name: string; scopes: WorkspacePermissionSlug[]; expiresAt?: string | null }
   ): Promise<CreateUserApiKeyResponse> {
     return api.post<CreateUserApiKeyResponse>(`/api/workspaces/${workspaceId}/user-api-keys`, params)
   },

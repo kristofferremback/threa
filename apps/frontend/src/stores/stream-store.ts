@@ -5,13 +5,57 @@ import { db, type CachedEvent, type CachedStream } from "@/db"
 /**
  * Cap the number of events loaded from IDB per stream when no sequence floor
  * is known (initial load before bootstrap resolves). Once the caller provides
- * a floor, the IDB query switches to a range scan with no count limit —
- * the floor itself bounds memory usage.
+ * a floor, the floor itself bounds memory usage and the cap doesn't apply.
  */
 const DEFAULT_IDB_EVENT_LIMIT = 150
 
 /** No-op — the in-memory event cache has been removed. Kept for clearAllCachedData compat. */
 export function resetStreamStoreCache(): void {}
+
+/**
+ * Read events for a stream from IndexedDB, sorted ASC by `_sequenceNum`.
+ *
+ * Single read path regardless of whether a floor is provided:
+ *   - With a floor: range scan from the floor to maxKey, no count cap.
+ *   - Without a floor: same range, but capped to the latest N events as a
+ *     memory bound on initial pre-bootstrap load.
+ *
+ * Pending and failed optimistic events with placeholder sequences are merged
+ * in and the full list re-sorted, so they always land in their natural slot
+ * by `_sequenceNum` rather than being appended at the end of the array.
+ */
+export async function loadStreamEvents(streamId: string, fromSequenceNum: number | null): Promise<CachedEvent[]> {
+  // Iterate the index in DESC so the count cap (when applied) keeps the
+  // newest events; flip to ASC at the end for rendering.
+  const lowerBound: [string, number] | [string, typeof Dexie.minKey] =
+    fromSequenceNum != null ? [streamId, fromSequenceNum] : [streamId, Dexie.minKey]
+  const collection = db.events
+    .where("[streamId+_sequenceNum]")
+    .between(lowerBound, [streamId, Dexie.maxKey], true, true)
+    .reverse()
+  const reversed =
+    fromSequenceNum != null ? await collection.toArray() : await collection.limit(DEFAULT_IDB_EVENT_LIMIT).toArray()
+
+  // Merge in pending/failed optimistic events that fell outside the window
+  // (defensive — the current placeholder scheme uses `Date.now()` so they
+  // sort to the very top and are already in-window). Re-sort the full list
+  // so order is determined solely by `_sequenceNum`, not insertion path.
+  const loadedIds = new Set(reversed.map((e) => e.id))
+  const unsent = await db.events
+    .where("streamId")
+    .equals(streamId)
+    .filter(
+      (e) =>
+        (e._status === "pending" || e._status === "failed") &&
+        !loadedIds.has(e.id) &&
+        (fromSequenceNum == null || e._sequenceNum >= fromSequenceNum)
+    )
+    .toArray()
+
+  const merged = unsent.length > 0 ? [...reversed, ...unsent] : reversed
+  merged.sort((a, b) => a._sequenceNum - b._sequenceNum)
+  return merged
+}
 
 /**
  * Reactively read all events for a stream from IndexedDB.
@@ -31,41 +75,10 @@ export function useStreamEvents(
 ): CachedEvent[] | undefined {
   const result = useLiveQuery(async () => {
     if (!streamId) return []
-
-    let events: CachedEvent[]
-    if (fromSequenceNum != null) {
-      // Floor-based range scan: return all events from the floor onward.
-      // The floor is controlled by the caller (bootstrap + pagination) so
-      // memory is bounded by how far the user has actually scrolled back.
-      events = await db.events
-        .where("[streamId+_sequenceNum]")
-        .between([streamId, fromSequenceNum], [streamId, Dexie.maxKey], true, true)
-        .toArray()
-    } else {
-      // No floor known yet (pre-bootstrap) — use a count-based cap so the
-      // initial load is bounded on low-memory devices.
-      events = await db.events
-        .where("[streamId+_sequenceNum]")
-        .between([streamId, Dexie.minKey], [streamId, Dexie.maxKey])
-        .reverse()
-        .limit(DEFAULT_IDB_EVENT_LIMIT)
-        .toArray()
-      events.reverse()
-    }
-
-    // Include any pending/failed optimistic events that may have
-    // placeholder sequences outside the loaded window.
-    const loadedIds = new Set(events.map((e) => e.id))
-    const unsent = await db.events
-      .where("streamId")
-      .equals(streamId)
-      .filter((e) => (e._status === "pending" || e._status === "failed") && !loadedIds.has(e.id))
-      .toArray()
-    for (const e of unsent)
-      events.push(e)
-      // Stamp the result with the streamId it was fetched for so the caller
-      // can distinguish a fresh empty result from a stale empty result left
-      // over from the previous stream.
+    const events = await loadStreamEvents(streamId, fromSequenceNum ?? null)
+    // Stamp the result with the streamId it was fetched for so the caller
+    // can distinguish a fresh empty result from a stale empty result left
+    // over from the previous stream.
     ;(events as CachedEvent[] & { __streamId?: string }).__streamId = streamId
     return events
   }, [streamId, fromSequenceNum])

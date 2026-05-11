@@ -277,7 +277,7 @@ function TraceBody({
     content = <div className="p-6 text-center text-destructive">Failed to load trace. Please try again.</div>
   }
 
-  return <div className="flex-1 min-h-0 overflow-y-auto">{content}</div>
+  return <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">{content}</div>
 }
 
 function TraceFooter({

@@ -1,12 +1,28 @@
 import { ulid } from "ulid"
 import { logger } from "../logger"
-import type { WorkosAppInvitation, WorkosOrgService, WorkosUserSummary } from "./workos-org-service"
+import type {
+  WorkosAppInvitation,
+  WorkosMembershipEvent,
+  WorkosOrgService,
+  WorkosOrganizationMembership,
+  WorkosUserSummary,
+} from "./workos-org-service"
 
 export class StubWorkosOrgService implements WorkosOrgService {
   private orgsByExternalId = new Map<string, string>()
   private appInvitations: WorkosAppInvitation[] = []
   /** Test helper: let callers pre-populate a user lookup table. */
   public users = new Map<string, WorkosUserSummary>()
+  /**
+   * Test helper: in-memory stack of mirror events. Tests push into this with
+   * `pushMirrorEvent` and the poller drains via `listMirrorEvents`.
+   */
+  private mirrorEvents: WorkosMembershipEvent[] = []
+  /**
+   * Test helper: per-org membership listing returned by backfill. Tests seed
+   * it via `setOrganizationMemberships`.
+   */
+  private membershipsByOrg = new Map<string, WorkosOrganizationMembership[]>()
 
   async createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }> {
     const id = `org_stub_${ulid()}`
@@ -82,6 +98,16 @@ export class StubWorkosOrgService implements WorkosOrgService {
     return this.users.get(workosUserId) ?? null
   }
 
+  async listOrganizationUsers(organizationId: string): Promise<WorkosUserSummary[]> {
+    const memberships = this.membershipsByOrg.get(organizationId) ?? []
+    const users: WorkosUserSummary[] = []
+    for (const m of memberships) {
+      const user = this.users.get(m.userId)
+      if (user) users.push(user)
+    }
+    return users
+  }
+
   async getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null> {
     return { id: organizationId, domains: [] }
   }
@@ -99,5 +125,34 @@ export class StubWorkosOrgService implements WorkosOrgService {
 
   async getWidgetToken(_params: { organizationId: string; userId: string; scopes: string[] }): Promise<string> {
     return "stub_widget_token"
+  }
+
+  async listMirrorEvents(params: {
+    after?: string
+    limit?: number
+  }): Promise<{ data: WorkosMembershipEvent[]; after: string | null }> {
+    const startIdx = params.after ? this.mirrorEvents.findIndex((e) => e.id === params.after) + 1 : 0
+    const slice = this.mirrorEvents.slice(startIdx, startIdx + (params.limit ?? 100))
+    const next = startIdx + slice.length < this.mirrorEvents.length ? (slice[slice.length - 1]?.id ?? null) : null
+    return { data: slice, after: next }
+  }
+
+  async listOrganizationMemberships(organizationId: string): Promise<WorkosOrganizationMembership[]> {
+    return [...(this.membershipsByOrg.get(organizationId) ?? [])]
+  }
+
+  /** Test helper: append a mirror event to the stub queue. */
+  pushMirrorEvent(event: WorkosMembershipEvent): void {
+    this.mirrorEvents.push(event)
+  }
+
+  /** Test helper: replace the membership listing for an organization. */
+  setOrganizationMemberships(organizationId: string, memberships: WorkosOrganizationMembership[]): void {
+    this.membershipsByOrg.set(organizationId, [...memberships])
+  }
+
+  /** Test helper: clear all queued mirror events. */
+  clearMirrorEvents(): void {
+    this.mirrorEvents = []
   }
 }

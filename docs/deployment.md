@@ -15,6 +15,8 @@ How production deploys work for each component of the Threa stack.
 | Backoffice                  | Cloudflare Pages   | Auto-deploy on push to `main` (via `deploy-cloudflare.yml`)       | `admin.threa.io`                               |
 | Backoffice-router (staging) | Cloudflare Workers | Auto-deploy on push to `main` (via `deploy-cloudflare.yml`)       | `admin-staging.threa.io/*`                     |
 | Backoffice (staging)        | Cloudflare Pages   | Auto-deploy on push to `main` (via `deploy-cloudflare.yml`)       | `admin-staging.threa.io`                       |
+| Frontend (staging)          | Cloudflare Pages   | Auto-deploy on push to `main` (via `deploy-cloudflare.yml`)       | `staging.threa.io`                             |
+| Workspace-router (staging)  | Cloudflare Workers | Auto-deploy on push to `main` (via `deploy-cloudflare.yml`)       | `staging.threa.io/api/*`, `pr-N-staging.*`     |
 
 ## Railway Services (Auto-Deploy)
 
@@ -116,16 +118,25 @@ Both services share the same PostgreSQL instance but use different databases:
 
 ## Cloudflare (Workers + Pages)
 
-All Cloudflare surfaces auto-deploy on push to `main` via `.github/workflows/deploy-cloudflare.yml`. The workflow fires on `workflow_run` after CI passes and runs six parallel deploy jobs:
+All Cloudflare surfaces auto-deploy on push to `main` via `.github/workflows/deploy-cloudflare.yml`. The workflow fires on `workflow_run` after CI passes and runs eight parallel deploy jobs:
 
-| Job                                | Resource                                | What it does                                                               |
-| ---------------------------------- | --------------------------------------- | -------------------------------------------------------------------------- |
-| `deploy-frontend`                  | `threa-frontend` (CF Pages)             | builds `apps/frontend` and pushes `dist/` to the Pages project             |
-| `deploy-workspace-router`          | `workspace-router` (CF Worker)          | `wrangler deploy --config wrangler.production.toml`                        |
-| `deploy-backoffice`                | `threa-backoffice` (CF Pages)           | builds `apps/backoffice` and pushes to the Pages project                   |
-| `deploy-backoffice-router`         | `backoffice-router` (CF Worker)         | `wrangler deploy --config wrangler.production.toml`                        |
-| `deploy-backoffice-staging`        | `threa-backoffice-staging` (CF Pages)   | builds `apps/backoffice` and pushes the same bundle to the staging project |
-| `deploy-backoffice-router-staging` | `backoffice-router-staging` (CF Worker) | `wrangler deploy --config wrangler.staging.toml`                           |
+| Job                                | Resource                                | What it does                                                                   |
+| ---------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------ |
+| `deploy-frontend`                  | `threa-frontend` (CF Pages)             | builds `apps/frontend` and pushes `dist/` to the prod Pages project            |
+| `deploy-workspace-router`          | `workspace-router` (CF Worker)          | `wrangler deploy --config wrangler.production.toml`                            |
+| `deploy-backoffice`                | `threa-backoffice` (CF Pages)           | builds `apps/backoffice` and pushes to the Pages project                       |
+| `deploy-backoffice-router`         | `backoffice-router` (CF Worker)         | `wrangler deploy --config wrangler.production.toml`                            |
+| `deploy-backoffice-staging`        | `threa-backoffice-staging` (CF Pages)   | builds `apps/backoffice` and pushes the same bundle to the staging project     |
+| `deploy-backoffice-router-staging` | `backoffice-router-staging` (CF Worker) | `wrangler deploy --config wrangler.staging.toml`                               |
+| `deploy-frontend-staging`          | `threa-staging` (CF Pages)              | builds `apps/frontend` and pushes to the staging Pages project (`main` branch) |
+| `deploy-workspace-router-staging`  | `workspace-router-staging` (CF Worker)  | `wrangler deploy --config wrangler.staging.toml`                               |
+
+The PR-staging workflow (`staging.yml`) deploys the same `threa-staging` Pages
+project but with `--branch pr-N` to give each PR an isolated preview at
+`pr-N-staging.threa.io`. The new `deploy-frontend-staging` job above keeps the
+`main` branch of `threa-staging` (served at `staging.threa.io`) in sync as PRs
+land — without it, the always-on staging environment fossilizes on whatever
+build was last manually pushed.
 
 ### Workspace-router (`apps/workspace-router/`)
 

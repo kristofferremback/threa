@@ -5,10 +5,12 @@ import type { User } from "../../features/workspaces"
 import type { ConversationWithStaleness } from "../../features/conversations"
 import type {
   Memo as WireMemo,
+  StreamEvent as WireStreamEvent,
   UserPreferences,
   LastMessagePreview,
   Bot as WireBot,
   SavedMessageView,
+  ScheduledMessageView,
 } from "@threa/types"
 
 /**
@@ -19,6 +21,7 @@ export type OutboxEventType =
   | "message:created"
   | "message:edited"
   | "message:deleted"
+  | "messages:moved"
   | "message:updated"
   | "reaction:added"
   | "reaction:removed"
@@ -31,6 +34,7 @@ export type OutboxEventType =
   | "stream:read_all"
   | "stream:activity"
   | "attachment:uploaded"
+  | "attachment:extraction_completed"
   | "workspace_user:added"
   | "workspace_user:removed"
   | "workspace_user:updated"
@@ -51,12 +55,17 @@ export type OutboxEventType =
   | "stream:member_added"
   | "stream:member_removed"
   | "invitation:sent"
+  | "invitation:link-created"
+  | "invitation:link-claimed"
   | "invitation:accepted"
   | "invitation:revoked"
   | "activity:created"
   | "saved:upserted"
   | "saved:deleted"
   | "saved_reminder:fired"
+  | "scheduled_message:upserted"
+  | "scheduled_message:sent"
+  | "scheduled_message:cancelled"
   | "bot:created"
   | "bot:updated"
   | "link_preview:ready"
@@ -68,6 +77,7 @@ export type StreamScopedEventType =
   | "message:created"
   | "message:edited"
   | "message:deleted"
+  | "messages:moved"
   | "message:updated"
   | "reaction:added"
   | "reaction:removed"
@@ -94,6 +104,7 @@ export type WorkspaceScopedEventType =
   | "stream:archived"
   | "stream:unarchived"
   | "attachment:uploaded"
+  | "attachment:extraction_completed"
   | "workspace_user:added"
   | "workspace_user:removed"
   | "workspace_user:updated"
@@ -128,6 +139,39 @@ export interface MessageEditedOutboxPayload extends StreamScopedPayload {
 export interface MessageDeletedOutboxPayload extends StreamScopedPayload {
   messageId: string
   deletedAt: string
+}
+
+export interface MessagesMovedOutboxPayload extends StreamScopedPayload {
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: Stream
+  events: WireStreamEvent[]
+  removedEventIds: string[]
+  /**
+   * The `messages:moved` tombstone inserted into the SOURCE stream. Source
+   * clients append this to their IDB cache after applying `removedEventIds`
+   * so the timeline keeps a "moved 3 messages → thread" trace where the
+   * messages used to be. Not part of `events` because that array is the
+   * destination-side write set.
+   */
+  sourceTombstoneEvent: WireStreamEvent
+  /**
+   * Authoritative `replyCount` for the drop-target message (the thread
+   * parent), recomputed AFTER the move's `incrementReplyCountBy`. Frontend
+   * sets this directly on the parent message in the source stream. Including
+   * it in `messages:moved` makes this event self-sufficient: ThreadCard
+   * surfaces with the right count even if the sibling `message:updated`
+   * outbox event is delayed, dropped, or processed out of order.
+   */
+  parentReplyCount: number
+  /**
+   * Recomputed thread summary for the drop-target — same field shape
+   * `message:updated` ships, included here so the card preview/participants
+   * land alongside the move without waiting for a second event.
+   */
+  parentThreadSummary: import("@threa/types").ThreadSummary | null
 }
 
 export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
@@ -208,6 +252,19 @@ export interface AttachmentTranscodedOutboxPayload extends WorkspaceScopedPayloa
   processingStatus: string
   streamId?: string
   messageId?: string
+}
+
+/**
+ * Fired in the same transaction as the `attachment_extractions` insert,
+ * across all extraction pipelines (text/word/image-caption via
+ * `processAttachment`, plus the PDF assemble path). The
+ * `AttachmentEmbeddingHandler` consumes it to enqueue summary-embedding
+ * jobs; carries `contentType` so the handler can short-circuit ineligible
+ * extractions (`photo`, `other`) before paying for an enqueue.
+ */
+export interface AttachmentExtractionCompletedOutboxPayload extends WorkspaceScopedPayload {
+  attachmentId: string
+  contentType: import("@threa/types").ExtractionContentType
 }
 
 export interface WorkspaceUserAddedOutboxPayload extends WorkspaceScopedPayload {
@@ -316,6 +373,20 @@ export interface InvitationSentOutboxPayload extends WorkspaceScopedPayload {
   inviterWorkosUserId?: string
 }
 
+export interface InvitationLinkCreatedOutboxPayload extends WorkspaceScopedPayload {
+  invitationId: string
+  tokenHash: string
+  role: string
+  expiresAt: string
+}
+
+export interface InvitationLinkClaimedOutboxPayload extends WorkspaceScopedPayload {
+  invitationId: string
+  email: string
+  role: string
+  inviterWorkosUserId?: string
+}
+
 export interface InvitationAcceptedOutboxPayload extends WorkspaceScopedPayload {
   invitationId: string
   email: string
@@ -367,6 +438,25 @@ export interface SavedReminderFiredOutboxPayload extends WorkspaceScopedPayload 
   saved: SavedMessageView
 }
 
+// Scheduled message event payloads
+export interface ScheduledMessageUpsertedOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  scheduled: ScheduledMessageView
+}
+
+export interface ScheduledMessageSentOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  scheduledId: string
+  sentMessageId: string
+  streamId: string
+  scheduled: ScheduledMessageView
+}
+
+export interface ScheduledMessageCancelledOutboxPayload extends WorkspaceScopedPayload {
+  targetUserId: string
+  scheduledId: string
+}
+
 // Bot event payloads
 export interface BotCreatedOutboxPayload extends WorkspaceScopedPayload {
   bot: WireBot
@@ -404,6 +494,7 @@ export interface OutboxEventPayloadMap {
   "message:created": MessageCreatedOutboxPayload
   "message:edited": MessageEditedOutboxPayload
   "message:deleted": MessageDeletedOutboxPayload
+  "messages:moved": MessagesMovedOutboxPayload
   "message:updated": MessageUpdatedOutboxPayload
   "reaction:added": ReactionOutboxPayload
   "reaction:removed": ReactionOutboxPayload
@@ -436,17 +527,23 @@ export interface OutboxEventPayloadMap {
   "user_preferences:updated": UserPreferencesUpdatedOutboxPayload
   "budget:alert": BudgetAlertOutboxPayload
   "invitation:sent": InvitationSentOutboxPayload
+  "invitation:link-created": InvitationLinkCreatedOutboxPayload
+  "invitation:link-claimed": InvitationLinkClaimedOutboxPayload
   "invitation:accepted": InvitationAcceptedOutboxPayload
   "invitation:revoked": InvitationRevokedOutboxPayload
   "activity:created": ActivityCreatedOutboxPayload
   "saved:upserted": SavedUpsertedOutboxPayload
   "saved:deleted": SavedDeletedOutboxPayload
   "saved_reminder:fired": SavedReminderFiredOutboxPayload
+  "scheduled_message:upserted": ScheduledMessageUpsertedOutboxPayload
+  "scheduled_message:sent": ScheduledMessageSentOutboxPayload
+  "scheduled_message:cancelled": ScheduledMessageCancelledOutboxPayload
   "bot:created": BotCreatedOutboxPayload
   "bot:updated": BotUpdatedOutboxPayload
   "link_preview:ready": LinkPreviewReadyOutboxPayload
   "link_preview:dismissed": LinkPreviewDismissedOutboxPayload
   "attachment:transcoded": AttachmentTranscodedOutboxPayload
+  "attachment:extraction_completed": AttachmentExtractionCompletedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
@@ -482,6 +579,7 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "message:created",
   "message:edited",
   "message:deleted",
+  "messages:moved",
   "message:updated",
   "reaction:added",
   "reaction:removed",
@@ -532,13 +630,23 @@ export function isAuthorScopedEvent(event: OutboxEvent): event is OutboxEvent<Au
 }
 
 /** Events that are scoped to a specific target user (delivered to that user's sockets) */
-export type UserScopedEventType = "activity:created" | "saved:upserted" | "saved:deleted" | "saved_reminder:fired"
+export type UserScopedEventType =
+  | "activity:created"
+  | "saved:upserted"
+  | "saved:deleted"
+  | "saved_reminder:fired"
+  | "scheduled_message:upserted"
+  | "scheduled_message:sent"
+  | "scheduled_message:cancelled"
 
 const USER_SCOPED_EVENTS: UserScopedEventType[] = [
   "activity:created",
   "saved:upserted",
   "saved:deleted",
   "saved_reminder:fired",
+  "scheduled_message:upserted",
+  "scheduled_message:sent",
+  "scheduled_message:cancelled",
 ]
 
 /**

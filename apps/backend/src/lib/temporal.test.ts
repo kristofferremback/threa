@@ -162,6 +162,10 @@ describe("temporal utilities", () => {
     it("should build simple time section without participants", () => {
       const section = buildTemporalPromptSection(baseContext)
       expect(section).toContain("Current time: 2026-01-06 14:30")
+      expect(section).toContain("invocation-time definition of now")
+      expect(section).toContain("not your training cutoff date")
+      expect(section).toContain("not the stream creation date")
+      expect(section).toContain("Resolve relative times silently")
       expect(section).toContain("use 24-hour format")
     })
 

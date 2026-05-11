@@ -81,7 +81,7 @@ test.describe("Activity Feed", () => {
       ctxB = await loginInNewContext(browser, userBEmail, userBName)
 
       const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "user" },
+        data: { role: "member" },
       })
       expect(joinWsRes.ok()).toBeTruthy()
       const { user: userB } = (await joinWsRes.json()) as { user: { id: string; slug: string } }
@@ -184,7 +184,7 @@ test.describe("Activity Feed", () => {
       // User B joins workspace + channel
       ctxB = await loginInNewContext(browser, userBEmail, userBName)
       const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "user" },
+        data: { role: "member" },
       })
       expect(joinWsRes.ok()).toBeTruthy()
       const { user: userB } = (await joinWsRes.json()) as { user: { id: string; slug: string } }
@@ -263,7 +263,7 @@ test.describe("Activity Feed", () => {
       // User B joins workspace + channel
       ctxB = await loginInNewContext(browser, userBEmail, userBName)
       const joinWsRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "user" },
+        data: { role: "member" },
       })
       expect(joinWsRes.ok()).toBeTruthy()
       const { user: userB } = (await joinWsRes.json()) as { user: { id: string; slug: string } }

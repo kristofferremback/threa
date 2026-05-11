@@ -4,7 +4,6 @@ import { toast } from "sonner"
 import type { SavedMessageView, SavedStatus } from "@threa/types"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { usePreferences } from "@/contexts"
 import { useSaveMessage, useUpdateSaved, useDeleteSaved } from "@/hooks/use-saved"
 import { ReminderBadge } from "@/components/saved/reminder-badge"
 import { REMINDER_PRESETS, computeRemindAt } from "@/lib/reminder-presets"
@@ -16,10 +15,10 @@ interface ReminderPopoverContentProps {
 }
 
 export function ReminderPopoverContent({ workspaceId, messageId, saved }: ReminderPopoverContentProps) {
-  const { preferences } = usePreferences()
-  // Fall back to the system timezone if the user hasn't set one — matches
-  // how `formatFutureTime` treats an absent timezone.
-  const timezone = preferences?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  // Browser-local everywhere in the UI — never use `preferences.timezone`
+  // here. Native pickers operate in device-local; any drift would silently
+  // shift saved reminders by the device-vs-preference offset.
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const saveMutation = useSaveMessage(workspaceId)
   const updateMutation = useUpdateSaved(workspaceId)
   const deleteMutation = useDeleteSaved(workspaceId)

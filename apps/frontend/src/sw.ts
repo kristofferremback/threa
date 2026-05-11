@@ -6,6 +6,7 @@ import {
   SW_MSG_NOTIFICATION_CLICK,
   SW_MSG_SUBSCRIPTION_CHANGED,
   SW_MSG_CLEAR_NOTIFICATIONS,
+  SW_MSG_QUEUE_BOOTSTRAP_SYNC,
   SHARE_TARGET_CACHE,
 } from "./lib/sw-messages"
 
@@ -15,7 +16,14 @@ declare const self: ServiceWorkerGlobalScope
 interface ExtendedNotificationOptions extends NotificationOptions {
   /** Re-alert the user (vibrate/sound) when replacing an existing notification with the same tag. */
   renotify?: boolean
+  /** Vibration pattern: alternating vibrate/pause durations in ms. Honored on Android Chromium PWAs. */
+  vibrate?: number[]
 }
+
+// Distinct "d-dt" vibration (short tap, brief pause, longer tap) so Threa notifications
+// feel different from the OS default dzzt-dzzt. Honored on Android Chromium PWAs; iOS
+// and most desktop browsers ignore it and fall back to the OS default.
+const THREA_VIBRATION_PATTERN = [30, 10, 100]
 
 // Activate new service worker immediately so users get fresh code
 // without needing to close all tabs.
@@ -26,7 +34,7 @@ self.addEventListener("activate", (event) => {
       // Clean stale caches from previous SW versions. Keep only the current
       // workbox precache, push-bootstrap, and share-target caches. Without this,
       // old precache buckets linger and can serve stale HTML/CSS after an update.
-      const currentCaches = new Set([PUSH_BOOTSTRAP_CACHE, SHARE_TARGET_CACHE])
+      const currentCaches = new Set([PUSH_BOOTSTRAP_CACHE, SHARE_TARGET_CACHE, PENDING_SYNC_CACHE])
       const allCaches = await caches.keys()
       await Promise.all(
         allCaches
@@ -52,7 +60,9 @@ cleanupOutdatedCaches()
 // get the latest HTML with correct asset references. The precache still
 // serves as an offline fallback.
 self.addEventListener("fetch", (event) => {
-  if (event.request.mode !== "navigate") return
+  // Only app-shell GET navigations belong here. Web Share Target launches use
+  // a POST navigation to /share, which must fall through to the handler below.
+  if (event.request.mode !== "navigate" || event.request.method !== "GET") return
 
   event.respondWith(
     fetch(event.request).catch(async () => {
@@ -77,11 +87,29 @@ precacheAndRoute(self.__WB_MANIFEST)
 // Push bootstrap pre-fetch — cache stream data so it's instant on notification tap
 // ============================================================================
 
-/** Cache name for pre-fetched bootstrap responses triggered by push notifications. */
+/** Cache name for pre-fetched bootstrap responses triggered by push or background sync. */
 const PUSH_BOOTSTRAP_CACHE = "push-bootstrap"
 
+/** Cache name used to persist pending Background Sync targets across SW restarts. */
+const PENDING_SYNC_CACHE = "pending-sync"
+
+/** Single sync tag for bootstrap refresh — browsers coalesce repeat registrations under the same tag. */
+const BOOTSTRAP_SYNC_TAG = "threa-bootstrap-refresh"
+
+/** Cache key for the persisted sync target. Last write wins; only the most recent target is replayed. */
+const PENDING_SYNC_KEY = `/_sync/${BOOTSTRAP_SYNC_TAG}`
+
 /** Regex matching stream bootstrap API paths. */
-const BOOTSTRAP_PATH_RE = /^\/api\/workspaces\/[^/]+\/streams\/[^/]+\/bootstrap$/
+const STREAM_BOOTSTRAP_PATH_RE = /^\/api\/workspaces\/[^/]+\/streams\/[^/]+\/bootstrap$/
+
+/** Regex matching workspace bootstrap API paths. */
+const WORKSPACE_BOOTSTRAP_PATH_RE = /^\/api\/workspaces\/[^/]+\/bootstrap$/
+
+interface BootstrapSyncTarget {
+  workspaceId: string
+  streamId: string | null
+  messageId: string | null
+}
 
 /**
  * Pre-fetch events around a specific message so it's available in IDB
@@ -167,6 +195,123 @@ async function prefetchStreamBootstrap(workspaceId: string, streamId: string): P
     // Best-effort — normal fetch path takes over if this fails
   }
 }
+
+/**
+ * Pre-fetch the workspace bootstrap so the next workspace bootstrap fetch in the
+ * page is served from the warm push cache by the interceptor above.
+ *
+ * Errors propagate so the `sync` event handler sees the rejection and the
+ * browser retries Background Sync. Inline callers (push handler, no-sync
+ * fallback) catch separately and treat failures as best-effort.
+ *
+ * Unlike stream bootstrap, we don't seed IDB here — the workspace bootstrap
+ * apply pipeline is large and lives in workspace-sync; running it from the SW
+ * would duplicate that surface. Cache-API hydration alone is enough because
+ * TanStack always issues a fresh GET on app load and that GET hits the cache.
+ */
+async function prefetchWorkspaceBootstrap(workspaceId: string): Promise<void> {
+  const url = `/api/workspaces/${workspaceId}/bootstrap`
+  const response = await fetch(url, { credentials: "include" })
+  if (!response.ok) return
+  const cache = await caches.open(PUSH_BOOTSTRAP_CACHE)
+  await cache.put(url, response)
+}
+
+/**
+ * Run a bootstrap prefetch for the given target. Pure-ish: does network + cache
+ * + IDB writes but no event-listener wiring, so unit tests can drive it directly.
+ *
+ * Stream prefetch runs first because that's the user's perceived loading path
+ * after tapping a notification; workspace prefetch is the ambient sidebar
+ * freshness pass that can land slightly later without affecting the open-stream
+ * experience.
+ */
+export async function runBootstrapSync(target: BootstrapSyncTarget): Promise<void> {
+  if (target.streamId) {
+    await prefetchStreamBootstrap(target.workspaceId, target.streamId)
+    if (target.messageId) {
+      await prefetchEventsAround(target.workspaceId, target.streamId, target.messageId)
+    }
+  }
+  await prefetchWorkspaceBootstrap(target.workspaceId)
+}
+
+/**
+ * Persist the sync target and register a Background Sync. The browser fires the
+ * `sync` event once connectivity is available and retries on failure, so the
+ * prefetch survives flaky networks and SW termination.
+ *
+ * Browsers without Background Sync (Safari, Firefox) throw on register — we
+ * fall through to running the prefetch immediately. Inline runs delete the
+ * persisted target after the run so a sync-capable browser that gains support
+ * later (or a leftover entry from a previous SW version) doesn't replay stale.
+ */
+async function queueBootstrapSync(target: BootstrapSyncTarget): Promise<void> {
+  const cache = await caches.open(PENDING_SYNC_CACHE)
+  await cache.put(
+    PENDING_SYNC_KEY,
+    new Response(JSON.stringify(target), { headers: { "Content-Type": "application/json" } })
+  )
+
+  const reg = self.registration as ServiceWorkerRegistration & {
+    sync?: { register: (tag: string) => Promise<void> }
+  }
+  if (reg.sync) {
+    try {
+      await reg.sync.register(BOOTSTRAP_SYNC_TAG)
+      return
+    } catch {
+      // Fall through to immediate prefetch below
+    }
+  }
+
+  try {
+    await runBootstrapSync(target)
+  } finally {
+    void caches.open(PENDING_SYNC_CACHE).then((c) => c.delete(PENDING_SYNC_KEY))
+  }
+}
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== SW_MSG_QUEUE_BOOTSTRAP_SYNC) return
+  const { workspaceId, streamId, messageId } = event.data as {
+    workspaceId?: string
+    streamId?: string | null
+    messageId?: string | null
+  }
+  if (!workspaceId) return
+  event.waitUntil(
+    queueBootstrapSync({
+      workspaceId,
+      streamId: streamId ?? null,
+      messageId: messageId ?? null,
+    })
+  )
+})
+
+// Background Sync's `SyncEvent` extends ExtendableEvent but isn't in the default
+// service-worker lib types, so we cast through this shape.
+type SyncEvent = ExtendableEvent & { tag: string }
+
+self.addEventListener("sync", ((event: SyncEvent) => {
+  if (event.tag !== BOOTSTRAP_SYNC_TAG) return
+
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(PENDING_SYNC_CACHE)
+      const cached = await cache.match(PENDING_SYNC_KEY)
+      if (!cached) return
+
+      const target = (await cached.json()) as BootstrapSyncTarget
+      // Run before delete: if the run throws, the entry stays so the browser's
+      // `sync` retry has a target to replay. A new `queueBootstrapSync` call
+      // (e.g. another tab hide) overwrites the entry with a fresher target,
+      // which is the desired behavior.
+      await runBootstrapSync(target)
+      await cache.delete(PENDING_SYNC_KEY)
+    })()
+  )
+}) as EventListener)
 
 /** Find the most recent message_created event. Bootstrap events are ordered oldest → newest. */
 function findLatestMessageEvent(events: StreamEvent[]): StreamEvent | null {
@@ -262,7 +407,7 @@ self.addEventListener("fetch", (event) => {
  */
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url)
-  if (!BOOTSTRAP_PATH_RE.test(url.pathname)) return
+  if (!STREAM_BOOTSTRAP_PATH_RE.test(url.pathname) && !WORKSPACE_BOOTSTRAP_PATH_RE.test(url.pathname)) return
 
   event.respondWith(
     (async () => {
@@ -296,6 +441,8 @@ interface PushData {
   messages?: Array<{ authorName?: string; contentPreview?: string }>
   /** Backend-driven action: "clear" dismisses notifications for the stream; "session_expired" prompts re-login. */
   action?: "clear" | "session_expired"
+  /** Payload kind: "test" is sent by the in-app diagnostic to verify end-to-end delivery. */
+  kind?: "test"
 }
 
 self.addEventListener("push", (event) => {
@@ -326,6 +473,24 @@ self.addEventListener("push", (event) => {
     return
   }
 
+  // Test push from the in-app diagnostic. Always display, even with the app
+  // focused — the user explicitly asked to verify the delivery loop, so
+  // suppressing it would defeat the purpose.
+  if (data.kind === "test") {
+    event.waitUntil(
+      self.registration.showNotification("Threa test notification", {
+        body: "Push delivery is working — you should see this on every subscribed device.",
+        icon: "/threa-logo-192.png",
+        badge: "/threa-logo-192.png",
+        tag: "threa-test",
+        renotify: true,
+        vibrate: THREA_VIBRATION_PATTERN,
+        data: { ...data, kind: "test" },
+      } as ExtendedNotificationOptions)
+    )
+    return
+  }
+
   // Session expired: the user's auth has expired and their push subscriptions
   // have been cleaned up. Show a one-shot notification so they know to log back in.
   if (data.action === "session_expired") {
@@ -335,6 +500,7 @@ self.addEventListener("push", (event) => {
         icon: "/threa-logo-192.png",
         badge: "/threa-logo-192.png",
         tag: "session-expired",
+        vibrate: THREA_VIBRATION_PATTERN,
         data: { ...data, action: "session_expired" },
       } as ExtendedNotificationOptions)
     )
@@ -373,19 +539,23 @@ self.addEventListener("push", (event) => {
           data: { ...data, messages },
           tag,
           renotify: true, // Re-alert (vibrate/sound) even when replacing an existing notification
+          vibrate: THREA_VIBRATION_PATTERN,
         }
 
         await self.registration.showNotification(title, options)
 
-        // Pre-fetch stream bootstrap in the background so it's ready when user taps.
-        // Best-effort: swallow errors so notification display is never affected.
-        if (data.workspaceId && data.streamId) {
-          await prefetchStreamBootstrap(data.workspaceId, data.streamId).catch(() => {})
-          // If targeting a specific message, also prefetch events around it
-          // so the message is in IDB when the user taps the notification.
-          if (data.messageId) {
-            await prefetchEventsAround(data.workspaceId, data.streamId, data.messageId).catch(() => {})
-          }
+        // Queue a Background Sync to prefetch stream + workspace bootstrap so
+        // the data is fresh when the user taps the notification. Going through
+        // queueBootstrapSync (vs. inline fetch) means a flaky network or an
+        // SW termination won't leave the user staring at a stale stream — the
+        // browser retries `sync` until it succeeds. Best-effort: errors here
+        // never block notification display.
+        if (data.workspaceId) {
+          await queueBootstrapSync({
+            workspaceId: data.workspaceId,
+            streamId: data.streamId ?? null,
+            messageId: data.messageId ?? null,
+          }).catch(() => {})
         }
       }
     )

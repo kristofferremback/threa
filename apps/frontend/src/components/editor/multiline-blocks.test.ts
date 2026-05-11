@@ -3,12 +3,40 @@ import { Editor } from "@tiptap/core"
 import type { JSONContent } from "@tiptap/react"
 import { createEditorExtensions } from "./editor-extensions"
 import { serializeToMarkdown, parseMarkdown } from "./editor-markdown"
-import { handleBeforeInputNewline, insertPastedText, toggleMultilineBlock } from "./multiline-blocks"
+import { NodeSelection } from "@tiptap/pm/state"
+import {
+  deleteAdjacentInlineAtom,
+  handleBeforeInputAtomDelete,
+  handleBeforeInputGraphemeDelete,
+  handleBeforeInputKeyboardPaste,
+  handleBeforeInputNewline,
+  insertPastedText,
+  toggleMultilineBlock,
+} from "./multiline-blocks"
 
 function createTestEditor(content: string | JSONContent) {
+  // Enable mention + emoji extensions so tests can build docs with those atoms.
+  // The suggestion stubs are inert; we only need the schemas registered.
+  const extensions = createEditorExtensions({
+    placeholder: "Type a message...",
+    mentionSuggestion: {
+      items: () => [],
+      render: () => ({ onStart: () => {}, onUpdate: () => {}, onExit: () => {}, onKeyDown: () => false }),
+    },
+    channelSuggestion: {
+      items: () => [],
+      render: () => ({ onStart: () => {}, onUpdate: () => {}, onExit: () => {}, onKeyDown: () => false }),
+    },
+    emojiSuggestion: {
+      items: () => [],
+      render: () => ({ onStart: () => {}, onUpdate: () => {}, onExit: () => {}, onKeyDown: () => false }),
+    },
+    toEmoji: (code) => (code === "rocket" ? "🚀" : null),
+  })
+
   return new Editor({
     element: document.createElement("div"),
-    extensions: createEditorExtensions({ placeholder: "Type a message..." }),
+    extensions,
     content:
       typeof content === "string"
         ? parseMarkdown(
@@ -18,6 +46,22 @@ function createTestEditor(content: string | JSONContent) {
           )
         : content,
   })
+}
+
+function insertText(editor: Editor, text: string) {
+  let handled = false
+
+  editor.view.someProp("handleTextInput", (handleTextInput) => {
+    if (
+      handleTextInput(editor.view, editor.state.selection.from, editor.state.selection.to, text, () => editor.state.tr)
+    ) {
+      handled = true
+      return true
+    }
+    return false
+  })
+
+  return handled
 }
 
 function createBlockquote(lines: string[]): JSONContent {
@@ -106,9 +150,10 @@ function selectLines(editor: Editor, startText: string, endText: string) {
   editor.commands.setTextSelection({ from, to })
 }
 
-function createBeforeInputEvent(inputType: "insertParagraph" | "insertLineBreak" = "insertParagraph") {
+function makeBeforeInput(inputType: string = "insertParagraph", data: string | null = null) {
   return {
     inputType,
+    data,
     prevented: false,
     preventDefault() {
       this.prevented = true
@@ -257,6 +302,146 @@ describe("multiline block paste handling", () => {
     expect(serializeToMarkdown(editor.getJSON())).toBe("> line 1\n> line 2")
     editor.destroy()
   })
+
+  it("inserts a single-line paste inline without splitting the current paragraph", () => {
+    const editor = createTestEditor("Hello ")
+
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "World",
+      () => "user",
+      () => null
+    )
+
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.firstChild?.type.name).toBe("paragraph")
+    expect(serializeToMarkdown(editor.getJSON())).toBe("Hello World")
+    editor.destroy()
+  })
+
+  it("inserts a single-line paste mid-paragraph without splitting it in two", () => {
+    const editor = createTestEditor("Hi my  friend")
+
+    setCursor(editor, " friend")
+    insertPastedText(
+      editor,
+      "little",
+      () => "user",
+      () => null
+    )
+
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.firstChild?.type.name).toBe("paragraph")
+    expect(serializeToMarkdown(editor.getJSON())).toBe("Hi my little friend")
+    editor.destroy()
+  })
+
+  it("preserves active marks when pasting plain text inside a styled span", () => {
+    const editor = createTestEditor("**bold** text")
+
+    // Place the cursor in the middle of the bold word ("bol|d")
+    setCursor(editor, "d")
+    insertPastedText(
+      editor,
+      "X",
+      () => "user",
+      () => null
+    )
+
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("**bolXd** text")
+    editor.destroy()
+  })
+
+  it("reconstructs a sharedMessage block when pasted into an empty editor", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)",
+      () => "user",
+      () => null
+    )
+
+    expect(editor.getJSON().content?.[0]).toMatchObject({
+      type: "sharedMessage",
+      attrs: { messageId: "msg_01ABC", streamId: "stream_01XYZ", authorName: "Ariadne" },
+    })
+    editor.destroy()
+  })
+
+  it("reconstructs a sharedMessage when pasted into a non-empty paragraph", () => {
+    const editor = createTestEditor("Hello ")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)",
+      () => "user",
+      () => null
+    )
+
+    const sharedNode = (editor.getJSON().content ?? []).find((b) => b.type === "sharedMessage")
+    expect(sharedNode).toMatchObject({
+      type: "sharedMessage",
+      attrs: { messageId: "msg_01ABC", streamId: "stream_01XYZ" },
+    })
+    editor.destroy()
+  })
+
+  it("reconstructs a quoteReply block when pasted into an empty editor", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "> Hello world\n>\n> — [Kristoffer](quote:stream_01XYZ/msg_01ABC/usr_01KR/user)",
+      () => "user",
+      () => null
+    )
+
+    expect(editor.getJSON().content?.[0]).toMatchObject({
+      type: "quoteReply",
+      attrs: { messageId: "msg_01ABC", snippet: "Hello world" },
+    })
+    editor.destroy()
+  })
+
+  it("reconstructs an attachmentReference when pasted into an empty editor", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      '[Image #1](attachment:attach_123 "threa-attachment:filename=test.png&mimeType=image%2Fpng&sizeBytes=1024")',
+      () => "user",
+      () => null
+    )
+
+    expect(editor.getJSON().content?.[0]).toMatchObject({
+      type: "paragraph",
+      content: [
+        {
+          type: "attachmentReference",
+          attrs: { id: "attach_123", filename: "test.png", mimeType: "image/png", sizeBytes: 1024 },
+        },
+      ],
+    })
+    editor.destroy()
+  })
+
+  it("keeps multi-line plain-text pastes as separate paragraphs", () => {
+    const editor = createTestEditor("prefix ")
+
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+    insertPastedText(
+      editor,
+      "line 1\nline 2",
+      () => "user",
+      () => null
+    )
+
+    expect(serializeToMarkdown(editor.getJSON())).toBe("prefix line 1\n\nline 2")
+    editor.destroy()
+  })
 })
 
 describe("multiline beforeinput enter handling", () => {
@@ -265,20 +450,20 @@ describe("multiline beforeinput enter handling", () => {
 
     editor.commands.setTextSelection(editor.state.doc.content.size - 1)
 
-    const firstEvent = createBeforeInputEvent()
+    const firstEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, firstEvent)).toBe(true)
     expect(firstEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
     expect(editor.state.doc.firstChild?.textContent).toBe("const x = 1\n")
 
-    const secondEvent = createBeforeInputEvent()
+    const secondEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, secondEvent)).toBe(true)
     expect(secondEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
     expect(editor.state.doc.firstChild?.textContent).toBe("const x = 1\n\n")
     expect(editor.isActive("codeBlock")).toBe(true)
 
-    const thirdEvent = createBeforeInputEvent()
+    const thirdEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, thirdEvent)).toBe(true)
     expect(thirdEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("codeBlock")
@@ -293,26 +478,574 @@ describe("multiline beforeinput enter handling", () => {
 
     editor.commands.setTextSelection(editor.state.doc.content.size - 1)
 
-    const firstEvent = createBeforeInputEvent()
+    const firstEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, firstEvent)).toBe(true)
     expect(firstEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("blockquote")
     expect(editor.state.doc.firstChild?.childCount).toBe(2)
 
-    const secondEvent = createBeforeInputEvent()
+    const secondEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, secondEvent)).toBe(true)
     expect(secondEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("blockquote")
     expect(editor.state.doc.firstChild?.childCount).toBe(3)
     expect(editor.isActive("blockquote")).toBe(true)
 
-    const thirdEvent = createBeforeInputEvent()
+    const thirdEvent = makeBeforeInput("insertParagraph")
     expect(handleBeforeInputNewline(editor, thirdEvent)).toBe(true)
     expect(thirdEvent.prevented).toBe(true)
     expect(editor.state.doc.firstChild?.type.name).toBe("blockquote")
     expect(editor.state.doc.firstChild?.childCount).toBe(2)
     expect(editor.state.doc.lastChild?.type.name).toBe("paragraph")
     expect(editor.isActive("blockquote")).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe("handleBeforeInputKeyboardPaste (Gboard suggestion-bar paste)", () => {
+  it("intercepts multi-char insertText containing markdown chars", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", "**bold text**")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("**bold text**")
+    editor.destroy()
+  })
+
+  it("intercepts multi-line insertText", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", "line 1\nline 2")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("line 1\n\nline 2")
+    editor.destroy()
+  })
+
+  it("ignores single-char insertText (normal typing)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", "x")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("ignores multi-word insertText with no markdown chars (word suggestions / swipe typing)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", "hello world")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("ignores insertText shorter than 3 chars even with styling chars", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", "**")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("ignores non-insertText input types (e.g. insertCompositionText)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertCompositionText", "**bold**")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("falls through inside code blocks so plain text flows verbatim", () => {
+    const editor = createTestEditor("```\nseed\n```")
+    setCursor(editor, "seed")
+
+    const event = makeBeforeInput("insertText", "**bold**")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("intercepts emoji shortcode pastes", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", ":rocket: launching")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      (code) => (code === "rocket" ? "🚀" : null)
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(editor.getJSON().content?.[0]?.content?.[0]).toEqual({ type: "text", text: "🚀 launching" })
+    expect(serializeToMarkdown(editor.getJSON())).toBe("🚀 launching")
+    editor.destroy()
+  })
+
+  it("intercepts URL pastes (the colon in ':// matches the styling-char heuristic)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", "https://example.com")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    editor.destroy()
+  })
+
+  it("intercepts mention pastes (`@alice`)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", "Hey @alice ping")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    const inline = (editor.getJSON().content?.[0]?.content ?? []) as JSONContent[]
+    expect(inline.find((n) => n.type === "mention")).toMatchObject({
+      type: "mention",
+      attrs: { slug: "alice" },
+    })
+    editor.destroy()
+  })
+
+  it("intercepts channel-ref pastes (`#general`)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", "see #general for context")
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    const inline = (editor.getJSON().content?.[0]?.content ?? []) as JSONContent[]
+    expect(inline.find((n) => n.type === "channelLink")).toMatchObject({
+      type: "channelLink",
+      attrs: { slug: "general" },
+    })
+    editor.destroy()
+  })
+
+  it("intercepts pointer URL pastes (sharedMessage)", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput(
+      "insertText",
+      "Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)"
+    )
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(editor.getJSON().content?.[0]).toMatchObject({ type: "sharedMessage" })
+    editor.destroy()
+  })
+
+  it("ignores null data", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", null)
+    const handled = handleBeforeInputKeyboardPaste(
+      editor,
+      event,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe("handleBeforeInputAtomDelete (Android atom deletion)", () => {
+  function emojiDoc(prefix: string, suffix: string): JSONContent {
+    const inline: JSONContent[] = []
+    if (prefix) inline.push({ type: "text", text: prefix })
+    inline.push({ type: "emoji", attrs: { shortcode: "rocket", emoji: "🚀" } })
+    if (suffix) inline.push({ type: "text", text: suffix })
+    return {
+      type: "doc",
+      content: [{ type: "paragraph", content: inline }],
+    }
+  }
+
+  it("deletes the inline atom on deleteContentBackward when caret sits right after it", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    // Caret at the start of " end" — i.e. immediately after the emoji atom.
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("renders emoji atoms with text-like inline layout", () => {
+    const editor = createTestEditor(emojiDoc("", ""))
+    const emoji = editor.view.dom.querySelector<HTMLElement>('span[data-type="emoji"]')
+
+    expect(emoji?.className).toBe("inline")
+    editor.destroy()
+  })
+
+  it("converts typed shortcode emoji to editable text instead of a new atom", () => {
+    const editor = createTestEditor(":rocket")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    expect(insertText(editor, ":")).toBe(true)
+    expect(editor.getJSON().content?.[0]?.content?.[0]).toEqual({ type: "text", text: "🚀" })
+    editor.destroy()
+  })
+
+  it("deletes the inline atom on deleteContentForward when caret sits right before it", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    // Caret at end of "hi " — i.e. immediately before the emoji atom.
+    editor.commands.setTextSelection(findTextPosition(editor, "hi ") + 3)
+
+    const event = makeBeforeInput("deleteContentForward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("deletes a mention atom on deleteContentBackward", () => {
+    const editor = createTestEditor("@alice trailing")
+    editor.commands.setTextSelection(findTextPosition(editor, " trailing"))
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe(" trailing")
+    editor.destroy()
+  })
+
+  it("falls through when the adjacent node is plain text", () => {
+    const editor = createTestEditor("hello world")
+    editor.commands.setTextSelection(findTextPosition(editor, "hello world") + "hello world".length)
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("falls through when the selection is non-empty (range delete)", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    selectText(editor, "hi")
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("deletes a non-empty selection containing an inline atom", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    editor.commands.setTextSelection({
+      from: findTextPosition(editor, "hi "),
+      to: findTextPosition(editor, " end"),
+    })
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe(" end")
+    editor.destroy()
+  })
+
+  it("ignores non-delete input types", () => {
+    const editor = createTestEditor(emojiDoc("hi ", ""))
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("insertText", "x")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("falls through when caret is not adjacent to any atom (mid-text)", () => {
+    const editor = createTestEditor(emojiDoc("hello ", " trailing"))
+    // Caret in middle of "hello " — far from any atom
+    editor.commands.setTextSelection(findTextPosition(editor, "hello") + 2)
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    editor.destroy()
+  })
+
+  it("deletes a NodeSelection on an inline atom in one keystroke (Firefox Android)", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    // Simulate Firefox Android promoting the selection to a NodeSelection on
+    // first Backspace. Position is the open-pos of the emoji atom.
+    const atomPos = findTextPosition(editor, " end") - 1
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, atomPos)))
+
+    const handled = deleteAdjacentInlineAtom(editor, "backward")
+
+    expect(handled).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("keeps the direct keymap fallback inactive while composing", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+    ;(editor.view as unknown as { input: { composing: boolean } }).input.composing = true
+
+    const handled = deleteAdjacentInlineAtom(editor, "backward")
+
+    expect(handled).toBe(false)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi :rocket: end")
+    editor.destroy()
+  })
+
+  it("deletes the adjacent atom from beforeinput while composing", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+    ;(editor.view as unknown as { input: { composing: boolean } }).input.composing = true
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("flushes a pending DOM selection before checking the delete target", () => {
+    const editor = createTestEditor(emojiDoc("hi ", " end"))
+    editor.commands.setTextSelection(findTextPosition(editor, "hi "))
+    const domObserver = (editor.view as unknown as { domObserver: { flush: () => void } }).domObserver
+    const originalFlush = domObserver.flush.bind(domObserver)
+    let flushed = false
+
+    domObserver.flush = () => {
+      flushed = true
+      editor.commands.setTextSelection(findTextPosition(editor, " end"))
+    }
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputAtomDelete(editor, event)
+    domObserver.flush = originalFlush
+
+    expect(flushed).toBe(true)
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("ignores a NodeSelection on a non-atom (defensive)", () => {
+    const editor = createTestEditor("plain")
+    // No atoms in this doc, so NodeSelection branch shouldn't fire — fall through
+    // to the empty-cursor path, which also returns false.
+    editor.commands.setTextSelection(0)
+
+    const handled = deleteAdjacentInlineAtom(editor, "backward")
+
+    expect(handled).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe("handleBeforeInputGraphemeDelete (mobile emoji text deletion)", () => {
+  it("deletes a text emoji as one grapheme on deleteContentBackward", () => {
+    const editor = createTestEditor("hi 🚀 end")
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("deletes a text emoji as one grapheme on deleteContentForward", () => {
+    const editor = createTestEditor("hi 🚀 end")
+    editor.commands.setTextSelection(findTextPosition(editor, "🚀"))
+
+    const event = makeBeforeInput("deleteContentForward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("deletes only one emoji when two text emoji are adjacent", () => {
+    const editor = createTestEditor("🚀🚀")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("🚀")
+    editor.destroy()
+  })
+
+  it("recovers when the native selection lands inside a surrogate pair", () => {
+    const editor = createTestEditor("hi 🚀 end")
+    const emojiStart = findTextPosition(editor, "🚀")
+    editor.commands.setTextSelection(emojiStart + 1)
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("expands a selection that ends inside a surrogate pair", () => {
+    const editor = createTestEditor("a🚀b")
+    const start = findTextPosition(editor, "a")
+    const emojiStart = findTextPosition(editor, "🚀")
+    editor.commands.setTextSelection({ from: start, to: emojiStart + 1 })
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("b")
+    editor.destroy()
+  })
+
+  it("deletes a zwj emoji sequence as one grapheme", () => {
+    const editor = createTestEditor("hi 👨‍👩‍👧‍👦 end")
+    editor.commands.setTextSelection(findTextPosition(editor, " end"))
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(true)
+    expect(event.prevented).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hi  end")
+    editor.destroy()
+  })
+
+  it("falls through for ordinary single-code-unit text", () => {
+    const editor = createTestEditor("hello")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const event = makeBeforeInput("deleteContentBackward")
+    const handled = handleBeforeInputGraphemeDelete(editor, event)
+
+    expect(handled).toBe(false)
+    expect(event.prevented).toBe(false)
+    expect(serializeToMarkdown(editor.getJSON())).toBe("hello")
     editor.destroy()
   })
 })

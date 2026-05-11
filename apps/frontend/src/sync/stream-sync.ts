@@ -1,4 +1,4 @@
-import { db, sequenceToNum } from "@/db"
+import { db, sequenceToNum, type CachedEvent } from "@/db"
 import {
   StreamTypes,
   type StreamEvent,
@@ -11,6 +11,7 @@ import {
 } from "@threa/types"
 import type { Socket } from "socket.io-client"
 import { workspaceKeys } from "@/hooks/use-workspaces"
+import { streamKeys } from "@/hooks/use-streams"
 import type { QueryClient } from "@tanstack/react-query"
 
 // ============================================================================
@@ -43,6 +44,10 @@ function dedupeAndSortEvents(events: StreamEvent[]): StreamEvent[] {
   })
 }
 
+function maxSequence(a: string, b: string): string {
+  return BigInt(a) >= BigInt(b) ? a : b
+}
+
 export function toCachedStreamBootstrap(
   bootstrap: StreamBootstrap,
   previous?: CachedStreamBootstrap,
@@ -50,14 +55,15 @@ export function toCachedStreamBootstrap(
 ): CachedStreamBootstrap {
   const nextStream = preserveDmDisplayName(bootstrap.stream, previous?.stream)
   const shouldIncrementWindowVersion = bootstrap.syncMode === "replace" && options?.incrementWindowVersionOnReplace
+  const shouldAppend = bootstrap.syncMode === "append" && previous
   return {
     ...bootstrap,
     stream: nextStream,
-    events:
-      bootstrap.syncMode === "append" && previous
-        ? dedupeAndSortEvents([...previous.events, ...bootstrap.events])
-        : bootstrap.events,
-    hasOlderEvents: bootstrap.syncMode === "append" && previous ? previous.hasOlderEvents : bootstrap.hasOlderEvents,
+    events: shouldAppend ? dedupeAndSortEvents([...previous.events, ...bootstrap.events]) : bootstrap.events,
+    latestSequence: shouldAppend
+      ? maxSequence(previous.latestSequence, bootstrap.latestSequence)
+      : bootstrap.latestSequence,
+    hasOlderEvents: shouldAppend ? previous.hasOlderEvents : bootstrap.hasOlderEvents,
     windowVersion: shouldIncrementWindowVersion ? (previous?.windowVersion ?? 0) + 1 : (previous?.windowVersion ?? 0),
   }
 }
@@ -145,9 +151,64 @@ async function writeBootstrapEventsAndStream(
   }
 
   if (bootstrap.events.length > 0) {
-    await db.events.bulkPut(
-      bootstrap.events.map((e) => ({ ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }))
+    // For message_created events, the bootstrap snapshot can race against
+    // socket updates that already landed in IDB. We resolve this in two
+    // tiers:
+    //
+    //   1. Freshness skip — if the row was patched by a socket handler
+    //      AFTER the backend's snapshot was taken (`_patchedAt > snapshotMs`),
+    //      bootstrap's enrichment for that row may be stale, so we preserve
+    //      the existing row entirely. Example: a reaction:added arrives at
+    //      the client before the bootstrap response; the bootstrap's
+    //      reactions enrichment query ran before the reaction committed, so
+    //      its payload omits the reaction — overwriting would lose it.
+    //
+    //   2. Per-field merge — if the row wasn't patched after the snapshot
+    //      (or no snapshotAt is on the wire), we still merge per-field so
+    //      bootstrap-internal-inconsistency races (e.g.
+    //      getThreadsWithReplyCounts and getThreadSummaries seeing different
+    //      snapshots of the same reply) can't omit a field that was already
+    //      populated in IDB.
+    //
+    // Other event types' payloads are immutable post-creation, so a plain
+    // overwrite is equivalent for them.
+    const snapshotMs = bootstrap.snapshotAt ? Date.parse(bootstrap.snapshotAt) : null
+    const existingRows = await db.events.bulkGet(bootstrap.events.map((e) => e.id))
+    const existingById = new Map(
+      existingRows.filter((row): row is NonNullable<typeof row> => row != null).map((row) => [row.id, row] as const)
     )
+
+    const toWrite: CachedEvent[] = []
+    for (const e of bootstrap.events) {
+      const base = { ...e, workspaceId, _sequenceNum: sequenceToNum(e.sequence), _cachedAt: now }
+      if (e.eventType !== "message_created") {
+        toWrite.push(base)
+        continue
+      }
+      const existing = existingById.get(e.id)
+      if (!existing) {
+        toWrite.push(base)
+        continue
+      }
+      if (snapshotMs !== null && existing._patchedAt !== undefined && existing._patchedAt > snapshotMs) {
+        // Skip the put — existing row is fresher than this snapshot.
+        continue
+      }
+      toWrite.push({
+        ...base,
+        payload: {
+          ...(existing.payload as Record<string, unknown>),
+          ...(e.payload as Record<string, unknown>),
+        },
+        // Preserve the patch watermark so subsequent bootstraps still see
+        // that this row has been touched by socket activity.
+        _patchedAt: existing._patchedAt,
+      })
+    }
+
+    if (toWrite.length > 0) {
+      await db.events.bulkPut(toWrite)
+    }
   }
 
   // Merge stream metadata without destroying fields that only exist on the
@@ -160,6 +221,10 @@ async function writeBootstrapEventsAndStream(
     pinned: bootstrap.membership?.pinned,
     notificationLevel: bootstrap.membership?.notificationLevel,
     lastReadEventId: bootstrap.membership?.lastReadEventId,
+    // Mirror the persisted ContextBag into IDB so the timeline can read it
+    // synchronously on first paint via the `useWorkspaceStreams` cache —
+    // matches how attachments live on the message payload (sync from IDB).
+    contextBag: bootstrap.contextBag,
     _cachedAt: now,
   }
   const isDmWithNullName = stream.type === StreamTypes.DM && stream.displayName == null
@@ -229,6 +294,25 @@ interface MessageDeletedPayload {
   deletedAt: string
 }
 
+interface MessagesMovedPayload {
+  workspaceId: string
+  streamId: string
+  sourceStreamId: string
+  destinationStreamId: string
+  targetMessageId: string
+  movedMessageIds: string[]
+  thread: Stream
+  events: StreamEvent[]
+  removedEventIds: string[]
+  /** Tombstone event inserted into the source stream — appended to the
+   *  source-side IDB cache so the timeline keeps a "moved → thread" trace. */
+  sourceTombstoneEvent: StreamEvent
+  /** Authoritative replyCount for the drop-target after the move (see backend payload doc). */
+  parentReplyCount: number
+  /** Recomputed thread summary for the drop-target — same shape as `message:updated` ships. */
+  parentThreadSummary: ThreadSummary | null
+}
+
 interface ReactionPayload {
   workspaceId: string
   streamId: string
@@ -289,23 +373,32 @@ interface LinkPreviewReadyPayload {
 // Helper: find and update a message_created event in IndexedDB
 // ============================================================================
 
-async function updateMessageEvent(
+export async function updateMessageEvent(
   streamId: string,
   messageId: string,
   updater: (payload: Record<string, unknown>) => Record<string, unknown>
 ): Promise<void> {
   // Use compound index to narrow to message_created events for this stream,
   // then filter by messageId in the payload (not indexed but over a small set).
-  const events = await db.events
+  // modify() runs the callback inside a readwrite cursor so the read and write
+  // are atomic. This prevents lost updates when multiple socket handlers
+  // (messages:moved, stream:created, message:updated) update the same parent
+  // message concurrently — the second transaction sees the first's writes.
+  await db.events
     .where("[streamId+eventType]")
     .equals([streamId, "message_created"])
     .filter((e) => (e.payload as { messageId?: string })?.messageId === messageId)
-    .toArray()
-
-  if (events.length === 0) return
-  const event = events[0]
-  const updatedPayload = updater(event.payload as Record<string, unknown>)
-  await db.events.update(event.id, { payload: updatedPayload, _cachedAt: Date.now() })
+    .modify((event) => {
+      const updatedPayload = updater(event.payload as Record<string, unknown>)
+      const now = Date.now()
+      event.payload = updatedPayload
+      event._cachedAt = now
+      // Freshness watermark — see `_patchedAt` doc on CachedEvent. Only
+      // bumped by socket-handler patches (and the optimistic helpers below
+      // that mirror them); bootstrap apply leaves it alone so a later
+      // bootstrap response can decide whether its enrichment is stale.
+      event._patchedAt = now
+    })
 }
 
 /**
@@ -360,6 +453,18 @@ export async function setParentThreadId(
  * lastMessagePreview on message:created — this is a transitional coupling
  * that will be removed in Phase 3 when workspace data moves to IDB.
  */
+function contentHasSharedMessage(contentJson: unknown): boolean {
+  if (!contentJson || typeof contentJson !== "object") return false
+  const node = contentJson as { type?: unknown; content?: unknown[] }
+  if (node.type === "sharedMessage") return true
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) {
+      if (contentHasSharedMessage(child)) return true
+    }
+  }
+  return false
+}
+
 export function registerStreamSocketHandlers(
   socket: Socket,
   workspaceId: string,
@@ -431,6 +536,15 @@ export function registerStreamSocketHandlers(
         }),
       }
     })
+
+    // If the new event includes a sharedMessage pointer, the cached bootstrap's
+    // sharedMessages hydration map won't contain an entry for the source yet —
+    // without a refetch the pointer renders with no content. Invalidate so the
+    // next response populates the hydration map.
+    if (contentHasSharedMessage(newPayload.contentJson)) {
+      await queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+      await queryClient.invalidateQueries({ queryKey: streamKeys.events(workspaceId, streamId) })
+    }
   }
 
   const handleMessageEdited = async (payload: MessageEventPayload) => {
@@ -448,6 +562,11 @@ export function registerStreamSocketHandlers(
       contentMarkdown: editPayload.contentMarkdown,
       editedAt: editEvent.createdAt,
     }))
+
+    if (contentHasSharedMessage(editPayload.contentJson)) {
+      await queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+      await queryClient.invalidateQueries({ queryKey: streamKeys.events(workspaceId, streamId) })
+    }
   }
 
   const handleMessageDeleted = async (payload: MessageDeletedPayload) => {
@@ -456,6 +575,73 @@ export function registerStreamSocketHandlers(
       ...p,
       deletedAt: payload.deletedAt,
     }))
+  }
+
+  const handleMessagesMoved = async (payload: MessagesMovedPayload) => {
+    if (payload.sourceStreamId !== streamId && payload.destinationStreamId !== streamId) return
+
+    const now = Date.now()
+    await db.transaction("rw", [db.events, db.streams], async () => {
+      if (payload.sourceStreamId === streamId) {
+        await db.events.bulkDelete(payload.removedEventIds)
+        // Append the source tombstone after the deletes so the timeline
+        // shows a "moved 3 messages → thread" trace where the messages
+        // used to be. The event was assigned a fresh sequence in the
+        // source stream so it sorts naturally at the bottom of the
+        // post-move state.
+        await db.events.put({
+          ...payload.sourceTombstoneEvent,
+          workspaceId,
+          _sequenceNum: sequenceToNum(payload.sourceTombstoneEvent.sequence),
+          _cachedAt: now,
+        })
+        // SET replyCount + threadSummary directly from the payload (not
+        // additive) so the patch is idempotent against the sibling
+        // `message:updated` event — they carry the same authoritative
+        // values, and whichever arrives second just overwrites with the
+        // identical result. This makes `messages:moved` self-sufficient:
+        // the thread card surfaces with the right count even if
+        // `message:updated` is delayed or lost.
+        await updateMessageEvent(streamId, payload.targetMessageId, (p) => ({
+          ...p,
+          threadId: payload.thread.id,
+          replyCount: payload.parentReplyCount,
+          threadSummary: payload.parentThreadSummary,
+        }))
+      }
+
+      if (payload.destinationStreamId === streamId) {
+        await db.events.bulkPut(
+          payload.events.map((event) => ({
+            ...event,
+            workspaceId,
+            _sequenceNum: sequenceToNum(event.sequence),
+            _cachedAt: now,
+          }))
+        )
+      }
+
+      const streamUpdate = { ...payload.thread, _cachedAt: now }
+      const updated = await db.streams.update(payload.thread.id, streamUpdate)
+      if (updated === 0) {
+        await db.streams.put(streamUpdate)
+      }
+    })
+
+    queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+      if (!old) return old
+      const streamExists = old.streams.some((stream) => stream.id === payload.thread.id)
+      return {
+        ...old,
+        streams: streamExists
+          ? old.streams.map((stream) =>
+              stream.id === payload.thread.id
+                ? { ...stream, ...payload.thread, lastMessagePreview: stream.lastMessagePreview }
+                : stream
+            )
+          : [...old.streams, { ...payload.thread, lastMessagePreview: null }],
+      }
+    })
   }
 
   const handleReactionAdded = async (payload: ReactionPayload) => {
@@ -493,6 +679,23 @@ export function registerStreamSocketHandlers(
       ...p,
       threadId: stream.id,
     }))
+
+    await db.streams.put({ ...stream, _cachedAt: Date.now() })
+
+    queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+      if (!old) return old
+      const streamExists = old.streams.some((existing) => existing.id === stream.id)
+      return {
+        ...old,
+        streams: streamExists
+          ? old.streams.map((existing) =>
+              existing.id === stream.id
+                ? { ...existing, ...stream, lastMessagePreview: existing.lastMessagePreview }
+                : existing
+            )
+          : [...old.streams, { ...stream, lastMessagePreview: null }],
+      }
+    })
   }
 
   const handleMessageUpdated = async (payload: MessageUpdatedPayload) => {
@@ -538,9 +741,23 @@ export function registerStreamSocketHandlers(
     }))
   }
 
+  /**
+   * Invalidate any TanStack Query cache holding this stream's messages when
+   * a pointer-referenced source message in another stream is edited or
+   * deleted. Triggers a refetch so the hydrated share-map on the next
+   * response reflects the new content. The payload's targetStreamId is the
+   * room this emit was scoped to, so we just invalidate bootstrap/events.
+   */
+  const handlePointerInvalidated = async (payload: { targetStreamId: string; sourceMessageId: string }) => {
+    if (payload.targetStreamId !== streamId) return
+    await queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+    await queryClient.invalidateQueries({ queryKey: streamKeys.events(workspaceId, streamId) })
+  }
+
   socket.on("message:created", handleMessageCreated)
   socket.on("message:edited", handleMessageEdited)
   socket.on("message:deleted", handleMessageDeleted)
+  socket.on("messages:moved", handleMessagesMoved)
   socket.on("reaction:added", handleReactionAdded)
   socket.on("reaction:removed", handleReactionRemoved)
   socket.on("stream:created", handleStreamCreated)
@@ -556,11 +773,13 @@ export function registerStreamSocketHandlers(
   socket.on("agent_session:failed", handleAppendEvent)
   socket.on("agent_session:deleted", handleAppendEvent)
   socket.on("link_preview:ready", handleLinkPreviewReady)
+  socket.on("pointer:invalidated", handlePointerInvalidated)
 
   return () => {
     socket.off("message:created", handleMessageCreated)
     socket.off("message:edited", handleMessageEdited)
     socket.off("message:deleted", handleMessageDeleted)
+    socket.off("messages:moved", handleMessagesMoved)
     socket.off("reaction:added", handleReactionAdded)
     socket.off("reaction:removed", handleReactionRemoved)
     socket.off("stream:created", handleStreamCreated)
@@ -576,5 +795,6 @@ export function registerStreamSocketHandlers(
     socket.off("agent_session:failed", handleAppendEvent)
     socket.off("agent_session:deleted", handleAppendEvent)
     socket.off("link_preview:ready", handleLinkPreviewReady)
+    socket.off("pointer:invalidated", handlePointerInvalidated)
   }
 }

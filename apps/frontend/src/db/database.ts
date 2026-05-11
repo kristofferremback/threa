@@ -1,5 +1,15 @@
 import Dexie, { type EntityTable } from "dexie"
-import type { AuthorType, CompanionMode, EventType, JSONContent, NotificationLevel, StreamType } from "@threa/types"
+import type {
+  AuthorType,
+  CompanionMode,
+  EventType,
+  JSONContent,
+  NotificationLevel,
+  StreamContextBagPayload,
+  StreamType,
+  WorkspaceRoleSlug,
+} from "@threa/types"
+import type { DraftContextRef } from "@/lib/context-bag/types"
 
 const WORKSPACE_USERS_STORE = "workspaceUsers"
 const LEGACY_WORKSPACE_USERS_STORE = "workspaceMembers"
@@ -20,7 +30,7 @@ export interface CachedWorkspaceUser {
   workspaceId: string
   workosUserId: string
   email: string
-  role: "owner" | "admin" | "user"
+  role: WorkspaceRoleSlug
   slug: string
   name: string
   description: string | null
@@ -58,6 +68,14 @@ export interface CachedStream {
   pinned?: boolean
   notificationLevel?: string | null
   lastReadEventId?: string | null
+  /**
+   * Persisted ContextBag attached to this stream. Mirrored into IDB by
+   * `applyStreamBootstrap` so the timeline message-context badge can render
+   * synchronously on first paint — no fetch, no layout shift. Always present
+   * shape-wise (`{bag: null, refs: []}` for streams without an attached bag);
+   * optional on the type so older cached records still parse.
+   */
+  contextBag?: StreamContextBagPayload
   _cachedAt: number
 }
 
@@ -101,6 +119,16 @@ export interface CachedEvent {
   _clientId?: string
   _status?: "pending" | "sent" | "failed" | "editing"
   _cachedAt: number
+  /**
+   * Client wall-clock (ms) of the most recent socket-driven payload patch
+   * applied to this row by `updateMessageEvent`. Compared against the
+   * bootstrap response's `snapshotAt` so a freshly-arrived patch (e.g. a
+   * reaction added between the backend's snapshot and the client's apply)
+   * isn't clobbered by a stale enrichment value carried in the bootstrap
+   * payload. Distinct from `_cachedAt`, which is bumped on bootstrap apply
+   * too — `_patchedAt` is bumped only by socket-handler patches.
+   */
+  _patchedAt?: number
 }
 
 /**
@@ -166,10 +194,25 @@ export interface PendingMessage {
   retryCount: number
   /** Timestamp before which this message should not be retried (exponential backoff) */
   retryAfter?: number
-  /** When "editing", the queue skips this message so it isn't sent while the user edits it */
-  status?: "editing"
+  /**
+   * Queue-side status flags that gate retry behavior:
+   * - `editing` — user is actively editing the message in the composer; the
+   *   drain loop skips this entry until the user either sends or cancels.
+   * - `blocked-privacy` — backend rejected with
+   *   `SHARE_PRIVACY_CONFIRMATION_REQUIRED` on a share that crosses a
+   *   privacy boundary. Not auto-retried — surfaces a toast so the user
+   *   explicitly confirms or aborts. On confirm the toast clears
+   *   `status` and sets `confirmedPrivacyWarning: true`.
+   */
+  status?: "editing" | "blocked-privacy"
   /** Original queue state before entering editing mode; used to cancel stale edits on startup. */
   preEditStatus?: "pending" | "failed"
+  /**
+   * Set by the privacy-confirm toast after the user clicks "Share anyway".
+   * Forwarded as `confirmedPrivacyWarning` on the next send attempt so the
+   * backend's privacy-boundary check passes through to the share insert.
+   */
+  confirmedPrivacyWarning?: boolean
   /** When set, the queue creates this stream before sending the message */
   streamCreation?: PendingStreamCreation
   /** The draft ID to clean up after successful stream creation + message send */
@@ -185,7 +228,18 @@ export interface PendingMessage {
 export interface PendingOperation {
   id: string // ULID
   workspaceId: string
-  type: "edit_message" | "delete_message" | "add_reaction" | "remove_reaction"
+  type:
+    | "edit_message"
+    | "delete_message"
+    | "add_reaction"
+    | "remove_reaction"
+    // Scheduled-message ops follow the offline-first pattern (mirrors
+    // sendMessage's pendingMessages queue): the UI writes to IDB
+    // immediately and the operation queue replays the API call when online.
+    | "schedule_message"
+    | "update_scheduled_message"
+    | "cancel_scheduled_message"
+    | "send_scheduled_now"
   payload: Record<string, unknown>
   createdAt: number
   retryCount: number
@@ -224,7 +278,26 @@ export interface DraftMessage {
   contentJson: JSONContent
   /** Attachments that have been uploaded and are ready to attach to the message */
   attachments?: DraftAttachment[]
+  /** Context refs attached to this draft (populated by "Discuss with Ariadne"). */
+  contextRefs?: DraftContextRef[]
   updatedAt: number
+}
+
+/**
+ * An explicitly-stashed draft, created by the user pressing Cmd+S or the save
+ * button in the composer. Unlike `DraftMessage` (one per scope, auto-saved as
+ * the user types), any number of stashed drafts can coexist for the same scope
+ * — they're a sidelined pile the user can restore later. Scope mirrors the
+ * `DraftMessage` key format: "stream:{streamId}" or "thread:{parentMessageId}".
+ */
+export interface StashedDraft {
+  /** ULID with "stash_" prefix. Distinct from "draft_" which is claimed by DraftScratchpad. */
+  id: string
+  workspaceId: string
+  scope: string
+  contentJson: JSONContent
+  attachments?: DraftAttachment[]
+  createdAt: number
 }
 
 export interface CachedUnreadState {
@@ -323,12 +396,71 @@ export interface CachedSavedMessage {
   _cachedAt: number
 }
 
+/**
+ * Scheduled-message row cached for offline-first rendering of the To send /
+ * Sent / Failed tabs and the per-stream composer popover. Keys mirror the
+ * server's wire shape (`ScheduledMessageView`); we don't denormalize a live
+ * message snapshot like saved-messages does because the scheduled row IS the
+ * draft — `contentJson` and `contentMarkdown` are canonical here until the
+ * worker fires.
+ *
+ * Numeric `_scheduledForMs` and `_statusChangedAtMs` mirror drive sort order
+ * since Dexie can't sort on ISO strings efficiently.
+ *
+ * `_cachedAt` is the watermark used by the persistence helpers so a slow list
+ * fetch can't clobber a fresher socket-driven write.
+ */
+export interface CachedScheduledMessage {
+  id: string
+  workspaceId: string
+  userId: string
+  streamId: string
+  parentMessageId: string | null
+  contentJson: unknown
+  contentMarkdown: string
+  attachmentIds: string[]
+  metadata: Record<string, string> | null
+  scheduledFor: string
+  status: string
+  sentMessageId: string | null
+  lastError: string | null
+  /** Worker fence — present (and in the future) while any editor session is open. */
+  editActiveUntil: string | null
+  clientMessageId: string | null
+  /** Optimistic-concurrency version. Sent back as `expectedVersion` on save. */
+  version: number
+  createdAt: string
+  updatedAt: string
+  statusChangedAt: string
+  /**
+   * `true` for rows written optimistically before the schedule POST landed.
+   * The id starts with `sched_local_`; once the server-issued row arrives we
+   * delete the local placeholder and persist the real one. UI can hide
+   * destructive controls (edit, send-now) on placeholder rows since the
+   * server doesn't know about them yet.
+   */
+  _localOnly?: boolean
+  _scheduledForMs: number
+  _statusChangedAtMs: number
+  _cachedAt: number
+}
+
 export interface CachedWorkspaceMetadata {
   id: string // workspaceId
   workspaceId: string
   emojis: Array<{ shortcode: string; emoji: string; type: string; group: string; order: number; aliases: string[] }>
   emojiWeights: Record<string, number>
-  commands: Array<{ name: string; description: string }>
+  /**
+   * Commands surfaced in the slash-command menu. `kind` defaults to "server"
+   * for backwards compatibility with older cached rows; "client-action" items
+   * carry a `clientActionId` the frontend dispatches on locally.
+   */
+  commands: Array<{
+    name: string
+    description: string
+    kind?: "server" | "client-action"
+    clientActionId?: string
+  }>
   _cachedAt: number
 }
 
@@ -346,6 +478,7 @@ class ThreaDatabase extends Dexie {
   syncCursors!: EntityTable<SyncCursor, "key">
   draftScratchpads!: EntityTable<DraftScratchpad, "id">
   draftMessages!: EntityTable<DraftMessage, "id">
+  stashedDrafts!: EntityTable<StashedDraft, "id">
   unreadState!: EntityTable<CachedUnreadState, "id">
   userPreferences!: EntityTable<CachedUserPreferences, "id">
   workspaceMetadata!: EntityTable<CachedWorkspaceMetadata, "id">
@@ -353,6 +486,7 @@ class ThreaDatabase extends Dexie {
   markdownBlockCollapse!: EntityTable<CachedMarkdownBlockCollapse, "id">
   linkPreviewCollapse!: EntityTable<CachedLinkPreviewCollapse, "id">
   savedMessages!: EntityTable<CachedSavedMessage, "id">
+  scheduledMessages!: EntityTable<CachedScheduledMessage, "id">
 
   constructor() {
     super("threa")
@@ -579,6 +713,26 @@ class ThreaDatabase extends Dexie {
           })
       })
 
+    // v26: Stashed drafts — multiple explicitly-saved drafts per scope,
+    // browsable via the composer picker. The compound [workspaceId+scope]
+    // index lets the picker list drafts for the current stream/thread
+    // without scanning the workspace. Keyed by ULID so the same scope can
+    // hold many stashed snapshots.
+    this.version(26).stores({
+      stashedDrafts: "id, workspaceId, scope, [workspaceId+scope], createdAt",
+    })
+
+    // v27: Scheduled messages cache — first-page offline rendering and
+    // optimistic UI for the To send / Sent / Failed tabs and the per-stream
+    // composer popover. Indexes:
+    //   [workspaceId+status+_scheduledForMs] — To send tab (ASC)
+    //   [workspaceId+status+_statusChangedAtMs] — Sent / Failed tabs (DESC)
+    //   [workspaceId+streamId+status+_scheduledForMs] — composer popover
+    this.version(27).stores({
+      scheduledMessages:
+        "id, workspaceId, streamId, status, [workspaceId+status+_scheduledForMs], [workspaceId+status+_statusChangedAtMs], [workspaceId+streamId+status+_scheduledForMs], _cachedAt",
+    })
+
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
 }
@@ -606,6 +760,8 @@ export async function clearAllCachedData(): Promise<void> {
       db.markdownBlockCollapse.clear(),
       db.linkPreviewCollapse.clear(),
       db.savedMessages.clear(),
+      db.scheduledMessages.clear(),
+      db.stashedDrafts.clear(),
       // Note: we keep pendingMessages to retry sending after re-login
     ])
   } finally {

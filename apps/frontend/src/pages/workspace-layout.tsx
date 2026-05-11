@@ -26,6 +26,7 @@ import {
   useWorkspaceService,
   useStreamService,
   useMessageService,
+  useScheduledService,
   PanelProvider,
   QuickSwitcherProvider,
   PreferencesProvider,
@@ -47,6 +48,8 @@ import {
   useAppUpdate,
   useMessageQueue,
   useUnreadTabIndicator,
+  usePageResumeRefresh,
+  useBackgroundBootstrapSync,
 } from "@/hooks"
 import { usePageResume } from "@/hooks/use-page-resume"
 import { useAuth } from "@/auth"
@@ -59,6 +62,7 @@ import { SettingsDialog } from "@/components/settings"
 import { WorkspaceSettingsDialog } from "@/components/workspace-settings/workspace-settings-dialog"
 import { StreamSettingsDialog } from "@/components/stream-settings/stream-settings-dialog"
 import { CreateChannelDialog } from "@/components/create-channel"
+import { AttachmentExplorer, useExplorerUrlState } from "@/components/attachment-explorer"
 import { TraceDialog } from "@/components/trace"
 import { useQueryClient } from "@tanstack/react-query"
 import { ApiError } from "@/api/client"
@@ -66,17 +70,23 @@ import { SyncStatusStore, SyncStatusContext } from "@/sync/sync-status"
 
 interface WorkspaceKeyboardHandlerProps {
   onOpenSwitcher: (mode: QuickSwitcherMode) => void
+  currentStreamId: string | undefined
   children: ReactNode
 }
 
-function WorkspaceKeyboardHandler({ onOpenSwitcher, children }: WorkspaceKeyboardHandlerProps) {
+function WorkspaceKeyboardHandler({ onOpenSwitcher, currentStreamId, children }: WorkspaceKeyboardHandlerProps) {
   const { openSettings } = useSettings()
+  const { open: openExplorer } = useExplorerUrlState()
 
   useKeyboardShortcuts({
     openQuickSwitcher: () => onOpenSwitcher("stream"),
     openSearch: () => onOpenSwitcher("search"),
     openCommands: () => onOpenSwitcher("command"),
     openSettings: () => openSettings(),
+    openAttachmentExplorer: () =>
+      openExplorer({
+        streamIds: currentStreamId ? [currentStreamId] : [],
+      }),
   })
 
   return <>{children}</>
@@ -132,6 +142,7 @@ function WorkspaceSyncHandler({
   const workspaceService = useWorkspaceService()
   const streamService = useStreamService()
   const messageService = useMessageService()
+  const scheduledService = useScheduledService()
   const syncStatusStore = useContext(SyncStatusContext)
   const { user } = useAuth()
   const isOnline = useOnlineStatus()
@@ -158,6 +169,11 @@ function WorkspaceSyncHandler({
       reactionService: {
         add: (wid: string, mid: string, emoji: string) => messagesApi.addReaction(wid, mid, emoji),
         remove: (wid: string, mid: string, emoji: string) => messagesApi.removeReaction(wid, mid, emoji),
+      },
+      scheduledService: {
+        create: scheduledService.create,
+        delete: scheduledService.delete,
+        sendNow: scheduledService.sendNow,
       },
     })
   }
@@ -247,6 +263,12 @@ function AppUpdateChecker() {
   return null
 }
 
+function FreshnessWatchers() {
+  usePageResumeRefresh()
+  useBackgroundBootstrapSync()
+  return null
+}
+
 function TraceDialogContainer() {
   const { isOpen } = useTrace()
 
@@ -325,6 +347,7 @@ export function WorkspaceLayout() {
         <WorkspaceSyncHandler workspaceId={workspaceId} visibleStreamIds={streamIds}>
           <UnreadTabIndicator workspaceId={workspaceId} />
           <AppUpdateChecker />
+          <FreshnessWatchers />
           <MessageQueueHandler />
           <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
             <ChannelLinkProvider workspaceId={workspaceId} streams={streams}>
@@ -334,7 +357,7 @@ export function WorkspaceLayout() {
                     <WorkspaceEmojiProvider workspaceId={workspaceId}>
                       <PreferencesProvider workspaceId={workspaceId}>
                         <SettingsProvider>
-                          <WorkspaceKeyboardHandler onOpenSwitcher={openSwitcher}>
+                          <WorkspaceKeyboardHandler onOpenSwitcher={openSwitcher} currentStreamId={streamId}>
                             <QuickSwitcherProvider openSwitcher={openSwitcher}>
                               <PanelProvider>
                                 <MediaGalleryProvider>
@@ -359,6 +382,7 @@ export function WorkspaceLayout() {
                                     <WorkspaceSettingsDialog workspaceId={workspaceId} />
                                     <StreamSettingsDialog workspaceId={workspaceId} />
                                     <CreateChannelDialog workspaceId={workspaceId} />
+                                    <AttachmentExplorer workspaceId={workspaceId} />
                                     <TraceDialogContainer />
                                     <Toaster />
                                   </TraceProvider>

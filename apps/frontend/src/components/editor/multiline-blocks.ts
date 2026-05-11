@@ -1,12 +1,24 @@
 import type { JSONContent, Editor } from "@tiptap/react"
-import { Fragment, type Node as ProseMirrorNode, type Schema } from "@tiptap/pm/model"
-import { Selection, type Transaction, type EditorState } from "@tiptap/pm/state"
-import { parseMarkdown, type EmojiLookup, type MentionTypeLookup } from "./editor-markdown"
+import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from "@tiptap/pm/model"
+import { NodeSelection, Selection, type Transaction, type EditorState } from "@tiptap/pm/state"
+import { parseMarkdown, type EmojiLookup, type MentionTypeLookup, type ParseMarkdownOptions } from "./editor-markdown"
 
 export interface BeforeInputEventLike {
   inputType: string
+  data?: string | null
   preventDefault(): void
 }
+
+interface GraphemeSegment {
+  from: number
+  to: number
+  text: string
+}
+
+// `@`/`#` cover mention and channel refs — emails like `a@b` are safe because
+// the parser only converts the strict `@slug` shape. `[` covers markdown-link
+// pair start; `<` covers our pointer URL syntax.
+const PASTE_STYLING_CHARS = /[*_~`[:<@#]/
 
 interface AncestorInfo {
   depth: number
@@ -24,8 +36,285 @@ interface SelectedBlockRange {
   blocks: SelectedBlockInfo[]
 }
 
+interface DeleteAdjacentInlineAtomOptions {
+  allowDuringComposition?: boolean
+}
+
+interface EditorViewWithDomObserver {
+  domObserver?: {
+    flush?: () => void
+  }
+}
+
+interface IntlSegmenterLike {
+  segment(text: string): Iterable<{ segment: string; index: number }>
+}
+
+type IntlWithSegmenter = typeof Intl & {
+  Segmenter?: new (
+    locale?: string | string[],
+    options?: { granularity: "grapheme" | "word" | "sentence" }
+  ) => IntlSegmenterLike
+}
+
+let graphemeSegmenter: IntlSegmenterLike | null | undefined
+
+function getGraphemeSegmenter(): IntlSegmenterLike | null {
+  if (graphemeSegmenter !== undefined) return graphemeSegmenter
+
+  const Segmenter = (Intl as IntlWithSegmenter).Segmenter
+  graphemeSegmenter = Segmenter ? new Segmenter(undefined, { granularity: "grapheme" }) : null
+  return graphemeSegmenter
+}
+
+function codePointSize(codePoint: number): number {
+  return codePoint > 0xffff ? 2 : 1
+}
+
+function codePointAt(text: string, index: number): number | null {
+  return index < text.length ? (text.codePointAt(index) ?? null) : null
+}
+
+function isVariationSelector(codePoint: number): boolean {
+  return codePoint === 0xfe0e || codePoint === 0xfe0f || (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
+}
+
+function isEmojiModifier(codePoint: number): boolean {
+  return codePoint >= 0x1f3fb && codePoint <= 0x1f3ff
+}
+
+function isRegionalIndicator(codePoint: number): boolean {
+  return codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff
+}
+
+function isCombiningMark(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x0300 && codePoint <= 0x036f) ||
+    (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+    (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+    (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
+    (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
+  )
+}
+
+function consumeGraphemeExtenders(text: string, index: number): number {
+  let cursor = index
+
+  while (cursor < text.length) {
+    const codePoint = codePointAt(text, cursor)
+    if (
+      codePoint === null ||
+      (!isVariationSelector(codePoint) &&
+        !isEmojiModifier(codePoint) &&
+        !isCombiningMark(codePoint) &&
+        codePoint !== 0x20e3)
+    ) {
+      break
+    }
+    cursor += codePointSize(codePoint)
+  }
+
+  return cursor
+}
+
+function fallbackGraphemeSegments(text: string): GraphemeSegment[] {
+  const segments: GraphemeSegment[] = []
+  let index = 0
+
+  while (index < text.length) {
+    const from = index
+    const firstCodePoint = codePointAt(text, index)
+    if (firstCodePoint === null) break
+
+    index += codePointSize(firstCodePoint)
+    index = consumeGraphemeExtenders(text, index)
+
+    // Flags are pairs of regional indicators.
+    if (isRegionalIndicator(firstCodePoint)) {
+      const nextCodePoint = codePointAt(text, index)
+      if (nextCodePoint !== null && isRegionalIndicator(nextCodePoint)) {
+        index += codePointSize(nextCodePoint)
+        index = consumeGraphemeExtenders(text, index)
+      }
+    }
+
+    // Emoji ZWJ sequences should delete as one visible character.
+    while (text.charCodeAt(index) === 0x200d) {
+      index += 1
+      const joinedCodePoint = codePointAt(text, index)
+      if (joinedCodePoint === null) break
+      index += codePointSize(joinedCodePoint)
+      index = consumeGraphemeExtenders(text, index)
+    }
+
+    segments.push({ from, to: index, text: text.slice(from, index) })
+  }
+
+  return segments
+}
+
+function getGraphemeSegments(text: string): GraphemeSegment[] {
+  const segmenter = getGraphemeSegmenter()
+  if (!segmenter) return fallbackGraphemeSegments(text)
+
+  return Array.from(segmenter.segment(text), ({ index, segment }) => ({
+    from: index,
+    to: index + segment.length,
+    text: segment,
+  }))
+}
+
+function isMultiCodeUnitGrapheme(segment: GraphemeSegment): boolean {
+  return segment.to - segment.from > 1
+}
+
+function findGraphemeForDelete(
+  text: string,
+  offset: number,
+  direction: "backward" | "forward"
+): GraphemeSegment | null {
+  const safeOffset = Math.max(0, Math.min(offset, text.length))
+  const segments = getGraphemeSegments(text)
+
+  if (direction === "backward") {
+    for (let i = segments.length - 1; i >= 0; i -= 1) {
+      const segment = segments[i]
+      if (segment.from < safeOffset && segment.to >= safeOffset) return segment
+      if (segment.to < safeOffset) return segment
+    }
+    return null
+  }
+
+  for (const segment of segments) {
+    if (segment.from <= safeOffset && segment.to > safeOffset) return segment
+    if (segment.from > safeOffset) return segment
+  }
+  return null
+}
+
+function findSplitGraphemeBoundary(text: string, offset: number): GraphemeSegment | null {
+  if (offset <= 0 || offset >= text.length) return null
+  return getGraphemeSegments(text).find((segment) => segment.from < offset && segment.to > offset) ?? null
+}
+
 function isEmptyParagraphNode(node: ProseMirrorNode | null | undefined): boolean {
   return !!node && node.type.name === "paragraph" && node.content.size === 0
+}
+
+function isDeletableInlineAtom(node: ProseMirrorNode): boolean {
+  // Text nodes are leaf/atom nodes in ProseMirror, but normal character
+  // deletion must stay on the browser/ProseMirror text path.
+  return !node.isText && node.isInline && node.isAtom
+}
+
+function rangeContainsInlineAtom(state: EditorState, from: number, to: number): boolean {
+  const docEnd = state.doc.content.size
+  const rangeFrom = Math.max(0, Math.min(from, docEnd))
+  const rangeTo = Math.max(rangeFrom, Math.min(to, docEnd))
+  let containsAtom = false
+
+  state.doc.nodesBetween(rangeFrom, rangeTo, (node) => {
+    if (isDeletableInlineAtom(node)) {
+      containsAtom = true
+      return false
+    }
+    return !containsAtom
+  })
+
+  return containsAtom
+}
+
+function flushPendingDomSelection(editor: Editor): void {
+  const domObserver = (editor.view as unknown as EditorViewWithDomObserver).domObserver
+  domObserver?.flush?.()
+}
+
+function deleteSelectionContainingInlineAtom(editor: Editor): boolean {
+  const { state, view } = editor
+  const { selection } = state
+  if (selection.empty) return false
+  if (!rangeContainsInlineAtom(state, selection.from, selection.to)) return false
+
+  view.dispatch(state.tr.deleteSelection().scrollIntoView())
+  return true
+}
+
+function expandPositionToGraphemeBoundary(state: EditorState, pos: number, side: "from" | "to"): number {
+  let expanded = pos
+
+  state.doc.descendants((node, nodePos) => {
+    if (!node.isText || !node.text) return true
+
+    const start = nodePos
+    const end = nodePos + node.text.length
+    if (pos <= start || pos >= end) return true
+
+    const splitGrapheme = findSplitGraphemeBoundary(node.text, pos - start)
+    if (splitGrapheme) {
+      expanded = start + (side === "from" ? splitGrapheme.from : splitGrapheme.to)
+      return false
+    }
+
+    return true
+  })
+
+  return expanded
+}
+
+function selectedRangeContainsMultiCodeUnitGrapheme(state: EditorState, from: number, to: number): boolean {
+  let containsGrapheme = false
+
+  state.doc.nodesBetween(from, to, (node, nodePos) => {
+    if (!node.isText || !node.text) return !containsGrapheme
+
+    const textFrom = Math.max(0, from - nodePos)
+    const textTo = Math.min(node.text.length, to - nodePos)
+    const selectedText = node.text.slice(textFrom, textTo)
+
+    if (
+      getGraphemeSegments(selectedText).some(isMultiCodeUnitGrapheme) ||
+      !!findSplitGraphemeBoundary(node.text, textFrom) ||
+      !!findSplitGraphemeBoundary(node.text, textTo)
+    ) {
+      containsGrapheme = true
+      return false
+    }
+
+    return !containsGrapheme
+  })
+
+  return containsGrapheme
+}
+
+function deleteSelectionContainingMultiCodeUnitGrapheme(editor: Editor): boolean {
+  const { state, view } = editor
+  const { selection } = state
+  if (selection.empty) return false
+  if (!selectedRangeContainsMultiCodeUnitGrapheme(state, selection.from, selection.to)) return false
+
+  const from = expandPositionToGraphemeBoundary(state, selection.from, "from")
+  const to = expandPositionToGraphemeBoundary(state, selection.to, "to")
+
+  view.dispatch(state.tr.delete(from, to).scrollIntoView())
+  return true
+}
+
+function deleteAdjacentMultiCodeUnitGrapheme(editor: Editor, direction: "backward" | "forward"): boolean {
+  const { state, view } = editor
+  const { selection } = state
+  if (!selection.empty) return false
+
+  const $from = selection.$from
+  if (!$from.parent.isTextblock) return false
+
+  const parentText = $from.parent.textBetween(0, $from.parent.content.size, undefined, "\ufffc")
+  const target = findGraphemeForDelete(parentText, $from.parentOffset, direction)
+  if (!target || !isMultiCodeUnitGrapheme(target)) return false
+
+  const from = $from.start() + target.from
+  const to = $from.start() + target.to
+  view.dispatch(state.tr.delete(from, to).scrollIntoView())
+  return true
 }
 
 function getSelectedBlockRange(editor: Editor): SelectedBlockRange | null {
@@ -397,14 +686,9 @@ function getParsedContent(
   text: string,
   getMentionType?: MentionTypeLookup,
   getEmoji?: EmojiLookup,
-  parseOptions?: {
-    enableMentions?: boolean
-    enableChannels?: boolean
-    enableSlashCommands?: boolean
-    enableEmoji?: boolean
-  }
+  parseOptions?: ParseMarkdownOptions
 ): JSONContent[] | undefined {
-  return parseMarkdown(text, getMentionType, getEmoji, parseOptions).content
+  return parseMarkdown(text, getMentionType, getEmoji, { emojiAsText: true, ...parseOptions }).content
 }
 
 export function insertPastedText(
@@ -412,12 +696,7 @@ export function insertPastedText(
   text: string,
   getMentionType?: MentionTypeLookup,
   getEmoji?: EmojiLookup,
-  parseOptions?: {
-    enableMentions?: boolean
-    enableChannels?: boolean
-    enableSlashCommands?: boolean
-    enableEmoji?: boolean
-  }
+  parseOptions?: ParseMarkdownOptions
 ): boolean {
   const normalizedText = text.replace(/\r\n?/g, "\n")
 
@@ -434,8 +713,43 @@ export function insertPastedText(
     return editor.chain().focus().insertContent(content).run()
   }
 
-  const parsed = parseMarkdown(normalizedText, getMentionType, getEmoji, parseOptions)
-  return editor.commands.insertContent(parsed)
+  const blocks = getParsedContent(normalizedText, getMentionType, getEmoji, parseOptions)
+  if (!blocks || blocks.length === 0) {
+    return false
+  }
+
+  // When the parsed markdown is a single paragraph (the common case for pasted
+  // plain text), unwrap to its inline content. Inserting a paragraph node mid-
+  // paragraph makes ProseMirror split the current paragraph, producing stray
+  // newlines around the paste. Inserting inline content lets tiptap route plain
+  // text through `tr.insertText`, which also preserves the cursor's active
+  // marks (bold, inline code, link, ...).
+  if (blocks.length === 1 && blocks[0].type === "paragraph") {
+    const inline = blocks[0].content
+    if (!inline || inline.length === 0) {
+      return false
+    }
+    return editor.commands.insertContent(inline)
+  }
+
+  // Multi-paragraph plain-text paste: build a slice open at both ends so the
+  // first and last pasted paragraphs merge with the paragraph surrounding the
+  // cursor, matching native paste behavior.
+  if (blocks.every((block) => block.type === "paragraph")) {
+    const { schema } = editor.state
+    const fragment = Fragment.fromArray(blocks.map((block) => schema.nodeFromJSON(block)))
+    const slice = new Slice(fragment, 1, 1)
+    return editor
+      .chain()
+      .focus()
+      .command(({ tr }) => {
+        tr.replaceSelection(slice)
+        return true
+      })
+      .run()
+  }
+
+  return editor.commands.insertContent(blocks)
 }
 
 /**
@@ -534,4 +848,111 @@ export function handleBeforeInputNewline(editor: Editor, event: BeforeInputEvent
   }
 
   return handled
+}
+
+/**
+ * Delete the inline atom adjacent to the caret (or already wrapped in a
+ * `NodeSelection`). Covers Firefox Android's first-Backspace promote-to-
+ * selection step so the second tap isn't needed.
+ */
+export function deleteAdjacentInlineAtom(
+  editor: Editor,
+  direction: "backward" | "forward",
+  options: DeleteAdjacentInlineAtomOptions = {}
+): boolean {
+  const { state, view } = editor
+  if (view.composing && !options.allowDuringComposition) return false
+
+  const { selection } = state
+  if (selection instanceof NodeSelection && isDeletableInlineAtom(selection.node)) {
+    view.dispatch(state.tr.deleteSelection().scrollIntoView())
+    return true
+  }
+  if (!selection.empty) return false
+
+  const $from = selection.$from
+  const adjacent = direction === "backward" ? $from.nodeBefore : $from.nodeAfter
+  if (!adjacent || !isDeletableInlineAtom(adjacent)) return false
+
+  const from = direction === "backward" ? $from.pos - adjacent.nodeSize : $from.pos
+  const to = direction === "backward" ? $from.pos : $from.pos + adjacent.nodeSize
+  view.dispatch(state.tr.delete(from, to).scrollIntoView())
+  return true
+}
+
+/**
+ * `beforeinput` adapter for {@link deleteAdjacentInlineAtom}. Needed because
+ * Android Chrome skips `keydown` for Backspace, so the keymap-based path
+ * never runs and the browser would otherwise blur the editor mid-flow.
+ */
+export function handleBeforeInputAtomDelete(editor: Editor, event: BeforeInputEventLike): boolean {
+  if (event.inputType !== "deleteContentBackward" && event.inputType !== "deleteContentForward") return false
+  const direction = event.inputType === "deleteContentBackward" ? "backward" : "forward"
+
+  // Firefox Android can update the native selection around an inline atom
+  // before ProseMirror has observed it. Flush first so a native atom/range
+  // selection becomes editor state before deciding whether to intercept.
+  flushPendingDomSelection(editor)
+
+  if (
+    !deleteSelectionContainingInlineAtom(editor) &&
+    !deleteAdjacentInlineAtom(editor, direction, { allowDuringComposition: true })
+  ) {
+    return false
+  }
+
+  event.preventDefault()
+  return true
+}
+
+/**
+ * Firefox Android can delete a text emoji one UTF-16 code unit at a time,
+ * leaving a broken surrogate/variation fragment that shows up as the square
+ * highlight. Only intercept multi-code-unit graphemes so normal text deletion
+ * stays on the native ProseMirror path.
+ */
+export function handleBeforeInputGraphemeDelete(editor: Editor, event: BeforeInputEventLike): boolean {
+  if (event.inputType !== "deleteContentBackward" && event.inputType !== "deleteContentForward") return false
+  const direction = event.inputType === "deleteContentBackward" ? "backward" : "forward"
+
+  flushPendingDomSelection(editor)
+
+  if (
+    !deleteSelectionContainingMultiCodeUnitGrapheme(editor) &&
+    !deleteAdjacentMultiCodeUnitGrapheme(editor, direction)
+  ) {
+    return false
+  }
+
+  event.preventDefault()
+  return true
+}
+
+/**
+ * Catch Gboard / SwiftKey clipboard-bar pastes that the browser surfaces as
+ * `insertText`, not `paste` (Marijn confirmed this is unfixable upstream:
+ * https://discuss.prosemirror.net/t/transformpasted-doesnt-catch-pasted/8157).
+ * Heuristic: 3+ chars containing a newline or markdown styling char, outside
+ * composition and code blocks. Once matched we never fall back to TipTap's
+ * default insert, which would silently drop mention / channel / emoji parsing.
+ */
+export function handleBeforeInputKeyboardPaste(
+  editor: Editor,
+  event: BeforeInputEventLike,
+  getMentionType?: MentionTypeLookup,
+  getEmoji?: EmojiLookup,
+  parseOptions?: ParseMarkdownOptions
+): boolean {
+  if (event.inputType !== "insertText") return false
+  if (editor.view.composing) return false
+  const data = event.data
+  if (!data || data.length < 3) return false
+  if (!data.includes("\n") && !PASTE_STYLING_CHARS.test(data)) return false
+  if (editor.isActive("codeBlock")) return false
+
+  event.preventDefault()
+  if (!insertPastedText(editor, data, getMentionType, getEmoji, parseOptions)) {
+    editor.commands.insertContent(data)
+  }
+  return true
 }

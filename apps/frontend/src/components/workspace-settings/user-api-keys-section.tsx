@@ -21,10 +21,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
-import { API_KEY_PERMISSIONS, type ApiKeyScope } from "@threa/types"
+import { API_KEY_ELIGIBLE_PICKER_SCOPES, WORKSPACE_PERMISSIONS, type WorkspacePermissionSlug } from "@threa/types"
 import { Check, ChevronDown, Copy, Key, Plus, Trash2, Eye, EyeOff } from "lucide-react"
 
-const SCOPE_LABELS: Record<string, string> = Object.fromEntries(API_KEY_PERMISSIONS.map((p) => [p.slug, p.name]))
+// Full catalog drives SCOPE_LABELS so previously-issued keys with scopes
+// outside the eligible picker subset still render a human-readable name.
+const SCOPE_LABELS: Record<string, string> = Object.fromEntries(WORKSPACE_PERMISSIONS.map((p) => [p.slug, p.name]))
 
 interface UserApiKeysSectionProps {
   workspaceId: string
@@ -42,7 +44,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
 
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newKeyName, setNewKeyName] = useState("")
-  const [selectedScopes, setSelectedScopes] = useState<Set<ApiKeyScope>>(new Set())
+  const [selectedScopes, setSelectedScopes] = useState<Set<WorkspacePermissionSlug>>(new Set())
   const [createdKeyValue, setCreatedKeyValue] = useState<string | null>(null)
   const [showKeyValue, setShowKeyValue] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -50,7 +52,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
   const [revokedOpen, setRevokedOpen] = useState(false)
 
   const createMutation = useMutation({
-    mutationFn: (params: { name: string; scopes: ApiKeyScope[] }) =>
+    mutationFn: (params: { name: string; scopes: WorkspacePermissionSlug[] }) =>
       workspacesApi.createUserApiKey(workspaceId, params),
     onSuccess: (data) => {
       setCreatedKeyValue(data.value)
@@ -74,7 +76,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
     },
   })
 
-  const toggleScope = (scope: ApiKeyScope) => {
+  const toggleScope = (scope: WorkspacePermissionSlug) => {
     setSelectedScopes((prev) => {
       const next = new Set(prev)
       if (next.has(scope)) {
@@ -199,7 +201,7 @@ export function UserApiKeysSection({ workspaceId }: UserApiKeysSectionProps) {
           <div className="space-y-1.5">
             <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Permissions</Label>
             <div className="rounded-md border divide-y">
-              {API_KEY_PERMISSIONS.map((perm) => (
+              {API_KEY_ELIGIBLE_PICKER_SCOPES.map((perm) => (
                 <label
                   key={perm.slug}
                   className="block px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors first:rounded-t-md last:rounded-b-md"

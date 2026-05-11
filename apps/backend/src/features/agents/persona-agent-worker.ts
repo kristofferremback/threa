@@ -80,12 +80,17 @@ export function createPersonaAgentWorker(deps: PersonaAgentWorkerDeps): JobHandl
 
 /**
  * Check if there are USER messages that arrived after lastSeenSequence and dispatch
- * a follow-up job if needed.
+ * a follow-up PERSONA_AGENT job if needed.
  *
  * IMPORTANT: We only check for USER messages, not all messages. Otherwise the
  * agent's own responses would trigger follow-up jobs in an infinite loop.
+ *
+ * Exported because any worker that holds the `(stream_id) WHERE status='running'`
+ * session slot during its AI call must call this on completion — `CompanionHandler`
+ * suppresses duplicate dispatches while a session is active, so without a follow-up
+ * nudge any user message that lands during the AI call gets stranded.
  */
-async function checkForUnseenMessages(params: {
+export async function checkForUnseenMessages(params: {
   pool: Pool
   jobQueue: QueueManager
   workspaceId: string

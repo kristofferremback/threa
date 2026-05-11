@@ -20,13 +20,16 @@ export function getBaseUrl(): string {
   return testServer.url
 }
 
-// Global setup - runs once before all test files
-beforeAll(async () => {
-  testServer = await startTestServer()
-  // Set environment variable so client.ts can pick it up
-  process.env.TEST_BASE_URL = testServer.url
-  console.log(`Test server started at ${testServer.url}`)
-})
+// Global setup - runs once before all test files (migrations + MinIO can exceed 5s default hook time)
+beforeAll(
+  async () => {
+    testServer = await startTestServer()
+    // Set environment variable so client.ts can pick it up
+    process.env.TEST_BASE_URL = testServer.url
+    console.log(`Test server started at ${testServer.url}`)
+  },
+  { timeout: 120_000 }
+)
 
 // Global teardown - runs once after all test files
 // Fast shutdown mode enables immediate shutdown, so no long timeout needed

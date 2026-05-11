@@ -13,6 +13,7 @@ import {
   createGetStreamMessagesTool,
   createSearchAttachmentsTool,
   createGetAttachmentTool,
+  createDescribeMemoTool,
   createLoadAttachmentTool,
   createLoadPdfSectionTool,
   createLoadFileSectionTool,
@@ -39,6 +40,9 @@ import {
 export interface ToolSetConfig {
   enabledTools: string[] | null
   tavilyApiKey?: string
+  /** Invocation time used to ground current/latest/recent web searches. */
+  currentTime?: string
+  timezone?: string
   runWorkspaceAgent?: (query: string, opts: RunWorkspaceAgentOptions) => Promise<WorkspaceAgentResult>
   workspace?: WorkspaceToolDeps
   github?: GitHubToolDeps
@@ -51,7 +55,8 @@ export interface ToolSetConfig {
  * Returns AgentTool[] — send_message is NOT included (the runtime handles it).
  */
 export function buildToolSet(config: ToolSetConfig): AgentTool[] {
-  const { enabledTools, tavilyApiKey, runWorkspaceAgent, workspace, github, supportsVision } = config
+  const { enabledTools, tavilyApiKey, currentTime, timezone, runWorkspaceAgent, workspace, github, supportsVision } =
+    config
 
   if (!github && enabledTools !== null) {
     const requestedGithubTools = enabledTools.filter((t) => t.startsWith("github_"))
@@ -69,7 +74,7 @@ export function buildToolSet(config: ToolSetConfig): AgentTool[] {
 
     // Web tools
     tavilyApiKey && isToolEnabled(enabledTools, AgentToolNames.WEB_SEARCH)
-      ? createWebSearchTool({ tavilyApiKey })
+      ? createWebSearchTool({ tavilyApiKey, currentTime, timezone })
       : null,
     isToolEnabled(enabledTools, AgentToolNames.READ_URL) ? createReadUrlTool() : null,
 
@@ -88,6 +93,7 @@ export function buildToolSet(config: ToolSetConfig): AgentTool[] {
       ? createSearchAttachmentsTool(workspace)
       : null,
     workspace && isToolEnabled(enabledTools, AgentToolNames.GET_ATTACHMENT) ? createGetAttachmentTool(workspace) : null,
+    workspace && isToolEnabled(enabledTools, AgentToolNames.DESCRIBE_MEMO) ? createDescribeMemoTool(workspace) : null,
     workspace && supportsVision && isToolEnabled(enabledTools, AgentToolNames.LOAD_ATTACHMENT)
       ? createLoadAttachmentTool(workspace)
       : null,

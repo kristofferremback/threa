@@ -1,6 +1,7 @@
 import {
   type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type RefObject,
   useMemo,
   useCallback,
@@ -11,12 +12,16 @@ import {
 } from "react"
 import { ArrowUp, X, Plus, AtSign, Slash, Paperclip, Maximize2 } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { usePreferencesOptional } from "@/contexts"
+import { getEffectiveKeyBinding, matchesKeyBinding } from "@/lib/keyboard-shortcuts"
 import { RichEditor, EditorToolbar, EditorActionBar } from "@/components/editor"
 import type { RichEditorHandle } from "@/components/editor"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
+import { ContextRefStrip } from "./context-ref-strip"
+import type { DraftContextRef } from "@/lib/context-bag/types"
 import { cn } from "@/lib/utils"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 import type { MessageSendMode, JSONContent } from "@threa/types"
@@ -58,6 +63,11 @@ function getPreviewText(doc: JSONContent): string {
       return `Replying to ${author}`
     }
 
+    if (node.type === "sharedMessage") {
+      const author = typeof node.attrs?.authorName === "string" ? node.attrs.authorName : ""
+      return author ? `Sharing message from ${author}` : "Sharing a message"
+    }
+
     if (node.type === "codeBlock") {
       const text = (node.content ?? []).map((c) => c.text ?? "").join("")
       return text.split("\n")[0] ?? ""
@@ -91,6 +101,12 @@ function getPreviewText(doc: JSONContent): string {
 const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
 const MOD_KEY_NAME = navigator.platform?.toLowerCase().includes("mac") ? "Command" : "Control"
 
+export interface ComposerControlHandle {
+  focus(): void
+  focusAfterQuoteReply(): void
+  getEditor(): Editor | null
+}
+
 export interface MessageComposerProps {
   // Content (controlled)
   content: JSONContent
@@ -99,6 +115,18 @@ export interface MessageComposerProps {
   // Attachments (controlled)
   pendingAttachments: PendingAttachment[]
   onRemoveAttachment: (id: string) => void
+  /**
+   * Context refs attached to the current draft (sidecar). Rendered inline
+   * with `pendingAttachments` as one unified attachment row using the same
+   * `<AttachmentPill>` primitive — matches the user mental model that both
+   * are "things attached to this message" and preps for an eventual
+   * unified bag where attachments live as another ref kind.
+   */
+  contextRefs?: DraftContextRef[]
+  /** Stream id; required only when `contextRefs` is non-empty so the strip can build deep-links. */
+  streamId?: string
+  /** Workspace id; required only when `contextRefs` is non-empty so the strip can fetch source metadata. */
+  workspaceId?: string
   fileInputRef: RefObject<HTMLInputElement | null>
   onFileSelect: (e: ChangeEvent<HTMLInputElement>) => void
   /** Called when files are pasted or dropped into the editor */
@@ -143,7 +171,48 @@ export interface MessageComposerProps {
   /** Stream context for filtering which broadcast mentions (@channel, @here) are available */
   streamContext?: MentionStreamContext
   /** Imperative handle ref for programmatic focus from parent */
-  composerRef?: React.MutableRefObject<{ focus: () => void; focusAfterQuoteReply: () => void } | null>
+  composerRef?: React.MutableRefObject<ComposerControlHandle | null>
+
+  /**
+   * Triggered when the user presses Cmd/Ctrl+S with focus inside the composer,
+   * or when they click "Save current" in the stashed-drafts picker. The host
+   * is responsible for snapshotting the current content/attachments, adding a
+   * row to the stash, clearing the active draft, and showing a toast. An
+   * empty composer should no-op; the picker disables its own button when
+   * `canStashCurrent` is false.
+   */
+  onStashDraft?: () => void
+
+  /**
+   * Slot for the stashed-drafts picker trigger used in the desktop inline
+   * toolbar and the mobile action bar (compact size). Omit to hide the
+   * affordance entirely (used by edit forms and other non-draft consumers).
+   */
+  stashedDraftsTrigger?: ReactNode
+
+  /**
+   * Separate slot for the expanded-mode FAB drawer, where the trigger needs
+   * to match the 30x30 outline-shadow style of the other drawer buttons.
+   * Hosts pass both slots because the picker is rendered fresh in each
+   * context rather than shared by reference.
+   */
+  stashedDraftsTriggerFab?: ReactNode
+
+  /**
+   * Slot for the unified scheduled-messages picker — both the "schedule this
+   * draft" entry point and the "what's queued for this stream?" peek live
+   * behind a single trigger. Omit to hide the affordance entirely (used by
+   * edit forms and any composer that isn't sending a fresh message).
+   */
+  scheduledMessagesTrigger?: ReactNode
+
+  /**
+   * Separate slot for the expanded-mode FAB drawer; mirrors
+   * `stashedDraftsTriggerFab`. The picker is rendered fresh per context
+   * (with `size="fab"`) rather than shared by reference because the trigger
+   * sizing differs between the inline action bar and the floating drawer.
+   */
+  scheduledMessagesTriggerFab?: ReactNode
 }
 
 export function MessageComposer({
@@ -151,6 +220,9 @@ export function MessageComposer({
   onContentChange,
   pendingAttachments,
   onRemoveAttachment,
+  contextRefs,
+  streamId,
+  workspaceId,
   fileInputRef,
   onFileSelect,
   onFileUpload,
@@ -173,6 +245,11 @@ export function MessageComposer({
   onCollapse,
   streamContext,
   composerRef,
+  onStashDraft,
+  stashedDraftsTrigger,
+  stashedDraftsTriggerFab,
+  scheduledMessagesTrigger,
+  scheduledMessagesTriggerFab,
 }: MessageComposerProps) {
   // Controls (buttons, file input) are disabled during both external disable and sending.
   // The editor itself stays editable during sending so mobile keyboards don't close/reopen.
@@ -180,6 +257,7 @@ export function MessageComposer({
 
   const richEditorRef = useRef<RichEditorHandle>(null)
   const expandedShellRef = useRef<HTMLDivElement>(null)
+  const actionBarWrapperRef = useRef<HTMLDivElement>(null)
   const [mobileToolbarEditor, setMobileToolbarEditor] = useState<Editor | null>(null)
   const [formatOpen, setFormatOpen] = useState(false)
   const [mobileExpanded, setMobileExpanded] = useState(false)
@@ -304,6 +382,7 @@ export function MessageComposer({
         setMobileFocused(true)
         requestAnimationFrame(() => richEditorRef.current?.focusAfterQuoteReply())
       },
+      getEditor: () => richEditorRef.current?.getEditor() ?? null,
     }
     return () => {
       composerRef.current = null
@@ -324,6 +403,27 @@ export function MessageComposer({
       onCollapse()
     },
     [onCollapse]
+  )
+
+  // `draftStash` stashes the current draft. Attached in the capture phase on
+  // the composer root so it runs before TipTap's contentEditable sees the
+  // event, and before the browser's default "save page" behavior. Capture
+  // scopes the shortcut to whichever composer actually received focus — if
+  // main + thread are both mounted, only the focused one fires. Registered
+  // via `SHORTCUT_ACTIONS`, so the user can remap it in settings.
+  const preferencesCtx = usePreferencesOptional()
+  const stashBinding = getEffectiveKeyBinding("draftStash", preferencesCtx?.preferences?.keyboardShortcuts ?? {})
+
+  const handleStashKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!stashBinding) return
+      if (!matchesKeyBinding(event.nativeEvent, stashBinding)) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      onStashDraft?.()
+    },
+    [onStashDraft, stashBinding]
   )
 
   const sharedEditor = (
@@ -412,6 +512,7 @@ export function MessageComposer({
           className={cn("relative flex flex-col h-full bg-background", className)}
           tabIndex={-1}
           onKeyDown={handleExpandedShellKeyDown}
+          onKeyDownCapture={handleStashKeyDown}
         >
           <p id={instructionsId} className="sr-only">
             {screenReaderInstructions}
@@ -456,9 +557,17 @@ export function MessageComposer({
               onEscapeBlur={focusExpandedShell}
               streamContext={streamContext}
               belowToolbarContent={
-                pendingAttachments.length > 0 ? (
+                pendingAttachments.length > 0 || (contextRefs && contextRefs.length > 0) ? (
                   <div className="pt-1 pb-2 border-b border-border/50 [&>div]:mb-0">
-                    <PendingAttachments attachments={pendingAttachments} onRemove={onRemoveAttachment} />
+                    <PendingAttachments
+                      attachments={pendingAttachments}
+                      onRemove={onRemoveAttachment}
+                      beforePills={
+                        contextRefs && contextRefs.length > 0 && streamId && workspaceId ? (
+                          <ContextRefStrip workspaceId={workspaceId} streamId={streamId} draftRefs={contextRefs} />
+                        ) : null
+                      }
+                    />
                   </div>
                 ) : undefined
               }
@@ -470,7 +579,9 @@ export function MessageComposer({
           {/* Floating action drawer + send button — bottom-right corner */}
           <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1.5 group/fab">
             {/* Action drawer — slides out from behind the + button on hover or focus-within */}
-            <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[200px] group-hover/fab:opacity-100 group-focus-within/fab:max-w-[200px] group-focus-within/fab:opacity-100 transition-all duration-200 ease-out">
+            <div className="flex items-center gap-1 overflow-hidden max-w-0 opacity-0 group-hover/fab:max-w-[240px] group-hover/fab:opacity-100 group-focus-within/fab:max-w-[240px] group-focus-within/fab:opacity-100 transition-all duration-200 ease-out">
+              {stashedDraftsTriggerFab}
+              {scheduledMessagesTriggerFab}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -619,12 +730,21 @@ export function MessageComposer({
         )}
         onFocusCapture={isMobile ? handleFocusCapture : undefined}
         onBlurCapture={isMobile ? handleBlurCapture : undefined}
+        onKeyDownCapture={handleStashKeyDown}
       >
         <p id={instructionsId} className="sr-only">
           {screenReaderInstructions}
         </p>
         {/* Attachment bar - shown above input */}
-        <PendingAttachments attachments={pendingAttachments} onRemove={onRemoveAttachment} />
+        <PendingAttachments
+          attachments={pendingAttachments}
+          onRemove={onRemoveAttachment}
+          beforePills={
+            contextRefs && contextRefs.length > 0 && streamId && workspaceId ? (
+              <ContextRefStrip workspaceId={workspaceId} streamId={streamId} draftRefs={contextRefs} />
+            ) : null
+          }
+        />
 
         {/* Hidden file input */}
         <input
@@ -677,9 +797,25 @@ export function MessageComposer({
 
             {/* Bottom action bar — visible on desktop always, on mobile only when focused.
                onMouseDown preventDefault keeps editor focus on mobile so the virtual keyboard
-               stays open when tapping any button in this bar. */}
+               stays open when tapping any button in this bar.
+
+               Subtlety: React synthetic events bubble through the *React component
+               tree*, not the DOM tree. Slots like `scheduledMessagesTrigger` host
+               Radix Popover/Dialog whose content is portaled into <body>, but
+               their synthetic events still bubble back here through the React
+               tree. A blanket `preventDefault` therefore cancels native focus on
+               inputs (date/time pickers, search inputs) inside those portals. The
+               DOM-subtree guard below limits the suppression to elements actually
+               living under this wrapper — buttons in our own action bar — and
+               leaves portaled content untouched. */}
             {(!isMobile || mobileFocused) && (
-              <div onMouseDown={(e) => e.preventDefault()}>
+              <div
+                ref={actionBarWrapperRef}
+                onMouseDown={(e) => {
+                  if (!actionBarWrapperRef.current?.contains(e.target as Node)) return
+                  e.preventDefault()
+                }}
+              >
                 {isMobile ? (
                   <EditorActionBar
                     editorHandle={richEditorRef.current}
@@ -690,7 +826,17 @@ export function MessageComposer({
                     onMobileExpandedChange={setMobileExpanded}
                     showAttach
                     onAttachClick={handleAttachClick}
-                    trailingContent={sendButton}
+                    trailingContent={
+                      stashedDraftsTrigger || scheduledMessagesTrigger ? (
+                        <div className="flex items-center gap-1">
+                          {stashedDraftsTrigger}
+                          {scheduledMessagesTrigger}
+                          {sendButton}
+                        </div>
+                      ) : (
+                        sendButton
+                      )
+                    }
                   />
                 ) : (
                   <div className="flex items-center gap-1">
@@ -808,6 +954,8 @@ export function MessageComposer({
                         Attach files
                       </TooltipContent>
                     </Tooltip>
+                    {stashedDraftsTrigger}
+                    {scheduledMessagesTrigger}
                     {sendButton}
                   </div>
                 )}

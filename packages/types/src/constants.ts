@@ -66,6 +66,7 @@ export const EVENT_TYPES = [
   "agent_session:completed",
   "agent_session:failed",
   "agent_session:deleted",
+  "messages:moved",
 ] as const
 export type EventType = (typeof EVENT_TYPES)[number]
 
@@ -73,9 +74,9 @@ export type EventType = (typeof EVENT_TYPES)[number]
 export const COMMAND_EVENT_TYPES = ["command_dispatched", "command_completed", "command_failed"] as const
 export type CommandEventType = (typeof COMMAND_EVENT_TYPES)[number]
 
-// Workspace user roles
-export const WORKSPACE_USER_ROLES = ["owner", "admin", "user"] as const
-export type WorkspaceUserRole = (typeof WORKSPACE_USER_ROLES)[number]
+// Workspace user roles — re-exported from workspace-permissions so the catalog
+// (`WORKSPACE_ROLE_DEFINITIONS`) and the User.role union cannot drift.
+export { WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "./workspace-permissions"
 
 // Notification levels (per-stream member preference)
 export const NOTIFICATION_LEVELS = ["everything", "activity", "mentions", "muted"] as const
@@ -123,6 +124,18 @@ export const SavedStatuses = {
   DONE: "done",
   ARCHIVED: "archived",
 } as const satisfies Record<string, SavedStatus>
+
+// Scheduled message statuses
+export const SCHEDULED_MESSAGE_STATUSES = ["pending", "sending", "sent", "cancelled", "failed"] as const
+export type ScheduledMessageStatus = (typeof SCHEDULED_MESSAGE_STATUSES)[number]
+
+export const ScheduledMessageStatuses = {
+  PENDING: "pending",
+  SENDING: "sending",
+  SENT: "sent",
+  CANCELLED: "cancelled",
+  FAILED: "failed",
+} as const satisfies Record<string, ScheduledMessageStatus>
 
 // Invitation statuses
 export const INVITATION_STATUSES = ["pending", "accepted", "expired", "revoked"] as const
@@ -263,6 +276,7 @@ export const AGENT_TOOL_NAMES = [
   "load_pdf_section",
   "load_file_section",
   "load_excel_section",
+  "describe_memo",
   "github_list_repos",
   "github_list_branches",
   "github_list_commits",
@@ -295,6 +309,7 @@ export const AgentToolNames = {
   LOAD_PDF_SECTION: "load_pdf_section",
   LOAD_FILE_SECTION: "load_file_section",
   LOAD_EXCEL_SECTION: "load_excel_section",
+  DESCRIBE_MEMO: "describe_memo",
   GITHUB_LIST_REPOS: "github_list_repos",
   GITHUB_LIST_BRANCHES: "github_list_branches",
   GITHUB_LIST_COMMITS: "github_list_commits",
@@ -541,5 +556,37 @@ export const LinearPreviewTypes = {
   DOCUMENT: "linear_document",
 } as const satisfies Record<string, LinearPreviewType>
 
+// Share flavors (cross-stream message sharing)
+export const SHARE_FLAVORS = ["pointer", "quote"] as const
+export type ShareFlavor = (typeof SHARE_FLAVORS)[number]
+
+export const ShareFlavors = {
+  POINTER: "pointer",
+  QUOTE: "quote",
+} as const satisfies Record<string, ShareFlavor>
+
+/**
+ * Wire-format error codes for the sharing feature. Centralised here because
+ * the privacy-confirmation code is matched on by the frontend message queue
+ * to surface the "Share anyway" / "Cancel" toast — keeping it as a magic
+ * string in two places would let typos drift the contract silently.
+ */
+export const ShareErrorCodes = {
+  PRIVACY_CONFIRMATION_REQUIRED: "SHARE_PRIVACY_CONFIRMATION_REQUIRED",
+  SOURCE_MESSAGE_NOT_FOUND: "SHARE_SOURCE_MESSAGE_NOT_FOUND",
+  SOURCE_STREAM_MISMATCH: "SHARE_SOURCE_STREAM_MISMATCH",
+  SOURCE_STREAM_NOT_FOUND: "SHARE_SOURCE_STREAM_NOT_FOUND",
+  CROSS_WORKSPACE_FORBIDDEN: "SHARE_CROSS_WORKSPACE_FORBIDDEN",
+  SOURCE_FORBIDDEN: "SHARE_SOURCE_FORBIDDEN",
+} as const
+
 // Inter-service authentication header (control-plane ↔ regional backend ↔ workspace-router)
 export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
+
+/**
+ * Floor for interaction-driven socket heartbeats. The frontend throttles
+ * interaction-flagged heartbeats to this interval; the backend ignores
+ * non-interaction heartbeats faster than this. Shared so the two sides
+ * cannot drift.
+ */
+export const HEARTBEAT_INTERACTION_THROTTLE_MS = 15_000

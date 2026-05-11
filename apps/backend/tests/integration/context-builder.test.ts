@@ -87,6 +87,41 @@ describe("Context Builder", () => {
         expect(context.participants).toBeUndefined()
       })
     })
+
+    test("should include temporal when only currentTime is provided (no user preferences)", async () => {
+      await withTestTransaction(pool, async (client) => {
+        const workosUserId = userId()
+        const wsId = workspaceId()
+        const scratchpadId = streamId()
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Context Test Workspace 2",
+          slug: `ctx-ws-${wsId}`,
+          createdBy: workosUserId,
+        })
+        const ownerUserId = (await addTestMember(client, wsId, workosUserId)).id
+
+        const scratchpad = await StreamRepository.insert(client, {
+          id: scratchpadId,
+          workspaceId: wsId,
+          type: StreamTypes.SCRATCHPAD,
+          displayName: "Pinned time scratchpad",
+          description: null,
+          visibility: Visibilities.PRIVATE,
+          createdBy: ownerUserId,
+        })
+
+        const pinned = new Date("2026-11-15T10:00:00.000Z")
+        const context = await buildStreamContext(client, scratchpad, { currentTime: pinned })
+
+        expect(context.temporal).toMatchObject({
+          currentTime: pinned.toISOString(),
+          timezone: "UTC",
+          dateFormat: "YYYY-MM-DD",
+          timeFormat: "24h",
+        })
+      })
+    })
   })
 
   describe("Channel Context", () => {

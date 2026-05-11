@@ -6,7 +6,7 @@
  */
 
 /** Default model for stream naming */
-export const STREAM_NAMING_MODEL_ID = "openrouter:openai/gpt-4.1-mini"
+export const STREAM_NAMING_MODEL_ID = "openrouter:openai/gpt-5.4-nano"
 
 /** Temperature for name generation - low for consistency */
 export const STREAM_NAMING_TEMPERATURE = 0.3

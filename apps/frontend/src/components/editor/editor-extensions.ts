@@ -25,6 +25,7 @@ import { CommandExtension, type CommandOptions } from "./triggers/command-extens
 import { EmojiExtension, type EmojiExtensionOptions } from "./triggers/emoji-extension"
 import { AttachmentReferenceExtension } from "./attachment-reference-extension"
 import { QuoteReplyExtension } from "./quote-reply-extension"
+import { SharedMessageExtension } from "./shared-message-extension"
 
 // Create lowlight instance with common languages
 const lowlight = createLowlight(common)
@@ -100,6 +101,9 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
 
     // Quote reply blocks
     QuoteReplyExtension,
+
+    // Shared message pointer blocks (cross-stream shares)
+    SharedMessageExtension,
   ]
 
   // Add mention extension if suggestion config provided

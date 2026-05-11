@@ -5,9 +5,13 @@ import type {
   CreateMessageInput,
   CreateDmMessageInput,
   UpdateMessageInput,
+  MoveMessagesToThreadInput,
+  MoveMessagesToThreadResponse,
+  ValidateMoveMessagesToThreadInput,
+  ValidateMoveMessagesToThreadResponse,
 } from "@threa/types"
 
-export type { CreateMessageInput, CreateDmMessageInput, UpdateMessageInput }
+export type { CreateMessageInput, CreateDmMessageInput, UpdateMessageInput, MoveMessagesToThreadInput }
 
 export const messageKeys = {
   versions: (workspaceId: string, messageId: string) => ["messageVersions", workspaceId, messageId] as const,
@@ -37,6 +41,17 @@ export const messagesApi = {
 
   delete(workspaceId: string, messageId: string): Promise<void> {
     return api.delete(`/api/workspaces/${workspaceId}/messages/${messageId}`)
+  },
+
+  moveToThread(workspaceId: string, data: MoveMessagesToThreadInput): Promise<MoveMessagesToThreadResponse> {
+    return api.post(`/api/workspaces/${workspaceId}/messages/move-to-thread`, data)
+  },
+
+  validateMoveToThread(
+    workspaceId: string,
+    data: ValidateMoveMessagesToThreadInput
+  ): Promise<ValidateMoveMessagesToThreadResponse> {
+    return api.post(`/api/workspaces/${workspaceId}/messages/move-to-thread/validate`, data)
   },
 
   // Reactions

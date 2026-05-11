@@ -4,17 +4,18 @@ import {
   renderLoginPage,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
-  SESSION_COOKIE_NAME,
   SESSION_COOKIE_CONFIG,
+  setSessionCookie,
   type StubAuthService,
 } from "@threa/backend-common"
+import { WORKSPACE_INVITABLE_ROLES, WORKSPACE_ROLE_SLUGS } from "@threa/types"
 import type { WorkspaceService } from "../features/workspaces"
 import type { StreamService } from "../features/streams"
 import type { InvitationService } from "../features/invitations"
 import { HttpError } from "../lib/errors"
 
 const workspaceJoinSchema = z.object({
-  role: z.enum(["user", "admin"]).optional(),
+  role: z.enum(WORKSPACE_INVITABLE_ROLES).optional(),
   name: z.string().optional(),
 })
 
@@ -53,7 +54,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
       name: user.name,
     })
 
-    res.cookie(SESSION_COOKIE_NAME, session, { ...SESSION_COOKIE_CONFIG, secure: false })
+    setSessionCookie(res, session, { ...SESSION_COOKIE_CONFIG, secure: false })
 
     // If user was accepted into exactly one workspace, redirect to setup
     if (acceptedWorkspaceIds.length === 1) {
@@ -69,7 +70,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
 
     const { user, session } = await authStubService.devLogin({ email, name })
 
-    res.cookie(SESSION_COOKIE_NAME, session, { ...SESSION_COOKIE_CONFIG, secure: false })
+    setSessionCookie(res, session, { ...SESSION_COOKIE_CONFIG, secure: false })
 
     res.json({ user })
   }
@@ -94,7 +95,7 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
       workosUserId,
       email: authUser.email,
       name,
-      role: role ?? "user",
+      role: role ?? WORKSPACE_ROLE_SLUGS.MEMBER,
     })
     res.json({ user })
   }

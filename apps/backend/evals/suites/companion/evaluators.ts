@@ -250,6 +250,41 @@ export const webSearchUsageEvaluator: Evaluator<CompanionOutput, CompanionExpect
   },
 }
 
+/**
+ * Evaluates whether web search queries include expected temporal grounding terms.
+ */
+export const webSearchQueryEvaluator: Evaluator<CompanionOutput, CompanionExpected> = {
+  name: "web-search-query",
+  evaluate: (output: CompanionOutput, expected: CompanionExpected): EvaluatorResult => {
+    const expectedTerms = expected.responseCharacteristics?.webSearchQueryShouldContain
+    if (!expectedTerms || expectedTerms.length === 0) {
+      return { name: "web-search-query", score: 1, passed: true, details: "No web search query requirements" }
+    }
+
+    const searchQueries =
+      output.toolCalls
+        ?.filter((tc) => tc.name === "web_search")
+        .map((tc) => tc.args.query)
+        .filter((query): query is string => typeof query === "string") ?? []
+
+    if (searchQueries.length === 0) {
+      return { name: "web-search-query", score: 0, passed: false, details: "No web search query found" }
+    }
+
+    const combinedQueries = searchQueries.join(" ").toLowerCase()
+    const found = expectedTerms.filter((term) => combinedQueries.includes(term.toLowerCase()))
+    const missing = expectedTerms.filter((term) => !combinedQueries.includes(term.toLowerCase()))
+    const score = found.length / expectedTerms.length
+
+    return {
+      name: "web-search-query",
+      score,
+      passed: missing.length === 0,
+      details: missing.length > 0 ? `Search query missing: ${missing.map((s) => `"${s}"`).join(", ")}` : undefined,
+    }
+  },
+}
+
 // =============================================================================
 // Run-Level Evaluators
 // =============================================================================

@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
-import { FileText, Hash, MessageSquare, Trash2, FileEdit, ArrowLeft } from "lucide-react"
+import { FileText, Hash, MessageSquare, Trash2, FileEdit, ArrowLeft, Bookmark } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   ResponsiveAlertDialog,
@@ -55,7 +55,12 @@ export function DraftsPage() {
     setDraftToDelete(null)
   }, [])
 
-  // Convert drafts to QuickSwitcherItem format
+  // Convert drafts to QuickSwitcherItem format. Stashed rows render under the
+  // same per-stream `group` as their ambient-draft sibling, so the explorer
+  // reads as "one section per conversation" instead of a flat dump. Stashed
+  // rows surface a small bookmark icon inline (in front of the preview) so
+  // they're distinguishable at a glance without stealing the stream's own
+  // icon from the section header.
   const items: QuickSwitcherItem[] = useMemo(() => {
     return drafts.map((draft) => {
       let description = draft.preview
@@ -64,12 +69,16 @@ export function DraftsPage() {
         description = description ? `${description}${attachmentSuffix}` : attachmentSuffix
       }
 
+      const label = draft.isStashed ? draft.preview || "Empty draft" : draft.displayName
+      const icon = draft.isStashed ? Bookmark : TYPE_ICONS[draft.type]
+
       return {
         id: draft.id,
-        label: draft.displayName,
-        description,
-        icon: TYPE_ICONS[draft.type],
+        label,
+        description: draft.isStashed ? undefined : description,
+        icon,
         href: draft.href ?? undefined,
+        group: draft.groupLabel,
         onSelect: () => handleSelectDraft(draft.href),
         onAction: () => handleDeleteClick(draft),
         actionIcon: Trash2,

@@ -14,10 +14,12 @@ import {
   type ActivityCreatedOutboxPayload,
   type StreamDisplayNameUpdatedPayload,
   type AttachmentTranscodedOutboxPayload,
+  type MessagesMovedOutboxPayload,
 } from "./repository"
 import { logger } from "../logger"
 import { CursorLock, ensureListenerFromLatest, DebounceWithMaxWait, type ProcessResult } from "@threa/backend-common"
 import type { OutboxHandler } from "@threa/backend-common"
+import { invalidatePointersForEvent } from "../../features/messaging/sharing"
 
 export interface BroadcastHandlerConfig {
   batchSize?: number
@@ -106,6 +108,10 @@ export class BroadcastHandler implements OutboxHandler {
       try {
         for (const event of events) {
           this.broadcastEvent(event)
+          // After the normal per-event emit, fan out any pointer-invalidated
+          // hints so clients subscribed to target streams refresh their
+          // hydrated pointer content (see features/messaging/sharing, D7).
+          await invalidatePointersForEvent(event, this.db, this.io)
           seen.push(event.id)
         }
 
@@ -174,6 +180,15 @@ export class BroadcastHandler implements OutboxHandler {
       if (payload.parentStreamId) {
         this.io.to(`ws:${workspaceId}:stream:${payload.parentStreamId}`).emit(event.eventType, event.payload)
       }
+      return
+    }
+
+    if (isOutboxEventType(event, "messages:moved")) {
+      const payload = event.payload as MessagesMovedOutboxPayload
+      this.io
+        .to(`ws:${workspaceId}:stream:${payload.sourceStreamId}`)
+        .to(`ws:${workspaceId}:stream:${payload.destinationStreamId}`)
+        .emit(event.eventType, event.payload)
       return
     }
 

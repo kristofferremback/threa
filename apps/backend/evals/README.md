@@ -15,7 +15,7 @@ bun run eval -- -s companion
 bun run eval -- -s companion -c scratchpad-companion-greeting-001
 
 # Compare models
-bun run eval -- -s companion -m openrouter:anthropic/claude-haiku-4.5,openrouter:openai/gpt-4.1-mini
+bun run eval -- -s companion -m openrouter:anthropic/claude-haiku-4.5,openrouter:openai/gpt-5.4-nano
 
 # Run from config file
 bun run eval -- --config evals/example-config.yaml
@@ -82,10 +82,10 @@ suites:
 
   # Same suite, different provider
   - name: companion
-    title: "GPT-4.1-mini"
+    title: "gpt-5.4-nano"
     components:
       companion:
-        model: openrouter:openai/gpt-4.1-mini
+        model: openrouter:openai/gpt-5.4-nano
 ```
 
 ### Component Keys by Suite
@@ -118,10 +118,10 @@ suites:
         temperature: 0.7
 
   - name: companion
-    title: "GPT-4.1-mini"
+    title: "gpt-5.4-nano"
     components:
       companion:
-        model: openrouter:openai/gpt-4.1-mini
+        model: openrouter:openai/gpt-5.4-nano
         temperature: 0.5
 
   # Run stream-naming with specific cases only

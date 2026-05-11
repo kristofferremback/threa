@@ -26,6 +26,7 @@ import type { QueueManager } from "../../../lib/queue"
 import { ProcessingStatuses, PdfJobStatuses, PdfPageClassifications, PdfSizeTiers } from "@threa/types"
 import type { PdfPageClassification, PdfSizeTier } from "@threa/types"
 import { JobQueues } from "../../../lib/queue"
+import { OutboxRepository } from "../../../lib/outbox"
 import { logger } from "../../../lib/logger"
 import { classifyPage, type ClassificationInput, type TextItemWithPosition } from "./classifier"
 import {
@@ -507,6 +508,15 @@ export class PdfProcessingService implements PdfProcessingServiceLike {
 
       // Mark attachment as completed
       await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
+
+      // Emit the same extraction-completed event the shared `processAttachment`
+      // path emits, so PDFs flow through `AttachmentEmbeddingHandler` for the
+      // summary embedding (INV-7 — atomic with the extraction insert).
+      await OutboxRepository.insert(client, "attachment:extraction_completed", {
+        workspaceId: attachment.workspaceId,
+        attachmentId,
+        contentType: "document",
+      })
     })
 
     log.info({ sizeTier, totalPages: pages.length }, "PDF processing complete")

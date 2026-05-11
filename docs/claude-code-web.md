@@ -17,7 +17,7 @@ Paste this script into **CC web Settings > Setup Script**. It runs as root on ea
 
 The `.claude/settings.json` SessionStart hook runs after clone and:
 
-- Copies `.env.claude-code-web` to `.env` (if not already present)
+- Copies `.env.remote-dev` to `.env` (if not already present)
 - Runs `docker compose up -d --wait` to start PostgreSQL 17 with pgvector and MinIO
 - Runs `bun install`
 
@@ -25,7 +25,7 @@ This uses the same `docker-compose.yml` and ports as local dev (Postgres 5454, M
 
 ## Environment
 
-`.env.claude-code-web` is copied to `.env` automatically. It matches `docker-compose.yml` port mappings (5454 for Postgres, 9099 for MinIO) with stub auth enabled.
+`.env.remote-dev` is copied to `.env` automatically. It matches `docker-compose.yml` port mappings (5454 for Postgres, 9099 for MinIO) with stub auth enabled, and it is shared with the Codex cloud bootstrap flow.
 
 ## Manual UI Configuration
 

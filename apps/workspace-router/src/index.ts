@@ -34,6 +34,9 @@ const REGIONS_ROUTE_RE = /^\/api\/regions\/?$/
 const DEV_AUTH_ROUTE_RE = /^\/(?:test-auth-login|api\/dev\/login)\/?$/
 /** User-facing invitation acceptance (handled by control-plane) */
 const INVITATION_ACCEPT_RE = /^\/api\/invitations\/[^/]+\/accept$/
+/** Public link-invite lookup + claim (handled by control-plane, unauthenticated) */
+const INVITATION_LOOKUP_RE = /^\/api\/invitations\/lookup$/
+const INVITATION_CLAIM_RE = /^\/api\/invitations\/claim$/
 
 /** Matches /api/workspaces/:workspaceId with optional trailing path */
 const WORKSPACE_ROUTE_RE = /^\/api\/workspaces\/([^/]+)(?:\/.+)?$/
@@ -107,7 +110,9 @@ export default {
           (WORKSPACES_COLLECTION_RE.test(path) && (method === "GET" || method === "POST")) ||
           REGIONS_ROUTE_RE.test(path) ||
           DEV_AUTH_ROUTE_RE.test(path) ||
-          (INVITATION_ACCEPT_RE.test(path) && method === "POST")
+          (INVITATION_ACCEPT_RE.test(path) && method === "POST") ||
+          (INVITATION_LOOKUP_RE.test(path) && method === "GET") ||
+          (INVITATION_CLAIM_RE.test(path) && method === "POST")
         ) {
           try {
             return await proxyRequest(request, env.CONTROL_PLANE_URL)
@@ -141,7 +146,9 @@ export default {
         (WORKSPACES_COLLECTION_RE.test(path) && (method === "GET" || method === "POST")) ||
         REGIONS_ROUTE_RE.test(path) ||
         DEV_AUTH_ROUTE_RE.test(path) ||
-        (INVITATION_ACCEPT_RE.test(path) && method === "POST")
+        (INVITATION_ACCEPT_RE.test(path) && method === "POST") ||
+        (INVITATION_LOOKUP_RE.test(path) && method === "GET") ||
+        (INVITATION_CLAIM_RE.test(path) && method === "POST")
       ) {
         try {
           return await proxyRequest(request, env.CONTROL_PLANE_URL)
@@ -251,13 +258,35 @@ async function routeWorkspaceRequest(
   return proxyRequest(request, config.apiUrl)
 }
 
+function isLocalProxyTarget(targetBaseUrl: string): boolean {
+  try {
+    const { hostname } = new URL(targetBaseUrl)
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+  } catch {
+    return false
+  }
+}
+
 async function proxyRequest(request: Request, targetBaseUrl: string): Promise<Response> {
   const url = new URL(request.url)
   const targetUrl = new URL(url.pathname + url.search, targetBaseUrl)
 
   const headers = new Headers(request.headers)
-  headers.set("X-Forwarded-Host", url.host)
-  headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""))
+  const preserveUpstreamForwardedHeaders = isLocalProxyTarget(targetBaseUrl)
+  const forwardedHost = preserveUpstreamForwardedHeaders ? request.headers.get("X-Forwarded-Host") : null
+  const forwardedProto = preserveUpstreamForwardedHeaders ? request.headers.get("X-Forwarded-Proto") : null
+  const forwardedPort = preserveUpstreamForwardedHeaders ? request.headers.get("X-Forwarded-Port") : null
+
+  headers.set("X-Forwarded-Host", forwardedHost ?? url.host)
+  headers.set("X-Forwarded-Proto", forwardedProto ?? url.protocol.replace(":", ""))
+
+  if (forwardedPort) {
+    headers.set("X-Forwarded-Port", forwardedPort)
+  } else if (url.port) {
+    headers.set("X-Forwarded-Port", url.port)
+  } else {
+    headers.delete("X-Forwarded-Port")
+  }
 
   // Only trust CF-Connecting-IP (set by Cloudflare, not spoofable by clients).
   // Strip any client-supplied X-Forwarded-For to prevent rate limit bypass.

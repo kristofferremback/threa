@@ -98,6 +98,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // User-facing invitation acceptance
   app.post("/api/invitations/:id/accept", auth, shadow.accept)
 
+  // Public/unauthenticated link-invite surface (the /join page).
+  // Tight rate limit on claim — submitting an email is an effect (sends WorkOS email)
+  // and we want to make token-guessing expensive too.
+  app.get("/api/invitations/lookup", authLimit, shadow.lookup)
+  app.post("/api/invitations/claim", authLimit, shadow.claim)
+
   // Backoffice app surface. `/me` returns both identity and admin status so
   // the frontend can render a friendly "not authorised" screen; every other
   // backoffice route is gated by requirePlatformAdmin.
@@ -105,6 +111,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/backoffice/config", auth, requirePlatformAdmin, backoffice.getConfig)
   app.get("/api/backoffice/workspaces", auth, requirePlatformAdmin, backoffice.listWorkspaces)
   app.get("/api/backoffice/workspaces/:id", auth, requirePlatformAdmin, backoffice.getWorkspace)
+  app.get("/api/backoffice/workspaces/:id/members", auth, requirePlatformAdmin, backoffice.listWorkspaceMembers)
   app.get(
     "/api/backoffice/workspace-owner-invitations",
     auth,
@@ -134,6 +141,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/internal/workspaces/:workspaceId/region", internalAuth, workspace.getRegion)
   app.post("/internal/invitation-shadows", internalAuth, shadow.create)
   app.patch("/internal/invitation-shadows/:id", internalAuth, shadow.update)
+  app.post("/internal/invitation-shadows/:id/claim", internalAuth, shadow.notifyClaim)
 
   app.use(errorHandler)
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react"
 import { db, type DraftAttachment, type DraftMessage } from "@/db"
+import type { DraftContextRef } from "@/lib/context-bag/types"
 import {
   deleteDraftMessageFromCache,
   hasSeededDraftCache,
@@ -36,12 +37,16 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
         debounceRef.current = null
       }
 
-      // Get current attachments if not provided
+      // Get current attachments + contextRefs if not provided. The contextRefs
+      // sidecar must survive a content-only save (e.g. user typing into a
+      // bag-attached scratchpad) — without this preservation the chip would
+      // vanish from the composer the moment the first keystroke fires.
       const currentDraft = await db.draftMessages.get(draftKey)
       const finalAttachments = attachments ?? currentDraft?.attachments ?? []
+      const finalContextRefs = currentDraft?.contextRefs ?? []
 
-      // Delete draft only if both content and attachments are empty
-      if (isEmptyContent(contentJson) && finalAttachments.length === 0) {
+      // Delete draft only when content + attachments + contextRefs are all empty.
+      if (isEmptyContent(contentJson) && finalAttachments.length === 0 && finalContextRefs.length === 0) {
         await db.draftMessages.delete(draftKey)
         deleteDraftMessageFromCache(workspaceId, draftKey)
         return
@@ -52,6 +57,7 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
         workspaceId,
         contentJson,
         attachments: finalAttachments,
+        contextRefs: finalContextRefs.length > 0 ? finalContextRefs : undefined,
         updatedAt: Date.now(),
       }
       await db.draftMessages.put(nextDraft)
@@ -96,6 +102,8 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
         workspaceId,
         contentJson: currentDraft?.contentJson ?? emptyDoc,
         attachments: [...currentAttachments, attachment],
+        // Preserve sidecar so a paste/upload doesn't wipe an attached chip.
+        contextRefs: currentDraft?.contextRefs,
         updatedAt: Date.now(),
       }
       await db.draftMessages.put(nextDraft)
@@ -161,6 +169,8 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
     isLoaded: hasSeededDraftCache(workspaceId),
     contentJson: resolvedDraft?.contentJson ?? emptyDoc,
     attachments: resolvedDraft?.attachments ?? [],
+    /** Sidecar context refs attached to the draft (see DraftContextRef). */
+    contextRefs: (resolvedDraft?.contextRefs ?? []) as DraftContextRef[],
     saveDraft,
     saveDraftDebounced,
     addAttachment,

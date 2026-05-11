@@ -120,16 +120,28 @@ export function buildDmPrompt(context: StreamContext): string {
 }
 
 export function buildPromptSectionForStreamType(context: StreamContext, workspaceResearchEnabled: boolean): string {
+  let section: string
   switch (context.streamType) {
     case StreamTypes.SCRATCHPAD:
-      return buildScratchpadPrompt(context, workspaceResearchEnabled)
+      section = buildScratchpadPrompt(context, workspaceResearchEnabled)
+      break
     case StreamTypes.CHANNEL:
-      return buildChannelPrompt(context)
+      section = buildChannelPrompt(context)
+      break
     case StreamTypes.THREAD:
-      return buildThreadPrompt(context)
+      section = buildThreadPrompt(context)
+      break
     case StreamTypes.DM:
-      return buildDmPrompt(context)
+      section = buildDmPrompt(context)
+      break
     default:
-      return buildScratchpadPrompt(context, workspaceResearchEnabled)
+      section = buildScratchpadPrompt(context, workspaceResearchEnabled)
   }
+
+  // Surface the active stream id so the agent can build `shared-message:` /
+  // `quote:` pointer URLs back at messages in this conversation. Per-message
+  // tags carry msg + author ids; stream id is constant across the window.
+  section += `\n\nStream id: \`${context.streamInfo.id}\``
+
+  return section
 }

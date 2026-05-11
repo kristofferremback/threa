@@ -35,6 +35,12 @@ function urlTransform(url: string): string {
   if (url.startsWith("quote:")) {
     return url
   }
+  // Allow shared-message: protocol so the paragraph renderer can detect the
+  // anchor and swap it for the pointer card. react-markdown strips unknown
+  // protocols by default, which would hide the link metadata we rely on.
+  if (url.startsWith("shared-message:")) {
+    return url
+  }
   // For other URLs, use default behavior (returns url as-is for http/https/mailto)
   const protocols = ["http:", "https:", "mailto:", "tel:"]
   const parsed = url.includes(":") ? url.split(":")[0] + ":" : ""

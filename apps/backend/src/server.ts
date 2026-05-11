@@ -14,6 +14,7 @@ import { UserApiKeyService as UserApiKeyServiceImpl } from "./features/user-api-
 import { BotApiKeyService } from "./features/public-api"
 import { LinkPreviewService, LinkPreviewOutboxHandler, createLinkPreviewWorker } from "./features/link-previews"
 import { WorkspaceIntegrationService } from "./features/workspace-integrations"
+import { WorkspaceAuthzService } from "./features/workspace-authz"
 import {
   WorkspaceService,
   AvatarService,
@@ -69,6 +70,8 @@ import {
   CompanionHandler,
   MentionInvokeHandler,
   AgentMessageMutationHandler,
+  ContextBagPrecomputeHandler,
+  createContextBagPrecomputeWorker,
   createOrphanSessionCleanup,
   createPersonaAgentWorker,
   WorkspaceAgent,
@@ -79,13 +82,15 @@ import {
   ConversationSummaryService,
   COMPANION_SUMMARY_MODEL_ID,
   COMPANION_SUMMARY_TEMPERATURE,
+  stripInaccessibleAgentRefs,
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
 import { SystemMessageService, SystemMessageOutboxHandler } from "./features/system-messages"
 import { ActivityService, ActivityFeedHandler } from "./features/activity"
 import { SavedMessagesService, createSavedReminderWorker } from "./features/saved-messages"
+import { ScheduledMessagesService, createScheduledMessageSendWorker } from "./features/scheduled-messages"
 import { PushService, PushNotificationHandler, createPushSessionCleanup } from "./features/push"
-import { AttachmentUploadedHandler } from "./features/attachments"
+import { AttachmentUploadedHandler, AttachmentEmbeddingHandler } from "./features/attachments"
 import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, InviteCommand, createCommandWorker, CommandHandler } from "./features/commands"
 import {
@@ -98,6 +103,7 @@ import {
   createExcelProcessingWorker,
   createVideoTranscodeSubmitWorker,
   createVideoTranscodeCheckWorker,
+  createAttachmentEmbeddingWorker,
   ImageCaptionService,
   StubImageCaptionService,
   PdfProcessingService,
@@ -133,7 +139,7 @@ import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { createCorsOriginChecker } from "./lib/cors"
 import type { AuthorType } from "@threa/types"
-import { parseMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, parseMarkdown } from "@threa/prosemirror"
 import { normalizeMessage, toEmoji } from "./features/emoji"
 import { logger } from "./lib/logger"
 import { createAI } from "./lib/ai/ai"
@@ -303,9 +309,45 @@ export async function startServer(): Promise<ServerInstance> {
     content: string
     sources?: { title: string; url: string }[]
     sessionId?: string
+    /** Idempotency key forwarded to `event-service.createMessage` so retried writes dedup via ON CONFLICT. */
+    clientMessageId?: string
+    /**
+     * Pre-computed `AgentAccessSpec` reach for persona-authored messages.
+     * Authorizes inline-attachment / share-pointer gates via set membership
+     * — personas have no `stream_members` rows, so the user-path membership
+     * check always denies. The scope is invocation-bounded by design (a
+     * public channel only sees public streams, etc.); passing the invoking
+     * user's full access here would be a privilege escalation.
+     */
+    accessibleStreamIds?: string[]
   }) => {
-    const contentMarkdown = normalizeMessage(params.content)
-    const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+    const initialMarkdown = normalizeMessage(params.content)
+    const initialJson = parseMarkdown(initialMarkdown, undefined, toEmoji)
+    // For agent-authored messages, pre-validate the structural pointers
+    // (`shared-message:`, `quote:`, `attachment:`) and drop nodes that
+    // wouldn't pass event-service's strict gate. Without this, a single
+    // bad ref (out-of-scope stream, deleted message, cross-workspace id)
+    // causes the entire message to fail rather than just losing the
+    // pointer. The helper re-serializes the cleaned tree to keep the
+    // wire markdown in sync with `contentJson`.
+    let contentJson = initialJson
+    let contentMarkdown = initialMarkdown
+    if (params.accessibleStreamIds) {
+      const stripped = await stripInaccessibleAgentRefs({
+        pool,
+        workspaceId: params.workspaceId,
+        targetStreamId: params.streamId,
+        accessibleStreamIds: params.accessibleStreamIds,
+        contentJson: initialJson,
+      })
+      contentJson = stripped.contentJson
+      contentMarkdown = stripped.contentMarkdown
+    }
+    // Surface inline `[name](attachment:id)` pointers so step 1 access checks
+    // and step 6b `attachment_references` projection run. Without this, copy-
+    // paste resends and recipients without source-stream access can't resolve
+    // the download URL for an Ariadne resurfacing.
+    const attachmentIds = collectAttachmentReferenceIds(contentJson)
     return eventService.createMessage({
       workspaceId: params.workspaceId,
       streamId: params.streamId,
@@ -313,8 +355,11 @@ export async function startServer(): Promise<ServerInstance> {
       authorType: params.authorType,
       contentJson,
       contentMarkdown,
+      attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       sources: params.sources,
       sessionId: params.sessionId,
+      clientMessageId: params.clientMessageId,
+      accessibleStreamIds: params.accessibleStreamIds,
     })
   }
   const editMessage = async (params: {
@@ -323,9 +368,29 @@ export async function startServer(): Promise<ServerInstance> {
     messageId: string
     actorId: string
     content: string
+    /** Same semantics as `createMessage.accessibleStreamIds`. */
+    accessibleStreamIds?: string[]
   }) => {
-    const contentMarkdown = normalizeMessage(params.content)
-    const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+    const initialMarkdown = normalizeMessage(params.content)
+    const initialJson = parseMarkdown(initialMarkdown, undefined, toEmoji)
+    let contentJson = initialJson
+    let contentMarkdown = initialMarkdown
+    if (params.accessibleStreamIds) {
+      const stripped = await stripInaccessibleAgentRefs({
+        pool,
+        workspaceId: params.workspaceId,
+        targetStreamId: params.streamId,
+        accessibleStreamIds: params.accessibleStreamIds,
+        contentJson: initialJson,
+      })
+      contentJson = stripped.contentJson
+      contentMarkdown = stripped.contentMarkdown
+    }
+    // Same as createMessage: derive attachmentIds from the cleaned JSON so
+    // event-service can refresh the `attachment_references` projection in
+    // sync with the new content (INV-7). Without this, an agent edit that
+    // adds or removes an `attachment:` link leaves stale rows behind.
+    const attachmentIds = collectAttachmentReferenceIds(contentJson)
     return eventService.editMessage({
       workspaceId: params.workspaceId,
       streamId: params.streamId,
@@ -334,6 +399,8 @@ export async function startServer(): Promise<ServerInstance> {
       contentMarkdown,
       actorId: params.actorId,
       actorType: "persona",
+      attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+      accessibleStreamIds: params.accessibleStreamIds,
     })
   }
   const deleteMessage = (params: { workspaceId: string; streamId: string; messageId: string; actorId: string }) =>
@@ -348,6 +415,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   const activityService = new ActivityService({ pool })
   const savedMessagesService = new SavedMessagesService({ pool })
+  const scheduledMessagesService = new ScheduledMessagesService({ pool, eventService })
   // PushService runs on pools.realtime so push delivery (outbox hot path) has
   // reserved DB capacity isolated from background workers. Subscription CRUD
   // endpoints also use this pool — low volume, plenty of headroom.
@@ -390,6 +458,11 @@ export async function startServer(): Promise<ServerInstance> {
   // Bot API key service — self-managed keys for bot integrations
   const botApiKeyService = new BotApiKeyService(pool)
 
+  // Workspace authz mirror service — shared by routes (middleware + handlers,
+  // public API auth) and feature services that need to gate on workspace
+  // permissions outside the request middleware chain.
+  const workspaceAuthzService = new WorkspaceAuthzService({ pool })
+
   // Link preview service — created early for route registration
   const workspaceIntegrationService = new WorkspaceIntegrationService({
     pool,
@@ -416,6 +489,7 @@ export async function startServer(): Promise<ServerInstance> {
     invitationService,
     activityService,
     savedMessagesService,
+    scheduledMessagesService,
     pushService,
     s3Config: config.s3,
     commandRegistry,
@@ -428,10 +502,12 @@ export async function startServer(): Promise<ServerInstance> {
     botChannelService,
     linkPreviewService,
     workspaceIntegrationService,
+    workspaceAuthzService,
     workosOrgService,
     userApiKeyService,
     botApiKeyService,
     storage,
+    ai,
   })
 
   app.use(errorHandler)
@@ -480,6 +556,7 @@ export async function startServer(): Promise<ServerInstance> {
     searchService,
     conversationSummaryService,
     attachmentService,
+    memoExplorerService,
     storage,
     modelRegistry,
     workspaceIntegrationService,
@@ -508,6 +585,16 @@ export async function startServer(): Promise<ServerInstance> {
     fairness: QueueFairness.NONE,
   })
 
+  // Context-bag pre-compute worker — warms the shared summary cache and
+  // persists the initial render snapshot for newly-created bag-attached
+  // scratchpads so the first real user turn hits the cache. Posts no
+  // messages and runs without a persona or session.
+  const contextBagPrecomputeWorker = createContextBagPrecomputeWorker({ pool, ai })
+  jobQueue.registerHandler(JobQueues.CONTEXT_BAG_PRECOMPUTE, contextBagPrecomputeWorker, {
+    tier: QueueTiers.INTERACTIVE,
+    fairness: QueueFairness.NONE,
+  })
+
   const namingWorker = createNamingWorker({ streamNamingService })
   jobQueue.registerHandler(JobQueues.NAMING_GENERATE, namingWorker, {
     tier: QueueTiers.LIGHT,
@@ -516,6 +603,14 @@ export async function startServer(): Promise<ServerInstance> {
 
   const embeddingWorker = createEmbeddingWorker({ pool, embeddingService })
   jobQueue.registerHandler(JobQueues.EMBEDDING_GENERATE, embeddingWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
+
+  // Attachment summary embeddings — same tier as message embeddings (LIGHT,
+  // single network call to the embedding provider, no heavy local work).
+  const attachmentEmbeddingWorker = createAttachmentEmbeddingWorker({ pool, embeddingService })
+  jobQueue.registerHandler(JobQueues.ATTACHMENT_EMBED, attachmentEmbeddingWorker, {
     tier: QueueTiers.LIGHT,
     fairness: QueueFairness.NONE,
   })
@@ -726,6 +821,13 @@ export async function startServer(): Promise<ServerInstance> {
     fairness: QueueFairness.NONE,
   })
 
+  // Scheduled message send worker — fires due messages via EventService.createMessage
+  const scheduledMessageSendWorker = createScheduledMessageSendWorker({ scheduledMessagesService })
+  jobQueue.registerHandler(JobQueues.SCHEDULED_MESSAGE_SEND, scheduledMessageSendWorker, {
+    tier: QueueTiers.LIGHT,
+    fairness: QueueFairness.NONE,
+  })
+
   // Register handlers before starting
   await jobQueue.start()
 
@@ -753,6 +855,7 @@ export async function startServer(): Promise<ServerInstance> {
   // use the main pool — they enqueue jobs and can tolerate back-pressure.
   const broadcastHandler = new BroadcastHandler(pools.realtime, io)
   const companionHandler = new CompanionHandler(pool, jobQueue)
+  const contextBagPrecomputeHandler = new ContextBagPrecomputeHandler(pool, jobQueue)
   const namingHandler = new NamingHandler(pool, jobQueue)
   const emojiUsageHandler = new EmojiUsageHandler(pool)
   const embeddingHandler = new EmbeddingHandler(pool, jobQueue)
@@ -762,6 +865,7 @@ export async function startServer(): Promise<ServerInstance> {
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
   const agentMessageMutationHandler = new AgentMessageMutationHandler(pool, jobQueue, eventService)
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
+  const attachmentEmbeddingHandler = new AttachmentEmbeddingHandler(pool, jobQueue)
   const systemMessageOutboxHandler = new SystemMessageOutboxHandler(pool, systemMessageService)
   const activityFeedHandler = new ActivityFeedHandler(pool, activityService)
   const pushNotificationHandler = pushService.isEnabled()
@@ -775,6 +879,7 @@ export async function startServer(): Promise<ServerInstance> {
   const outboxHandlers: (OutboxHandler & { ensureListener(): Promise<void> })[] = [
     broadcastHandler,
     companionHandler,
+    contextBagPrecomputeHandler,
     namingHandler,
     emojiUsageHandler,
     embeddingHandler,
@@ -784,6 +889,7 @@ export async function startServer(): Promise<ServerInstance> {
     mentionInvokeHandler,
     agentMessageMutationHandler,
     attachmentUploadedHandler,
+    attachmentEmbeddingHandler,
     systemMessageOutboxHandler,
     activityFeedHandler,
     linkPreviewOutboxHandler,

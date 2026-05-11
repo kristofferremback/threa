@@ -46,6 +46,13 @@ function calendarInZone(date: Date, timezone: string): { y: number; m: number; d
  * local wall-clock time. Intl doesn't expose tz-offset lookup directly, so
  * we converge in two passes — enough to handle DST boundaries without a
  * dedicated date-fns-tz dep.
+ *
+ * The naive UTC instant (`Date.UTC(y,m,d,h,min)`) reads as `wall + offset`
+ * in the target tz, so we subtract that offset to land on `wall`. The second
+ * pass only fires when the offset *changed* across the adjusted instant —
+ * the DST-spring-forward / fall-back case where the first-pass answer
+ * straddles the transition. Without the equality guard we'd subtract the
+ * offset a second time on every non-UTC tz, returning garbage.
  */
 function buildZonedDate(timezone: string, y: number, m: number, d: number, hours: number, minutes: number): Date {
   let candidate = new Date(Date.UTC(y, m, d, hours, minutes))
@@ -65,7 +72,10 @@ function buildZonedDate(timezone: string, y: number, m: number, d: number, hours
   const offset1 = readLocal(candidate).getTime() - candidate.getTime()
   candidate = new Date(candidate.getTime() - offset1)
   const offset2 = readLocal(candidate).getTime() - candidate.getTime()
-  if (offset2 !== 0) candidate = new Date(candidate.getTime() - offset2)
+  if (offset2 !== offset1) {
+    // DST boundary spans the first-pass interval — apply the offset delta.
+    candidate = new Date(candidate.getTime() - (offset2 - offset1))
+  }
   return candidate
 }
 

@@ -26,11 +26,13 @@ import type { AI, CostContext } from "../../lib/ai/ai"
 import type { SearchService } from "../search"
 import type { ConversationSummaryService } from "./conversation-summary-service"
 import type { AttachmentService } from "../attachments"
+import type { MemoExplorerService } from "../memos"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { ModelRegistry } from "../../lib/ai/model-registry"
 import { WorkspaceAgent, type WorkspaceAgentResult } from "./researcher"
 import { logger } from "../../lib/logger"
 import { buildAgentContext, buildToolSet, withCompanionSession, type WithSessionResult } from "./companion"
+import { resolveBagForStream, persistSnapshot, appendBagToSystemPrompt, type ResolvedBag } from "./context-bag"
 import { createMemoizedGithubClient } from "./tools"
 import { AgentRuntime, SessionTraceObserver, OtelObserver, type NewMessageInfo } from "./runtime"
 import {
@@ -56,6 +58,7 @@ export interface PersonaAgentDeps {
   searchService: SearchService
   conversationSummaryService: ConversationSummaryService
   attachmentService: AttachmentService
+  memoExplorerService: MemoExplorerService
   storage: StorageProvider
   modelRegistry: ModelRegistry
   workspaceIntegrationService?: WorkspaceIntegrationService
@@ -69,6 +72,16 @@ export interface PersonaAgentDeps {
     content: string
     sources?: SourceItem[]
     sessionId?: string
+    /**
+     * Pre-computed access scope (from `AgentAccessSpec`) used to authorize
+     * inline attachment references and cross-stream share/quote pointers.
+     * Persona-authored messages must set this — personas have no
+     * `stream_members` rows so the membership-keyed gate always denies.
+     * The scope is invocation-bounded (a public channel agent only sees
+     * public streams, etc.); passing the user's full access here would be
+     * a privilege escalation.
+     */
+    accessibleStreamIds?: string[]
   }) => Promise<{ id: string }>
   editMessage: (params: {
     workspaceId: string
@@ -76,6 +89,8 @@ export interface PersonaAgentDeps {
     messageId: string
     actorId: string
     content: string
+    /** Same semantics as `createMessage.accessibleStreamIds`. */
+    accessibleStreamIds?: string[]
   }) => Promise<{ id: string } | null>
   deleteMessage: (params: {
     workspaceId: string
@@ -100,6 +115,8 @@ export interface PersonaAgentInput {
   trigger?: typeof AgentTriggers.MENTION
   supersedesSessionId?: string
   rerunContext?: AgentSessionRerunContext
+  /** Invocation time override for deterministic evals/tests. Production leaves this unset. */
+  currentTime?: Date
 }
 
 export interface PersonaAgentResult {
@@ -132,6 +149,7 @@ export class PersonaAgent {
       searchService,
       conversationSummaryService,
       attachmentService,
+      memoExplorerService,
       storage,
       modelRegistry,
       workspaceIntegrationService,
@@ -142,11 +160,21 @@ export class PersonaAgent {
       deleteMessage,
       createThread,
     } = this.deps
-    const { workspaceId, streamId, messageId, personaId, serverId, trigger, supersedesSessionId, rerunContext } = input
+    const {
+      workspaceId,
+      streamId,
+      messageId,
+      personaId,
+      serverId,
+      trigger,
+      supersedesSessionId,
+      rerunContext,
+      currentTime,
+    } = input
 
     // Step 1: Load and validate persona + stream
     const precheck = await withClient(pool, async (client) => {
-      const persona = await PersonaRepository.findById(client, personaId)
+      const persona = await PersonaRepository.findById(client, personaId, workspaceId)
       if (!persona || persona.status !== "active") {
         return { skip: true as const, reason: "persona not found or inactive" }
       }
@@ -225,7 +253,25 @@ export class PersonaAgent {
         // Build all context the agent needs
         const agentContext = await buildAgentContext(
           { db: pool, userPreferencesService, conversationSummaryService },
-          { workspaceId, streamId, stream, messageId, persona, trigger }
+          { workspaceId, streamId, stream, messageId, persona, trigger, currentTime }
+        )
+
+        // Resolve an attached ContextBag (if any) so `stable + delta` flow into
+        // the system prompt for this turn. Live-follow: the bag is re-resolved
+        // every turn, so edits/deletes on the source thread surface in the
+        // "Since last turn" delta block. Runs after `buildAgentContext` so we
+        // can fold its output into the same systemPrompt the AgentRuntime sees.
+        // INV-41: `resolveBagForStream` releases the DB connection before any
+        // summarization AI call runs.
+        const bagCostContext: CostContext = {
+          workspaceId,
+          userId: agentContext.invokingUserId,
+          sessionId: session.id,
+          origin: agentContext.invokingUserId ? "user" : "system",
+        }
+        const resolvedBag: ResolvedBag | null = await resolveBagForStream(
+          { pool, ai, costContext: bagCostContext },
+          streamId
         )
 
         // Persist which message IDs are in the agent's context window
@@ -239,6 +285,30 @@ export class PersonaAgent {
           const triggerIdx = history.findIndex((m) => m.id === messageId)
           const contextMessages = triggerIdx >= 0 ? history.slice(Math.max(0, triggerIdx - 4)) : history.slice(-5)
 
+          // Surface the resolved context-bag (the same one folded into the
+          // system prompt above) on the trace step so the dialog can render
+          // the same "X messages in #foo" pill the in-stream message shows,
+          // plus the actual referenced messages. The point of the trace is
+          // to expose more than what's visible in the stream — without this
+          // the user can't see what was fed to the model.
+          const attachedContext = resolvedBag
+            ? {
+                refs: resolvedBag.refs.map((ref) => ({
+                  streamId: ref.streamId,
+                  fromMessageId: ref.fromMessageId,
+                  toMessageId: ref.toMessageId,
+                  originMessageId: ref.originMessageId,
+                  source: ref.source,
+                  messages: ref.items.map((m) => ({
+                    messageId: m.messageId,
+                    authorName: m.authorName,
+                    createdAt: m.createdAt,
+                    content: m.contentMarkdown.slice(0, 300),
+                  })),
+                })),
+              }
+            : undefined
+
           const step = await trace.startStep({
             stepType: AgentStepTypes.CONTEXT_RECEIVED,
             content: JSON.stringify({
@@ -251,6 +321,7 @@ export class PersonaAgent {
                 isTrigger: m.id === messageId,
               })),
               rerunContext: toTraceRerunContext(rerunContext),
+              ...(attachedContext && { attachedContext }),
             }),
           })
           await step.complete({})
@@ -308,6 +379,7 @@ export class PersonaAgent {
                 messageId: reusableMessageId,
                 actorId: persona.id,
                 content: msgInput.content,
+                accessibleStreamIds: agentContext.accessibleStreamIds ? [...agentContext.accessibleStreamIds] : [],
               })
               if (editedMessage) {
                 return { messageId: editedMessage.id, operation: "edited" as const }
@@ -328,6 +400,17 @@ export class PersonaAgent {
             content: msgInput.content,
             sources: msgInput.sources,
             sessionId: session.id,
+            // Personas have no `stream_members` rows; pass the agent's
+            // scope-restricted `AgentAccessSpec` reach so inline-attachment
+            // and share gates run against the same set the workspace tools
+            // already use (private channel = that channel + public, public
+            // channel = public only, scratchpad = user-full). NOT the
+            // invoking user's full access — that would be a scope escalation.
+            // Always pass an array (even empty) so the persona path uses the
+            // set-membership gate. Falling back to `undefined` would route
+            // through the user-path membership check keyed by authorId, which
+            // unconditionally denies for personas (no `stream_members` rows).
+            accessibleStreamIds: agentContext.accessibleStreamIds ? [...agentContext.accessibleStreamIds] : [],
           })
           return { messageId: message.id, operation: "created" as const }
         }
@@ -345,6 +428,7 @@ export class PersonaAgent {
             invokingUserId: agentContext.invokingUserId,
             searchService,
             attachmentService,
+            memoExplorer: memoExplorerService,
             storage,
           }
         }
@@ -356,6 +440,8 @@ export class PersonaAgent {
         const tools = buildToolSet({
           enabledTools: persona.enabledTools,
           tavilyApiKey,
+          currentTime: agentContext.streamContext.temporal?.currentTime,
+          timezone: agentContext.streamContext.temporal?.timezone,
           runWorkspaceAgent,
           workspace: workspaceDeps,
           github: githubDeps,
@@ -389,11 +475,16 @@ export class PersonaAgent {
             sessionId: session.id,
             origin: agentContext.invokingUserId ? "user" : "system",
           },
-          systemPrompt: isSupersedeRerun
-            ? buildSupersedeRerunSystemPrompt(agentContext.systemPrompt, rerunContext)
-            : agentContext.systemPrompt,
+          systemPrompt: appendBagToSystemPrompt(
+            isSupersedeRerun
+              ? buildSupersedeRerunSystemPrompt(agentContext.systemPrompt, rerunContext)
+              : agentContext.systemPrompt,
+            resolvedBag
+          ),
           messages: agentContext.messages,
           tools,
+          maxTokens: persona.maxTokens,
+          temperature: persona.temperature,
           sendMessage: doSendMessage,
           allowNoMessageOutput: isSupersedeRerun,
           validateFinalResponse: isSupersedeRerun
@@ -483,7 +574,7 @@ export class PersonaAgent {
 
               const [members, personas] = await Promise.all([
                 userIds.length > 0 ? UserRepository.findByIds(db, workspaceId, userIds) : Promise.resolve([]),
-                personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+                personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds, workspaceId) : Promise.resolve([]),
               ])
 
               const names = new Map<string, string>()
@@ -597,6 +688,15 @@ export class PersonaAgent {
               retainedMessageIds,
               deleteMessage,
             })
+          }
+
+          // Persist the render snapshot so the next turn's diff is anchored
+          // against the state we just rendered. Idempotent UPDATE; safe if a
+          // retry re-runs the turn body. Written after `runtime.run()` settles
+          // to match the crash-window semantics of `persistSnapshot` itself
+          // (INV-41: no DB connection held across the AI call).
+          if (resolvedBag) {
+            await persistSnapshot(pool, workspaceId, resolvedBag.bagId, resolvedBag.nextSnapshot)
           }
 
           return {

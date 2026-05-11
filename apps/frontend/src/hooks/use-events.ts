@@ -6,7 +6,7 @@ import { db, sequenceToNum } from "@/db"
 import { EVENT_PAGE_SIZE } from "@/lib/constants"
 import { useStreamEvents } from "@/stores/stream-store"
 import { shouldSuppressBootstrapError } from "@/lib/query-load-state"
-import type { StreamEvent, EventsAroundResponse } from "@threa/types"
+import type { StreamEvent, EventsAroundResponse, SharedMessageHydration } from "@threa/types"
 
 export const eventKeys = {
   all: ["events"] as const,
@@ -22,6 +22,13 @@ interface JumpState {
   oldestSequence: string
   /** Sequence of the newest event in the jump window — cursor for forward pagination */
   newestSequence: string
+  /**
+   * Hydration map for `sharedMessage` pointers landing in the jump window.
+   * Merged with bootstrap + paginated maps via `useEvents().pagedSharedMessages`
+   * so jumping to a message containing a pointer renders content immediately
+   * instead of falling back to the IDB / skeleton path.
+   */
+  sharedMessages?: Record<string, SharedMessageHydration>
 }
 
 type SequencedEvent = Pick<StreamEvent, "sequence">
@@ -125,6 +132,37 @@ export function filterEventsForDisplay<T extends DisplayableEvent>(events: T[], 
   })
 }
 
+/**
+ * Pick the source of events to render in the timeline.
+ *
+ * IDB is the primary read model — once it has events, it always wins because
+ * it carries socket-arrived events and optimistic pending/failed rows that
+ * the bootstrap snapshot doesn't.
+ *
+ * The bootstrap fallback closes a narrow but visible race on cold load: the
+ * bootstrap query writes events to IDB inside its queryFn, then resolves and
+ * triggers a re-render. `useLiveQuery` only refreshes once Dexie's change
+ * notifications propagate, which can land one or more renders later (and on
+ * mobile Safari has been observed to miss the change entirely until the next
+ * page-resume). Without the fallback, that interim render computes
+ * `hasAnyEvents=true` from `bootstrap.events` while the rendered array stays
+ * empty — neither the skeleton nor the empty state fires and the user sees
+ * a blank scroll area.
+ *
+ * Falling back to bootstrap is safe specifically because IDB is empty: there
+ * are no socket-arrived or pending events to hide. As soon as `useLiveQuery`
+ * picks up the bootstrap writes, control flips back to IDB seamlessly.
+ */
+export function getEffectiveEvents<T extends DisplayableEvent>(
+  idbResolved: boolean,
+  idbEvents: T[],
+  bootstrapEvents: T[]
+): T[] {
+  if (!idbResolved) return []
+  if (idbEvents.length > 0) return idbEvents
+  return bootstrapEvents
+}
+
 export function getOldestSequence(events: SequencedEvent[] | null | undefined): string | null {
   if (!events || events.length === 0) return null
 
@@ -223,15 +261,25 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     queryKey: eventKeys.list(workspaceId, streamId),
     queryFn: async ({ pageParam }) => {
       if (!pageParam) {
-        return { events: [] as StreamEvent[], hasMore: false, cursor: undefined }
+        return {
+          events: [] as StreamEvent[],
+          hasMore: false,
+          cursor: undefined,
+          sharedMessages: undefined as Record<string, SharedMessageHydration> | undefined,
+        }
       }
-      const events = await streamService.getEvents(workspaceId, streamId, {
+      const result = await streamService.getEvents(workspaceId, streamId, {
         before: pageParam,
         limit: EVENT_PAGE_SIZE,
       })
       // Write fetched events to IDB — they become available via useStreamEvents
-      await cacheToIndexedDB(workspaceId, events)
-      return { events, hasMore: events.length === EVENT_PAGE_SIZE, cursor: undefined }
+      await cacheToIndexedDB(workspaceId, result.events)
+      return {
+        events: result.events,
+        hasMore: result.events.length === EVENT_PAGE_SIZE,
+        cursor: undefined,
+        sharedMessages: result.sharedMessages,
+      }
     },
     getNextPageParam: (lastPage) => {
       if (!lastPage.hasMore) return undefined
@@ -252,14 +300,24 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     queryKey: eventKeys.newer(workspaceId, streamId),
     queryFn: async ({ pageParam }) => {
       if (!pageParam) {
-        return { events: [] as StreamEvent[], hasMore: false, cursor: undefined }
+        return {
+          events: [] as StreamEvent[],
+          hasMore: false,
+          cursor: undefined,
+          sharedMessages: undefined as Record<string, SharedMessageHydration> | undefined,
+        }
       }
-      const events = await streamService.getEvents(workspaceId, streamId, {
+      const result = await streamService.getEvents(workspaceId, streamId, {
         after: pageParam,
         limit: EVENT_PAGE_SIZE,
       })
-      await cacheToIndexedDB(workspaceId, events)
-      return { events, hasMore: events.length === EVENT_PAGE_SIZE, cursor: undefined }
+      await cacheToIndexedDB(workspaceId, result.events)
+      return {
+        events: result.events,
+        hasMore: result.events.length === EVENT_PAGE_SIZE,
+        cursor: undefined,
+        sharedMessages: result.sharedMessages,
+      }
     },
     getNextPageParam: (lastPage) => {
       if (!lastPage.hasMore) return undefined
@@ -317,12 +375,14 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const hasIdbEvents = idbResolved && idbEvents.length > 0
   const suppressBootstrapError = shouldSuppressBootstrapError(error, hasIdbEvents)
 
-  // IDB is the primary read model. While useLiveQuery resolves (typically <10ms),
-  // treat it as a brief loading state rather than falling back to stale bootstrap
-  // events. The bootstrap cache only contains the original snapshot and would hide
-  // messages sent or received via socket after the first bootstrap.
-  const effectiveEvents: DisplayableEvent[] = idbResolved ? idbEvents : []
-  const hasAnyEvents = effectiveEvents.length > 0 || (bootstrap?.events ?? []).length > 0
+  // IDB is the primary read model. When useLiveQuery resolves with content,
+  // we always use it — it carries socket-arrived events and optimistic
+  // pending/failed rows the bootstrap snapshot doesn't. The bootstrap-events
+  // fallback only fires when IDB is genuinely empty, closing the cold-load
+  // race where bootstrap has finished but Dexie change events haven't yet
+  // propagated to useLiveQuery (see getEffectiveEvents docstring).
+  const effectiveEvents: DisplayableEvent[] = getEffectiveEvents(idbResolved, idbEvents ?? [], bootstrap?.events ?? [])
+  const hasAnyEvents = effectiveEvents.length > 0
 
   const cachedWindowFloor = useMemo(() => getCachedWindowFloor(effectiveEvents, EVENT_PAGE_SIZE), [effectiveEvents])
   const displayFloor = useMemo(() => {
@@ -466,6 +526,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
         hasNewer: result.hasNewer,
         oldestSequence: sorted[0].sequence,
         newestSequence: sorted[sorted.length - 1].sequence,
+        sharedMessages: result.sharedMessages,
       })
 
       // Reset pagination caches for this stream
@@ -503,11 +564,30 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     return idbEvents[idbEvents.length - 1].sequence
   }, [idbEvents, bootstrap?.latestSequence])
 
+  // Aggregated `sharedMessages` hydration entries from every page fetched
+  // beyond the bootstrap window — older pages, jump-to results, forward
+  // pagination. Bootstrap's own map is merged at the consumer (stream-content)
+  // since it lives on a different query. Without this aggregation, pointers
+  // in pages older than the bootstrap window render as skeletons even
+  // though the backend ships the hydration data on each response.
+  const pagedSharedMessages = useMemo<Record<string, SharedMessageHydration>>(() => {
+    const merged: Record<string, SharedMessageHydration> = {}
+    for (const page of olderData?.pages ?? []) {
+      if (page.sharedMessages) Object.assign(merged, page.sharedMessages)
+    }
+    for (const page of newerData?.pages ?? []) {
+      if (page.sharedMessages) Object.assign(merged, page.sharedMessages)
+    }
+    if (jumpState?.sharedMessages) Object.assign(merged, jumpState.sharedMessages)
+    return merged
+  }, [olderData, newerData, jumpState])
+
   return {
     events,
     isLoading,
     isConfirmedEmpty,
     error: suppressBootstrapError ? null : error,
+    pagedSharedMessages,
     fetchOlderEvents,
     hasOlderEvents,
     isFetchingOlder,

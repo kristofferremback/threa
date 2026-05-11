@@ -389,6 +389,54 @@ export function formatDuration(ms: number): string {
 }
 
 // ============================================================================
+// Native input helpers (date / time / datetime-local)
+// ============================================================================
+
+const padTwo = (n: number) => String(n).padStart(2, "0")
+
+/** YYYY-MM-DD in local time — the shape `<input type="date">` expects. */
+export function toDateInputValue(date: Date): string {
+  return `${date.getFullYear()}-${padTwo(date.getMonth() + 1)}-${padTwo(date.getDate())}`
+}
+
+/** HH:mm in local time — the shape `<input type="time">` expects. */
+export function toTimeInputValue(date: Date): string {
+  return `${padTwo(date.getHours())}:${padTwo(date.getMinutes())}`
+}
+
+/** YYYY-MM-DDTHH:mm in local time — the shape `<input type="datetime-local">` expects. */
+export function toDateTimeLocalValue(date: Date): string {
+  return `${toDateInputValue(date)}T${toTimeInputValue(date)}`
+}
+
+/**
+ * Parse the YYYY-MM-DD + HH:mm pair produced by split native pickers into a
+ * Date (interpreted in the local timezone, matching `<input type="datetime-local">`).
+ * Returns null when either half is empty or the combined string is invalid.
+ */
+export function parseLocalDateTime(dateStr: string, timeStr: string): Date | null {
+  if (!dateStr || !timeStr) return null
+  const parsed = new Date(`${dateStr}T${timeStr}`)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+// ============================================================================
+// Send countdown (≤1m falls back to "Sending soon")
+// ============================================================================
+
+/**
+ * Future-time label for surfaces that count down toward an imminent send —
+ * scheduled message rows, the in-composer popover, etc. Wraps `formatFutureTime`
+ * but collapses the sub-1m window ("0m" / "1m") to "Sending soon" so we don't
+ * render a stressful 0m countdown while the worker is still claiming the row.
+ */
+export function formatSendCountdown(date: Date, now: Date = new Date(), prefs?: TimePrefs): string {
+  const deltaMs = date.getTime() - now.getTime()
+  if (deltaMs <= 60_000) return "Sending soon"
+  return formatFutureTime(date, now, prefs)
+}
+
+// ============================================================================
 // Re-exports from date-fns for convenience
 // ============================================================================
 

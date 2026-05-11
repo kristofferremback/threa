@@ -165,7 +165,9 @@ function EmojiGridContent({
   const total = totalCount(geometry)
   useEffect(() => {
     setSelectedIndex(0)
-    if (open) virtuosoRef.current?.scrollToIndex({ index: 0 })
+    if (open && total > 0) {
+      virtuosoRef.current?.scrollToIndex({ index: 0 })
+    }
   }, [total, open, setSelectedIndex])
 
   const scrollAllRowIfNeeded = useCallback((allRow: number) => {

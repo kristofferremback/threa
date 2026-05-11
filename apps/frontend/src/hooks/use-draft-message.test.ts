@@ -203,6 +203,67 @@ describe("useDraftMessage", () => {
         })
       )
     })
+
+    it("should preserve existing contextRefs sidecar when saving content (regression: typing wiped the chip)", async () => {
+      seededDraftCache = true
+      const existingRefs = [
+        {
+          refKind: "thread",
+          streamId: "stream_src",
+          fromMessageId: null,
+          toMessageId: null,
+          status: "ready" as const,
+          fingerprint: null,
+          errorMessage: null,
+        },
+      ]
+      mockGet.mockResolvedValue({ attachments: [], contextRefs: existingRefs })
+
+      const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
+      const updatedContent = makeDoc("user is typing")
+
+      await act(async () => {
+        await result.current.saveDraft(updatedContent)
+      })
+
+      expect(mockPut).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentJson: updatedContent,
+          attachments: [],
+          contextRefs: existingRefs,
+        })
+      )
+    })
+
+    it("should keep the draft alive when content goes empty but contextRefs is non-empty", async () => {
+      seededDraftCache = true
+      const existingRefs = [
+        {
+          refKind: "thread",
+          streamId: "stream_src",
+          fromMessageId: null,
+          toMessageId: null,
+          status: "ready" as const,
+          fingerprint: null,
+          errorMessage: null,
+        },
+      ]
+      mockGet.mockResolvedValue({ attachments: [], contextRefs: existingRefs })
+
+      const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
+
+      await act(async () => {
+        await result.current.saveDraft(EMPTY_DOC)
+      })
+
+      expect(mockDelete).not.toHaveBeenCalled()
+      expect(mockPut).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentJson: EMPTY_DOC,
+          contextRefs: existingRefs,
+        })
+      )
+    })
   })
 
   describe("saveDraftDebounced", () => {

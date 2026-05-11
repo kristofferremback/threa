@@ -241,6 +241,7 @@ describe("WorkspaceAgent runSearchLoop iteration count", () => {
               title: "t",
               abstract: "a",
               keyPoints: [],
+              sourceMessageIds: [],
             },
             distance: 0,
             sourceStream: null,

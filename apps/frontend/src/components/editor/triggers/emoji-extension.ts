@@ -32,8 +32,8 @@ export interface EmojiExtensionOptions {
  *
  * Features:
  * - Suggestion popup when typing ":" followed by query
- * - Input rule to auto-convert :shortcode: to emoji node
- * - Displays emoji character, serializes as :shortcode:
+ * - Input rule to auto-convert :shortcode: to editable emoji text
+ * - Renders legacy emoji atom nodes from older message JSON
  */
 export const EmojiExtension = Node.create<EmojiExtensionOptions>({
   name: "emoji",
@@ -86,7 +86,9 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
       "span",
       mergeAttributes(HTMLAttributes, {
         "data-type": "emoji",
-        class: "inline-block",
+        // Match trigger atoms' text-like inline layout; Firefox Android handles
+        // adjacent contenteditable=false inline-block emoji spans poorly.
+        class: "inline",
       }),
       node.attrs.emoji, // Display the emoji character
     ]
@@ -100,7 +102,9 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
   addInputRules() {
     const { toEmoji } = this.options
 
-    // Auto-convert :shortcode: to emoji node when closing colon is typed
+    // Auto-convert :shortcode: to emoji text when closing colon is typed.
+    // Legacy emoji atom rendering remains above for old content, but new
+    // composer input uses text so mobile browsers delete it natively.
     return [
       new InputRule({
         find: /:([a-z0-9_+-]+):$/,
@@ -112,8 +116,6 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
           // Suppress inside an unclosed inline-code word (see markdown-guards).
           if (isInBacktickWord(state, range.from)) return null
 
-          const nodeType = this.type
-
           // Get marks at current position to preserve styling
           const $from = state.doc.resolve(range.from)
           const { storedMarks } = state
@@ -123,10 +125,10 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
             attrs: mark.attrs,
           }))
 
-          // Replace the :shortcode: with an emoji node using chain
+          // Replace the :shortcode: with editable emoji text.
           chain()
             .deleteRange(range)
-            .insertContent([{ type: nodeType.name, attrs: { shortcode, emoji }, marks }])
+            .insertContent([{ type: "text", text: emoji, marks }])
             .run()
         },
       }),
@@ -175,10 +177,6 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
         ...this.options.suggestion,
         command: ({ editor, range, props }) => {
           const item = props as EmojiEntry
-          const attrs: EmojiNodeAttrs = {
-            shortcode: item.shortcode,
-            emoji: item.emoji,
-          }
 
           // Get marks at the current position to preserve styling
           const { $from } = editor.state.selection
@@ -194,7 +192,7 @@ export const EmojiExtension = Node.create<EmojiExtensionOptions>({
             .focus()
             .deleteRange(range)
             .insertContent([
-              { type: "emoji", attrs, marks },
+              { type: "text", text: item.emoji, marks },
               { type: "text", text: " ", marks },
             ])
             .run()

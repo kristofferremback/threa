@@ -3,13 +3,10 @@ import type { Message } from "../../features/messaging"
 import type { AttachmentWithExtraction } from "../../features/attachments"
 import { UserRepository } from "../../features/workspaces"
 import { PersonaRepository } from "../../features/agents"
+import { escapeXmlAttr } from "../xml"
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-}
-
-function escapeXmlAttr(s: string): string {
-  return escapeXml(s).replace(/"/g, "&quot;")
 }
 
 /**
@@ -62,7 +59,7 @@ export class MessageFormatter {
 
     const [users, personas] = await Promise.all([
       UserRepository.findByIds(client, workspaceId, [...userIds]),
-      PersonaRepository.findByIds(client, [...personaIds]),
+      PersonaRepository.findByIds(client, [...personaIds], workspaceId),
     ])
 
     const nameById = new Map<string, string>()

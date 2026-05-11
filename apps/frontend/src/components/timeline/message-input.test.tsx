@@ -10,6 +10,8 @@ import * as workspaceStoreModule from "@/stores/workspace-store"
 import * as authModule from "@/auth"
 import * as quoteReplyModule from "./quote-reply-context"
 import * as composerModule from "@/components/composer"
+import * as discussModule from "@/hooks/use-discuss-with-ariadne"
+import * as streamContextBagModule from "@/hooks/use-stream-context-bag"
 import { MessageInput, materializePendingAttachmentReferences } from "./message-input"
 import type { JSONContent } from "@threa/types"
 
@@ -133,6 +135,12 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useStreamBootstrap").mockReturnValue({
     data: undefined,
   } as unknown as ReturnType<typeof hooksModule.useStreamBootstrap>)
+  // useMentionStreamContext composes useStreamBootstrap + useUser + workspace
+  // user role lookups; tests only care that the editor receives *some* context,
+  // so stub to undefined which falls through to "no broadcast filter applied".
+  vi.spyOn(hooksModule, "useMentionStreamContext").mockReturnValue(
+    undefined as unknown as ReturnType<typeof hooksModule.useMentionStreamContext>
+  )
 
   vi.spyOn(quoteReplyModule, "useQuoteReply").mockReturnValue({
     triggerQuoteReply: vi.fn(),
@@ -158,6 +166,21 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useStreamOrDraft").mockReturnValue({
     sendMessage: mockSendMessage,
   } as unknown as ReturnType<typeof hooksModule.useStreamOrDraft>)
+  // `useDiscussWithAriadne` internally pulls in `useCreateStream` → services
+  // context + query client, none of which the test wrapper provides. Stub it
+  // out; the command-routing branch is exercised by its own dedicated tests
+  // further down (rather than via render()-level assertions).
+  vi.spyOn(discussModule, "useDiscussWithAriadne").mockImplementation(
+    () => vi.fn() as unknown as ReturnType<typeof discussModule.useDiscussWithAriadne>
+  )
+  // `useStreamContextBag` calls `useQuery` which the wrapper doesn't provide
+  // a client for. Stub to an empty bag so the strip renders nothing — the
+  // strip's own behavior is covered by its dedicated tests.
+  vi.spyOn(streamContextBagModule, "useStreamContextBag").mockReturnValue({
+    data: { bag: null, refs: [] },
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof streamContextBagModule.useStreamContextBag>)
   vi.spyOn(hooksModule, "getDraftMessageKey").mockImplementation(() => "test-draft-key")
   vi.spyOn(hooksModule, "useDraftComposer").mockImplementation(
     () =>
@@ -184,6 +207,14 @@ beforeEach(() => {
   vi.spyOn(hooksModule, "useComposerHeightPublish").mockImplementation(
     () => undefined as unknown as ReturnType<typeof hooksModule.useComposerHeightPublish>
   )
+  // The composer's schedule-send entry needs the scheduled service via
+  // ServicesProvider; tests run without that wrapper, so stub the hook to a
+  // no-op mutation. The schedule path itself is exercised by the page tests.
+  vi.spyOn(hooksModule, "useScheduleMessage").mockReturnValue({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    mutate: vi.fn(),
+    isPending: false,
+  } as unknown as ReturnType<typeof hooksModule.useScheduleMessage>)
 
   vi.spyOn(composerModule, "FloatingComposerShell").mockImplementation((({
     children,
@@ -441,7 +472,7 @@ describe("MessageInput", () => {
   })
 
   describe("quote replies", () => {
-    it("inserts a quote block without appending a synthetic trailing paragraph", () => {
+    it("inserts a quote block with one trailing paragraph so typing starts on the next line", () => {
       mockComposerState.content = {
         type: "doc",
         content: [{ type: "paragraph", content: [{ type: "text", text: "Before" }] }, { type: "paragraph" }],
@@ -475,6 +506,7 @@ describe("MessageInput", () => {
               snippet: "The vibes are immaculate",
             },
           },
+          { type: "paragraph" },
         ],
       })
       expect(mockComposerFocusAfterQuoteReply).toHaveBeenCalledTimes(1)

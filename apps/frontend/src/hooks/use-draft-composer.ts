@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef, type ChangeEvent, type RefObj
 import { useDraftMessage } from "./use-draft-message"
 import { useAttachments, type PendingAttachment, type UploadResult } from "./use-attachments"
 import type { JSONContent } from "@threa/types"
+import { EMPTY_DOC } from "@/lib/prosemirror-utils"
+import type { DraftContextRef } from "@/lib/context-bag/types"
 
 export interface UseDraftComposerOptions {
   workspaceId: string
@@ -11,9 +13,6 @@ export interface UseDraftComposerOptions {
   /** Initial content (optional, for pre-filled content as JSON) */
   initialContent?: JSONContent
 }
-
-/** Default empty ProseMirror document */
-const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
 /** Check if a document is empty (no actual text content) */
 function hasDocContent(doc: JSONContent | undefined): boolean {
@@ -46,6 +45,9 @@ export interface DraftComposerState {
   /** Current count of images (for sequential naming) */
   imageCount: number
 
+  /** Context refs attached to this draft (sidecar — populated by "Discuss with Ariadne"). */
+  contextRefs: DraftContextRef[]
+
   // Submission
   canSend: boolean
   isSending: boolean
@@ -54,6 +56,15 @@ export interface DraftComposerState {
   // Clear helpers
   clearDraft: () => Promise<void>
   clearAttachments: () => void
+
+  /**
+   * Hydrate attachments from a snapshot (e.g. when restoring a stashed draft).
+   * Pushes them into the pending-attachments list; the persistence effect
+   * then writes them into the active DraftMessage on next flush.
+   */
+  restoreAttachments: (
+    attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>
+  ) => void
 
   // Loading
   isLoaded: boolean
@@ -70,6 +81,7 @@ export function useDraftComposer({
     isLoaded: isDraftLoaded,
     contentJson: savedDraft,
     attachments: savedAttachments,
+    contextRefs: savedContextRefs = [] as DraftContextRef[],
     saveDraftDebounced,
     addAttachment: addDraftAttachment,
     removeAttachment: removeDraftAttachment,
@@ -213,7 +225,22 @@ export function useDraftComposer({
   // Sending while uploads are still in flight is not safe: the message would
   // be created before attachment IDs exist, leaving uploaded files unattached.
   // Failed uploads still don't block send; the user can send with whatever succeeded.
-  const canSend = (hasContent || uploadedIds.length > 0) && !isSending && !isUploading
+  //
+  // Context-ref sidecar follows the same model: a `pending` ref means
+  // precompute is still in flight (sending now risks an inline-summarize
+  // delay on the first turn), and `error` means the server couldn't resolve
+  // the ref (we'd produce a turn without context). `ready` and `inline`
+  // are safe.
+  //
+  // A context ref alone is enough to send: "Discuss with Ariadne" can be
+  // dispatched with just the attached thread chip — no body text, no upload
+  // required. Treating refs as a third payload type lets the user fire off
+  // "what's going on here?" without typing.
+  const contextRefsReady = savedContextRefs.every(
+    (ref: DraftContextRef) => ref.status === "ready" || ref.status === "inline"
+  )
+  const hasPayload = hasContent || uploadedIds.length > 0 || savedContextRefs.length > 0
+  const canSend = hasPayload && !isSending && !isUploading && contextRefsReady
 
   return {
     // Content
@@ -233,6 +260,9 @@ export function useDraftComposer({
     uploadFile,
     imageCount,
 
+    // Context refs (sidecar — populated by "Discuss with Ariadne")
+    contextRefs: savedContextRefs,
+
     // Submission
     canSend,
     isSending,
@@ -241,6 +271,7 @@ export function useDraftComposer({
     // Clear helpers
     clearDraft,
     clearAttachments,
+    restoreAttachments,
 
     // Loading
     isLoaded: isDraftLoaded,

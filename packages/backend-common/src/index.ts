@@ -3,8 +3,21 @@ export { WorkosAuthService } from "./auth/auth-service"
 export type { AuthResult, AuthService } from "./auth/auth-service"
 export { StubAuthService } from "./auth/auth-service.stub"
 export type { DevLoginResult } from "./auth/auth-service.stub"
-export { WorkosOrgServiceImpl, getWorkosErrorCode } from "./auth/workos-org-service"
-export type { WorkosOrgService, WorkosAppInvitation, WorkosUserSummary } from "./auth/workos-org-service"
+export {
+  WorkosOrgServiceImpl,
+  getWorkosErrorCode,
+  WORKOS_MIRROR_EVENT_TYPES,
+  WORKOS_MEMBERSHIP_STATUSES,
+} from "./auth/workos-org-service"
+export type {
+  WorkosOrgService,
+  WorkosAppInvitation,
+  WorkosUserSummary,
+  WorkosMembershipEvent,
+  WorkosMirrorEventType,
+  WorkosMembershipStatus,
+  WorkosOrganizationMembership,
+} from "./auth/workos-org-service"
 export { StubWorkosOrgService } from "./auth/workos-org-service.stub"
 export { createAuthMiddleware } from "./auth/middleware"
 export { WorkosApiKeyService } from "./auth/api-key-service"
@@ -80,8 +93,22 @@ export {
   videoTranscodeJobId,
   savedMessageId,
   reminderQueueId,
+  scheduledMessageId,
+  scheduledMessageQueueId,
+  sharedMessageId,
+  attachmentReferenceId,
+  streamContextAttachmentId,
+  contextSummaryId,
+  leaseId,
 } from "./id"
-export { parseCookies, SESSION_COOKIE_NAME, SESSION_COOKIE_CONFIG } from "./cookies"
+export {
+  parseCookies,
+  SESSION_COOKIE_NAME,
+  SESSION_COOKIE_CONFIG,
+  setSessionCookie,
+  clearSessionCookie,
+} from "./cookies"
+export type { SessionCookieOptions } from "./cookies"
 export { generateSlug, generateUniqueSlug } from "./slug"
 
 // Outbox infrastructure

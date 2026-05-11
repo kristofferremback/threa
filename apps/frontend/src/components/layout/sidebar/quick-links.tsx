@@ -1,4 +1,4 @@
-import { Bell, Bookmark, Brain, FileEdit, MessageSquareText } from "lucide-react"
+import { Bell, Bookmark, Brain, CalendarClock, FileEdit, MessageSquareText, Paperclip } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { UnreadBadge } from "@/components/unread-badge"
@@ -12,8 +12,11 @@ interface SidebarQuickLinksProps {
   draftCount: number
   isSavedPage: boolean
   savedCount: number
+  isScheduledPage: boolean
+  scheduledCount: number
   isActivityPage: boolean
   isMemoryPage: boolean
+  isFilesPage: boolean
   unreadActivityCount: number
 }
 
@@ -36,8 +39,11 @@ export function SidebarQuickLinks({
   draftCount,
   isSavedPage,
   savedCount,
+  isScheduledPage,
+  scheduledCount,
   isActivityPage,
   isMemoryPage,
+  isFilesPage,
   unreadActivityCount,
 }: SidebarQuickLinksProps) {
   const { collapseOnMobile, getSectionState, toggleSectionState } = useSidebar()
@@ -61,6 +67,25 @@ export function SidebarQuickLinks({
       isActive: isSavedPage,
       unreadCount: savedCount,
       signalSlot: savedCount > 0 ? <span className="ml-auto text-xs text-muted-foreground">({savedCount})</span> : null,
+    },
+    {
+      key: "files",
+      to: `/w/${workspaceId}/files`,
+      icon: Paperclip,
+      label: "Files",
+      isActive: isFilesPage,
+      unreadCount: 0,
+      signalSlot: null,
+    },
+    {
+      key: "scheduled",
+      to: `/w/${workspaceId}/scheduled`,
+      icon: CalendarClock,
+      label: "Scheduled",
+      isActive: isScheduledPage,
+      unreadCount: scheduledCount,
+      signalSlot:
+        scheduledCount > 0 ? <span className="ml-auto text-xs text-muted-foreground">({scheduledCount})</span> : null,
     },
     {
       key: "threads",

@@ -2,6 +2,17 @@
 export { AttachmentRepository } from "./repository"
 export type { Attachment, InsertAttachmentParams, AttachmentWithExtraction } from "./repository"
 
+export { AttachmentReferenceRepository } from "./reference-repository"
+export type { AttachmentReference, InsertAttachmentReferenceParams } from "./reference-repository"
+
+// Fallback access helper — `getDownloadUrl` and create-message validation
+// both walk share-grant + inline-reference after their stream-access fast
+// path fails. See `access.ts`.
+export { isAttachmentReadableViaShareOrReference } from "./access"
+
+// Wire-shape mappers
+export { toAttachmentSummary } from "./summary"
+
 export { AttachmentExtractionRepository } from "./extraction-repository"
 export type {
   AttachmentExtraction,
@@ -28,8 +39,15 @@ export type { CreateAttachmentParams } from "./service"
 // Handlers
 export { createAttachmentHandlers } from "./handlers"
 
-// Outbox handler
+// Outbox handlers
 export { AttachmentUploadedHandler } from "./uploaded-outbox-handler"
+export { AttachmentEmbeddingHandler } from "./embedding-outbox-handler"
+export type { AttachmentEmbeddingHandlerConfig } from "./embedding-outbox-handler"
+
+// Embedding worker
+export { createAttachmentEmbeddingWorker } from "./embedding-worker"
+export type { AttachmentEmbeddingWorkerDeps } from "./embedding-worker"
+export { isContentTypeEmbeddable, MIN_SUMMARY_LENGTH } from "./embedding-config"
 
 // Await processing
 export { awaitAttachmentProcessing, hasPendingAttachmentProcessing } from "./await-processing"

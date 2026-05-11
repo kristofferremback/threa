@@ -300,8 +300,11 @@ describe("Event Sourcing", () => {
 
       const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
 
-      expect(outboxEvents).toHaveLength(1)
-      expect(outboxEvents[0].eventType).toBe("message:edited")
+      // INV-23: assert presence of the specific event, not the row count.
+      // Background workers (boundary-extraction etc.) can land async outbox
+      // writes after baseline-capture, so a strict length assertion flakes.
+      const editedEvent = outboxEvents.find((e) => e.eventType === "message:edited")
+      expect(editedEvent).toBeDefined()
     })
   })
 
@@ -399,9 +402,10 @@ describe("Event Sourcing", () => {
 
       const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
 
-      expect(outboxEvents).toHaveLength(1)
-      expect(outboxEvents[0].eventType).toBe("message:deleted")
-      expect(outboxEvents[0].payload).toMatchObject({
+      // INV-23: assert presence of the specific event, not the row count.
+      const deletedEvent = outboxEvents.find((e) => e.eventType === "message:deleted")
+      expect(deletedEvent).toBeDefined()
+      expect(deletedEvent!.payload).toMatchObject({
         messageId: message.id,
       })
     })
@@ -602,9 +606,14 @@ describe("Event Sourcing", () => {
 
       const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
 
-      expect(outboxEvents).toHaveLength(2)
-      expect(outboxEvents[0].eventType).toBe("reaction:added")
-      expect(outboxEvents[1].eventType).toBe("reaction:removed")
+      // INV-23: assert presence of the specific events, not the row count or
+      // ordering — both reactions land on the outbox but background workers
+      // can interleave their own writes between them.
+      const addedEvent = outboxEvents.find((e) => e.eventType === "reaction:added")
+      const removedEvent = outboxEvents.find((e) => e.eventType === "reaction:removed")
+      expect(addedEvent).toBeDefined()
+      expect(removedEvent).toBeDefined()
+      expect(addedEvent!.id < removedEvent!.id).toBe(true)
     })
   })
 

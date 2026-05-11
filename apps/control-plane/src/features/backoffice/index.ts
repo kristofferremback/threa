@@ -4,6 +4,7 @@ export type {
   WorkspaceOwnerInvitation,
   WorkspaceSummary,
   WorkspaceDetail,
+  WorkspaceMemberSummary,
   WorkspaceOwnerSummary,
   WorkspaceRef,
   BackofficeConfig,

@@ -1,6 +1,9 @@
-import { describe, expect, it, mock } from "bun:test"
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { AttachmentSafetyStatuses } from "@threa/types"
 import { createAttachmentHandlers } from "./handlers"
+import { SharedMessageRepository } from "../messaging"
+import { AttachmentReferenceRepository } from "./reference-repository"
+import { AttachmentRepository, type AttachmentSearchRow } from "./repository"
 
 function createResponse() {
   const res: any = {}
@@ -35,6 +38,12 @@ function buildAttachment(safetyStatus: (typeof AttachmentSafetyStatuses)[keyof t
 }
 
 describe("attachment handlers safety gating", () => {
+  // Suite-level cleanup so spies don't leak into later tests if an
+  // assertion fails before an inline `mockRestore()` runs.
+  afterEach(() => {
+    mock.restore()
+  })
+
   it("rejects upload when scanner quarantines the file", async () => {
     const attachmentService = {
       createForUpload: mock(() =>
@@ -194,5 +203,340 @@ describe("attachment handlers safety gating", () => {
 
     expect(attachmentService.getDownloadUrl).toHaveBeenCalled()
     expect(res.body).toEqual({ url: "https://download", expiresIn: 900 })
+  })
+
+  it("denies download when user has no direct stream access nor share grant nor inline reference", async () => {
+    const attachment = {
+      ...buildAttachment(AttachmentSafetyStatuses.CLEAN),
+      streamId: "str_source",
+      messageId: "msg_source",
+    }
+    const attachmentService = {
+      getById: mock(() => Promise.resolve(attachment)),
+      getDownloadUrl: mock(() => Promise.resolve("https://download")),
+      getSharingBlockReason: mock(() => null),
+    } as any
+    const streamService = {
+      tryAccess: mock(() => Promise.resolve(null)),
+    } as any
+    const grantSpy = spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(new Set())
+    const refSpy = spyOn(AttachmentReferenceRepository, "hasViewerAccessByReference").mockResolvedValue(false)
+
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
+    const res = createResponse()
+
+    await handlers.getDownloadUrl(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        params: { attachmentId: "attach_1" },
+        query: {},
+      } as any,
+      res
+    )
+
+    expect(grantSpy).toHaveBeenCalled()
+    expect(refSpy).toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(403)
+    expect(res.body).toEqual({ error: "Access denied" })
+    expect(attachmentService.getDownloadUrl).not.toHaveBeenCalled()
+  })
+
+  it("returns download URL when access is granted via an inline attachment reference", async () => {
+    const attachment = {
+      ...buildAttachment(AttachmentSafetyStatuses.CLEAN),
+      streamId: "str_source",
+      messageId: "msg_source",
+    }
+    const attachmentService = {
+      getById: mock(() => Promise.resolve(attachment)),
+      getDownloadUrl: mock(() => Promise.resolve("https://download")),
+      getSharingBlockReason: mock(() => null),
+    } as any
+    const streamService = {
+      tryAccess: mock(() => Promise.resolve(null)),
+    } as any
+    const grantSpy = spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(new Set())
+    const refSpy = spyOn(AttachmentReferenceRepository, "hasViewerAccessByReference").mockResolvedValue(true)
+
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
+    const res = createResponse()
+
+    await handlers.getDownloadUrl(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        params: { attachmentId: "attach_1" },
+        query: {},
+      } as any,
+      res
+    )
+
+    expect(refSpy).toHaveBeenCalledWith(expect.anything(), "ws_1", "usr_1", "attach_1")
+    expect(attachmentService.getDownloadUrl).toHaveBeenCalled()
+    expect(res.body).toEqual({ url: "https://download", expiresIn: 900 })
+  })
+
+  it("returns download URL when access is granted via a shared-message", async () => {
+    const attachment = {
+      ...buildAttachment(AttachmentSafetyStatuses.CLEAN),
+      streamId: "str_source",
+      messageId: "msg_source",
+    }
+    const attachmentService = {
+      getById: mock(() => Promise.resolve(attachment)),
+      getDownloadUrl: mock(() => Promise.resolve("https://download")),
+      getSharingBlockReason: mock(() => null),
+    } as any
+    const streamService = {
+      tryAccess: mock(() => Promise.resolve(null)),
+    } as any
+    const grantSpy = spyOn(SharedMessageRepository, "listSourcesGrantedToViewer").mockResolvedValue(
+      new Set(["msg_source"])
+    )
+
+    const handlers = createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
+    const res = createResponse()
+
+    await handlers.getDownloadUrl(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        params: { attachmentId: "attach_1" },
+        query: {},
+      } as any,
+      res
+    )
+
+    expect(grantSpy).toHaveBeenCalled()
+    expect(attachmentService.getDownloadUrl).toHaveBeenCalled()
+    expect(res.body).toEqual({ url: "https://download", expiresIn: 900 })
+  })
+})
+
+function buildSearchRow(overrides: Partial<AttachmentSearchRow> = {}): AttachmentSearchRow {
+  const createdAt = overrides.createdAt ?? new Date("2026-05-01T10:00:00.000Z")
+  return {
+    id: "attach_a",
+    workspaceId: "ws_1",
+    streamId: "str_design",
+    messageId: "msg_1",
+    uploadedBy: "usr_1",
+    filename: "logo.png",
+    mimeType: "image/png",
+    sizeBytes: 1024,
+    storageProvider: "s3",
+    storagePath: "ws_1/attach_a/logo.png",
+    processingStatus: "completed",
+    safetyStatus: AttachmentSafetyStatuses.CLEAN,
+    createdAt,
+    extraction: null,
+    streamSlug: "design",
+    streamName: "Design",
+    streamType: "channel",
+    uploaderSlug: "mira",
+    uploaderName: "Mira",
+    referenceCount: 0,
+    ...overrides,
+  }
+}
+
+describe("attachment search handler", () => {
+  afterEach(() => {
+    mock.restore()
+  })
+
+  function makeHandlers() {
+    const attachmentService = {} as any
+    const streamService = {} as any
+    return createAttachmentHandlers({ attachmentService, streamService, storage: {} as any, pool: {} as any })
+  }
+
+  it("rejects unknown body fields via strict zod schema", async () => {
+    const handlers = makeHandlers()
+    const res = createResponse()
+
+    await handlers.search(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        body: { somethingExtra: true },
+      } as any,
+      res
+    )
+
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.body).toMatchObject({ error: "Invalid request body" })
+  })
+
+  it("rejects an invalid base64 cursor", async () => {
+    const handlers = makeHandlers()
+    const res = createResponse()
+
+    await handlers.search(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        body: { cursor: "!!!not-base64!!!" },
+      } as any,
+      res
+    )
+
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.body).toEqual({ error: "Invalid cursor" })
+  })
+
+  it("forwards filters and identity to the repository", async () => {
+    const searchSpy = spyOn(AttachmentRepository, "search").mockResolvedValue([])
+    const handlers = makeHandlers()
+    const res = createResponse()
+
+    await handlers.search(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        body: {
+          streamIds: ["str_design"],
+          categories: ["image", "pdf"],
+          uploadedBy: "usr_2",
+          before: "2026-05-01T00:00:00.000Z",
+          after: "2026-04-01T00:00:00.000Z",
+          queryText: "invoice",
+          exact: true,
+          nameSubstring: "q2",
+          limit: 25,
+        },
+      } as any,
+      res
+    )
+
+    expect(searchSpy).toHaveBeenCalledTimes(1)
+    const args = searchSpy.mock.calls[0]![1]
+    expect(args).toMatchObject({
+      workspaceId: "ws_1",
+      userId: "usr_1",
+      streamIds: ["str_design"],
+      categories: ["image", "pdf"],
+      uploadedBy: "usr_2",
+      queryText: "invoice",
+      exact: true,
+      nameSubstring: "q2",
+      limit: 25,
+    })
+    expect(args.before).toEqual(new Date("2026-05-01T00:00:00.000Z"))
+    expect(args.after).toEqual(new Date("2026-04-01T00:00:00.000Z"))
+  })
+
+  it("returns null nextCursor when fewer than limit+1 rows come back", async () => {
+    const rows = [buildSearchRow({ id: "attach_a" }), buildSearchRow({ id: "attach_b" })]
+    spyOn(AttachmentRepository, "search").mockResolvedValue(rows)
+
+    const handlers = makeHandlers()
+    const res = createResponse()
+
+    await handlers.search(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        body: { limit: 30 },
+      } as any,
+      res
+    )
+
+    expect(res.body.items).toHaveLength(2)
+    expect(res.body.nextCursor).toBeNull()
+    expect(res.body.items[0]).toMatchObject({
+      id: "attach_a",
+      filename: "logo.png",
+      streamSlug: "design",
+      uploaderSlug: "mira",
+      referenceCount: 0,
+    })
+  })
+
+  it("trims the trailing row and emits a base64url cursor when more pages exist", async () => {
+    const t0 = new Date("2026-05-01T12:00:00.000Z")
+    const t1 = new Date("2026-05-01T11:00:00.000Z")
+    const t2 = new Date("2026-05-01T10:00:00.000Z")
+    spyOn(AttachmentRepository, "search").mockResolvedValue([
+      buildSearchRow({ id: "attach_a", createdAt: t0 }),
+      buildSearchRow({ id: "attach_b", createdAt: t1 }),
+      buildSearchRow({ id: "attach_c", createdAt: t2 }),
+    ])
+
+    const handlers = makeHandlers()
+    const res = createResponse()
+
+    await handlers.search(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        body: { limit: 2 },
+      } as any,
+      res
+    )
+
+    expect(res.body.items).toHaveLength(2)
+    expect(res.body.items.map((row: any) => row.id)).toEqual(["attach_a", "attach_b"])
+
+    expect(typeof res.body.nextCursor).toBe("string")
+    const decoded = JSON.parse(Buffer.from(res.body.nextCursor, "base64url").toString("utf8"))
+    expect(decoded).toEqual({ c: t1.toISOString(), i: "attach_b" })
+  })
+
+  it("decodes a previously-emitted cursor and forwards it to the repository", async () => {
+    const t = new Date("2026-05-01T11:00:00.000Z")
+    const cursor = Buffer.from(JSON.stringify({ c: t.toISOString(), i: "attach_b" }), "utf8").toString("base64url")
+    const searchSpy = spyOn(AttachmentRepository, "search").mockResolvedValue([])
+
+    const handlers = makeHandlers()
+    const res = createResponse()
+
+    await handlers.search(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        body: { cursor },
+      } as any,
+      res
+    )
+
+    const args = searchSpy.mock.calls[0]![1]
+    expect(args.cursor).toEqual({ createdAt: t, id: "attach_b" })
+  })
+
+  it("serializes extraction excerpts when present", async () => {
+    spyOn(AttachmentRepository, "search").mockResolvedValue([
+      buildSearchRow({
+        id: "attach_pdf",
+        filename: "Q2.pdf",
+        mimeType: "application/pdf",
+        extraction: {
+          contentType: "document",
+          summary: "Quarterly summary",
+        },
+        referenceCount: 3,
+      }),
+    ])
+
+    const handlers = makeHandlers()
+    const res = createResponse()
+
+    await handlers.search(
+      {
+        user: { id: "usr_1" },
+        workspaceId: "ws_1",
+        body: {},
+      } as any,
+      res
+    )
+
+    expect(res.body.items[0]).toMatchObject({
+      id: "attach_pdf",
+      filename: "Q2.pdf",
+      extraction: { contentType: "document", summary: "Quarterly summary" },
+      referenceCount: 3,
+    })
+    expect(res.body.items[0].extraction).not.toHaveProperty("fullText")
   })
 })

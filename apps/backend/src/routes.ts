@@ -5,7 +5,8 @@ import { createWorkspaceUserMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware, createAvatarUploadMiddleware } from "./middleware/upload"
 import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-limit"
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
-import { requireRole } from "./middleware/authorization"
+import { createRequireWorkspacePermission } from "./middleware/workspace-permission"
+import { createWorkspaceAuthzHandlers, WorkspaceAuthzService } from "./features/workspace-authz"
 import { createAuthHandlers } from "./auth/handlers"
 import { createWorkspaceHandlers, WorkspaceRepository } from "./features/workspaces"
 import { createStreamHandlers } from "./features/streams"
@@ -18,14 +19,16 @@ import { createConversationHandlers } from "./features/conversations"
 import { createCommandHandlers } from "./features/commands"
 import { createUserPreferencesHandlers } from "./features/user-preferences"
 import { createAIUsageHandlers } from "./features/ai-usage"
+import type { AI } from "./lib/ai/ai"
 import { createInvitationHandlers } from "./features/invitations"
 import { createActivityHandlers } from "./features/activity"
 import { createSavedMessagesHandlers } from "./features/saved-messages"
+import { createScheduledMessagesHandlers } from "./features/scheduled-messages"
 import { createPushHandlers } from "./features/push"
 import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createInternalHandlers } from "./handlers/internal-handlers"
 import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
-import { createAgentSessionHandlers } from "./features/agents"
+import { createAgentSessionHandlers, createContextBagHandlers } from "./features/agents"
 import { createLinkPreviewHandlers } from "./features/link-previews"
 import { createWorkspaceIntegrationHandlers } from "./features/workspace-integrations"
 import { createPublicApiHandlers, createBotHandlers } from "./features/public-api"
@@ -38,7 +41,7 @@ import {
   type ApiKeyService,
 } from "@threa/backend-common"
 import { createPublicApiAuthMiddleware, requireApiKeyScope } from "./middleware/public-api-auth"
-import { API_KEY_SCOPES } from "@threa/types"
+import { WORKSPACE_PERMISSION_SCOPES } from "@threa/types"
 import type { WorkspaceService } from "./features/workspaces"
 import type { StreamService } from "./features/streams"
 import type { EventService } from "./features/messaging"
@@ -49,6 +52,7 @@ import type { ConversationService } from "./features/conversations"
 import type { InvitationService } from "./features/invitations"
 import type { ActivityService } from "./features/activity"
 import type { SavedMessagesService } from "./features/saved-messages"
+import type { ScheduledMessagesService } from "./features/scheduled-messages"
 import type { PushService } from "./features/push"
 import type { S3Config } from "./lib/env"
 import type { StorageProvider } from "./lib/storage/s3-client"
@@ -78,6 +82,7 @@ interface Dependencies {
   invitationService: InvitationService
   activityService: ActivityService
   savedMessagesService: SavedMessagesService
+  scheduledMessagesService: ScheduledMessagesService
   pushService: PushService
   s3Config: S3Config
   commandRegistry: CommandRegistry
@@ -90,10 +95,12 @@ interface Dependencies {
   botChannelService: BotChannelService
   linkPreviewService: LinkPreviewService
   workspaceIntegrationService: WorkspaceIntegrationService
+  workspaceAuthzService: WorkspaceAuthzService
   workosOrgService: WorkosOrgService
   userApiKeyService: UserApiKeyService
   botApiKeyService: BotApiKeyService
   storage: StorageProvider
+  ai: AI
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -112,6 +119,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     invitationService,
     activityService,
     savedMessagesService,
+    scheduledMessagesService,
     pushService,
     s3Config,
     commandRegistry,
@@ -124,10 +132,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     botChannelService,
     linkPreviewService,
     workspaceIntegrationService,
+    workspaceAuthzService,
     workosOrgService,
     userApiKeyService,
     botApiKeyService,
     storage,
+    ai,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -135,6 +145,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceUser]
+
+  const requireWorkspacePermission = createRequireWorkspacePermission()
+  const workspaceAuthz = createWorkspaceAuthzHandlers({ workspaceAuthzService })
 
   const rateLimits = createRateLimiters(rateLimiterConfig)
   const opsAccess = createOpsAccessMiddleware()
@@ -152,7 +165,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     workosOrgService,
     pool,
   })
-  const stream = createStreamHandlers({ streamService, eventService, activityService, linkPreviewService })
+  const stream = createStreamHandlers({ pool, streamService, eventService, activityService, linkPreviewService })
   const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
   const attachment = createAttachmentHandlers({ attachmentService, streamService, storage, pool })
   const search = createSearchHandlers({ pool, searchService })
@@ -166,7 +179,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const invitation = createInvitationHandlers({ invitationService })
   const activity = createActivityHandlers({ activityService })
   const savedMessages = createSavedMessagesHandlers({ savedMessagesService })
+  const scheduledMessages = createScheduledMessagesHandlers({ scheduledMessagesService })
   const agentSession = createAgentSessionHandlers({ pool })
+  const contextBag = createContextBagHandlers({ pool, ai })
   const linkPreview = createLinkPreviewHandlers({ linkPreviewService })
   const workspaceIntegration = createWorkspaceIntegrationHandlers({
     workspaceIntegrationService,
@@ -185,6 +200,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     app.post("/internal/workspaces", internalAuth, internal.createWorkspace)
     app.post("/internal/invitations/:id/accept", internalAuth, internal.acceptInvitation)
+    app.post("/internal/invitations/claim-link", internalAuth, invitation.claimLink)
+    app.post("/internal/authz/memberships", internalAuth, workspaceAuthz.syncMembership)
   }
 
   // Global baseline rate limit
@@ -242,7 +259,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", ...authed, stream.archive)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/unarchive", ...authed, stream.unarchive)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/members", ...authed, stream.addMember)
-  app.delete("/api/workspaces/:workspaceId/streams/:streamId/members/:memberId", ...authed, stream.removeMember)
+  app.delete(
+    "/api/workspaces/:workspaceId/streams/:streamId/members/:memberId",
+    ...authed,
+    requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE),
+    stream.removeMember
+  )
 
   app.get("/api/workspaces/:workspaceId/streams/:streamId/events", ...authed, stream.listEvents)
   app.get("/api/workspaces/:workspaceId/streams/:streamId/events/around", ...authed, stream.listEventsAround)
@@ -253,6 +275,18 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/memos/:memoId", ...authed, memo.getById)
 
   app.post("/api/workspaces/:workspaceId/messages", ...authed, rateLimits.messageCreate, message.create)
+  app.post(
+    "/api/workspaces/:workspaceId/messages/move-to-thread/validate",
+    ...authed,
+    rateLimits.messageCreate,
+    message.validateMoveToThread
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/messages/move-to-thread",
+    ...authed,
+    rateLimits.messageCreate,
+    message.moveToThread
+  )
   app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
   app.get("/api/workspaces/:workspaceId/messages/:messageId/versions", ...authed, message.getHistory)
@@ -261,7 +295,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   // Attachments (workspace-scoped upload, stream assigned on message creation)
   app.post("/api/workspaces/:workspaceId/attachments", ...authed, rateLimits.upload, upload, attachment.upload)
+  app.post("/api/workspaces/:workspaceId/attachments/search", ...authed, rateLimits.search, attachment.search)
   app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
+  app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/extraction", ...authed, attachment.getExtraction)
   app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
 
   // Conversations
@@ -273,19 +309,21 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/commands/dispatch", ...authed, rateLimits.commandDispatch, command.dispatch)
   app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
 
-  // Invitations (admin+ only)
-  app.get("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.list)
-  app.post("/api/workspaces/:workspaceId/invitations", ...authed, requireRole("admin"), invitation.send)
+  // Invitations — gated on members:write
+  const requireMembersWrite = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
+  app.get("/api/workspaces/:workspaceId/invitations", ...authed, requireMembersWrite, invitation.list)
+  app.post("/api/workspaces/:workspaceId/invitations", ...authed, requireMembersWrite, invitation.send)
+  app.post("/api/workspaces/:workspaceId/invitations/links", ...authed, requireMembersWrite, invitation.createLink)
   app.post(
     "/api/workspaces/:workspaceId/invitations/:invitationId/revoke",
     ...authed,
-    requireRole("admin"),
+    requireMembersWrite,
     invitation.revoke
   )
   app.post(
     "/api/workspaces/:workspaceId/invitations/:invitationId/resend",
     ...authed,
-    requireRole("admin"),
+    requireMembersWrite,
     invitation.resend
   )
 
@@ -305,7 +343,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
-  app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, requireRole("admin"), aiUsage.updateBudget)
+  app.put(
+    "/api/workspaces/:workspaceId/ai-budget",
+    ...authed,
+    requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN),
+    aiUsage.updateBudget
+  )
 
   // Activity feed
   app.get("/api/workspaces/:workspaceId/activity", ...authed, activity.list)
@@ -318,16 +361,31 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.patch("/api/workspaces/:workspaceId/saved/:savedId", ...authed, savedMessages.update)
   app.delete("/api/workspaces/:workspaceId/saved/:savedId", ...authed, savedMessages.delete)
 
+  // Scheduled messages
+  app.get("/api/workspaces/:workspaceId/scheduled", ...authed, scheduledMessages.list)
+  app.post("/api/workspaces/:workspaceId/scheduled", ...authed, scheduledMessages.create)
+  app.get("/api/workspaces/:workspaceId/scheduled/:id", ...authed, scheduledMessages.getById)
+  app.patch("/api/workspaces/:workspaceId/scheduled/:id", ...authed, scheduledMessages.update)
+  app.delete("/api/workspaces/:workspaceId/scheduled/:id", ...authed, scheduledMessages.delete)
+  app.post("/api/workspaces/:workspaceId/scheduled/:id/lock", ...authed, scheduledMessages.lockForEdit)
+  app.post("/api/workspaces/:workspaceId/scheduled/:id/unlock", ...authed, scheduledMessages.releaseEditLock)
+  app.post("/api/workspaces/:workspaceId/scheduled/:id/send-now", ...authed, scheduledMessages.sendNow)
+
   // Push notifications
   const push = createPushHandlers({ pushService })
   app.get("/api/workspaces/:workspaceId/push/vapid-key", ...authed, push.getVapidKey)
   app.post("/api/workspaces/:workspaceId/push/subscribe", ...authed, push.subscribe)
   app.post("/api/workspaces/:workspaceId/push/unsubscribe", ...authed, push.unsubscribe)
+  app.post("/api/workspaces/:workspaceId/push/test", ...authed, rateLimits.pushTest, push.sendTest)
   // Non-workspace-scoped: cleans up all push subscriptions for a browser endpoint (used on logout)
   app.post("/api/push/cleanup-endpoint", auth, push.cleanupEndpoint)
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
+
+  // Context-bag standalone precompute (composer draft flow)
+  app.post("/api/workspaces/:workspaceId/context-bag/precompute", ...authed, contextBag.precompute)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId/context-bag", ...authed, contextBag.getStreamBag)
 
   // Link Previews
   app.get("/api/workspaces/:workspaceId/messages/:messageId/link-previews", ...authed, linkPreview.getForMessage)
@@ -342,42 +400,43 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     linkPreview.resolveMessageLink
   )
 
-  // Workspace integrations (admin-only)
+  // Workspace integrations — gated on workspace:admin
+  const requireWorkspaceAdmin = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN)
   app.get(
     "/api/workspaces/:workspaceId/integrations/github",
     ...authed,
-    requireRole("admin"),
+    requireWorkspaceAdmin,
     workspaceIntegration.getGithub
   )
   app.get(
     "/api/workspaces/:workspaceId/integrations/github/connect",
     ...authed,
-    requireRole("admin"),
+    requireWorkspaceAdmin,
     workspaceIntegration.connectGithub
   )
   app.delete(
     "/api/workspaces/:workspaceId/integrations/github",
     ...authed,
-    requireRole("admin"),
+    requireWorkspaceAdmin,
     workspaceIntegration.disconnectGithub
   )
 
   app.get(
     "/api/workspaces/:workspaceId/integrations/linear",
     ...authed,
-    requireRole("admin"),
+    requireWorkspaceAdmin,
     workspaceIntegration.getLinear
   )
   app.get(
     "/api/workspaces/:workspaceId/integrations/linear/connect",
     ...authed,
-    requireRole("admin"),
+    requireWorkspaceAdmin,
     workspaceIntegration.connectLinear
   )
   app.delete(
     "/api/workspaces/:workspaceId/integrations/linear",
     ...authed,
-    requireRole("admin"),
+    requireWorkspaceAdmin,
     workspaceIntegration.disconnectLinear
   )
 
@@ -391,66 +450,66 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/user-api-keys", ...authed, userApiKeys.create)
   app.post("/api/workspaces/:workspaceId/user-api-keys/:keyId/revoke", ...authed, userApiKeys.revoke)
 
-  // Bot management (admin-only)
+  // Bot management. Today every bot is shared (workspace-owned), so create gates
+  // on bots:create:shared. Personal bots arrive in a later PR and will introduce
+  // a sibling endpoint gated on bots:create:personal. Manage endpoints gate on
+  // bots:manage until per-bot ownership checks land via PR #482.
   const botHandlers = createBotHandlers({ botApiKeyService, avatarService, streamService, pool })
+  const requireBotsCreateShared = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_SHARED)
+  const requireBotsManage = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.BOTS_MANAGE)
   app.get("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.list)
-  app.post("/api/workspaces/:workspaceId/bots", ...authed, requireRole("admin"), botHandlers.create)
+  app.post("/api/workspaces/:workspaceId/bots", ...authed, requireBotsCreateShared, botHandlers.create)
   app.get("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.get)
-  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, requireRole("admin"), botHandlers.update)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, requireRole("admin"), botHandlers.archive)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, requireRole("admin"), botHandlers.restore)
-  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.listKeys)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireRole("admin"), botHandlers.createKey)
+  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, requireBotsManage, botHandlers.update)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, requireBotsManage, botHandlers.archive)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, requireBotsManage, botHandlers.restore)
+  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireBotsManage, botHandlers.listKeys)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireBotsManage, botHandlers.createKey)
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/keys/:keyId/revoke",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.revokeKey
   )
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/avatar",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     avatarUpload,
     botHandlers.uploadAvatar
   )
-  app.delete(
-    "/api/workspaces/:workspaceId/bots/:botId/avatar",
-    ...authed,
-    requireRole("admin"),
-    botHandlers.removeAvatar
-  )
+  app.delete("/api/workspaces/:workspaceId/bots/:botId/avatar", ...authed, requireBotsManage, botHandlers.removeAvatar)
   // Bot avatar serving (unauthenticated — S3 keys contain unguessable ULIDs)
   app.get("/api/workspaces/:workspaceId/bots/:botId/avatar/:file", botHandlers.serveAvatarFile)
-  // Bot channel access grants (admin-only)
+  // Bot channel access grants
   app.get(
     "/api/workspaces/:workspaceId/bots/:botId/streams",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.listStreamGrants
   )
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.grantStreamAccess
   )
   app.delete(
     "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.revokeStreamAccess
   )
-  // Stream → bots reverse lookup (admin-only)
+  // Stream → bots reverse lookup
   app.get(
     "/api/workspaces/:workspaceId/streams/:streamId/bots",
     ...authed,
-    requireRole("admin"),
+    requireBotsManage,
     botHandlers.listStreamBots
   )
 
   // Public API v1 — API key auth (workspace-scoped or user-scoped)
-  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, pool })
+  const publicAuth = createPublicApiAuthMiddleware({ userApiKeyService, botApiKeyService, workspaceAuthzService, pool })
   const publicApi = createPublicApiHandlers({
     searchService,
     memoExplorerService,
@@ -465,37 +524,37 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post(
     "/api/v1/workspaces/:workspaceId/messages/search",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_SEARCH),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH),
     publicApi.searchMessages
   )
   app.post(
     "/api/v1/workspaces/:workspaceId/memos/search",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MEMOS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MEMOS_READ),
     publicApi.searchMemos
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/memos/:memoId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MEMOS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MEMOS_READ),
     publicApi.getMemo
   )
   app.post(
     "/api/v1/workspaces/:workspaceId/attachments/search",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.ATTACHMENTS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ),
     publicApi.searchAttachments
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/attachments/:attachmentId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.ATTACHMENTS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ),
     publicApi.getAttachment
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/attachments/:attachmentId/url",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.ATTACHMENTS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ),
     publicApi.getAttachmentDownloadUrl
   )
 
@@ -503,19 +562,19 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get(
     "/api/v1/workspaces/:workspaceId/streams",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.STREAMS_READ),
     publicApi.listStreams
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/streams/:streamId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.STREAMS_READ),
     publicApi.getStream
   )
   app.get(
     "/api/v1/workspaces/:workspaceId/streams/:streamId/members",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.STREAMS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.STREAMS_READ),
     publicApi.listMembers
   )
 
@@ -523,31 +582,31 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get(
     "/api/v1/workspaces/:workspaceId/streams/:streamId/messages",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ),
     publicApi.listMessages
   )
   app.post(
     "/api/v1/workspaces/:workspaceId/streams/:streamId/messages",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE),
     publicApi.sendMessage
   )
   app.post(
     "/api/v1/workspaces/:workspaceId/messages/find-by-metadata",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ),
     publicApi.findMessagesByMetadata
   )
   app.patch(
     "/api/v1/workspaces/:workspaceId/messages/:messageId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE),
     publicApi.updateMessage
   )
   app.delete(
     "/api/v1/workspaces/:workspaceId/messages/:messageId",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.MESSAGES_WRITE),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE),
     publicApi.deleteMessage
   )
 
@@ -555,7 +614,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get(
     "/api/v1/workspaces/:workspaceId/users",
     ...publicMiddleware,
-    requireApiKeyScope(API_KEY_SCOPES.USERS_READ),
+    requireApiKeyScope(WORKSPACE_PERMISSION_SCOPES.USERS_READ),
     publicApi.listUsers
   )
 

@@ -1,5 +1,6 @@
 import type { Components } from "react-markdown"
 import { Suspense, lazy, Component, Children, isValidElement, type ReactNode, type MouseEvent } from "react"
+import { parseQuoteHref, parseSharedMessageHref } from "@threa/prosemirror"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -8,31 +9,59 @@ import { useAttachmentContext } from "./attachment-context"
 import { useLinkPreviewContext } from "./link-preview-context"
 import { QuoteReplyBlock } from "./quote-reply-block"
 import { BlockquoteBlock } from "./blockquote-block"
+import { SharedMessagePointerBlock } from "./shared-message-block"
 
 const CodeBlock = lazy(() => import("./code-block"))
 
+// The serializer emits these prefixes verbatim, no marks or extra text. Match
+// the shape exactly so a mixed paragraph like "FYI Shared a message from
+// [Alice](...)" doesn't get hijacked into a pointer block.
+const SHARED_MESSAGE_PREFIX = "Shared a message from "
+const QUOTE_ATTRIBUTION_PREFIX = "— "
+
 /**
- * Parse quote: protocol href into streamId and messageId.
- * Format: quote:streamId/messageId
+ * Resolve a `<p>` (or `<p>`-shaped node's children) that matches the exact
+ * serializer-produced "prefix text + single anchor" pattern. Returns the
+ * parsed href payload plus the anchor's plain-text content (the human-readable
+ * author name) when matched, `null` otherwise.
  */
-function parseQuoteHref(
-  href: string
-): { streamId: string; messageId: string; authorId: string; actorType: string } | null {
-  if (!href.startsWith("quote:")) return null
-  const parts = href.slice("quote:".length).split("/")
-  if (parts.length < 2) return null
-  return {
-    streamId: parts[0],
-    messageId: parts[1],
-    authorId: parts[2] ?? "",
-    actorType: parts[3] ?? "user",
-  }
+function matchAnchorParagraph<T>(
+  children: ReactNode,
+  expectedPrefix: string,
+  parseHref: (href: string) => T | null
+): (T & { linkText: string }) | null {
+  const arr = Children.toArray(children)
+  if (arr.length !== 2) return null
+  const [prefix, anchor] = arr
+  if (prefix !== expectedPrefix) return null
+  if (!isValidElement(anchor)) return null
+  const props = anchor.props as Record<string, unknown>
+  if (typeof props.href !== "string") return null
+  const parsed = parseHref(props.href)
+  if (!parsed) return null
+  return { ...parsed, linkText: extractTextFromChildren(props.children as ReactNode) }
 }
 
 /**
- * Walk React children tree to find a link with quote: protocol,
- * indicating this blockquote is a quote-reply.
- * Returns extracted metadata or null if not a quote-reply.
+ * Detects whether a paragraph's children are *exactly* the serializer-produced
+ * shared-message pointer line (prefix text + a `shared-message:` anchor and
+ * nothing else). Mixed paragraphs that happen to contain such a link are
+ * intentionally not matched — they'd lose their surrounding text.
+ */
+function findSharedMessageInChildren(
+  children: ReactNode
+): { streamId: string; messageId: string; authorName: string } | null {
+  const match = matchAnchorParagraph(children, SHARED_MESSAGE_PREFIX, parseSharedMessageHref)
+  if (!match) return null
+  return { streamId: match.streamId, messageId: match.messageId, authorName: match.linkText }
+}
+
+/**
+ * Walk a blockquote's children for the serializer's quote-reply attribution
+ * paragraph: a `<p>` whose children are exactly "— " followed by a single
+ * `quote:` anchor. Returns the parsed metadata plus the children that come
+ * before that paragraph (the actual quoted content), or `null` if this is
+ * a regular blockquote or the last paragraph isn't an exact attribution shape.
  */
 function extractQuoteReplyFromChildren(children: ReactNode): {
   authorName: string
@@ -44,57 +73,21 @@ function extractQuoteReplyFromChildren(children: ReactNode): {
 } | null {
   const childArray: ReactNode[] = Children.toArray(children)
 
-  // The markdown renders as: <p>quoted text</p>\n<p>— <a href="quote:...">Author</a></p>
   for (let i = childArray.length - 1; i >= 0; i--) {
     const child = childArray[i]
     if (!isValidElement(child)) continue
 
-    const quoteLink = findQuoteLinkInElement(child)
-    if (quoteLink) {
+    const props = child.props as Record<string, unknown>
+    const match = matchAnchorParagraph(props.children as ReactNode, QUOTE_ATTRIBUTION_PREFIX, parseQuoteHref)
+    if (match) {
       return {
-        authorName: quoteLink.authorName,
-        streamId: quoteLink.streamId,
-        messageId: quoteLink.messageId,
-        authorId: quoteLink.authorId,
-        actorType: quoteLink.actorType,
+        authorName: match.linkText,
+        streamId: match.streamId,
+        messageId: match.messageId,
+        authorId: match.authorId,
+        actorType: match.actorType,
         quotedContent: childArray.slice(0, i),
       }
-    }
-  }
-
-  return null
-}
-
-interface QuoteLinkInfo {
-  authorName: string
-  streamId: string
-  messageId: string
-  authorId: string
-  actorType: string
-}
-
-/**
- * Recursively search a React element for a link with quote: protocol.
- */
-function findQuoteLinkInElement(element: ReactNode): QuoteLinkInfo | null {
-  if (!isValidElement(element)) return null
-
-  // Check if this is directly a link with quote: href
-  const props = element.props as Record<string, unknown>
-  if (props.href && typeof props.href === "string") {
-    const parsed = parseQuoteHref(props.href)
-    if (parsed) {
-      const authorName = extractTextFromChildren(props.children as ReactNode)
-      return { ...parsed, authorName }
-    }
-  }
-
-  // Search through children
-  if (props.children) {
-    const childArray = Children.toArray(props.children as ReactNode)
-    for (let i = childArray.length - 1; i >= 0; i--) {
-      const result = findQuoteLinkInElement(childArray[i])
-      if (result) return result
     }
   }
 
@@ -236,12 +229,27 @@ export const markdownComponents: Components = {
     </h6>
   ),
 
-  // Paragraphs - process @mentions, #channels, and :emoji:
-  p: ({ children }) => (
-    <p className="mb-2 last:mb-0">
-      <ProcessedChildren>{children}</ProcessedChildren>
-    </p>
-  ),
+  // Paragraphs - process @mentions, #channels, and :emoji:. If the paragraph
+  // carries a shared-message: anchor, swap the whole paragraph for the pointer
+  // card (the serializer emits a single-line paragraph for each share, so
+  // this lossless swap is always correct).
+  p: ({ children }) => {
+    const share = findSharedMessageInChildren(children)
+    if (share) {
+      return (
+        <SharedMessagePointerBlock
+          streamId={share.streamId}
+          messageId={share.messageId}
+          authorName={share.authorName}
+        />
+      )
+    }
+    return (
+      <p className="mb-2 last:mb-0">
+        <ProcessedChildren>{children}</ProcessedChildren>
+      </p>
+    )
+  },
 
   // Links - handles both regular links and attachment:// URLs
   // [&_span] ensures inline-flex elements like TriggerChips inherit underline decoration

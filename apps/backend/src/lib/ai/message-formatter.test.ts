@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach, spyOn } from "bun:test"
+import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from "bun:test"
 import { MessageFormatter } from "./message-formatter"
 import { UserRepository } from "../../features/workspaces"
 import { PersonaRepository } from "../../features/agents"
@@ -48,6 +48,8 @@ describe("MessageFormatter", () => {
 
     formatter = new MessageFormatter()
   })
+
+  afterEach(() => mock.restore())
 
   test("should return empty wrapper for empty message list", async () => {
     const result = await formatter.formatMessages(mockClient, "ws_test", [])
@@ -130,7 +132,7 @@ describe("MessageFormatter", () => {
 
     // Verify batch efficiency: only 1 call per author type despite 3 messages
     expect(mockFindUsersByIds).toHaveBeenCalledWith(mockClient, "ws_test", ["usr_123"])
-    expect(mockFindPersonasByIds).toHaveBeenCalledWith(mockClient, ["persona_456"])
+    expect(mockFindPersonasByIds).toHaveBeenCalledWith(mockClient, ["persona_456"], "ws_test")
 
     expect(result).toBe(
       "<messages>\n" +

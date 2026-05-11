@@ -7,7 +7,7 @@
  */
 import { z } from "zod"
 import {
-  API_KEY_SCOPES,
+  WORKSPACE_PERMISSION_SCOPES,
   STREAM_TYPES,
   AUTHOR_TYPES,
   MEMO_TYPES,
@@ -15,7 +15,7 @@ import {
   PROCESSING_STATUSES,
   EXTRACTION_CONTENT_TYPES,
 } from "@threa/types"
-import type { ApiKeyScope } from "@threa/types"
+import type { WorkspacePermissionSlug } from "@threa/types"
 import {
   publicSearchSchema,
   listStreamsSchema,
@@ -265,7 +265,7 @@ export interface PublicApiRoute {
   summary: string
   description?: string
   tags: string[]
-  scopes: ApiKeyScope[]
+  scopes: WorkspacePermissionSlug[]
   parameters?: Array<{
     name: string
     in: "path" | "query"
@@ -294,7 +294,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "Search messages",
     description: "Full-text and optional semantic search across accessible streams.",
     tags: ["Messages"],
-    scopes: [API_KEY_SCOPES.MESSAGES_SEARCH],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.MESSAGES_SEARCH],
     parameters: [workspaceIdParam],
     requestSchema: publicSearchSchema,
     requestIn: "body",
@@ -307,7 +307,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "Search memos",
     description: "Search preserved workspace memos with semantic, exact, or recent-first retrieval.",
     tags: ["Memos"],
-    scopes: [API_KEY_SCOPES.MEMOS_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.MEMOS_READ],
     parameters: [workspaceIdParam],
     requestSchema: searchMemosSchema,
     requestIn: "body",
@@ -320,7 +320,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "Get a memo",
     description: "Retrieve a memo together with source stream and source message provenance.",
     tags: ["Memos"],
-    scopes: [API_KEY_SCOPES.MEMOS_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.MEMOS_READ],
     parameters: [workspaceIdParam, memoIdParam],
     responseSchema: dataEnvelope(memoDetailSchema),
     canReturn404: true,
@@ -332,7 +332,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "Search attachments",
     description: "Search accessible attachments by filename or extracted content.",
     tags: ["Attachments"],
-    scopes: [API_KEY_SCOPES.ATTACHMENTS_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ],
     parameters: [workspaceIdParam],
     requestSchema: searchAttachmentsSchema,
     requestIn: "body",
@@ -345,7 +345,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "Get an attachment",
     description: "Retrieve attachment metadata and extracted content for an accessible attachment.",
     tags: ["Attachments"],
-    scopes: [API_KEY_SCOPES.ATTACHMENTS_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ],
     parameters: [workspaceIdParam, attachmentIdParam],
     responseSchema: dataEnvelope(attachmentDetailsSchema),
     canReturn404: true,
@@ -357,7 +357,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "Get an attachment download URL",
     description: "Create a short-lived signed URL for an accessible attachment.",
     tags: ["Attachments"],
-    scopes: [API_KEY_SCOPES.ATTACHMENTS_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.ATTACHMENTS_READ],
     parameters: [workspaceIdParam, attachmentIdParam],
     responseSchema: dataEnvelope(attachmentUrlSchema),
     canReturn404: true,
@@ -371,7 +371,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "List streams",
     description: "List streams accessible to this API key, with optional type and text filters.",
     tags: ["Streams"],
-    scopes: [API_KEY_SCOPES.STREAMS_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.STREAMS_READ],
     parameters: [workspaceIdParam],
     requestSchema: listStreamsSchema,
     requestIn: "query",
@@ -383,7 +383,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     operationId: "getStream",
     summary: "Get a stream",
     tags: ["Streams"],
-    scopes: [API_KEY_SCOPES.STREAMS_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.STREAMS_READ],
     parameters: [workspaceIdParam, streamIdParam],
     responseSchema: dataEnvelope(streamSchema),
     canReturn404: true,
@@ -394,7 +394,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     operationId: "listMembers",
     summary: "List stream members",
     tags: ["Streams"],
-    scopes: [API_KEY_SCOPES.STREAMS_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.STREAMS_READ],
     parameters: [workspaceIdParam, streamIdParam],
     requestSchema: listMembersSchema,
     requestIn: "query",
@@ -409,7 +409,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "List messages in a stream",
     description: "Cursor-paginated message list. Use `before` or `after` sequence numbers.",
     tags: ["Messages"],
-    scopes: [API_KEY_SCOPES.MESSAGES_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ],
     parameters: [workspaceIdParam, streamIdParam],
     requestSchema: listMessagesSchema,
     requestIn: "query",
@@ -426,7 +426,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     description:
       "Send a message. Workspace-scoped keys send as a bot; user-scoped keys send on behalf of the key owner.",
     tags: ["Messages"],
-    scopes: [API_KEY_SCOPES.MESSAGES_WRITE],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE],
     parameters: [workspaceIdParam, streamIdParam],
     requestSchema: sendMessageSchema,
     requestIn: "body",
@@ -442,7 +442,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
       "Find non-deleted messages whose `metadata` contains all the given key/value pairs (AND-containment). " +
       "Useful for dedup flows — e.g. 'has a message already been posted for this GitHub PR event?'.",
     tags: ["Messages"],
-    scopes: [API_KEY_SCOPES.MESSAGES_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.MESSAGES_READ],
     parameters: [workspaceIdParam],
     requestSchema: findMessagesByMetadataSchema,
     requestIn: "body",
@@ -455,7 +455,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "Update a message",
     description: "Update a message you previously sent via API.",
     tags: ["Messages"],
-    scopes: [API_KEY_SCOPES.MESSAGES_WRITE],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE],
     parameters: [workspaceIdParam, messageIdParam],
     requestSchema: updateMessageSchema,
     requestIn: "body",
@@ -469,7 +469,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "Delete a message",
     description: "Delete a message you previously sent via API.",
     tags: ["Messages"],
-    scopes: [API_KEY_SCOPES.MESSAGES_WRITE],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.MESSAGES_WRITE],
     parameters: [workspaceIdParam, messageIdParam],
     responseSchema: z.void(),
     successStatus: 204,
@@ -484,7 +484,7 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     summary: "List workspace users",
     description: "List users in the workspace with optional text search and cursor pagination.",
     tags: ["Users"],
-    scopes: [API_KEY_SCOPES.USERS_READ],
+    scopes: [WORKSPACE_PERMISSION_SCOPES.USERS_READ],
     parameters: [workspaceIdParam],
     requestSchema: listUsersSchema,
     requestIn: "query",

@@ -9,6 +9,7 @@ export interface RateLimiterSet {
   upload: RequestHandler
   messageCreate: RequestHandler
   commandDispatch: RequestHandler
+  pushTest: RequestHandler
   publicApiWorkspace: RequestHandler
   publicApiKey: RequestHandler
 }
@@ -63,6 +64,16 @@ export function createRateLimiters(config: RateLimiterConfig): RateLimiterSet {
       name: "command-dispatch",
       windowMs: 60_000,
       max: 30,
+      key: userScopeKey,
+    }),
+
+    // The test push triggers up to MAX_SUBSCRIPTIONS_PER_USER outbound webpush
+    // calls per request, so cap aggressively — a user shouldn't need to test
+    // more than a few times a minute, and this prevents hammering FCM/Mozilla.
+    pushTest: createRateLimit({
+      name: "push-test",
+      windowMs: 60_000,
+      max: 6,
       key: userScopeKey,
     }),
 

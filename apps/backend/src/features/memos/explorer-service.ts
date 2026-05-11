@@ -238,7 +238,7 @@ export class MemoExplorerService {
 
     const [members, personas, streams] = await Promise.all([
       userIds.size > 0 ? UserRepository.findByIds(this.pool, workspaceId, [...userIds]) : Promise.resolve([]),
-      personaIds.size > 0 ? PersonaRepository.findByIds(this.pool, [...personaIds]) : Promise.resolve([]),
+      personaIds.size > 0 ? PersonaRepository.findByIds(this.pool, [...personaIds], workspaceId) : Promise.resolve([]),
       StreamRepository.findByIds(this.pool, [...streamIds]),
     ])
 

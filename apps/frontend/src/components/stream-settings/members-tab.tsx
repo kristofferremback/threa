@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { SearchableList } from "@/components/ui/searchable-list"
-import { renderUserListItem, type UserListItem } from "@/components/ui/user-list-item"
+import { SearchableSelect } from "@/components/ui/searchable-select"
+import { ActorAvatar } from "@/components/actor-avatar"
 import {
   ResponsiveAlertDialog,
   ResponsiveAlertDialogAction,
@@ -23,8 +23,6 @@ import { useStreamService } from "@/contexts"
 import { botsApi } from "@/api/bots"
 import { useWorkspaceUsers, useWorkspaceBots } from "@/stores/workspace-store"
 import { StreamTypes, type StreamMember } from "@threa/types"
-import { getInitials } from "@/lib/initials"
-import { getAvatarColor } from "@/lib/avatar-color"
 import { toast } from "sonner"
 
 interface MembersTabProps {
@@ -36,7 +34,6 @@ interface MembersTabProps {
 export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabProps) {
   const streamService = useStreamService()
   const [search, setSearch] = useState("")
-  const [addSearch, setAddSearch] = useState("")
   const addMutation = useAddStreamMember(workspaceId, streamId)
   const removeMutation = useRemoveStreamMember(workspaceId, streamId)
 
@@ -52,15 +49,20 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
   const workspaceUsers = useWorkspaceUsers(workspaceId)
 
   const streamType = bootstrap?.stream?.type
-  const canAddMembers = streamType === StreamTypes.CHANNEL || streamType === StreamTypes.THREAD
+  const canAddUserMembers = streamType === StreamTypes.CHANNEL
   const streamMembers = bootstrap?.members ?? []
   const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentUserId)
   const canManageMembers = currentWorkspaceUser?.role === "owner" || currentWorkspaceUser?.role === "admin"
 
+  // Bots can be managed on all stream types that have a members tab.
+  // Threads inherit bot access from their root, so the UI is read-only.
+  const canManageBots = canManageMembers && streamType !== undefined
+  const botsReadOnly = streamType === StreamTypes.THREAD
+
   const streamMemberIds = useMemo(() => new Set(streamMembers.map((m) => m.memberId)), [streamMembers])
 
   const enrichedMembers = useMemo(() => {
-    return streamMembers
+    const enriched = streamMembers
       .map((sm) => {
         const workspaceUser = workspaceUsers.find((u) => u.id === sm.memberId)
         return workspaceUser
@@ -68,6 +70,7 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
           : null
       })
       .filter(Boolean) as (StreamMember & { name: string; slug: string; role: string })[]
+    return enriched.sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug))
   }, [streamMembers, workspaceUsers])
 
   const filteredMembers = useMemo(() => {
@@ -76,29 +79,16 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
     return enrichedMembers.filter((m) => m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
   }, [enrichedMembers, search])
 
-  const availableToAdd = useMemo((): UserListItem[] => {
-    if (!addSearch) return []
-    const q = addSearch.toLowerCase()
+  const availableToAdd = useMemo(() => {
     return workspaceUsers
-      .filter(
-        (m) => !streamMemberIds.has(m.id) && (m.name.toLowerCase().includes(q) || m.slug.toLowerCase().includes(q))
-      )
-      .map((m) => ({
-        id: m.id,
-        label: m.name || m.slug,
-        description: `@${m.slug}`,
-        slug: m.slug,
-        name: m.name,
-      }))
-  }, [workspaceUsers, streamMemberIds, addSearch])
+      .filter((m) => !streamMemberIds.has(m.id))
+      .sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug))
+  }, [workspaceUsers, streamMemberIds])
 
   const handleAdd = useCallback(
-    (item: UserListItem) => {
-      addMutation.mutate(item.id, {
-        onSuccess: () => {
-          toast.success("Member added")
-          setAddSearch("")
-        },
+    (user: (typeof workspaceUsers)[number]) => {
+      addMutation.mutate(user.id, {
+        onSuccess: () => toast.success("Member added"),
         onError: () => toast.error("Failed to add member"),
       })
     },
@@ -135,17 +125,16 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
 
         <div className="space-y-1 max-h-64 overflow-y-auto">
           {filteredMembers.map((member) => {
-            const initials = getInitials(member.name || member.slug)
-            const color = getAvatarColor(member.memberId)
-
             return (
               <div key={member.memberId} className="flex items-center justify-between rounded-md border px-3 py-2">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className={`flex items-center justify-center h-7 w-7 rounded-full text-xs font-medium shrink-0 ${color}`}
-                  >
-                    {initials}
-                  </div>
+                  <ActorAvatar
+                    actorId={member.memberId}
+                    actorType="user"
+                    workspaceId={workspaceId}
+                    size="sm"
+                    alt={member.name || member.slug}
+                  />
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="text-sm font-medium truncate">{member.name || member.slug}</span>
                     <span className="text-xs text-muted-foreground">@{member.slug}</span>
@@ -174,26 +163,43 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
         </div>
       </div>
 
-      {canAddMembers && (
-        <div className="space-y-3">
+      {canAddUserMembers && (
+        <div className="space-y-2">
           <Label className="text-sm font-medium">Add member</Label>
-          <SearchableList
+          <SearchableSelect
             items={availableToAdd}
-            renderItem={renderUserListItem}
-            onSelect={handleAdd}
-            search={addSearch}
-            onSearchChange={setAddSearch}
-            placeholder="Search workspace users..."
+            value={null}
+            onChange={handleAdd}
+            getKey={(u) => u.id}
+            getKeywords={(u) => [u.name, u.slug, `@${u.slug}`]}
+            placeholder={availableToAdd.length === 0 ? "All workspace users are members" : "Add member..."}
+            searchPlaceholder="Search workspace users..."
             emptyMessage="No matching users"
-            icon={UserPlus}
+            triggerIcon={UserPlus}
+            disabled={availableToAdd.length === 0}
+            showAvailableCount
+            availableLabel={(n) => `${n} ${n === 1 ? "user" : "users"} available`}
+            renderItem={(user) => (
+              <>
+                <ActorAvatar
+                  actorId={user.id}
+                  actorType="user"
+                  workspaceId={workspaceId}
+                  size="xs"
+                  alt={user.name || user.slug}
+                />
+                <span className="text-sm font-medium truncate">{user.name || user.slug}</span>
+                <span className="ml-auto text-xs text-muted-foreground shrink-0">@{user.slug}</span>
+              </>
+            )}
           />
         </div>
       )}
 
-      {canManageMembers && streamType === StreamTypes.CHANNEL && (
+      {canManageBots && (
         <>
           <Separator />
-          <StreamBotsSection workspaceId={workspaceId} streamId={streamId} />
+          <StreamBotsSection workspaceId={workspaceId} streamId={streamId} readOnly={botsReadOnly} />
         </>
       )}
 
@@ -217,9 +223,16 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
 
 // ─── Stream Bots Section ────────────────────────────────────────────────────
 
-function StreamBotsSection({ workspaceId, streamId }: { workspaceId: string; streamId: string }) {
+function StreamBotsSection({
+  workspaceId,
+  streamId,
+  readOnly,
+}: {
+  workspaceId: string
+  streamId: string
+  readOnly?: boolean
+}) {
   const queryClient = useQueryClient()
-  const [botSearch, setBotSearch] = useState("")
   const allBots = useWorkspaceBots(workspaceId)
 
   // Single query: which bots have been granted access to this stream
@@ -231,27 +244,20 @@ function StreamBotsSection({ workspaceId, streamId }: { workspaceId: string; str
 
   const grantedBotIdSet = useMemo(() => new Set(grantedBotIds), [grantedBotIds])
 
-  const botsWithAccess = useMemo(() => allBots.filter((b) => grantedBotIdSet.has(b.id)), [allBots, grantedBotIdSet])
+  const botsWithAccess = useMemo(
+    () => allBots.filter((b) => grantedBotIdSet.has(b.id)).sort((a, b) => a.name.localeCompare(b.name)),
+    [allBots, grantedBotIdSet]
+  )
 
-  const availableToGrant = useMemo(() => {
-    if (!botSearch) return []
-    const q = botSearch.toLowerCase()
-    return allBots
-      .filter(
-        (b) =>
-          !b.archivedAt &&
-          !grantedBotIdSet.has(b.id) &&
-          (b.name.toLowerCase().includes(q) || b.slug?.toLowerCase().includes(q))
-      )
-      .slice(0, 10)
-  }, [allBots, grantedBotIdSet, botSearch])
+  const availableToGrant = useMemo(
+    () =>
+      allBots.filter((b) => !b.archivedAt && !grantedBotIdSet.has(b.id)).sort((a, b) => a.name.localeCompare(b.name)),
+    [allBots, grantedBotIdSet]
+  )
 
   const grantMutation = useMutation({
     mutationFn: (botId: string) => botsApi.grantStreamAccess(workspaceId, botId, streamId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: streamBotsQueryKey })
-      setBotSearch("")
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: streamBotsQueryKey }),
   })
 
   const revokeMutation = useMutation({
@@ -268,65 +274,58 @@ function StreamBotsSection({ workspaceId, streamId }: { workspaceId: string; str
           {botsWithAccess.map((bot) => (
             <div key={bot.id} className="flex items-center justify-between rounded-md border px-3 py-2 group">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex items-center justify-center h-7 w-7 rounded-full bg-emerald-500/10 text-emerald-600 text-xs font-medium shrink-0">
-                  {bot.avatarEmoji ?? <BotIcon className="h-3.5 w-3.5" />}
-                </div>
+                <ActorAvatar actorId={bot.id} actorType="bot" workspaceId={workspaceId} size="sm" alt={bot.name} />
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-sm font-medium truncate">{bot.name}</span>
                   {bot.slug && <span className="text-xs text-muted-foreground">@{bot.slug}</span>}
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0"
-                onClick={() => revokeMutation.mutate(bot.id)}
-                disabled={revokeMutation.isPending}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0"
+                  onClick={() => revokeMutation.mutate(bot.id)}
+                  disabled={revokeMutation.isPending}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
           ))}
         </div>
       )}
 
       {botsWithAccess.length === 0 && allBots.length > 0 && (
-        <p className="text-xs text-muted-foreground">No bots have been added to this channel.</p>
+        <p className="text-xs text-muted-foreground">No bots have been added to this stream.</p>
       )}
 
       {allBots.length === 0 && (
         <p className="text-xs text-muted-foreground">No bots in this workspace. Create one in workspace settings.</p>
       )}
 
-      {allBots.length > 0 && (
-        <div className="space-y-1.5">
-          <Input
-            placeholder="Search bots to add..."
-            value={botSearch}
-            onChange={(e) => setBotSearch(e.target.value)}
-            className="h-8"
-          />
-          {availableToGrant.length > 0 && (
-            <div className="rounded-md border divide-y max-h-40 overflow-y-auto">
-              {availableToGrant.map((bot) => (
-                <button
-                  key={bot.id}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-accent/50 transition-colors text-left"
-                  onClick={() => grantMutation.mutate(bot.id)}
-                >
-                  <div className="flex items-center justify-center h-6 w-6 rounded-full bg-emerald-500/10 text-emerald-600 text-xs shrink-0">
-                    {bot.avatarEmoji ?? <BotIcon className="h-3 w-3" />}
-                  </div>
-                  <span className="text-sm truncate">{bot.name}</span>
-                  {bot.slug && <span className="text-xs text-muted-foreground">@{bot.slug}</span>}
-                </button>
-              ))}
-            </div>
+      {!readOnly && allBots.length > 0 && (
+        <SearchableSelect
+          items={availableToGrant}
+          value={null}
+          onChange={(bot) => grantMutation.mutate(bot.id)}
+          getKey={(b) => b.id}
+          getKeywords={(b) => [b.name, b.slug ?? "", b.slug ? `@${b.slug}` : ""].filter(Boolean)}
+          placeholder={availableToGrant.length === 0 ? "All bots have access" : "Add bot..."}
+          searchPlaceholder="Search bots..."
+          emptyMessage="No matching bots"
+          triggerIcon={BotIcon}
+          disabled={availableToGrant.length === 0 || grantMutation.isPending}
+          showAvailableCount
+          availableLabel={(n) => `${n} ${n === 1 ? "bot" : "bots"} available`}
+          renderItem={(bot) => (
+            <>
+              <ActorAvatar actorId={bot.id} actorType="bot" workspaceId={workspaceId} size="xs" alt={bot.name} />
+              <span className="text-sm font-medium truncate">{bot.name}</span>
+              {bot.slug && <span className="ml-auto text-xs text-muted-foreground shrink-0">@{bot.slug}</span>}
+            </>
           )}
-          {botSearch && availableToGrant.length === 0 && (
-            <p className="text-xs text-muted-foreground py-1">No matching bots</p>
-          )}
-        </div>
+        />
       )}
     </div>
   )

@@ -11,6 +11,7 @@ import {
   registerWorkspaceSocketHandlers,
 } from "./workspace-sync"
 import {
+  applyStreamBootstrap,
   registerStreamSocketHandlers,
   getLatestPersistedSequence,
   toCachedStreamBootstrap,
@@ -42,6 +43,14 @@ interface SyncEngineDeps {
     add: (workspaceId: string, messageId: string, emoji: string) => Promise<void>
     remove: (workspaceId: string, messageId: string, emoji: string) => Promise<void>
   }
+  scheduledService?: {
+    create: (
+      workspaceId: string,
+      input: import("@threa/types").ScheduleMessageInput
+    ) => Promise<import("@threa/types").ScheduledMessageView>
+    delete: (workspaceId: string, id: string) => Promise<void>
+    sendNow: (workspaceId: string, id: string) => Promise<import("@threa/types").ScheduledMessageView>
+  }
 }
 
 /**
@@ -62,6 +71,7 @@ export class SyncEngine {
   private workspaceHandlerCleanup: (() => void) | null = null
   private activeBootstrap: Promise<void> | null = null
   private queuedReconnectBootstrap: Promise<void> | null = null
+  private activeStreamRefreshes = new Map<string, Promise<void>>()
   private hasEverConnected = false
   /** Whether the engine has been destroyed. Public for ref-check re-creation. */
   isDestroyed = false
@@ -81,7 +91,11 @@ export class SyncEngine {
 
   /** Update the current stream ID (called from React when route changes). */
   setCurrentStreamId(id: string | undefined): void {
+    if (this.currentStreamId === id) return
     this.currentStreamId = id
+    if (id) {
+      void this.refreshStreamAfterNavigation(id)
+    }
   }
 
   setVisibleStreamIds(ids: string[]): void {
@@ -134,7 +148,7 @@ export class SyncEngine {
    * transport survives but the client missed stream updates).
    */
   async refreshAfterConnectivityResume(): Promise<void> {
-    if (this.isDestroyed || !this.socket || !this.hasEverConnected) return
+    if (this.isDestroyed) return
     await this.runBootstrap(true)
   }
 
@@ -204,6 +218,7 @@ export class SyncEngine {
     void processOperationQueue(
       this.deps.messageService,
       this.deps.reactionService ?? { add: async () => {}, remove: async () => {} },
+      this.deps.scheduledService,
       () => this.socket !== null && !this.isDestroyed
     )
   }
@@ -232,7 +247,6 @@ export class SyncEngine {
   // =========================================================================
 
   private async bootstrapWorkspace(_isReconnect: boolean): Promise<void> {
-    if (!this.socket) return
     const { workspaceId, syncStatus, queryClient, workspaceService, streamService } = this.deps
 
     syncStatus.set(`workspace:${workspaceId}`, "syncing")
@@ -244,8 +258,12 @@ export class SyncEngine {
     }
 
     try {
-      // Subscribe-then-fetch (INV-53)
-      await joinRoomBestEffort(this.socket, `ws:${workspaceId}`, "SyncEngine")
+      // Subscribe-then-fetch (INV-53). Soft refresh can run while the socket
+      // client is still reconnecting; in that case we still fetch fresh
+      // bootstrap data and skip the room-join step.
+      if (this.socket) {
+        await joinRoomBestEffort(this.socket, `ws:${workspaceId}`, "SyncEngine")
+      }
 
       const fetchStartedAt = Date.now()
       let bootstrap: WorkspaceBootstrap
@@ -424,6 +442,58 @@ export class SyncEngine {
     }
 
     joinRoomFireAndForget(this.socket, room, new AbortController().signal, "SyncEngine")
+  }
+
+  private refreshStreamAfterNavigation(streamId: string): Promise<void> {
+    if (
+      this.isDestroyed ||
+      !this.socket ||
+      !this.socket.connected ||
+      streamId.startsWith("draft_") ||
+      streamId.startsWith("draft:")
+    ) {
+      return Promise.resolve()
+    }
+
+    const existing = this.activeStreamRefreshes.get(streamId)
+    if (existing) return existing
+
+    const refresh = this.performStreamRefresh(streamId).finally(() => {
+      if (this.activeStreamRefreshes.get(streamId) === refresh) {
+        this.activeStreamRefreshes.delete(streamId)
+      }
+    })
+    this.activeStreamRefreshes.set(streamId, refresh)
+    return refresh
+  }
+
+  private async performStreamRefresh(streamId: string): Promise<void> {
+    const { workspaceId, syncStatus, streamService, queryClient } = this.deps
+    const key = `stream:${streamId}`
+
+    syncStatus.set(key, "syncing")
+    syncStatus.setError(key, null)
+
+    try {
+      await this.ensureStreamSubscription(streamId, { awaitJoin: true })
+      if (this.isDestroyed) return
+
+      const queryKey = streamKeys.bootstrap(workspaceId, streamId)
+      const previousBootstrap = queryClient.getQueryData<CachedStreamBootstrap>(queryKey)
+      const after = previousBootstrap ? await getLatestPersistedSequence(streamId) : null
+      const bootstrap = await streamService.bootstrap(workspaceId, streamId, after ? { after } : undefined)
+      await applyStreamBootstrap(workspaceId, streamId, bootstrap)
+
+      queryClient.setQueryData<CachedStreamBootstrap>(queryKey, (currentBootstrap) =>
+        toCachedStreamBootstrap(bootstrap, currentBootstrap ?? previousBootstrap, {
+          incrementWindowVersionOnReplace: bootstrap.syncMode === "replace",
+        })
+      )
+      syncStatus.set(key, "synced")
+    } catch (error) {
+      this.applyReconnectStreamError(streamId, error)
+      syncStatus.set(key, syncStatus.getError(key) ? "error" : "stale")
+    }
   }
 
   private applyReconnectStreamError(streamId: string, error: unknown): void {

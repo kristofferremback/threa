@@ -12,6 +12,15 @@ import { getEffectiveLevel } from "../streams"
 import { BotRepository, serializeBot } from "../public-api"
 import { displayNameFromWorkos, type WorkosOrgService } from "@threa/backend-common"
 import { HttpError } from "../../lib/errors"
+import {
+  CommandKinds,
+  DISCUSS_WITH_ARIADNE_COMMAND,
+  parseJwtPermissions,
+  permissionsForRole,
+  WORKSPACE_PERMISSION_SCOPES,
+  type CommandInfo,
+  type WorkspacePermissionSlug,
+} from "@threa/types"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -164,9 +173,18 @@ export function createWorkspaceHandlers({
         }
       }
 
-      const commands = commandRegistry.getCommandNames().map((name) => {
+      const commands: CommandInfo[] = commandRegistry.getCommandNames().map((name) => {
         const cmd = commandRegistry.get(name)!
-        return { name, description: cmd.description }
+        return { name, description: cmd.description, kind: CommandKinds.SERVER }
+      })
+      // Client-action commands don't live in the server CommandRegistry (which
+      // only holds server-executable commands); surface them here so they show
+      // up in the slash-command suggestion list alongside server commands.
+      commands.push({
+        name: DISCUSS_WITH_ARIADNE_COMMAND,
+        description: "Open a private side-conversation with Ariadne about this thread",
+        kind: CommandKinds.CLIENT_ACTION,
+        clientActionId: DISCUSS_WITH_ARIADNE_COMMAND,
       })
 
       // Compute muted stream IDs: streams where effective notification level is "muted".
@@ -180,10 +198,19 @@ export function createWorkspaceHandlers({
         })
         .map((m) => m.streamId)
 
-      // Include invitations for admin+ members
+      // The WorkOS JWT carries `permissions` once authz rollout is active.
+      // Distinguish "claim absent" (older tokens / OAuth callback path) from
+      // "claim present but empty" — only the former triggers the role-derived
+      // fallback. An empty array means WorkOS deliberately granted nothing,
+      // and falling back would silently escalate privilege.
       const userRole = req.user!.role
-      const isAdmin = userRole === "admin" || userRole === "owner"
-      const invitations = isAdmin ? await invitationService.listInvitations(workspaceId) : undefined
+      const rawPermissions = req.authUser!.permissions
+      const viewerPermissions: WorkspacePermissionSlug[] =
+        rawPermissions === null ? permissionsForRole(userRole) : parseJwtPermissions(rawPermissions)
+
+      const invitations = viewerPermissions.includes(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
+        ? await invitationService.listInvitations(workspaceId)
+        : undefined
 
       res.json({
         data: {
@@ -204,6 +231,7 @@ export function createWorkspaceHandlers({
           dmPeers,
           userPreferences,
           invitations,
+          viewerPermissions,
         },
       })
     },

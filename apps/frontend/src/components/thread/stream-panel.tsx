@@ -1,7 +1,7 @@
 import { useSearchParams, useParams } from "react-router-dom"
 import { useMemo, useCallback, useEffect, useState, useRef } from "react"
 import { createPortal } from "react-dom"
-import { MessageSquare, ChevronLeft } from "lucide-react"
+import { MessageSquare, ChevronLeft, MoreHorizontal, CornerDownRight, Paperclip, Settings } from "lucide-react"
 import {
   SidePanel,
   SidePanelHeader,
@@ -11,18 +11,27 @@ import {
 } from "@/components/ui/side-panel"
 import { Button } from "@/components/ui/button"
 import {
+  SidebarActionDrawer,
+  SidebarActionMenu,
+  type SidebarActionItem,
+} from "@/components/layout/sidebar/sidebar-actions"
+import {
   useStreamBootstrap,
   useDraftComposer,
   getDraftMessageKey,
   useThreadAncestors,
   useQueueDraftMessage,
   useComposerHeightPublish,
+  useStashComposer,
 } from "@/hooks"
 import { useCoordinatedLoading, usePanel, isDraftPanel, parseDraftPanel, useSidebar } from "@/contexts"
 import { useUser } from "@/auth"
 import { useStreamEvents } from "@/stores/stream-store"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { onDraftPromoted } from "@/lib/draft-promotions"
+import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
+import { useStreamSettings } from "@/components/stream-settings/use-stream-settings"
+import { useExplorerUrlState } from "@/components/attachment-explorer"
 import { StreamLoadingIndicator } from "@/components/loading"
 import {
   StreamContent,
@@ -33,12 +42,13 @@ import {
 } from "@/components/timeline"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
-import { FloatingComposerShell, MessageComposer } from "@/components/composer"
+import { FloatingComposerShell, MessageComposer, StashedDraftsPicker } from "@/components/composer"
 import { SidebarToggle } from "@/components/layout"
+import { EMPTY_DOC } from "@/lib/prosemirror-utils"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
 import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
-import { StreamTypes, type JSONContent, type StreamType } from "@threa/types"
+import { StreamTypes, type StreamType } from "@threa/types"
 import type { MentionStreamContext } from "@/hooks/use-mentionables"
 import { getStreamName, streamFallbackLabel } from "@/lib/streams"
 
@@ -55,6 +65,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const { panelId, openPanel, getPanelUrl, closePanel } = usePanel()
   const user = useUser()
   const { queueDraftMessage, currentUserId } = useQueueDraftMessage(workspaceId)
+  const { openStreamSettings } = useStreamSettings()
+  const { open: openExplorer } = useExplorerUrlState()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
 
   const isMainViewStream = (streamId: string) => {
@@ -143,10 +155,70 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     scopeId: draftInfo?.parentMessageId ?? "",
   })
 
+  // Stashed drafts for this thread. `draftKey` is "" until the panel resolves
+  // a draft, so we pass `undefined` as the scope in that case — the hook
+  // returns an empty list and silently no-ops.
+  const stashScope = draftKey || undefined
+  const stash = useStashComposer(composer, workspaceId, stashScope)
+
+  const stashedDraftsTrigger = stashScope ? (
+    <StashedDraftsPicker
+      drafts={stash.drafts}
+      canStashCurrent={composer.canSend}
+      onStashCurrent={stash.handleStashDraft}
+      onRestore={stash.handleRestoreStashed}
+      onDelete={stash.handleDeleteStashed}
+      controlsDisabled={composer.isSending}
+    />
+  ) : undefined
+
+  const stashedDraftsTriggerFab = stashScope ? (
+    <StashedDraftsPicker
+      drafts={stash.drafts}
+      canStashCurrent={composer.canSend}
+      onStashCurrent={stash.handleStashDraft}
+      onRestore={stash.handleRestoreStashed}
+      onDelete={stash.handleDeleteStashed}
+      controlsDisabled={composer.isSending}
+      size="fab"
+    />
+  ) : undefined
+
   // Draft thread expand state
   const [draftExpanded, setDraftExpanded] = useState(false)
+  const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false)
   const draftExpandedRef = useRef<HTMLDivElement>(null)
   const draftPortalTargetRef = useRef<HTMLElement | null>(null)
+
+  const handleSelectMessages = useCallback(() => {
+    if (!panelId) return
+    dispatchStartBatchSelect(panelId)
+  }, [panelId])
+
+  const panelMenuActions: SidebarActionItem[] = []
+  panelMenuActions.push({
+    id: "stream-settings",
+    label: "Settings",
+    icon: Settings,
+    onSelect: () => {
+      if (panelId) openStreamSettings(panelId)
+    },
+  })
+  panelMenuActions.push({
+    id: "move-messages",
+    label: "Move messages…",
+    icon: CornerDownRight,
+    onSelect: handleSelectMessages,
+    separatorBefore: true,
+  })
+  panelMenuActions.push({
+    id: "browse-files",
+    label: "Browse files…",
+    icon: Paperclip,
+    onSelect: () => {
+      if (panelId) openExplorer({ streamIds: [panelId] })
+    },
+  })
   const setDraftPortalTarget = useCallback((el: HTMLElement | null) => {
     draftPortalTargetRef.current = el
   }, [])
@@ -235,13 +307,11 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     const attachments = extractUploadedAttachments(contentJson)
     const attachmentIds = attachments.map((a) => a.id)
 
-    // Capture content before clearing so we can restore on failure
-    const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
     setDraftExpanded(false)
 
     try {
       // Clear input optimistically inside try so we can restore on failure
-      composer.setContent(emptyDoc)
+      composer.setContent(EMPTY_DOC)
       composer.clearDraft()
       composer.clearAttachments()
 
@@ -330,6 +400,49 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
           </Button>
         )}
         {headerContent}
+        {!isDraft &&
+          stream &&
+          !stream.archivedAt &&
+          (isMobile ? (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 flex-shrink-0"
+                aria-label="Stream actions"
+                onClick={() => setIsMenuDrawerOpen(true)}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+              <SidebarActionDrawer
+                open={isMenuDrawerOpen}
+                onOpenChange={setIsMenuDrawerOpen}
+                actions={panelMenuActions}
+                title="Stream actions"
+                description="Choose an action for this stream."
+                header={
+                  <div className="px-4 pt-2 pb-3">
+                    <p className="truncate text-base font-semibold text-foreground">
+                      {getStreamName(stream) ?? streamFallbackLabel(stream.type as StreamType, "generic")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {stream.type === StreamTypes.THREAD ? "Thread" : "Stream"} actions
+                    </p>
+                  </div>
+                }
+              />
+            </>
+          ) : (
+            <SidebarActionMenu
+              actions={panelMenuActions}
+              ariaLabel="Stream actions"
+              trigger={
+                <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" aria-label="Stream actions">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              }
+            />
+          ))}
         {/* Hide X close button on mobile (back button used instead) */}
         {!isMobile && <SidePanelClose onClose={onClose} />}
       </SidePanelHeader>
@@ -364,12 +477,17 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                     onCollapse={handleDraftCollapse}
                     autoFocus
                     streamContext={draftStreamContext}
+                    onStashDraft={stash.handleStashDraft}
+                    stashedDraftsTrigger={stashedDraftsTrigger}
+                    stashedDraftsTriggerFab={stashedDraftsTriggerFab}
                   />
                 </div>,
                 draftPortalTargetRef.current
               )}
             <div
-              className={draftExpanded ? "flex-1 overflow-y-auto hidden" : "flex-1 overflow-y-auto"}
+              className={
+                draftExpanded ? "hidden flex-1 flex-col overflow-y-auto" : "flex flex-1 flex-col overflow-y-auto"
+              }
               style={{ paddingBottom: "var(--composer-height, 0px)" }}
             >
               {parentMessage && (
@@ -392,7 +510,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   streamId={panelId!}
                 />
               ) : (
-                <Empty className="h-full border-0">
+                <Empty className="min-h-[16rem] flex-none border-0">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
                       <MessageSquare />
@@ -425,6 +543,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   scopeId={panelId}
                   onExpandClick={handleDraftExpand}
                   streamContext={draftStreamContext}
+                  onStashDraft={stash.handleStashDraft}
+                  stashedDraftsTrigger={stashedDraftsTrigger}
+                  stashedDraftsTriggerFab={stashedDraftsTriggerFab}
                 />
               )}
             </FloatingComposerShell>

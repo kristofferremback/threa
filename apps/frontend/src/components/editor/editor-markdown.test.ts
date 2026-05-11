@@ -565,6 +565,39 @@ describe("editor-markdown", () => {
       expect(roundTrip("---")).toBe("---")
     })
 
+    it("should round-trip a sharedMessage node losslessly", () => {
+      const doc: JSONContent = {
+        type: "doc",
+        content: [
+          {
+            type: "sharedMessage",
+            attrs: {
+              messageId: "msg_01ABC",
+              streamId: "stream_01XYZ",
+              authorName: "Ariadne",
+              authorId: "",
+              actorType: "user",
+            },
+          },
+        ],
+      }
+
+      const md = serializeToMarkdown(doc)
+      expect(md).toBe("Shared a message from [Ariadne](shared-message:stream_01XYZ/msg_01ABC)")
+
+      const parsed = parseMarkdown(md)
+      expect(parsed.content?.[0]).toEqual({
+        type: "sharedMessage",
+        attrs: {
+          messageId: "msg_01ABC",
+          streamId: "stream_01XYZ",
+          authorName: "Ariadne",
+          authorId: "",
+          actorType: "user",
+        },
+      })
+    })
+
     it("should preserve mixed document", () => {
       const md = `# Heading
 
@@ -891,7 +924,7 @@ const x = 1
         expect(content?.[0]).toEqual({ type: "text", text: "Hey " })
         expect(content?.[1]).toEqual({
           type: "mention",
-          attrs: { id: "kristoffer", slug: "kristoffer", name: "kristoffer", mentionType: "user" },
+          attrs: { id: "kristoffer", slug: "kristoffer", mentionType: "user" },
         })
         expect(content?.[2]).toEqual({ type: "text", text: " check this out" })
       })
@@ -904,7 +937,7 @@ const x = 1
         expect(content?.[0]).toEqual({ type: "text", text: "See " })
         expect(content?.[1]).toEqual({
           type: "channelLink",
-          attrs: { id: "general", slug: "general", name: "general" },
+          attrs: { id: "general", slug: "general" },
         })
         expect(content?.[2]).toEqual({ type: "text", text: " for details" })
       })

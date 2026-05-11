@@ -28,6 +28,26 @@ export function useMarkdownBlockContext(): MarkdownBlockContextValue | null {
 }
 
 /**
+ * Marks descendants as rendered inside a foldable block so nested foldable
+ * blocks (blockquote-in-blockquote, code-in-blockquote, quote-reply-in-quote)
+ * skip their own collapse chrome. Only the outermost block folds; inner blocks
+ * render plain. See `useBlockCollapse`.
+ */
+const InsideCollapsibleBlockContext = createContext<boolean>(false)
+
+interface InsideCollapsibleBlockProviderProps {
+  children: ReactNode
+}
+
+export function InsideCollapsibleBlockProvider({ children }: InsideCollapsibleBlockProviderProps) {
+  return <InsideCollapsibleBlockContext.Provider value={true}>{children}</InsideCollapsibleBlockContext.Provider>
+}
+
+export function useIsInsideCollapsibleBlock(): boolean {
+  return useContext(InsideCollapsibleBlockContext)
+}
+
+/**
  * DJB2 hash of `namespace\0content`. Namespacing keeps the hash spaces of
  * different block kinds (and of different code-block languages) disjoint so
  * identical content doesn't alias across them. Not cryptographic.

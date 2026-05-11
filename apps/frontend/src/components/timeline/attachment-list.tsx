@@ -6,6 +6,7 @@ import { MediaGallery, type GalleryItem } from "@/components/image-gallery"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
 import { downloadImage, copyImage, triggerDownload } from "@/lib/image-utils"
+import { formatFileSize } from "@/lib/file-size"
 import { useAttachmentContext } from "@/lib/markdown/attachment-context"
 import { useMediaGallery } from "@/contexts"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -43,12 +44,6 @@ function getFileIcon(mimeType: string) {
     return FileText
   }
   return File
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function ImageActionDrawer({
@@ -182,14 +177,6 @@ function ImageAttachment({
     },
   }
 
-  const handleDownload = useCallback(() => {
-    downloadImage(workspaceId, attachment.id, attachment.filename)
-  }, [workspaceId, attachment.id, attachment.filename])
-
-  const handleCopy = useCallback(() => {
-    if (imageUrl) copyImage(imageUrl)
-  }, [imageUrl])
-
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.target !== e.currentTarget) return
@@ -230,36 +217,6 @@ function ImageAttachment({
         ) : (
           <img src={imageUrl!} alt={attachment.filename} className="h-32 w-auto max-w-xs object-cover" loading="lazy" />
         )}
-        {/* Desktop: show action buttons on hover; Mobile: just filename */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-1.5">
-          <div className="flex items-center gap-1">
-            <span className="block truncate text-xs text-white flex-1">{attachment.filename}</span>
-            <div className="hidden sm:flex items-center gap-0.5 shrink-0 opacity-0 group-hover/image:opacity-100 transition-opacity">
-              <button
-                type="button"
-                className="rounded p-1 text-white/80 hover:text-white hover:bg-white/20 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleDownload()
-                }}
-                title="Download image"
-              >
-                <Download className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                className="rounded p-1 text-white/80 hover:text-white hover:bg-white/20 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleCopy()
-                }}
-                title="Copy image"
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
       {isMobile && imageUrl && (
         <ImageActionDrawer
@@ -411,6 +368,7 @@ function VideoAttachment({
   return (
     <div
       role="button"
+      aria-label={attachment.filename}
       tabIndex={isProcessing || isLoading ? -1 : 0}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
@@ -431,9 +389,6 @@ function VideoAttachment({
         filename={attachment.filename}
         onThumbnailError={() => setError(true)}
       />
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-1.5">
-        <span className="block truncate text-xs text-white">{attachment.filename}</span>
-      </div>
     </div>
   )
 }

@@ -178,4 +178,26 @@ describe("BlockquoteBlock collapse behavior", () => {
     const rows = await db.markdownBlockCollapse.where("messageId").equals(messageId).toArray()
     expect(rows.every((row) => row.kind === "blockquote")).toBe(true)
   })
+
+  it("only the outermost blockquote folds when blockquotes are nested", () => {
+    // Threshold high enough that neither block defaults to collapsed —
+    // we want to verify the inner block renders without fold chrome at all,
+    // not just that it happens to be expanded.
+    currentPrefs = { blockquoteCollapseThreshold: 100 }
+    render(
+      <MarkdownBlockProvider messageId="msg_nested">
+        <BlockquoteBlock>
+          <p>Outer quote line.</p>
+          <BlockquoteBlock>
+            <p>Inner quote line.</p>
+          </BlockquoteBlock>
+        </BlockquoteBlock>
+      </MarkdownBlockProvider>
+    )
+
+    // Exactly one fold toggle exists — the outer one's "Collapse block quote".
+    expect(screen.getAllByRole("button", { name: /collapse block quote/i })).toHaveLength(1)
+    expect(screen.getByText("Outer quote line.")).toBeInTheDocument()
+    expect(screen.getByText("Inner quote line.")).toBeInTheDocument()
+  })
 })

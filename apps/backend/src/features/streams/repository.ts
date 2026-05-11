@@ -216,6 +216,36 @@ export const StreamRepository = {
   },
 
   /**
+   * Returns true when `ancestorCandidateId` equals `streamId`, is its parent
+   * anywhere up the chain, or is the non-thread root (`root_stream_id`) of any
+   * stream on the chain. Runs as a single recursive CTE — no app-level loop,
+   * no arbitrary depth cap. The `root_stream_id` predicate gives a one-hop
+   * short-circuit for the common thread→root share-to-parent case.
+   */
+  async isAncestor(db: Querier, ancestorCandidateId: string, streamId: string): Promise<boolean> {
+    if (ancestorCandidateId === streamId) return true
+    const result = await db.query<{ matched: boolean }>(sql`
+      WITH RECURSIVE chain AS (
+        SELECT id, parent_stream_id, root_stream_id
+        FROM streams
+        WHERE id = ${streamId}
+
+        UNION ALL
+
+        SELECT s.id, s.parent_stream_id, s.root_stream_id
+        FROM chain c
+        JOIN streams s ON s.id = c.parent_stream_id
+      )
+      SELECT TRUE AS matched
+      FROM chain
+      WHERE id = ${ancestorCandidateId}
+         OR root_stream_id = ${ancestorCandidateId}
+      LIMIT 1
+    `)
+    return result.rows.length > 0
+  },
+
+  /**
    * List streams by a known set of IDs with optional filtering.
    * Used by the public API to fetch accessible stream details.
    */
@@ -773,6 +803,31 @@ export const StreamRepository = {
     return map
   },
 
+  async moveChildThreadsToParent(
+    db: Querier,
+    params: {
+      workspaceId: string
+      sourceParentStreamId: string
+      destinationParentStreamId: string
+      parentMessageIds: string[]
+    }
+  ): Promise<void> {
+    if (params.parentMessageIds.length === 0) return
+
+    // Batch moves only reparent threads inside the same root stream; callers
+    // must keep source and destination roots aligned so root_stream_id remains
+    // valid. The `workspace_id` filter is defense-in-depth for INV-8 — even
+    // if a caller ever passes mismatched stream IDs, this UPDATE will refuse
+    // to cross workspace boundaries.
+    await db.query(sql`
+      UPDATE streams
+      SET parent_stream_id = ${params.destinationParentStreamId}, updated_at = NOW()
+      WHERE workspace_id = ${params.workspaceId}
+        AND parent_stream_id = ${params.sourceParentStreamId}
+        AND parent_message_id = ANY(${params.parentMessageIds})
+    `)
+  },
+
   /**
    * Find all threads for messages in a given parent stream, including reply counts.
    * Returns a map of parentMessageId -> { threadId, replyCount }
@@ -827,7 +882,6 @@ export const StreamRepository = {
         SELECT
           s.parent_message_id,
           m.id,
-          m.sequence,
           m.author_id,
           m.author_type,
           m.content_markdown,
@@ -842,18 +896,27 @@ export const StreamRepository = {
         SELECT DISTINCT ON (parent_message_id)
           parent_message_id, id, author_id, author_type, content_markdown, created_at
         FROM thread_messages
-        ORDER BY parent_message_id, sequence DESC
+        ORDER BY parent_message_id, created_at DESC, id DESC
       ),
       participants_distinct AS (
-        SELECT parent_message_id, author_id, author_type, MIN(sequence) AS first_reply_sequence
+        -- Pick the earliest reply row per (parent, author) so first_reply_at
+        -- and first_reply_id come from the same row. Independent MIN()s could
+        -- pair an early timestamp with a later id from the same author and
+        -- destabilize the (first_reply_at, first_reply_id) tie-break.
+        SELECT DISTINCT ON (parent_message_id, author_id, author_type)
+          parent_message_id,
+          author_id,
+          author_type,
+          created_at AS first_reply_at,
+          id AS first_reply_id
         FROM thread_messages
-        GROUP BY parent_message_id, author_id, author_type
+        ORDER BY parent_message_id, author_id, author_type, created_at ASC, id ASC
       ),
       participants AS (
         SELECT
           parent_message_id,
-          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids,
-          (ARRAY_AGG(author_type ORDER BY first_reply_sequence))[1:3] AS author_types
+          (ARRAY_AGG(author_id ORDER BY first_reply_at, first_reply_id))[1:3] AS author_ids,
+          (ARRAY_AGG(author_type ORDER BY first_reply_at, first_reply_id))[1:3] AS author_types
         FROM participants_distinct
         GROUP BY parent_message_id
       )
@@ -896,7 +959,6 @@ export const StreamRepository = {
         SELECT
           s.parent_message_id,
           m.id,
-          m.sequence,
           m.author_id,
           m.author_type,
           m.content_markdown,
@@ -907,14 +969,20 @@ export const StreamRepository = {
           AND m.deleted_at IS NULL
       ),
       participants_distinct AS (
-        SELECT author_id, author_type, MIN(sequence) AS first_reply_sequence
+        -- Same DISTINCT ON pattern as findThreadSummaries — keep the SQL in
+        -- sync so single-parent and batch results agree on participant order.
+        SELECT DISTINCT ON (author_id, author_type)
+          author_id,
+          author_type,
+          created_at AS first_reply_at,
+          id AS first_reply_id
         FROM thread_messages
-        GROUP BY author_id, author_type
+        ORDER BY author_id, author_type, created_at ASC, id ASC
       ),
       participants AS (
         SELECT
-          (ARRAY_AGG(author_id ORDER BY first_reply_sequence))[1:3] AS author_ids,
-          (ARRAY_AGG(author_type ORDER BY first_reply_sequence))[1:3] AS author_types
+          (ARRAY_AGG(author_id ORDER BY first_reply_at, first_reply_id))[1:3] AS author_ids,
+          (ARRAY_AGG(author_type ORDER BY first_reply_at, first_reply_id))[1:3] AS author_types
         FROM participants_distinct
       )
       SELECT
@@ -927,7 +995,7 @@ export const StreamRepository = {
         COALESCE((SELECT author_ids FROM participants), ARRAY[]::TEXT[]) AS participant_ids,
         COALESCE((SELECT author_types FROM participants), ARRAY[]::TEXT[]) AS participant_types
       FROM thread_messages l
-      ORDER BY l.sequence DESC
+      ORDER BY l.created_at DESC, l.id DESC
       LIMIT 1
     `)
 

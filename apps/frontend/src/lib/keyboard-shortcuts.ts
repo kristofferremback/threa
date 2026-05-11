@@ -68,6 +68,14 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     category: "view",
     global: true,
   },
+  {
+    id: "openAttachmentExplorer",
+    label: "Browse Files",
+    description: "Open the attachment explorer",
+    defaultKey: "mod+shift+a",
+    category: "navigation",
+    global: true,
+  },
   // Editor formatting shortcuts (not global — only active when editor is focused)
   {
     id: "formatBold",
@@ -102,6 +110,13 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     label: "Code Block",
     description: "Toggle code block",
     defaultKey: "mod+shift+c",
+    category: "editing",
+  },
+  {
+    id: "draftStash",
+    label: "Save Draft",
+    description: "Stash the current composer content into the saved-drafts pile and clear the editor",
+    defaultKey: "mod+s",
     category: "editing",
   },
 ]

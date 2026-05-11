@@ -116,6 +116,36 @@ export const WorkspaceRegistryRepository = {
     return result.rows.map((row) => ({ ...row, member_count: Number(row.member_count) }))
   },
 
+  /**
+   * Look up all workspaces registered against a WorkOS organization. The fan-out
+   * path uses this to translate a WorkOS membership event (keyed on
+   * organization id) into the set of regional backends that need a mirror update.
+   */
+  async listByWorkosOrganizationId(
+    db: Querier,
+    workosOrganizationId: string
+  ): Promise<Array<{ id: string; region: string }>> {
+    const result = await db.query<{ id: string; region: string }>(
+      `SELECT id, region FROM workspace_registry WHERE workos_organization_id = $1`,
+      [workosOrganizationId]
+    )
+    return result.rows
+  },
+
+  /**
+   * List the distinct WorkOS organization ids registered for any workspace.
+   * Used by the WorkOS authz backfill to enumerate orgs without paying for
+   * the membership-count join in {@link listAllWithMemberCounts}.
+   */
+  async listWorkosOrganizationIds(db: Querier): Promise<string[]> {
+    const result = await db.query<{ workos_organization_id: string }>(
+      `SELECT DISTINCT workos_organization_id
+       FROM workspace_registry
+       WHERE workos_organization_id IS NOT NULL`
+    )
+    return result.rows.map((row) => row.workos_organization_id)
+  },
+
   async listByUser(db: Querier, workosUserId: string): Promise<WorkspaceRegistryRow[]> {
     const result = await db.query<WorkspaceRegistryRow>(
       `SELECT wr.id, wr.name, wr.slug, wr.region, wr.created_by_workos_user_id, wr.workos_organization_id, wr.created_at, wr.updated_at

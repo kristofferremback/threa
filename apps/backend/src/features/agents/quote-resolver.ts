@@ -4,6 +4,7 @@ import { MessageRepository, type Message } from "../messaging"
 import { UserRepository } from "../workspaces"
 import { PersonaRepository } from "./persona-repository"
 import { logger } from "../../lib/logger"
+import { escapeXmlAttr } from "../../lib/xml"
 
 /**
  * Default maximum depth of quote-reply precursors to resolve.
@@ -257,15 +258,11 @@ async function resolveAuthorNamesForMessages(
 
   const [users, personas] = await Promise.all([
     userIds.size > 0 ? UserRepository.findByIds(db, workspaceId, [...userIds]) : Promise.resolve([]),
-    personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds]) : Promise.resolve([]),
+    personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds], workspaceId) : Promise.resolve([]),
   ])
 
   const names = new Map<string, string>()
   for (const u of users) names.set(u.id, u.name)
   for (const p of personas) names.set(p.id, p.name)
   return names
-}
-
-function escapeXmlAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }

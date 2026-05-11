@@ -21,6 +21,15 @@ interface MockDraftState {
   isLoaded: boolean
   contentJson: JSONContent
   attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>
+  contextRefs?: Array<{
+    refKind: string
+    streamId: string
+    fromMessageId: string | null
+    toMessageId: string | null
+    status: "pending" | "ready" | "inline" | "error"
+    fingerprint: string | null
+    errorMessage: string | null
+  }>
 }
 
 let mockDraftIsLoaded = true
@@ -78,6 +87,7 @@ describe("useDraftComposer", () => {
           isLoaded: state.isLoaded,
           contentJson: state.contentJson,
           attachments: state.attachments,
+          contextRefs: state.contextRefs ?? [],
           saveDraftDebounced: mockSaveDraftDebounced,
           addAttachment: mockAddDraftAttachment,
           removeAttachment: mockRemoveDraftAttachment,
@@ -433,6 +443,98 @@ describe("useDraftComposer", () => {
       })
 
       expect(result.current.canSend).toBe(false)
+    })
+
+    it("should be false when a context-ref sidecar entry is still pending precompute", () => {
+      mockDraftStateByKey[`stream:${scopeId}`] = {
+        isLoaded: true,
+        contentJson: makeDoc("Hello"),
+        attachments: [],
+        contextRefs: [
+          {
+            refKind: "thread",
+            streamId: "stream_src",
+            fromMessageId: null,
+            toMessageId: null,
+            status: "pending",
+            fingerprint: null,
+            errorMessage: null,
+          },
+        ],
+      }
+
+      const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
+      expect(result.current.canSend).toBe(false)
+    })
+
+    it("should be false when a context-ref sidecar entry errored during precompute", () => {
+      mockDraftStateByKey[`stream:${scopeId}`] = {
+        isLoaded: true,
+        contentJson: makeDoc("Hello"),
+        attachments: [],
+        contextRefs: [
+          {
+            refKind: "thread",
+            streamId: "stream_src",
+            fromMessageId: null,
+            toMessageId: null,
+            status: "error",
+            fingerprint: null,
+            errorMessage: "403 forbidden",
+          },
+        ],
+      }
+
+      const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
+      expect(result.current.canSend).toBe(false)
+    })
+
+    it("should be true when every context-ref sidecar entry is ready or inline", () => {
+      mockDraftStateByKey[`stream:${scopeId}`] = {
+        isLoaded: true,
+        contentJson: makeDoc("Hello"),
+        attachments: [],
+        contextRefs: [
+          {
+            refKind: "thread",
+            streamId: "stream_src",
+            fromMessageId: null,
+            toMessageId: null,
+            status: "ready",
+            fingerprint: "fp_1",
+            errorMessage: null,
+          },
+        ],
+      }
+
+      const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
+      expect(result.current.canSend).toBe(true)
+    })
+
+    it("should be true with only a ready context-ref (no body text, no attachments)", () => {
+      // Regression: clicking "Discuss with Ariadne" attaches a thread chip
+      // but doesn't fill the composer body. The send button shouldn't force
+      // the user to type a placeholder message — the chip itself is a
+      // sufficient payload to dispatch the discussion turn.
+      mockDraftStateByKey[`stream:${scopeId}`] = {
+        isLoaded: true,
+        contentJson: EMPTY_DOC,
+        attachments: [],
+        contextRefs: [
+          {
+            refKind: "thread",
+            streamId: "stream_src",
+            fromMessageId: null,
+            toMessageId: null,
+            status: "ready",
+            fingerprint: "fp_1",
+            errorMessage: null,
+          },
+        ],
+      }
+
+      const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
+      expect(result.current.canSend).toBe(true)
     })
   })
 

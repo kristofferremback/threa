@@ -347,6 +347,9 @@ function GenericPreviewContent({
   imageError: boolean
   onImageError: () => void
 }) {
+  const fallbackLabel = getGenericFallbackLabel(preview.url)
+  const hasPrimaryMetadata = Boolean(preview.title || preview.description || preview.imageUrl)
+
   // Text intentionally flows at natural height — `LinkPreviewBody` clips the
   // whole card to a shared ceiling and reveals a "Show more" toggle when
   // overflow occurs. Pre-truncating with `line-clamp-*` hid overflow from
@@ -356,6 +359,11 @@ function GenericPreviewContent({
       <div className="flex-1 min-w-0">
         {preview.title && <h4 className="text-sm font-medium text-foreground mb-0.5">{preview.title}</h4>}
         {preview.description && <p className="text-xs text-muted-foreground">{preview.description}</p>}
+        {!hasPrimaryMetadata && (
+          <p className="text-xs text-muted-foreground">
+            Open link: <span className="font-medium text-foreground">{fallbackLabel}</span>
+          </p>
+        )}
       </div>
       {preview.imageUrl && !imageError && (
         <img
@@ -368,6 +376,15 @@ function GenericPreviewContent({
       )}
     </div>
   )
+}
+
+function getGenericFallbackLabel(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname === "/" ? "" : parsed.pathname}`
+  } catch {
+    return url
+  }
 }
 
 // ---------------------------------------------------------------------------

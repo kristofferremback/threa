@@ -30,7 +30,6 @@ export {
   type CommandEventType,
   // Workspace roles
   WORKSPACE_USER_ROLES,
-  type WorkspaceUserRole,
   // Invitation statuses
   INVITATION_STATUSES,
   type InvitationStatus,
@@ -124,6 +123,10 @@ export {
   SAVED_STATUSES,
   type SavedStatus,
   SavedStatuses,
+  // Scheduled messages
+  SCHEDULED_MESSAGE_STATUSES,
+  type ScheduledMessageStatus,
+  ScheduledMessageStatuses,
   // Text processing
   TEXT_FORMATS,
   type TextFormat,
@@ -153,8 +156,15 @@ export {
   LINEAR_PREVIEW_TYPES,
   type LinearPreviewType,
   LinearPreviewTypes,
+  // Share flavors
+  SHARE_FLAVORS,
+  type ShareFlavor,
+  ShareFlavors,
+  ShareErrorCodes,
   // Inter-service authentication
   INTERNAL_API_KEY_HEADER,
+  // Socket heartbeat
+  HEARTBEAT_INTERACTION_THROTTLE_MS,
 } from "./constants"
 
 // Domain entities (wire format)
@@ -163,6 +173,7 @@ export type {
   Workspace,
   User,
   WorkspaceInvitation,
+  WorkspaceInvitationKind,
   Stream,
   LastMessagePreview,
   StreamWithPreview,
@@ -255,6 +266,10 @@ export {
 } from "./slug"
 export type { BroadcastSlug } from "./slug"
 
+// Attachment categories (mime → category mapping for the attachment explorer)
+export { ATTACHMENT_CATEGORIES, categoryFromMime, mimePrefixesForCategory } from "./attachment-categories"
+export type { AttachmentCategory } from "./attachment-categories"
+
 // API types
 export type {
   // Streams
@@ -262,7 +277,11 @@ export type {
   UpdateStreamInput,
   UpdateCompanionModeInput,
   StreamBootstrap,
+  StreamContextBagPayload,
+  StreamContextRef,
+  StreamContextRefSource,
   EventsAroundResponse,
+  SharedMessageHydration,
   // Messages
   CreateMessageInput,
   CreateMessageInputJson,
@@ -273,6 +292,13 @@ export type {
   UpdateMessageInput,
   UpdateMessageInputJson,
   UpdateMessageInputMarkdown,
+  MoveMessagesToThreadInput,
+  MoveMessagesToThreadResponse,
+  ValidateMoveMessagesToThreadInput,
+  ValidateMoveMessagesToThreadResponse,
+  MovedMessagePreview,
+  MessagesMovedEventPayload,
+  MovedFromProvenance,
   // Workspaces
   CreateWorkspaceInput,
   WorkspaceBootstrap,
@@ -281,6 +307,11 @@ export type {
   SendInvitationsInput,
   SendInvitationsResponse,
   InvitationSkipReason,
+  CreateInvitationLinkInput,
+  CreateInvitationLinkResponse,
+  InvitationLinkLookupResponse,
+  ClaimInvitationLinkInput,
+  ClaimInvitationLinkResponse,
   CompleteUserSetupInput,
   // Activity
   Activity,
@@ -294,10 +325,20 @@ export type {
   SavedUpsertedPayload,
   SavedDeletedPayload,
   SavedReminderFiredPayload,
+  // Scheduled messages
+  ScheduledMessageView,
+  ScheduleMessageInput,
+  UpdateScheduledMessageInput,
+  LockScheduledMessageResponse,
+  ScheduledMessageListResponse,
+  ScheduledMessageUpsertedPayload,
+  ScheduledMessageSentPayload,
+  ScheduledMessageCancelledPayload,
   // Emojis
   EmojiEntry,
   // Commands
   CommandInfo,
+  CommandKind,
   DispatchCommandInput,
   DispatchCommandResponse,
   DispatchCommandError,
@@ -320,6 +361,20 @@ export type {
 // Push Notifications
 export { DEVICE_KEY_LENGTH } from "./api"
 
+// Command kind constants
+export { CommandKinds } from "./api"
+
+// Discuss-with-Ariadne client-action id (single source of truth)
+export const DISCUSS_WITH_ARIADNE_COMMAND = "discuss-with-ariadne" as const
+
+/**
+ * Persona slug for Ariadne — the workspace-companion persona that backs
+ * "Discuss with Ariadne" scratchpads. Single source of truth (INV-33) so
+ * backend lookups (`PersonaRepository.findBySlug`), frontend command
+ * filters, and any future onboarding seeding stay in sync.
+ */
+export const ARIADNE_PERSONA_SLUG = "ariadne" as const
+
 // ProseMirror / TipTap JSON types
 export type {
   // Loose input type (compatible with TipTap)
@@ -332,6 +387,8 @@ export type {
   ThreaHeading,
   ThreaCodeBlock,
   ThreaBlockquote,
+  ThreaQuoteReply,
+  ThreaSharedMessage,
   ThreaBulletList,
   ThreaOrderedList,
   ThreaListItem,
@@ -426,19 +483,46 @@ export {
 
 // API Keys
 export {
-  API_KEY_SCOPES,
-  API_KEY_PERMISSIONS,
   SENT_VIA_API_PREFIX,
   sentViaApiKey,
   isSentViaApi,
-  type ApiKeyScope,
-  type ApiKeyPermission,
+  API_KEY_ELIGIBLE_SCOPES,
+  API_KEY_ELIGIBLE_PICKER_SCOPES,
   type UserApiKey,
   type CreateUserApiKeyResponse,
   BOT_KEY_PREFIX,
   type BotApiKey,
   type CreateBotApiKeyResponse,
 } from "./api-keys"
+
+// Workspace permissions catalog
+export {
+  WORKSPACE_PERMISSION_SCOPES,
+  WORKSPACE_PERMISSIONS,
+  WORKSPACE_ROLE_SLUGS,
+  WORKSPACE_ROLE_DEFINITIONS,
+  WORKSPACE_INVITABLE_ROLES,
+  permissionsForRole,
+  parseJwtPermissions,
+  roleRank,
+  type WorkspacePermission,
+  type WorkspacePermissionSlug,
+  type WorkspaceRoleSlug,
+  type WorkspaceInvitableRole,
+  type WorkspaceRoleDefinition,
+} from "./workspace-permissions"
+
+// Context bag primitive
+export {
+  ContextIntents,
+  CONTEXT_INTENTS,
+  ContextRefKinds,
+  CONTEXT_REF_KINDS,
+  type ContextIntent,
+  type ContextRefKind,
+  type ContextRef,
+  type ContextBag,
+} from "./context-bag"
 
 // Agent trace types
 export {

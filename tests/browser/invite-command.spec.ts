@@ -104,7 +104,7 @@ test.describe("Invite command", () => {
       // ──── User B: Join workspace but NOT the channel ────
       ctxB = await loginInNewContext(browser, `invitee-${Date.now()}@example.com`, "Invitee")
       const joinRes = await ctxB.page.request.post(`/api/dev/workspaces/${workspaceId}/join`, {
-        data: { role: "user" },
+        data: { role: "member" },
       })
       await expectApiOk(joinRes, "User B joins workspace")
       const { user: userB } = (await joinRes.json()) as { user: { id: string; slug: string; name: string } }

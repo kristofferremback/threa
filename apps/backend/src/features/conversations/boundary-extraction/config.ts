@@ -9,7 +9,7 @@ import { z } from "zod"
 import { CONVERSATION_STATUSES } from "@threa/types"
 
 /** Default model for boundary extraction */
-export const BOUNDARY_EXTRACTION_MODEL_ID = "openrouter:openai/gpt-4.1-mini"
+export const BOUNDARY_EXTRACTION_MODEL_ID = "openrouter:openai/gpt-5.4-nano"
 
 /** Temperature for classification - low for consistency */
 export const BOUNDARY_EXTRACTION_TEMPERATURE = 0.2

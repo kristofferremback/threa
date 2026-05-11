@@ -19,10 +19,13 @@
     "db:backfill-cp": "bun scripts/backfill-control-plane.ts",
     "workos:sync": "bun scripts/sync-workos-permissions.ts",
     "workos:check": "bun scripts/sync-workos-permissions.ts --check",
+    "workos-authz:backfill": "bun apps/control-plane/scripts/backfill-workos-authz.ts",
     "monitoring:start": "docker compose -f docker-compose.monitoring.yml up -d",
     "monitoring:stop": "docker compose -f docker-compose.monitoring.yml stop",
     "monitoring:logs": "docker compose -f docker-compose.monitoring.yml logs -f",
     "setup:worktree": "bun scripts/setup-worktree.ts",
+    "codex:setup": "bash scripts/codex-cloud-setup.sh",
+    "codex:doctor": "bash scripts/codex-cloud-doctor.sh",
     "lint": "bun run --cwd apps/backend lint && bun run --cwd apps/control-plane lint && bun run --cwd apps/frontend lint && bun run --cwd apps/backoffice lint && bun run check:dockerfiles",
     "check:dockerfiles": "bun scripts/check-dockerfile-workspaces.ts",
     "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd packages/prosemirror typecheck && bun run --cwd packages/backend-common typecheck && bun run --cwd apps/backend typecheck && bun run --cwd apps/control-plane typecheck && bun run --cwd apps/workspace-router typecheck && bun run --cwd apps/backoffice-router typecheck && bun run --cwd apps/frontend typecheck && bun run --cwd apps/backoffice typecheck",
@@ -45,7 +48,8 @@
     "docker:build": "bun run docker:build:backend && bun run docker:build:control-plane",
     "generate:api-docs": "bun apps/backend/scripts/generate-api-docs.ts",
     "generate:api-docs:check": "bun apps/backend/scripts/generate-api-docs.ts --check",
-    "infra:validate": "cd infra/aws && terraform validate"
+    "infra:validate": "cd infra/aws && terraform validate",
+    "test:codex:cloud": "bash scripts/test-codex-cloud.sh"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

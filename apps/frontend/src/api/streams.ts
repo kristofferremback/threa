@@ -9,7 +9,18 @@ import type {
   CreateStreamInput,
   UpdateStreamInput,
   NotificationLevel,
+  SharedMessageHydration,
 } from "@threa/types"
+
+/**
+ * Result shape for the events list endpoint. Carries the same `sharedMessages`
+ * hydration map that bootstrap returns so older-than-bootstrap pointers can
+ * render without a full bootstrap refetch.
+ */
+export interface EventsListResponse {
+  events: StreamEvent[]
+  sharedMessages?: Record<string, SharedMessageHydration>
+}
 
 export type { StreamBootstrap, CreateStreamInput, UpdateStreamInput }
 
@@ -62,21 +73,24 @@ export const streamsApi = {
     return api.post(`/api/workspaces/${workspaceId}/streams/${streamId}/unarchive`)
   },
 
-  // Event fetching for pagination
+  // Event fetching for pagination. Returns the `sharedMessages` hydration
+  // map alongside the events so paged-in pointers can render without
+  // waiting for a full bootstrap refetch — the previous shape silently
+  // dropped the map on the floor.
   async getEvents(
     workspaceId: string,
     streamId: string,
     params?: { before?: string; after?: string; limit?: number }
-  ): Promise<StreamEvent[]> {
+  ): Promise<EventsListResponse> {
     const searchParams = new URLSearchParams()
     if (params?.before) searchParams.set("before", params.before)
     if (params?.after) searchParams.set("after", params.after)
     if (params?.limit) searchParams.set("limit", params.limit.toString())
     const query = searchParams.toString()
-    const res = await api.get<{ events: StreamEvent[] }>(
+    const res = await api.get<EventsListResponse>(
       `/api/workspaces/${workspaceId}/streams/${streamId}/events${query ? `?${query}` : ""}`
     )
-    return res.events
+    return res
   },
 
   async getEventsAround(

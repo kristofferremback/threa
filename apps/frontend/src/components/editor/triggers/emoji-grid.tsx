@@ -82,7 +82,9 @@ function EmojiGridInner(
 
   useEffect(() => {
     setSelectedIndex(0)
-    virtuosoRef.current?.scrollToIndex({ index: 0 })
+    if (total > 0) {
+      virtuosoRef.current?.scrollToIndex({ index: 0 })
+    }
   }, [total])
 
   const scrollAllRowIfNeeded = (allRow: number) => {

@@ -1,5 +1,44 @@
-import { api, API_BASE, ApiError } from "./client"
-import type { Attachment } from "@threa/types"
+import { api, API_BASE, ApiError, parseApiError } from "./client"
+import type { Attachment, AttachmentCategory } from "@threa/types"
+
+export interface AttachmentSearchExtractionExcerpt {
+  contentType: string
+  summary: string
+}
+
+export interface AttachmentExtractionContent {
+  contentType: string
+  summary: string
+  fullText: string | null
+}
+
+export interface AttachmentSearchItem extends Attachment {
+  extraction: AttachmentSearchExtractionExcerpt | null
+  streamSlug: string | null
+  streamName: string | null
+  streamType: string | null
+  uploaderSlug: string | null
+  uploaderName: string | null
+  referenceCount: number
+}
+
+export interface AttachmentSearchRequest {
+  streamIds?: string[]
+  categories?: AttachmentCategory[]
+  uploadedBy?: string
+  before?: string
+  after?: string
+  queryText?: string
+  exact?: boolean
+  nameSubstring?: string
+  cursor?: string
+  limit?: number
+}
+
+export interface AttachmentSearchResponse {
+  items: AttachmentSearchItem[]
+  nextCursor: string | null
+}
 
 const inFlightDownloadUrlRequests = new Map<string, Promise<string>>()
 const resolvedDownloadUrlCache = new Map<string, { url: string; expiresAt: number }>()
@@ -27,9 +66,7 @@ export const attachmentsApi = {
     })
 
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      const errorMessage = typeof body.error === "string" ? body.error : body.error?.message || "Upload failed"
-      throw new ApiError(response.status, body.error?.code || "UPLOAD_ERROR", errorMessage, body.error?.details)
+      throw await parseApiError(response, { code: "UPLOAD_ERROR", message: "Upload failed" })
     }
 
     const body = await response.json()
@@ -89,5 +126,24 @@ export const attachmentsApi = {
    */
   delete(workspaceId: string, attachmentId: string): Promise<void> {
     return api.delete(`/api/workspaces/${workspaceId}/attachments/${attachmentId}`)
+  },
+
+  /**
+   * Search attachments for the explorer modal. Server-side gates results to
+   * streams the caller can read, expands threads into their root scope when
+   * `streamIds` is set, and applies category/date/free-text filters with
+   * keyset cursor pagination.
+   */
+  search(workspaceId: string, body: AttachmentSearchRequest): Promise<AttachmentSearchResponse> {
+    return api.post<AttachmentSearchResponse>(`/api/workspaces/${workspaceId}/attachments/search`, body)
+  },
+
+  /**
+   * Fetch the full extracted text for an attachment. Used by the explorer
+   * preview pane when the user expands the truncated summary or copies the
+   * full content.
+   */
+  getExtraction(workspaceId: string, attachmentId: string): Promise<AttachmentExtractionContent> {
+    return api.get<AttachmentExtractionContent>(`/api/workspaces/${workspaceId}/attachments/${attachmentId}/extraction`)
   },
 }

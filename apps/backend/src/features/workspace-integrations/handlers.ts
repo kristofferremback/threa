@@ -95,6 +95,7 @@ export function createWorkspaceIntegrationHandlers({
         state: parsed.data.state,
         installationId: parsed.data.installation_id,
         workosUserId,
+        viewerPermissions: req.authUser?.permissions ?? null,
       })
 
       res.redirect(buildProviderCallbackRedirectUrl(req, workspaceId, "github", allowedFrontendOrigins))

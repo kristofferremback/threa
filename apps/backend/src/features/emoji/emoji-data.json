@@ -2,7 +2,7 @@
   "emojis": [
     {
       "emoji": "😀",
-      "shortcodes": ["grinning"],
+      "shortcodes": ["grinning", "happy"],
       "group": "smileys",
       "order": 0
     },
@@ -20,7 +20,7 @@
     },
     {
       "emoji": "😁",
-      "shortcodes": ["grin"],
+      "shortcodes": ["grin", "happy_grin"],
       "group": "smileys",
       "order": 3
     },
@@ -38,19 +38,19 @@
     },
     {
       "emoji": "🤣",
-      "shortcodes": ["rofl"],
+      "shortcodes": ["rofl", "lol", "lmao"],
       "group": "smileys",
       "order": 6
     },
     {
       "emoji": "😂",
-      "shortcodes": ["joy"],
+      "shortcodes": ["joy", "laughing_tears", "tears_of_joy"],
       "group": "smileys",
       "order": 7
     },
     {
       "emoji": "🙂",
-      "shortcodes": ["slightly_smiling_face"],
+      "shortcodes": ["slightly_smiling_face", "smile_face"],
       "group": "smileys",
       "order": 8
     },
@@ -68,7 +68,7 @@
     },
     {
       "emoji": "😊",
-      "shortcodes": ["blush"],
+      "shortcodes": ["blush", "smiling", "happy_blush"],
       "group": "smileys",
       "order": 12
     },
@@ -128,7 +128,7 @@
     },
     {
       "emoji": "🥲",
-      "shortcodes": ["smiling_face_with_tear"],
+      "shortcodes": ["smiling_face_with_tear", "smiling_tear"],
       "group": "smileys",
       "order": 23
     },
@@ -188,7 +188,7 @@
     },
     {
       "emoji": "🤔",
-      "shortcodes": ["thinking"],
+      "shortcodes": ["thinking", "hmm"],
       "group": "smileys",
       "order": 35
     },
@@ -236,7 +236,7 @@
     },
     {
       "emoji": "🙄",
-      "shortcodes": ["roll_eyes"],
+      "shortcodes": ["roll_eyes", "eye_roll"],
       "group": "smileys",
       "order": 47
     },
@@ -278,7 +278,7 @@
     },
     {
       "emoji": "😴",
-      "shortcodes": ["sleeping"],
+      "shortcodes": ["sleeping", "sleeping_face", "snooze"],
       "group": "smileys",
       "order": 60
     },
@@ -434,7 +434,7 @@
     },
     {
       "emoji": "🥺",
-      "shortcodes": ["pleading_face"],
+      "shortcodes": ["pleading_face", "pleading"],
       "group": "smileys",
       "order": 90
     },
@@ -476,13 +476,13 @@
     },
     {
       "emoji": "😭",
-      "shortcodes": ["sob"],
+      "shortcodes": ["sob", "crying", "sobbing"],
       "group": "smileys",
       "order": 98
     },
     {
       "emoji": "😱",
-      "shortcodes": ["scream"],
+      "shortcodes": ["scream", "screaming", "shocked"],
       "group": "smileys",
       "order": 99
     },
@@ -566,7 +566,7 @@
     },
     {
       "emoji": "💀",
-      "shortcodes": ["skull"],
+      "shortcodes": ["skull", "dead", "rip"],
       "group": "smileys",
       "order": 113
     },
@@ -824,7 +824,7 @@
     },
     {
       "emoji": "💯",
-      "shortcodes": ["100"],
+      "shortcodes": ["100", "hundred", "perfect", "full_marks"],
       "group": "smileys",
       "order": 166
     },
@@ -902,7 +902,7 @@
     },
     {
       "emoji": "👋",
-      "shortcodes": ["wave"],
+      "shortcodes": ["wave", "hello", "hi", "bye"],
       "group": "people",
       "order": 0
     },
@@ -1052,13 +1052,13 @@
     },
     {
       "emoji": "👏",
-      "shortcodes": ["clap"],
+      "shortcodes": ["clap", "clapping", "applause"],
       "group": "people",
       "order": 201
     },
     {
       "emoji": "🙌",
-      "shortcodes": ["raised_hands"],
+      "shortcodes": ["raised_hands", "praise"],
       "group": "people",
       "order": 207
     },
@@ -1076,13 +1076,13 @@
     },
     {
       "emoji": "🤝",
-      "shortcodes": ["handshake"],
+      "shortcodes": ["handshake", "handshake_deal", "agreement"],
       "group": "people",
       "order": 231
     },
     {
       "emoji": "🙏",
-      "shortcodes": ["pray"],
+      "shortcodes": ["pray", "please", "thanks", "thank_you"],
       "group": "people",
       "order": 257
     },
@@ -1106,7 +1106,7 @@
     },
     {
       "emoji": "💪",
-      "shortcodes": ["muscle"],
+      "shortcodes": ["muscle", "strong", "flex"],
       "group": "people",
       "order": 282
     },
@@ -1184,7 +1184,7 @@
     },
     {
       "emoji": "👀",
-      "shortcodes": ["eyes"],
+      "shortcodes": ["eyes", "looking", "watching"],
       "group": "people",
       "order": 325
     },
@@ -1328,7 +1328,7 @@
     },
     {
       "emoji": "🤷",
-      "shortcodes": ["shrug"],
+      "shortcodes": ["shrug", "shrug_person"],
       "group": "people",
       "order": 793
     },
@@ -2420,7 +2420,7 @@
     },
     {
       "emoji": "🐛",
-      "shortcodes": ["bug"],
+      "shortcodes": ["bug", "bug_fix"],
       "group": "animals",
       "order": 119
     },
@@ -4184,7 +4184,7 @@
     },
     {
       "emoji": "🚀",
-      "shortcodes": ["rocket"],
+      "shortcodes": ["rocket", "launch", "blast_off"],
       "group": "travel",
       "order": 163
     },
@@ -4658,7 +4658,7 @@
     },
     {
       "emoji": "🔥",
-      "shortcodes": ["fire"],
+      "shortcodes": ["fire", "lit", "hot"],
       "group": "travel",
       "order": 264
     },
@@ -4718,13 +4718,13 @@
     },
     {
       "emoji": "🎉",
-      "shortcodes": ["tada"],
+      "shortcodes": ["tada", "celebration", "party", "celebrate"],
       "group": "activities",
       "order": 7
     },
     {
       "emoji": "🎊",
-      "shortcodes": ["confetti_ball"],
+      "shortcodes": ["confetti_ball", "party_popper2"],
       "group": "activities",
       "order": 8
     },
@@ -5000,7 +5000,7 @@
     },
     {
       "emoji": "🎯",
-      "shortcodes": ["dart"],
+      "shortcodes": ["dart", "bullseye", "on_target"],
       "group": "activities",
       "order": 58
     },
@@ -5798,7 +5798,7 @@
     },
     {
       "emoji": "💡",
-      "shortcodes": ["bulb"],
+      "shortcodes": ["bulb", "idea", "lightbulb_idea"],
       "group": "objects",
       "order": 124
     },
@@ -6182,7 +6182,7 @@
     },
     {
       "emoji": "📌",
-      "shortcodes": ["pushpin"],
+      "shortcodes": ["pushpin", "pin"],
       "group": "objects",
       "order": 201
     },
@@ -6764,7 +6764,7 @@
     },
     {
       "emoji": "⚠️",
-      "shortcodes": ["warning"],
+      "shortcodes": ["warning", "warning_sign", "caution"],
       "group": "symbols",
       "order": 13
     },
@@ -7322,7 +7322,7 @@
     },
     {
       "emoji": "❓",
-      "shortcodes": ["question"],
+      "shortcodes": ["question", "question_mark", "huh"],
       "group": "symbols",
       "order": 151
     },
@@ -7406,7 +7406,7 @@
     },
     {
       "emoji": "✅",
-      "shortcodes": ["white_check_mark"],
+      "shortcodes": ["white_check_mark", "done", "yes", "checkmark", "check_done"],
       "group": "symbols",
       "order": 169
     },
@@ -7424,7 +7424,7 @@
     },
     {
       "emoji": "❌",
-      "shortcodes": ["x"],
+      "shortcodes": ["x", "no", "wrong", "cross_mark"],
       "group": "symbols",
       "order": 174
     },
@@ -8051,6 +8051,402 @@
       "shortcodes": ["pirate_flag"],
       "group": "flags",
       "order": 12
+    },
+    {
+      "emoji": "🥹",
+      "shortcodes": ["face_holding_back_tears", "holding_back_tears"],
+      "group": "smileys",
+      "order": 185
+    },
+    {
+      "emoji": "🫠",
+      "shortcodes": ["melting_face", "melting"],
+      "group": "smileys",
+      "order": 186
+    },
+    {
+      "emoji": "🫡",
+      "shortcodes": ["saluting_face", "salute", "saluting"],
+      "group": "smileys",
+      "order": 187
+    },
+    {
+      "emoji": "🫢",
+      "shortcodes": ["face_with_open_eyes_and_hand_over_mouth", "shocked_gasp", "gasp_face"],
+      "group": "smileys",
+      "order": 188
+    },
+    {
+      "emoji": "🫣",
+      "shortcodes": ["face_with_peeking_eye", "peeking", "peek"],
+      "group": "smileys",
+      "order": 189
+    },
+    {
+      "emoji": "🫤",
+      "shortcodes": ["face_with_diagonal_mouth", "meh", "diagonal_mouth"],
+      "group": "smileys",
+      "order": 190
+    },
+    {
+      "emoji": "🫥",
+      "shortcodes": ["dotted_line_face", "invisible", "dotted_face"],
+      "group": "smileys",
+      "order": 191
+    },
+    {
+      "emoji": "🫰",
+      "shortcodes": ["hand_with_index_finger_and_thumb_crossed", "finger_heart", "money_fingers"],
+      "group": "people",
+      "order": 3290
+    },
+    {
+      "emoji": "🫱",
+      "shortcodes": ["rightwards_hand", "open_hand_right", "palm_right", "hand_right"],
+      "group": "people",
+      "order": 3291
+    },
+    {
+      "emoji": "🫲",
+      "shortcodes": ["leftwards_hand", "open_hand_left", "palm_left", "hand_left"],
+      "group": "people",
+      "order": 3292
+    },
+    {
+      "emoji": "🫳",
+      "shortcodes": ["palm_down_hand", "hand_palm_down"],
+      "group": "people",
+      "order": 3293
+    },
+    {
+      "emoji": "🫴",
+      "shortcodes": ["palm_up_hand", "hand_palm_up", "offer", "give"],
+      "group": "people",
+      "order": 3294
+    },
+    {
+      "emoji": "🫵",
+      "shortcodes": ["index_pointing_at_viewer", "you", "pointing_at_you"],
+      "group": "people",
+      "order": 3295
+    },
+    {
+      "emoji": "🫶",
+      "shortcodes": ["heart_hands", "hand_heart", "love_hands"],
+      "group": "people",
+      "order": 3296
+    },
+    {
+      "emoji": "🫅",
+      "shortcodes": ["person_with_crown", "royalty", "monarch"],
+      "group": "people",
+      "order": 3297
+    },
+    {
+      "emoji": "🫃",
+      "shortcodes": ["pregnant_man"],
+      "group": "people",
+      "order": 3298
+    },
+    {
+      "emoji": "🫄",
+      "shortcodes": ["pregnant_person"],
+      "group": "people",
+      "order": 3299
+    },
+    {
+      "emoji": "🪺",
+      "shortcodes": ["nest_with_eggs", "nest_eggs"],
+      "group": "animals",
+      "order": 165
+    },
+    {
+      "emoji": "🪹",
+      "shortcodes": ["empty_nest", "nest_empty"],
+      "group": "animals",
+      "order": 166
+    },
+    {
+      "emoji": "🫘",
+      "shortcodes": ["beans"],
+      "group": "food",
+      "order": 133
+    },
+    {
+      "emoji": "🫗",
+      "shortcodes": ["pouring_liquid", "pour"],
+      "group": "food",
+      "order": 134
+    },
+    {
+      "emoji": "🫙",
+      "shortcodes": ["jar"],
+      "group": "food",
+      "order": 135
+    },
+    {
+      "emoji": "🛞",
+      "shortcodes": ["wheel", "wheel_general"],
+      "group": "travel",
+      "order": 267
+    },
+    {
+      "emoji": "🩼",
+      "shortcodes": ["crutch"],
+      "group": "objects",
+      "order": 313
+    },
+    {
+      "emoji": "🩻",
+      "shortcodes": ["x_ray", "xray"],
+      "group": "objects",
+      "order": 314
+    },
+    {
+      "emoji": "🪪",
+      "shortcodes": ["id_card", "identification", "passport_card"],
+      "group": "objects",
+      "order": 315
+    },
+    {
+      "emoji": "🪫",
+      "shortcodes": ["low_battery", "battery_low"],
+      "group": "objects",
+      "order": 316
+    },
+    {
+      "emoji": "🪩",
+      "shortcodes": ["mirror_ball", "disco_ball", "disco"],
+      "group": "activities",
+      "order": 96
+    },
+    {
+      "emoji": "🛟",
+      "shortcodes": ["ring_buoy", "lifebuoy", "life_ring"],
+      "group": "travel",
+      "order": 268
+    },
+    {
+      "emoji": "🪬",
+      "shortcodes": ["hamsa", "hand_of_fatima"],
+      "group": "objects",
+      "order": 317
+    },
+    {
+      "emoji": "🫧",
+      "shortcodes": ["bubbles"],
+      "group": "smileys",
+      "order": 192
+    },
+    {
+      "emoji": "🟰",
+      "shortcodes": ["heavy_equals_sign", "equals"],
+      "group": "symbols",
+      "order": 305
+    },
+    {
+      "emoji": "🫨",
+      "shortcodes": ["shaking_face", "shaking", "vibrating_face"],
+      "group": "smileys",
+      "order": 193
+    },
+    {
+      "emoji": "🫷",
+      "shortcodes": ["leftwards_pushing_hand", "push_left", "stop_left"],
+      "group": "people",
+      "order": 3300
+    },
+    {
+      "emoji": "🫸",
+      "shortcodes": ["rightwards_pushing_hand", "push_right", "stop_right", "high_five_left"],
+      "group": "people",
+      "order": 3301
+    },
+    {
+      "emoji": "🪿",
+      "shortcodes": ["goose"],
+      "group": "animals",
+      "order": 167
+    },
+    {
+      "emoji": "🪼",
+      "shortcodes": ["jellyfish"],
+      "group": "animals",
+      "order": 168
+    },
+    {
+      "emoji": "🐦‍⬛",
+      "shortcodes": ["black_bird", "blackbird"],
+      "group": "animals",
+      "order": 169
+    },
+    {
+      "emoji": "🪽",
+      "shortcodes": ["wing"],
+      "group": "animals",
+      "order": 170
+    },
+    {
+      "emoji": "🪻",
+      "shortcodes": ["hyacinth", "lavender_flower"],
+      "group": "animals",
+      "order": 171
+    },
+    {
+      "emoji": "🫚",
+      "shortcodes": ["ginger_root", "ginger"],
+      "group": "food",
+      "order": 136
+    },
+    {
+      "emoji": "🫛",
+      "shortcodes": ["pea_pod", "peas", "pod"],
+      "group": "food",
+      "order": 137
+    },
+    {
+      "emoji": "🪈",
+      "shortcodes": ["flute"],
+      "group": "activities",
+      "order": 97
+    },
+    {
+      "emoji": "🪇",
+      "shortcodes": ["maraca", "maracas"],
+      "group": "activities",
+      "order": 98
+    },
+    {
+      "emoji": "🪯",
+      "shortcodes": ["khanda"],
+      "group": "symbols",
+      "order": 306
+    },
+    {
+      "emoji": "🪭",
+      "shortcodes": ["folding_hand_fan", "hand_fan", "folding_fan"],
+      "group": "objects",
+      "order": 318
+    },
+    {
+      "emoji": "🪮",
+      "shortcodes": ["hair_pick", "afro_pick"],
+      "group": "objects",
+      "order": 319
+    },
+    {
+      "emoji": "🛜",
+      "shortcodes": ["wireless", "wifi"],
+      "group": "symbols",
+      "order": 307
+    },
+    {
+      "emoji": "🩷",
+      "shortcodes": ["pink_heart", "heart_pink"],
+      "group": "smileys",
+      "order": 195
+    },
+    {
+      "emoji": "🩵",
+      "shortcodes": ["light_blue_heart", "heart_light_blue"],
+      "group": "smileys",
+      "order": 196
+    },
+    {
+      "emoji": "🩶",
+      "shortcodes": ["grey_heart", "heart_grey", "gray_heart", "heart_gray"],
+      "group": "smileys",
+      "order": 197
+    },
+    {
+      "emoji": "🐦‍🔥",
+      "shortcodes": ["phoenix", "bird_on_fire"],
+      "group": "animals",
+      "order": 172
+    },
+    {
+      "emoji": "🍋‍🟩",
+      "shortcodes": ["lime", "green_lemon"],
+      "group": "food",
+      "order": 138
+    },
+    {
+      "emoji": "🍄‍🟫",
+      "shortcodes": ["brown_mushroom", "mushroom_brown"],
+      "group": "food",
+      "order": 139
+    },
+    {
+      "emoji": "⛓️‍💥",
+      "shortcodes": ["broken_chain", "chain_break", "chains_broken"],
+      "group": "objects",
+      "order": 320
+    },
+    {
+      "emoji": "🫩",
+      "shortcodes": ["face_with_bags_under_eyes", "tired_eyes", "bags_under_eyes"],
+      "group": "smileys",
+      "order": 194
+    },
+    {
+      "emoji": "🫆",
+      "shortcodes": ["fingerprint", "print"],
+      "group": "objects",
+      "order": 321
+    },
+    {
+      "emoji": "🪾",
+      "shortcodes": ["leafless_tree", "bare_tree", "winter_tree"],
+      "group": "animals",
+      "order": 173
+    },
+    {
+      "emoji": "🫜",
+      "shortcodes": ["root_vegetable", "radish", "turnip"],
+      "group": "food",
+      "order": 140
+    },
+    {
+      "emoji": "🪉",
+      "shortcodes": ["harp"],
+      "group": "activities",
+      "order": 99
+    },
+    {
+      "emoji": "🪏",
+      "shortcodes": ["shovel", "spade_tool"],
+      "group": "objects",
+      "order": 322
+    },
+    {
+      "emoji": "🫟",
+      "shortcodes": ["splatter", "paint_splatter", "splat"],
+      "group": "objects",
+      "order": 323
+    },
+    {
+      "emoji": "🪷",
+      "shortcodes": ["lotus", "lotus_flower"],
+      "group": "animals",
+      "order": 174
+    },
+    {
+      "emoji": "🪸",
+      "shortcodes": ["coral"],
+      "group": "animals",
+      "order": 175
+    },
+    {
+      "emoji": "🫎",
+      "shortcodes": ["moose"],
+      "group": "animals",
+      "order": 176
+    },
+    {
+      "emoji": "🫏",
+      "shortcodes": ["donkey"],
+      "group": "animals",
+      "order": 177
     }
   ]
 }

@@ -31,11 +31,14 @@ export const JobQueues = {
   TEXT_PROCESS: "text.process",
   WORD_PROCESS: "word.process",
   EXCEL_PROCESS: "excel.process",
+  ATTACHMENT_EMBED: "attachment.embed",
   AVATAR_PROCESS: "avatar.process",
   LINK_PREVIEW_EXTRACT: "link_preview.extract",
   VIDEO_TRANSCODE_SUBMIT: "video.transcode_submit",
   VIDEO_TRANSCODE_CHECK: "video.transcode_check",
   SAVED_REMINDER_FIRE: "saved.reminder_fire",
+  SCHEDULED_MESSAGE_SEND: "scheduled_message.send",
+  CONTEXT_BAG_PRECOMPUTE: "context_bag.precompute",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -143,6 +146,21 @@ export interface ExcelProcessJobData {
   storagePath: string
 }
 
+/**
+ * Attachment summary embedding job — generates a vector embedding for an
+ * extraction's `summary` so attachments become semantically searchable.
+ *
+ * Enqueued by `AttachmentEmbeddingHandler` once an
+ * `attachment:extraction_completed` outbox event lands. The worker fetches
+ * the latest extraction state, applies the eligibility check (skips
+ * `photo`/`other` content types), and updates `summary_embedding` in place.
+ * Idempotent: a re-run for the same attachment overwrites the column.
+ */
+export interface AttachmentEmbeddingJobData {
+  attachmentId: string
+  workspaceId: string
+}
+
 /** Avatar processing job - resizes raw upload into WebP variants */
 export interface AvatarProcessJobData {
   workspaceId: string
@@ -185,6 +203,34 @@ export interface SavedReminderFireJobData {
   savedMessageId: string
 }
 
+/**
+ * Scheduled-message send job. Enqueued when a row is created or rescheduled
+ * and tombstoned (queue cancel) when the row is cancelled or rescheduled.
+ *
+ * The worker re-reads the row scoped to (workspaceId, scheduledMessageId),
+ * attempts a CAS to take the lock + flip status to `sending`, then invokes
+ * EventService.createMessage with the stored payload. If the CAS fails (an
+ * editor holds the lock), the worker schedules a short retry; bounded retry
+ * count is enforced before marking the row `failed`.
+ */
+export interface ScheduledMessageSendJobData {
+  workspaceId: string
+  userId: string
+  scheduledMessageId: string
+}
+
+/**
+ * Context-bag pre-compute job. Warms the shared `context_summaries` cache and
+ * persists the initial render snapshot for a newly-created bag-attached
+ * scratchpad — see `context-bag-precompute-handler.ts` for the flow. No
+ * kickoff message is posted; the first real turn happens when the user sends.
+ */
+export interface ContextBagPrecomputeJobData {
+  workspaceId: string
+  streamId: string
+  bagId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -201,11 +247,14 @@ export interface JobDataMap {
   [JobQueues.TEXT_PROCESS]: TextProcessJobData
   [JobQueues.WORD_PROCESS]: WordProcessJobData
   [JobQueues.EXCEL_PROCESS]: ExcelProcessJobData
+  [JobQueues.ATTACHMENT_EMBED]: AttachmentEmbeddingJobData
   [JobQueues.AVATAR_PROCESS]: AvatarProcessJobData
   [JobQueues.LINK_PREVIEW_EXTRACT]: LinkPreviewExtractJobData
   [JobQueues.VIDEO_TRANSCODE_SUBMIT]: VideoTranscodeSubmitJobData
   [JobQueues.VIDEO_TRANSCODE_CHECK]: VideoTranscodeCheckJobData
   [JobQueues.SAVED_REMINDER_FIRE]: SavedReminderFireJobData
+  [JobQueues.SCHEDULED_MESSAGE_SEND]: ScheduledMessageSendJobData
+  [JobQueues.CONTEXT_BAG_PRECOMPUTE]: ContextBagPrecomputeJobData
 }
 
 /**

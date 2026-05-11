@@ -47,7 +47,7 @@ test.describe("Invitation Flow", () => {
 
     // Send invitation
     const inviteRes = await page.request.post(`/api/workspaces/${workspaceId}/invitations`, {
-      data: { emails: [userBEmail], role: "user" },
+      data: { emails: [userBEmail], role: "member" },
     })
     await expectApiOk(inviteRes, "Send invitation")
     const inviteBody = (await inviteRes.json()) as { sent: unknown[]; skipped: unknown[] }

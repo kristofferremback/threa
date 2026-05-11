@@ -135,23 +135,42 @@ describe("AgentRuntime message counting", () => {
     expect(events.some((event) => event.type === "response:kept")).toBe(true)
   })
 
-  it("forwards modelString and costContext to generateTextWithTools so usage is recorded", async () => {
-    const captured: Array<{ modelString?: string; context?: Record<string, unknown> }> = []
-    const generateTextWithTools = mock(async (opts: { modelString?: string; context?: Record<string, unknown> }) => {
-      captured.push({ modelString: opts.modelString, context: opts.context })
-      return {
-        text: "All done.",
-        toolCalls: [],
-        response: {
-          messages: [{ role: "assistant", content: "All done." } as any],
-        },
+  it("forwards model config and cost context to generateTextWithTools", async () => {
+    const captured: Array<{
+      modelString?: string
+      context?: Record<string, unknown>
+      maxTokens?: number
+      temperature?: number
+    }> = []
+    const generateTextWithTools = mock(
+      async (opts: {
+        modelString?: string
+        context?: Record<string, unknown>
+        maxTokens?: number
+        temperature?: number
+      }) => {
+        captured.push({
+          modelString: opts.modelString,
+          context: opts.context,
+          maxTokens: opts.maxTokens,
+          temperature: opts.temperature,
+        })
+        return {
+          text: "All done.",
+          toolCalls: [],
+          response: {
+            messages: [{ role: "assistant", content: "All done." } as any],
+          },
+        }
       }
-    })
+    )
 
     const runtime = new AgentRuntime({
       ai: { generateTextWithTools } as any,
       model: {} as any,
       modelString: "openrouter:anthropic/claude-haiku-4.5",
+      maxTokens: 500,
+      temperature: 0.2,
       costContext: {
         workspaceId: "ws_abc",
         userId: "user_xyz",
@@ -170,6 +189,8 @@ describe("AgentRuntime message counting", () => {
     expect(captured).toHaveLength(1)
     expect(captured[0]).toEqual({
       modelString: "openrouter:anthropic/claude-haiku-4.5",
+      maxTokens: 500,
+      temperature: 0.2,
       context: {
         workspaceId: "ws_abc",
         userId: "user_xyz",
@@ -177,6 +198,67 @@ describe("AgentRuntime message counting", () => {
         origin: "user",
       },
     })
+  })
+
+  it("commits captured content text when a supersede rerun ends in keep_response", async () => {
+    // Reproduces the bug where a scratchpad rerun produces real assistant
+    // text alongside a keep_response tool call, then resolves with no message
+    // sent. The runtime should fall back to committing the captured text.
+    const events: AgentEvent[] = []
+    const sendMessage = mock(async (input: { content: string }) => ({
+      messageId: "msg_recovered",
+      operation: "created" as const,
+      content: input.content,
+    }))
+
+    const generateTextWithTools = mock(async () => ({
+      text: "Found it! You shared this in your Casual Greeting conversation.",
+      toolCalls: [
+        {
+          toolCallId: "tool_keep",
+          toolName: "keep_response",
+          input: { reason: "Previous response still fits." },
+        },
+      ],
+      response: {
+        messages: [
+          {
+            role: "assistant",
+            content: "Found it! You shared this in your Casual Greeting conversation.",
+          } as any,
+        ],
+      },
+    }))
+
+    const runtime = new AgentRuntime({
+      ai: { generateTextWithTools } as any,
+      model: {} as any,
+      systemPrompt: "You are helpful.",
+      messages: [{ role: "user", content: "I sent a picture of my daughter, can you find it?" }],
+      tools: [],
+      allowNoMessageOutput: true,
+      sendMessage,
+      observers: [
+        {
+          handle: async (event: AgentEvent) => {
+            events.push(event)
+          },
+        },
+      ],
+    })
+
+    const result = await runtime.run()
+
+    expect(result.messagesSent).toBe(1)
+    expect(result.sentMessageIds).toEqual(["msg_recovered"])
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0]?.[0].content).toBe(
+      "Found it! You shared this in your Casual Greeting conversation."
+    )
+    // We sent a message, so we must NOT also have emitted a misleading
+    // "kept previous response" trace step.
+    expect(events.some((event) => event.type === "response:kept")).toBe(false)
+    expect(events.some((event) => event.type === "message:sent")).toBe(true)
   })
 
   it("stops early when rerun keeps returning empty final decisions", async () => {

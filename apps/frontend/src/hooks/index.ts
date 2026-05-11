@@ -44,6 +44,16 @@ export {
 
 export { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
 
+export {
+  useStashedDrafts,
+  generateStashId,
+  type UseStashedDraftsResult,
+  type StashDraftInput,
+  type StashedDraft,
+} from "./use-stashed-drafts"
+
+export { useStashComposer, type UseStashComposerResult } from "./use-stash-composer"
+
 export { useStreamSocket } from "./use-stream-socket"
 
 export { useMessageQueue } from "./use-message-queue"
@@ -68,7 +78,8 @@ export {
 
 export { useSearch } from "./use-search"
 
-export { useActors } from "./use-actors"
+export { useActors, type ActorLookup } from "./use-actors"
+export { useMovedTombstone } from "./use-moved-tombstone"
 
 export { useWorkspaceEmoji } from "./use-workspace-emoji"
 
@@ -90,7 +101,12 @@ export { useNewMessageIndicator } from "./use-new-message-indicator"
 
 export { useScrollToElement } from "./use-scroll-to-element"
 
-export { useMentionables, filterMentionables, filterBroadcastMentions } from "./use-mentionables"
+export {
+  useMentionables,
+  useMentionStreamContext,
+  filterMentionables,
+  filterBroadcastMentions,
+} from "./use-mentionables"
 export type { MentionStreamContext } from "./use-mentionables"
 
 export { useAllDrafts, type UnifiedDraft, type DraftType } from "./use-all-drafts"
@@ -133,6 +149,10 @@ export { useEditLastMessageTrigger } from "./use-edit-last-message-trigger"
 
 export { useAppUpdate } from "./use-app-update"
 
+export { usePageResumeRefresh } from "./use-page-resume-refresh"
+
+export { useBackgroundBootstrapSync } from "./use-background-bootstrap-sync"
+
 export { useQueueDraftMessage } from "./use-queue-draft-message"
 
 export { useComposerHeightPublish } from "./use-composer-height-publish"
@@ -151,3 +171,20 @@ export {
   replaceSavedPage,
   savedKeys,
 } from "./use-saved"
+
+export {
+  useScheduledList,
+  useLiveScheduledCount,
+  useScheduleMessage,
+  useUpdateScheduled,
+  useCancelScheduled,
+  useSendScheduledNow,
+  useLockScheduledForEdit,
+  useReleaseScheduledEditLock,
+  persistScheduledRows,
+  removeScheduledRow,
+  replaceScheduledPage,
+  replaceLocalScheduledRow,
+  isLocalScheduledId,
+  scheduledKeys,
+} from "./use-scheduled"

@@ -1,6 +1,6 @@
 export { createInvitationHandlers } from "./handlers"
-export { InvitationService } from "./service"
-export type { AcceptPendingResult } from "./service"
+export { InvitationService, InvitationLinkError, hashInvitationToken } from "./service"
+export type { AcceptPendingResult, CreateLinkResult, ClaimLinkResult, InvitationLinkErrorCode } from "./service"
 export { InvitationRepository } from "./repository"
 export type { Invitation } from "./repository"
 export { InvitationShadowSyncHandler } from "./shadow-sync-outbox-handler"

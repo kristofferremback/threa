@@ -6,20 +6,24 @@ import {
   type JSONContent,
   type LinkPreviewSummary,
   type ThreadSummary,
+  type MovedFromProvenance,
 } from "@threa/types"
 import { toast } from "sonner"
 import { enqueueOperation } from "@/sync/operation-queue"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
+import { MessageContextBadge } from "@/components/composer"
 import { RelativeTime } from "@/components/relative-time"
 import { ActorAvatar } from "@/components/actor-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace, useMessageService } from "@/contexts"
 import { useUserProfile } from "@/components/user-profile"
 import { useFormattedDate } from "@/hooks/use-formatted-date"
+import { useMessageMarkdownCopy } from "@/hooks/use-message-markdown-copy"
 import { useEditLastMessage } from "./edit-last-message-context"
 import {
   useActors,
+  useMovedTombstone,
   useWorkspaceUserId,
   useMessageReactions,
   stripColons,
@@ -27,8 +31,8 @@ import {
   focusAtEnd,
   type MessageAgentActivity,
 } from "@/hooks"
-import { Quote, MessageSquareReply } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Quote, MessageSquareReply, Check } from "lucide-react"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLongPress } from "@/hooks/use-long-press"
@@ -39,6 +43,7 @@ import { MessageContextMenu } from "./message-context-menu"
 import { SaveMessageButton } from "./save-message-button"
 import { ReminderPickerSheet } from "./reminder-picker-sheet"
 import { useSavedForMessage, useSaveMessage, useDeleteSaved } from "@/hooks/use-saved"
+import { useDiscussWithAriadne } from "@/hooks/use-discuss-with-ariadne"
 import { MessageActionDrawer } from "./message-action-drawer"
 import { ThreadSlot } from "./thread-slot"
 import { DeleteMessageDialog } from "./delete-message-dialog"
@@ -46,12 +51,20 @@ import { MessageEditForm } from "./message-edit-form"
 import { UnsentMessageEditForm } from "./unsent-message-edit-form"
 import { UnsentMessageActionDrawer } from "./unsent-message-action-drawer"
 import { EditedIndicator } from "./edited-indicator"
+import { MovedFromIndicator } from "./moved-from-indicator"
+import { MovedMessagesDrawer } from "./moved-messages-drawer"
 import { SavedIndicator } from "@/components/saved/saved-indicator"
 import { MessageHistoryDialog } from "./message-history-dialog"
 import { MessageReactions } from "./message-reactions"
 import { ReactionEmojiPicker } from "./reaction-emoji-picker"
 import { useQuoteReply } from "./quote-reply-context"
 import { useSwipeAction } from "@/hooks/use-swipe-action"
+import { useStreamFromStore } from "@/stores/stream-store"
+import { queueShareHandoff } from "@/stores/share-handoff-store"
+import { navigateAfterShareHandoff } from "@/lib/share-navigation"
+import { ShareMessageModal } from "@/components/share/share-message-modal"
+import type { BatchTimelineState } from "./event-list"
+import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
 
 interface MessagePayload {
   messageId: string
@@ -70,6 +83,13 @@ interface MessagePayload {
   editedAt?: string
   sentVia?: string
   reactions?: Record<string, string[]>
+  /**
+   * Stamped onto the relocated `message_created` payload by the move flow.
+   * Surfaces a small "moved from #X" indicator alongside the timestamp so
+   * scrollers-by can see this message wasn't authored in this stream. We
+   * keep only the most recent move — re-moves overwrite earlier provenance.
+   */
+  movedFrom?: MovedFromProvenance
 }
 
 interface MessageEventProps {
@@ -93,13 +113,24 @@ interface MessageEventProps {
    * header.
    */
   groupContinuation?: boolean
+  /**
+   * True when this is the first message in the stream. Anchors the
+   * `<MessageContextBadge>` for bag-attached scratchpads — same UX pattern
+   * as a file-attachment chip that lived on the composer pre-send and now
+   * lives on the message that "carried" it.
+   */
+  isFirstMessage?: boolean
+  batch?: BatchTimelineState
 }
 
 interface MessageLayoutProps {
   event: StreamEvent
   payload: MessagePayload
   workspaceId: string
+  streamId: string
   actorName: string
+  /** True when this is the first message in the stream — renders `<MessageContextBadge>` for bag-attached scratchpads. */
+  isFirstMessage?: boolean
   /** Persona slug for SVG icon support (e.g., "ariadne") */
   /** User avatar image URL */
   statusIndicator: ReactNode
@@ -140,6 +171,7 @@ interface MessageLayoutProps {
   swipeOffset?: number
   /** Whether swipe has passed the threshold */
   swipeLocked?: boolean
+  batch?: BatchTimelineState
 }
 
 function focusVisibleZoneEditor(zone: HTMLElement | null, attempt = 0) {
@@ -224,10 +256,145 @@ const ACTOR_ROW_THEME: Record<NonNullable<StreamEvent["actorType"]>, ActorRowThe
   },
 }
 
+/**
+ * Avatar-as-toggle for batch-selection mode (Gmail Android pattern).
+ *
+ * The avatar is the leading slot for non-continuation rows; in batch mode it
+ * doubles as the per-message selection control. To avoid a "cheap" stacked
+ * look, we never blend layers via transparency — the avatar and the check
+ * circle each toggle their own `display`, so only one is in the DOM flow at
+ * any given (row-state, hover-state) combination. Three states:
+ *
+ * - rest (unselected, no group-hover) → avatar visible
+ * - group-hover (unselected) → outline-only check circle (primary border on
+ *   transparent fill — reads as "preview before you click")
+ * - checked → solid primary fill with white check
+ *
+ * The hover→checked transition is a `bg/text-color` change on the same
+ * element so it animates smoothly; the rest↔hover swap is instant (display
+ * none/grid) which reads as snappy rather than draggy. The whole row still
+ * toggles on click via `MessageLayout`'s `onClick`; this component is a
+ * visual affordance, not its own button.
+ */
+function BatchSelectionAvatar({
+  selected,
+  actorId,
+  actorType,
+  workspaceId,
+  alt,
+}: {
+  selected: boolean
+  actorId: string | null | undefined
+  actorType?: StreamEvent["actorType"]
+  workspaceId: string
+  alt: string
+}) {
+  // Wrapper has to match ActorAvatar size="md" exactly (h-8 w-8) — anything
+  // bigger leaves a gap around the inner avatar and clips its corners. We
+  // also intentionally don't add `rounded-full overflow-hidden` here: that
+  // would force image avatars into circles, hiding the rounded-square shape
+  // ActorAvatar actually uses for "md". The check overlay matches that
+  // `rounded-[8px]` so rest↔selected is a clean color swap, not a shape
+  // morph. Shadcn's AvatarFallback is `rounded-full` which makes initials
+  // read as a circle inside the outer rounded square; we accept the small
+  // visual difference between fallback (circle) and image (rounded square)
+  // because that's the existing app-wide behavior, not something this
+  // component should paper over.
+  return (
+    <div
+      data-batch-control
+      data-state={selected ? "checked" : "unchecked"}
+      className="message-avatar relative h-8 w-8 shrink-0 select-none"
+    >
+      <div aria-hidden={selected} className={cn("absolute inset-0", selected ? "hidden" : "block group-hover:hidden")}>
+        <ActorAvatar
+          actorId={actorId ?? null}
+          actorType={actorType ?? null}
+          workspaceId={workspaceId}
+          size="md"
+          alt={alt}
+        />
+      </div>
+      <div
+        aria-hidden={!selected}
+        className={cn(
+          "absolute inset-0 place-content-center rounded-[8px] transition-colors duration-150",
+          selected
+            ? "grid bg-primary text-primary-foreground shadow-sm"
+            : "hidden group-hover:grid border-2 border-primary bg-primary/5 text-primary"
+        )}
+      >
+        <Check className="h-4 w-4" strokeWidth={3} />
+      </div>
+    </div>
+  )
+}
+
+/** Render the batch-mode replacement for the leading slot, or the slot itself. */
+function renderBatchLeading(
+  batchEnabled: boolean,
+  isContinuation: boolean,
+  args: {
+    selected: boolean
+    actorId: string | null | undefined
+    actorType?: StreamEvent["actorType"]
+    workspaceId: string
+    alt: string
+    fallback: ReactNode
+  }
+): ReactNode {
+  if (!batchEnabled) return args.fallback
+  if (isContinuation) return <BatchSelectionDot selected={args.selected} />
+  return (
+    <BatchSelectionAvatar
+      selected={args.selected}
+      actorId={args.actorId}
+      actorType={args.actorType}
+      workspaceId={args.workspaceId}
+      alt={args.alt}
+    />
+  )
+}
+
+/**
+ * Selection dot for continuations — the "twist" on Gmail's avatar-as-toggle.
+ *
+ * Author-grouped continuations don't render an avatar (the head row carries
+ * it), so there's nothing to morph into a checkmark. We instead render a
+ * compact 14px outline circle inside the same `h-5 w-8` gutter that normally
+ * holds the on-hover HH:MM micro-time. Same column width, same vertical
+ * alignment, no row height change. Outline → primary on group-hover, filled
+ * on selection. Sits flush right inside the gutter so it lines up vertically
+ * with the head row's avatar above it, giving the column a consistent
+ * "selection rail" while batch mode is active.
+ */
+function BatchSelectionDot({ selected }: { selected: boolean }) {
+  return (
+    <div
+      data-batch-control
+      data-state={selected ? "checked" : "unchecked"}
+      className="message-avatar-spacer flex h-5 w-8 shrink-0 select-none items-center justify-end pr-1.5"
+    >
+      <span
+        aria-hidden={!selected}
+        className={cn(
+          "grid h-3.5 w-3.5 place-content-center rounded-full border transition-all duration-150",
+          selected
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-muted-foreground/30 bg-transparent group-hover:border-primary/60 group-hover:bg-primary/10"
+        )}
+      >
+        {selected && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+      </span>
+    </div>
+  )
+}
+
 function MessageLayout({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   statusIndicator,
   actions,
@@ -239,11 +406,13 @@ function MessageLayout({
   isNew,
   isEditing,
   isGroupContinuation,
+  isFirstMessage,
   containerRef,
   deferSecondaryHydration,
   touchHandlers,
   swipeOffset,
   swipeLocked,
+  batch,
 }: MessageLayoutProps) {
   const theme = ACTOR_ROW_THEME[event.actorType ?? "user"]
   // Users with a resolved actorId get a clickable name that opens their
@@ -260,14 +429,26 @@ function MessageLayout({
   const renderAsContinuation = isGroupContinuation && !isEditing
 
   const hasSwipe = swipeOffset !== undefined && swipeOffset !== 0
+  // Make a whole-message native copy lossless: scope the listener to the
+  // rendered markdown body only. A `select-all + Ctrl+C` over the markdown
+  // text writes `contentMarkdown` instead of the rendered text (which has
+  // stripped the structural quote:/shared-message:/attachment: URLs the
+  // composer needs to reconstruct nodes on paste). Selections that escape
+  // the markdown (into the attachment list, link previews, or another
+  // message) fall through to the browser default — partial copies still
+  // behave normally and the AttachmentList isn't part of `contentMarkdown`
+  // anyway.
+  const copyRef = useMessageMarkdownCopy(payload.contentMarkdown)
   const messageBody = children ?? (
     <LinkPreviewProvider>
       <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-        <MarkdownContent
-          content={payload.contentMarkdown}
-          messageId={payload.messageId}
-          className="text-sm leading-relaxed"
-        />
+        <div ref={copyRef}>
+          <MarkdownContent
+            content={payload.contentMarkdown}
+            messageId={payload.messageId}
+            className="text-sm leading-relaxed"
+          />
+        </div>
         {payload.attachments && payload.attachments.length > 0 && (
           <AttachmentList
             attachments={payload.attachments}
@@ -275,6 +456,7 @@ function MessageLayout({
             deferHydration={deferSecondaryHydration}
           />
         )}
+        {isFirstMessage && <MessageContextBadge workspaceId={workspaceId} streamId={streamId} />}
         <MessageLinkPreviews
           messageId={payload.messageId}
           workspaceId={workspaceId}
@@ -350,11 +532,37 @@ function MessageLayout({
   const rowAriaLabel = renderAsContinuation ? `Message from ${actorName}` : undefined
   const rowDataGroupContinuation = renderAsContinuation ? "true" : undefined
   const rowVerticalPadding = renderAsContinuation ? "py-0.5" : "py-3"
+  const isSelected = batch?.selectedMessageIds.has(payload.messageId) ?? false
+  const isInvalidTarget = batch?.invalidTargetIds.has(payload.messageId) ?? false
+  const isHoveredTarget = batch?.hoveredTargetId === payload.messageId
+  const batchEnabled = batch?.enabled ?? false
+
+  const handleBatchToggle = useCallback(
+    (event: React.MouseEvent | React.KeyboardEvent) => {
+      if (!batchEnabled) return
+      event.preventDefault()
+      event.stopPropagation()
+      batch?.onToggleMessage(payload.messageId)
+    },
+    [batch, batchEnabled, payload.messageId]
+  )
+
+  const handleBatchKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!batchEnabled) return
+      if (event.key === "Enter" || event.key === " ") {
+        handleBatchToggle(event)
+      }
+    },
+    [batchEnabled, handleBatchToggle]
+  )
 
   return (
     <div
       ref={containerRef}
       data-author-name={actorName}
+      data-message-id={payload.messageId}
+      data-batch-invalid-target={isInvalidTarget ? "true" : undefined}
       data-author-id={event.actorId ?? ""}
       data-actor-type={event.actorType ?? "user"}
       data-group-continuation={rowDataGroupContinuation}
@@ -366,7 +574,16 @@ function MessageLayout({
       // at the desktop breakpoint.
       className={cn("relative overflow-hidden sm:overflow-visible", containerClassName)}
       aria-label={rowAriaLabel}
+      // Batch mode turns the whole row into a toggle. Keyboard users get
+      // role="button" + tabIndex so they can Tab to messages, and Enter/Space
+      // fire the same handler the click path uses. aria-pressed mirrors the
+      // selection state so SR users hear "pressed" / "not pressed".
+      role={batchEnabled ? "button" : undefined}
+      tabIndex={batchEnabled ? 0 : undefined}
+      aria-pressed={batchEnabled ? isSelected : undefined}
+      onKeyDown={batchEnabled ? handleBatchKeyDown : undefined}
       {...touchHandlers}
+      onClick={batchEnabled ? handleBatchToggle : undefined}
     >
       {/* Swipe-to-quote reveal icon (behind the message) */}
       {hasSwipe && (
@@ -388,12 +605,32 @@ function MessageLayout({
             !theme.rowAccent &&
             "before:content-[''] before:absolute before:-top-4 before:-bottom-4 before:left-0 before:right-0 before:bg-primary/[0.04] before:-z-10",
           isHighlighted && "animate-highlight-flash",
-          isNew && !isHighlighted && "animate-new-message-fade"
+          isNew && !isHighlighted && "animate-new-message-fade",
+          batchEnabled && "cursor-pointer select-none touch-none",
+          batchEnabled && isSelected && "bg-primary/[0.07] ring-1 ring-primary/45 ring-inset",
+          batchEnabled && isInvalidTarget && "opacity-40 grayscale",
+          batchEnabled && isHoveredTarget && "ring-2 ring-primary/60 ring-inset"
         )}
         style={hasSwipe ? { transform: `translateX(${swipeOffset}px)` } : undefined}
       >
-        {leadingSlot}
-        <div className="message-content flex-1 min-w-0">
+        {renderBatchLeading(batchEnabled, !!renderAsContinuation, {
+          selected: isSelected,
+          actorId: event.actorId,
+          actorType: event.actorType,
+          workspaceId,
+          alt: actorName,
+          fallback: leadingSlot,
+        })}
+        <div
+          // `inert` removes descendants from the tab order and from
+          // pointer/click handling — `pointer-events-none` alone leaves
+          // nested links/buttons keyboard-focusable, so a Tab in batch mode
+          // would land inside the row instead of treating it as a single
+          // selection target. Reactions and thread cards still render at
+          // full size so row height stays stable.
+          inert={batchEnabled || undefined}
+          className={cn("message-content flex-1 min-w-0", batchEnabled && "pointer-events-none")}
+        >
           {headerRow}
           {messageBody}
           {footer}
@@ -442,6 +679,33 @@ interface MessageEventInnerProps {
    * full content column).
    */
   groupContinuation?: boolean
+  /** True when this is the first message in the stream — drives the context-bag attachment badge. */
+  isFirstMessage?: boolean
+  batch?: BatchTimelineState
+}
+
+/**
+ * Produce a user-facing label for the share-to-parent / share-to-root menu
+ * entry based on the target stream's type. Channels read naturally as
+ * "#slug"; DMs and scratchpads get a generic label to avoid awkward
+ * display-name phrasing ("Share to Untitled scratchpad" etc.) in slice 1.
+ * Thread parents (only reachable from a nested thread) include the display
+ * name so the user can tell the root + parent entries apart in the menu.
+ */
+function buildShareToStreamLabel(target: { type: string; displayName: string | null; slug: string | null }): string {
+  if (target.type === "channel") {
+    const tag = target.slug ? `#${target.slug}` : (target.displayName ?? "channel")
+    return `Share to ${tag}`
+  }
+  if (target.type === "dm") return "Share to DM"
+  if (target.type === "scratchpad") return "Share to scratchpad"
+  // Thread parent — only reachable from a nested thread. Use the display name
+  // when available so the user can tell the two entries apart in the menu.
+  if (target.type === "thread") {
+    const name = target.displayName ?? target.slug ?? "thread"
+    return `Share to thread (${name})`
+  }
+  return "Share to parent"
 }
 
 function SentMessageEvent({
@@ -456,12 +720,25 @@ function SentMessageEvent({
   activity,
   deferSecondaryHydration,
   groupContinuation,
+  isFirstMessage,
+  batch,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const messageService = useMessageService()
   const currentUserId = useWorkspaceUserId(workspaceId)
   const { getTraceUrl } = useTrace()
   const quoteReplyCtx = useQuoteReply()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const currentStream = useStreamFromStore(streamId)
+  const parentStream = useStreamFromStore(currentStream?.parentStreamId ?? undefined)
+  const rootStream = useStreamFromStore(currentStream?.rootStreamId ?? undefined)
+  // For one-level threads, parent === root, so we only show the root entry to
+  // avoid two identical menu items. For nested threads (parent is itself a
+  // thread), we show both: root for the most useful target (the channel/dm/
+  // scratchpad), parent for the intermediate thread when that's what the
+  // user actually wants.
+  const showParentEntry = parentStream && rootStream && parentStream.id !== rootStream.id
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -471,6 +748,12 @@ function SentMessageEvent({
   const [mobilePickerOpen, setMobilePickerOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [moveDetailsOpen, setMoveDetailsOpen] = useState(false)
+  // Hydrate the destination tombstone on demand for the per-message
+  // "Show move details" action. Reactive — populates as soon as the row
+  // lands in IDB (live socket apply or bootstrap).
+  const movedTombstoneEvent = useMovedTombstone(payload.movedFrom?.moveTombstoneId)
 
   // Mobile: long-press opens action drawer instead of dropdown
   const isMobile = useIsMobile()
@@ -478,7 +761,7 @@ function SentMessageEvent({
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const longPress = useLongPress({
     onLongPress: openDrawer,
-    enabled: isMobile && !isEditing,
+    enabled: isMobile && !isEditing && !batch?.enabled,
     deferToNativeLinks: true,
   })
 
@@ -497,7 +780,7 @@ function SentMessageEvent({
   }, [quoteReplyCtx, payload.messageId, payload.contentMarkdown, streamId, actorName, event.actorId, event.actorType])
   const swipe = useSwipeAction({
     onSwipe: handleSwipeQuote,
-    enabled: isMobile && !isEditing && !!quoteReplyCtx,
+    enabled: isMobile && !isEditing && !!quoteReplyCtx && !batch?.enabled,
   })
 
   const startEditing = useCallback(() => {
@@ -631,6 +914,21 @@ function SentMessageEvent({
 
   const handleRequestReminder = useCallback(() => setReminderSheetOpen(true), [])
 
+  const startDiscussWithAriadne = useDiscussWithAriadne(workspaceId)
+  const handleDiscussWithAriadne = useCallback(
+    // `useDiscussWithAriadne` rethrows after toasting so the surrounding
+    // mutation pipeline can see failures. The action menu invokes us
+    // fire-and-forget without awaiting, so we swallow here to keep the
+    // failure out of the unhandled-rejection log — the user already saw
+    // the toast. INV-11: failing loud means the toast, not the console.
+    () => {
+      void startDiscussWithAriadne({ sourceStreamId: streamId, sourceMessageId: payload.messageId }).catch(() => {
+        /* toast already surfaced inside the hook */
+      })
+    },
+    [startDiscussWithAriadne, streamId, payload.messageId]
+  )
+
   // Shared action context for both desktop dropdown and mobile drawer
   const actionContext = useMemo(
     () => ({
@@ -661,6 +959,7 @@ function SentMessageEvent({
       isSaved,
       onToggleSave: handleToggleSave,
       onRequestReminder: handleRequestReminder,
+      onDiscussWithAriadne: handleDiscussWithAriadne,
       onQuoteReply: quoteReplyCtx
         ? () =>
             quoteReplyCtx.triggerQuoteReply({
@@ -683,6 +982,54 @@ function SentMessageEvent({
               snippet,
             })
         : undefined,
+      onShareToRoot: rootStream
+        ? () => {
+            queueShareHandoff(rootStream.id, {
+              messageId: payload.messageId,
+              streamId,
+              authorName: actorName,
+              authorId: event.actorId ?? "",
+              actorType: event.actorType ?? "user",
+            })
+            navigateAfterShareHandoff({ workspaceId, targetStreamId: rootStream.id, location, navigate, isMobile })
+          }
+        : undefined,
+      shareToRootLabel: rootStream ? buildShareToStreamLabel(rootStream) : undefined,
+      onShareToParent:
+        showParentEntry && parentStream
+          ? () => {
+              queueShareHandoff(parentStream.id, {
+                messageId: payload.messageId,
+                streamId,
+                authorName: actorName,
+                authorId: event.actorId ?? "",
+                actorType: event.actorType ?? "user",
+              })
+              navigateAfterShareHandoff({
+                workspaceId,
+                targetStreamId: parentStream.id,
+                location,
+                navigate,
+                isMobile,
+              })
+            }
+          : undefined,
+      shareToParentLabel: showParentEntry && parentStream ? buildShareToStreamLabel(parentStream) : undefined,
+      onShare: () => setShareModalOpen(true),
+      // Per-message entry into the batch-move flow. Hidden during batch
+      // mode itself (the row's own checkbox handles that), on the thread
+      // parent (moving the parent into its own thread is nonsensical),
+      // and on archived streams to match the stream-header menu's gating.
+      onMoveToThread:
+        !batch?.enabled && !isThreadParentProp && !currentStream?.archivedAt
+          ? () => dispatchStartBatchSelect(streamId, payload.messageId)
+          : undefined,
+      // Destination-side discovery for moved messages. The drawer only
+      // renders once the tombstone hydrates from IDB, so gate the menu
+      // entry on the full lookup rather than just the id — keeps the
+      // user from clicking into a no-op while bootstrap is still in
+      // flight.
+      onShowMoveDetails: movedTombstoneEvent ? () => setTimeout(() => setMoveDetailsOpen(true), 0) : undefined,
     }),
     [
       payload.contentMarkdown,
@@ -709,8 +1056,40 @@ function SentMessageEvent({
       isSaved,
       handleToggleSave,
       handleRequestReminder,
+      parentStream,
+      rootStream,
+      showParentEntry,
+      navigate,
+      location,
+      isMobile,
+      handleDiscussWithAriadne,
+      batch?.enabled,
+      currentStream?.archivedAt,
+      movedTombstoneEvent,
     ]
   )
+
+  // Reactions + thread card stay visible in batch mode so entering selection
+  // mode doesn't change row height. They're rendered as `pointer-events-none`
+  // (handled below) so the row's batch-toggle click handler still wins.
+  let footerContent: ReactNode
+  if (isEditing && !isMobile) {
+    footerContent = undefined
+  } else {
+    footerContent = (
+      <>
+        {payload.reactions && Object.keys(payload.reactions).length > 0 && (
+          <MessageReactions
+            reactions={payload.reactions}
+            workspaceId={workspaceId}
+            messageId={payload.messageId}
+            currentUserId={currentUserId}
+          />
+        )}
+        {threadSlot}
+      </>
+    )
+  }
 
   return (
     <>
@@ -718,12 +1097,21 @@ function SentMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
         statusIndicator={
           <>
             <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
             {payload.editedAt && (
               <EditedIndicator editedAt={payload.editedAt} onShowHistory={() => setHistoryOpen(true)} />
+            )}
+            {payload.movedFrom && (
+              <MovedFromIndicator
+                workspaceId={workspaceId}
+                movedFrom={payload.movedFrom}
+                onClick={movedTombstoneEvent ? () => setMoveDetailsOpen(true) : undefined}
+              />
             )}
             <SavedIndicator saved={savedForMessage ?? null} />
           </>
@@ -731,71 +1119,59 @@ function SentMessageEvent({
         isEditing={isEditing && !isMobile}
         isGroupContinuation={groupContinuation}
         hoverActions={
-          // Desktop-only hover toolbar floated above the row. Mobile users reach
-          // these actions via the long-press drawer (MessageActionDrawer).
-          <>
-            <ReactionEmojiPicker
-              workspaceId={workspaceId}
-              onSelect={handleAddReaction}
-              activeShortcodes={activeReactionShortcodes}
-              allReactionShortcodes={allReactionShortcodes}
-            />
-            <SaveMessageButton workspaceId={workspaceId} messageId={payload.messageId} />
-            {actionContext.onQuoteReply && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
-                    aria-label="Quote reply"
-                    onClick={actionContext.onQuoteReply}
-                  >
-                    <Quote className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Quote reply</TooltipContent>
-              </Tooltip>
-            )}
-            {/* Reply-in-thread sits adjacent to the overflow menu so it mirrors
+          batch?.enabled ? undefined : (
+            // Desktop-only hover toolbar floated above the row. Mobile users reach
+            // these actions via the long-press drawer (MessageActionDrawer).
+            <>
+              <ReactionEmojiPicker
+                workspaceId={workspaceId}
+                onSelect={handleAddReaction}
+                activeShortcodes={activeReactionShortcodes}
+                allReactionShortcodes={allReactionShortcodes}
+              />
+              <SaveMessageButton workspaceId={workspaceId} messageId={payload.messageId} />
+              {actionContext.onQuoteReply && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
+                      aria-label="Quote reply"
+                      onClick={actionContext.onQuoteReply}
+                    >
+                      <Quote className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Quote reply</TooltipContent>
+                </Tooltip>
+              )}
+              {/* Reply-in-thread sits adjacent to the overflow menu so it mirrors
                 the top entry of the expanded context menu — the two thread
                 actions read as one visual neighborhood. Kept visible even when
                 the thread panel is already open (clicking is a harmless re-nav
                 to the same panel) so the toolbar never shuffles buttons in and
                 out as the user opens/closes the thread. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
-                >
-                  <Link to={actionContext.replyUrl} aria-label="Reply in thread">
-                    <MessageSquareReply className="h-3.5 w-3.5" />
-                  </Link>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Reply in thread</TooltipContent>
-            </Tooltip>
-            <MessageContextMenu context={actionContext} />
-          </>
-        }
-        footer={
-          isEditing && !isMobile ? undefined : (
-            <>
-              {payload.reactions && Object.keys(payload.reactions).length > 0 && (
-                <MessageReactions
-                  reactions={payload.reactions}
-                  workspaceId={workspaceId}
-                  messageId={payload.messageId}
-                  currentUserId={currentUserId}
-                />
-              )}
-              {threadSlot}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground shrink-0 hover:text-foreground"
+                  >
+                    <Link to={actionContext.replyUrl} aria-label="Reply in thread">
+                      <MessageSquareReply className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Reply in thread</TooltipContent>
+              </Tooltip>
+              <MessageContextMenu context={actionContext} />
             </>
           )
         }
+        footer={footerContent}
         containerRef={containerRef}
         isHighlighted={isHighlighted}
         isNew={isNew}
@@ -808,7 +1184,7 @@ function SentMessageEvent({
         swipeOffset={isMobile ? swipe.offset : undefined}
         swipeLocked={isMobile ? swipe.isLocked : undefined}
         touchHandlers={
-          isMobile
+          isMobile && !batch?.enabled
             ? {
                 onTouchStart: (e: React.TouchEvent) => {
                   longPress.handlers.onTouchStart(e)
@@ -826,6 +1202,7 @@ function SentMessageEvent({
               }
             : undefined
         }
+        batch={batch}
       >
         {/* Desktop: inline edit replaces message content. Mobile: drawer handles editing. */}
         {isEditing && !isMobile ? (
@@ -878,6 +1255,28 @@ function SentMessageEvent({
           }}
         />
       )}
+      {shareModalOpen && (
+        <ShareMessageModal
+          open={shareModalOpen}
+          onOpenChange={setShareModalOpen}
+          workspaceId={workspaceId}
+          attrs={{
+            messageId: payload.messageId,
+            streamId,
+            authorName: actorName,
+            authorId: event.actorId ?? "",
+            actorType: event.actorType ?? "user",
+          }}
+        />
+      )}
+      {moveDetailsOpen && movedTombstoneEvent && (
+        <MovedMessagesDrawer
+          open={moveDetailsOpen}
+          onOpenChange={setMoveDetailsOpen}
+          event={movedTombstoneEvent}
+          workspaceId={workspaceId}
+        />
+      )}
       {isMobile && (
         <MessageActionDrawer
           open={drawerOpen}
@@ -913,9 +1312,11 @@ function PendingMessageEvent({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   deferSecondaryHydration,
   groupContinuation,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const { markEditing, deleteMessage } = usePendingMessages()
   const isMobile = useIsMobile()
@@ -929,7 +1330,9 @@ function PendingMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
         deferSecondaryHydration={deferSecondaryHydration}
         isGroupContinuation={groupContinuation}
         containerClassName={cn(
@@ -976,8 +1379,10 @@ function FailedMessageEvent({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   deferSecondaryHydration,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const { retryMessage, markEditing, deleteMessage } = usePendingMessages()
   const isMobile = useIsMobile()
@@ -991,7 +1396,9 @@ function FailedMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
         deferSecondaryHydration={deferSecondaryHydration}
         containerClassName={cn(
           "border-l-2 border-destructive pl-2",
@@ -1039,8 +1446,10 @@ function EditingMessageEvent({
   event,
   payload,
   workspaceId,
+  streamId,
   actorName,
   deferSecondaryHydration,
+  isFirstMessage,
 }: MessageEventInnerProps) {
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1057,7 +1466,9 @@ function EditingMessageEvent({
         event={event}
         payload={payload}
         workspaceId={workspaceId}
+        streamId={streamId}
         actorName={actorName}
+        isFirstMessage={isFirstMessage}
         deferSecondaryHydration={deferSecondaryHydration}
         isEditing={!isMobile}
         containerRef={containerRef}
@@ -1089,6 +1500,8 @@ export function MessageEvent({
   activity,
   deferSecondaryHydration = false,
   groupContinuation = false,
+  isFirstMessage = false,
+  batch,
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
@@ -1098,6 +1511,10 @@ export function MessageEvent({
   const actorName = getActorName(event.actorId, event.actorType)
 
   switch (status) {
+    // Pending/failed/editing rows aren't selectable (they don't have a
+    // canonical server-side messageId yet), so the timeline never enters
+    // batch-target visuals on them. Don't thread `batch` through — it would
+    // only suggest these rows participate in selection when they don't.
     case "pending":
       return (
         <PendingMessageEvent
@@ -1109,6 +1526,7 @@ export function MessageEvent({
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
           groupContinuation={groupContinuation}
+          isFirstMessage={isFirstMessage}
         />
       )
     case "failed":
@@ -1121,6 +1539,7 @@ export function MessageEvent({
           actorName={actorName}
           isThreadParent={isThreadParent}
           deferSecondaryHydration={deferSecondaryHydration}
+          isFirstMessage={isFirstMessage}
         />
       )
     case "editing":
@@ -1132,6 +1551,7 @@ export function MessageEvent({
           streamId={streamId}
           actorName={actorName}
           deferSecondaryHydration={deferSecondaryHydration}
+          isFirstMessage={isFirstMessage}
         />
       )
     default:
@@ -1148,6 +1568,8 @@ export function MessageEvent({
           activity={activity}
           deferSecondaryHydration={deferSecondaryHydration}
           groupContinuation={groupContinuation}
+          isFirstMessage={isFirstMessage}
+          batch={batch}
         />
       )
   }

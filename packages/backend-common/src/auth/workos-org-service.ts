@@ -43,6 +43,51 @@ export interface WorkosUserSummary {
   lastName: string | null
 }
 
+/**
+ * The subset of organization-membership events the authz mirror cares about.
+ * Listed explicitly so the service contract makes the supported set obvious
+ * without leaking the full WorkOS event union.
+ */
+export const WORKOS_MIRROR_EVENT_TYPES = [
+  "organization_membership.created",
+  "organization_membership.updated",
+  "organization_membership.deleted",
+] as const
+
+export type WorkosMirrorEventType = (typeof WORKOS_MIRROR_EVENT_TYPES)[number]
+
+/** Decoded WorkOS organization membership event the mirror consumes. */
+export interface WorkosMembershipEvent {
+  id: string
+  type: WorkosMirrorEventType
+  createdAt: Date
+  membership: WorkosOrganizationMembership
+}
+
+/**
+ * WorkOS organization-membership lifecycle states. Sourced from the WorkOS
+ * dashboard event payload; mirrored in `workspace_user_permissions.status`
+ * and validated at the regional fan-out endpoint.
+ */
+export const WORKOS_MEMBERSHIP_STATUSES = ["active", "inactive", "pending"] as const
+
+export type WorkosMembershipStatus = (typeof WORKOS_MEMBERSHIP_STATUSES)[number]
+
+function isWorkosMembershipStatus(value: unknown): value is WorkosMembershipStatus {
+  return typeof value === "string" && (WORKOS_MEMBERSHIP_STATUSES as readonly string[]).includes(value)
+}
+
+/** Mirror-shaped membership returned from `listOrganizationMemberships`. */
+export interface WorkosOrganizationMembership {
+  id: string
+  organizationId: string
+  userId: string
+  status: WorkosMembershipStatus
+  roleSlugs: string[]
+  /** WorkOS-side updated_at; used as last_event_at when backfill upserts. */
+  updatedAt: Date
+}
+
 export interface WorkosOrgService {
   createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }>
   getOrganizationByExternalId(externalId: string): Promise<{ id: string } | null>
@@ -63,9 +108,29 @@ export interface WorkosOrgService {
   listAppInvitations(): Promise<WorkosAppInvitation[]>
   /** Look up a user by WorkOS id. Returns null if the user no longer exists. */
   getUser(workosUserId: string): Promise<WorkosUserSummary | null>
+  /**
+   * List every user that belongs to a WorkOS organization. Paginates the
+   * underlying `userManagement.listUsers({ organizationId })` call to
+   * completion. Used by the backoffice members tab to avoid N parallel
+   * `getUser` round-trips.
+   */
+  listOrganizationUsers(organizationId: string): Promise<WorkosUserSummary[]>
   getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null>
   ensureOrganizationMembership(params: { organizationId: string; userId: string; roleSlug: string }): Promise<void>
   getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string>
+  /**
+   * List WorkOS events for the authz mirror. Returns a normalized, mirror-shaped
+   * payload — callers don't need to know the WorkOS SDK union.
+   */
+  listMirrorEvents(params: {
+    after?: string
+    limit?: number
+  }): Promise<{ data: WorkosMembershipEvent[]; after: string | null }>
+  /**
+   * List every membership for an organization, paginated to completion. Used
+   * by backfill — low-frequency, run by an explicit operator action.
+   */
+  listOrganizationMemberships(organizationId: string): Promise<WorkosOrganizationMembership[]>
 }
 
 export class WorkosOrgServiceImpl implements WorkosOrgService {
@@ -163,6 +228,31 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
     } catch (error) {
       logger.warn({ err: error, workosUserId }, "Failed to load WorkOS user")
       return null
+    }
+  }
+
+  async listOrganizationUsers(organizationId: string): Promise<WorkosUserSummary[]> {
+    const results: WorkosUserSummary[] = []
+    let after: string | undefined
+
+    for (;;) {
+      const page = await this.workos.userManagement.listUsers({
+        organizationId,
+        limit: 100,
+        ...(after ? { after } : {}),
+      })
+
+      for (const user of page.data) {
+        results.push({
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        })
+      }
+
+      after = page.listMetadata.after ?? undefined
+      if (!after) return results
     }
   }
 
@@ -266,5 +356,130 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
       scopes: params.scopes as WidgetScope[],
     })
     return token
+  }
+
+  async listMirrorEvents(params: {
+    after?: string
+    limit?: number
+  }): Promise<{ data: WorkosMembershipEvent[]; after: string | null }> {
+    const page = await this.workos.events.listEvents({
+      events: [...WORKOS_MIRROR_EVENT_TYPES],
+      ...(params.after ? { after: params.after } : {}),
+      ...(params.limit ? { limit: params.limit } : {}),
+    })
+
+    const data: WorkosMembershipEvent[] = []
+    for (const raw of page.data) {
+      const decoded = decodeMembershipEvent(raw)
+      if (decoded) data.push(decoded)
+    }
+    return { data, after: page.listMetadata.after ?? null }
+  }
+
+  async listOrganizationMemberships(organizationId: string): Promise<WorkosOrganizationMembership[]> {
+    const results: WorkosOrganizationMembership[] = []
+    let after: string | undefined
+
+    for (;;) {
+      const page = await this.workos.userManagement.listOrganizationMemberships({
+        organizationId,
+        limit: 100,
+        ...(after ? { after } : {}),
+      })
+
+      for (const m of page.data) {
+        results.push(toMirrorMembership(m))
+      }
+
+      after = page.listMetadata.after ?? undefined
+      if (!after) return results
+    }
+  }
+}
+
+interface MembershipEventLike {
+  id: string
+  event: string
+  createdAt: string
+  data: unknown
+}
+
+function decodeMembershipEvent(raw: unknown): WorkosMembershipEvent | null {
+  if (!raw || typeof raw !== "object") return null
+  const candidate = raw as MembershipEventLike
+  if (typeof candidate.id !== "string" || typeof candidate.event !== "string") return null
+  if (!isMirrorEventType(candidate.event)) return null
+  const membership = parseMembershipPayload(candidate.data)
+  if (!membership) return null
+  return {
+    id: candidate.id,
+    type: candidate.event,
+    createdAt: new Date(candidate.createdAt),
+    membership,
+  }
+}
+
+function isMirrorEventType(event: string): event is WorkosMirrorEventType {
+  return (WORKOS_MIRROR_EVENT_TYPES as readonly string[]).includes(event)
+}
+
+interface MembershipPayloadLike {
+  id?: unknown
+  organizationId?: unknown
+  userId?: unknown
+  status?: unknown
+  updatedAt?: unknown
+  role?: { slug?: unknown }
+  roles?: Array<{ slug?: unknown }>
+}
+
+function parseMembershipPayload(data: unknown): WorkosOrganizationMembership | null {
+  if (!data || typeof data !== "object") return null
+  const m = data as MembershipPayloadLike
+  if (typeof m.id !== "string" || typeof m.organizationId !== "string" || typeof m.userId !== "string") {
+    return null
+  }
+  if (!isWorkosMembershipStatus(m.status)) {
+    return null
+  }
+  return {
+    id: m.id,
+    organizationId: m.organizationId,
+    userId: m.userId,
+    status: m.status,
+    roleSlugs: extractRoleSlugs(m),
+    updatedAt: typeof m.updatedAt === "string" ? new Date(m.updatedAt) : new Date(),
+  }
+}
+
+function extractRoleSlugs(m: MembershipPayloadLike): string[] {
+  const slugs: string[] = []
+  if (Array.isArray(m.roles)) {
+    for (const r of m.roles) {
+      if (r && typeof r.slug === "string") slugs.push(r.slug)
+    }
+  }
+  if (slugs.length === 0 && m.role && typeof m.role.slug === "string") {
+    slugs.push(m.role.slug)
+  }
+  return slugs
+}
+
+function toMirrorMembership(m: {
+  id: string
+  organizationId: string
+  userId: string
+  status: WorkosMembershipStatus
+  updatedAt: string
+  role: { slug: string }
+  roles?: Array<{ slug: string }>
+}): WorkosOrganizationMembership {
+  return {
+    id: m.id,
+    organizationId: m.organizationId,
+    userId: m.userId,
+    status: m.status,
+    roleSlugs: m.roles && m.roles.length > 0 ? m.roles.map((r) => r.slug) : [m.role.slug],
+    updatedAt: new Date(m.updatedAt),
   }
 }

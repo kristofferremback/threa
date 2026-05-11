@@ -1,17 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { ChevronLeft, Quote } from "lucide-react"
+import { ChevronDown, ChevronLeft, Quote } from "lucide-react"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { MarkdownContent } from "@/components/ui/markdown-content"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { useMessageReactions, stripColons, reactionShortcodes } from "@/hooks/use-message-reactions"
 import { getInitials } from "@/lib/initials"
 import { cn } from "@/lib/utils"
 import { buildQuickEmojis } from "@/lib/emoji-picker"
-import { type MessageActionContext, type MessageAction, getVisibleActions } from "./message-actions"
+import {
+  type MessageActionContext,
+  type MessageAction,
+  type GroupedActionItem,
+  getVisibleActions,
+  groupVisibleActions,
+  resolveActionLabel,
+} from "./message-actions"
 import { EmojiQuickBar } from "./emoji-quick-bar"
 
 interface MessageActionDrawerProps {
@@ -24,6 +32,7 @@ interface MessageActionDrawerProps {
 
 export function MessageActionDrawer({ open, onOpenChange, context, authorName }: MessageActionDrawerProps) {
   const actions = getVisibleActions(context)
+  const groupedActions = useMemo(() => groupVisibleActions(actions), [actions])
   const { emojis, emojiWeights } = useWorkspaceEmoji(context.workspaceId ?? "")
   const { toggleReaction } = useMessageReactions(context.workspaceId ?? "", context.messageId ?? "")
   const [expanded, setExpanded] = useState(false)
@@ -129,14 +138,6 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
     [context, handleOpenChange]
   )
 
-  const handleSubAction = useCallback(
-    (sub: { action: (ctx: MessageActionContext) => void | Promise<void> }) => {
-      handleOpenChange(false)
-      sub.action(context)
-    },
-    [context, handleOpenChange]
-  )
-
   if (!open && actions.length === 0) return null
 
   return (
@@ -159,13 +160,14 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
           <>
             {/* Message preview */}
             <div className="px-4 pt-1 pb-3">
-              <div
+              <button
+                type="button"
                 className={cn(
-                  "group/preview relative rounded-xl bg-muted/60 px-3.5 py-2.5",
+                  "group/preview relative w-full text-left rounded-xl bg-muted/60 px-3.5 py-2.5 disabled:opacity-100 disabled:cursor-default",
                   context.onQuoteReplyWithSnippet && "active:bg-muted/80 transition-colors cursor-pointer"
                 )}
-                role={context.onQuoteReplyWithSnippet ? "button" : undefined}
                 onClick={context.onQuoteReplyWithSnippet ? () => setExpanded(true) : undefined}
+                disabled={!context.onQuoteReplyWithSnippet}
               >
                 <p className="text-[13px] font-medium text-muted-foreground mb-0.5">{authorName}</p>
                 <div className="text-sm text-foreground/80 line-clamp-2 leading-snug pr-6">
@@ -177,7 +179,7 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
                     className="absolute top-2.5 right-2.5 h-3.5 w-3.5 text-muted-foreground/40 group-active/preview:text-primary transition-colors"
                   />
                 )}
-              </div>
+              </button>
               {context.onQuoteReplyWithSnippet && (
                 <p className="text-[11px] text-muted-foreground/60 mt-1.5 px-1 flex items-center gap-1">
                   <span className="inline-block h-1 w-1 rounded-full bg-primary/60" />
@@ -205,64 +207,15 @@ export function MessageActionDrawer({ open, onOpenChange, context, authorName }:
 
             {/* Action list */}
             <div className="px-2 pb-[max(12px,env(safe-area-inset-bottom))]">
-              {actions.map((action) => {
-                // Flatten sub-actions into separate rows (no nested menus on mobile)
-                if (action.subActions && action.subActions.length > 0) {
-                  return (
-                    <div key={action.id}>
-                      {action.separatorBefore && <Divider />}
-                      {action.subActions.map((sub) => {
-                        const SubIcon = sub.icon
-                        return (
-                          <button
-                            key={sub.id}
-                            type="button"
-                            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm active:bg-muted/80 transition-colors"
-                            onClick={() => handleSubAction(sub)}
-                          >
-                            <SubIcon className="h-[18px] w-[18px] text-muted-foreground shrink-0" />
-                            <span>{sub.label}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )
-                }
-
-                const Icon = action.icon
-                const isDestructive = action.variant === "destructive"
-                const href = action.getHref?.(context)
-
-                const rowClassName = cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-                  isDestructive ? "text-destructive active:bg-destructive/10" : "active:bg-muted/80"
-                )
-                const iconEl = (
-                  <Icon
-                    className={cn(
-                      "h-[18px] w-[18px] shrink-0",
-                      isDestructive ? "text-destructive" : "text-muted-foreground"
-                    )}
-                  />
-                )
-
-                return (
-                  <div key={action.id}>
-                    {action.separatorBefore && <Divider />}
-                    {href ? (
-                      <Link to={href} className={rowClassName} onClick={() => handleOpenChange(false)}>
-                        {iconEl}
-                        <span>{action.label}</span>
-                      </Link>
-                    ) : (
-                      <button type="button" className={rowClassName} onClick={() => handleAction(action)}>
-                        {iconEl}
-                        <span>{action.label}</span>
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
+              {groupedActions.map((item) => (
+                <DrawerActionItem
+                  key={item.kind === "single" ? item.action.id : item.members[0].id}
+                  item={item}
+                  context={context}
+                  onClose={() => handleOpenChange(false)}
+                  onAction={handleAction}
+                />
+              ))}
             </div>
           </>
         )}
@@ -366,7 +319,11 @@ function ExpandedQuoteView({
           </div>
 
           {/* Selectable message content */}
-          <div ref={contentRef} className="relative px-4 pb-6 select-text">
+          <div
+            ref={contentRef}
+            className="relative px-4 pb-6 select-text [-webkit-touch-callout:none] outline-none"
+            tabIndex={-1}
+          >
             <MarkdownContent content={contentMarkdown} className="text-sm leading-relaxed text-foreground" />
           </div>
         </div>
@@ -401,4 +358,148 @@ function ExpandedQuoteView({
 
 function Divider() {
   return <Separator className="mx-3 my-1 bg-border/50" />
+}
+
+function DrawerActionItem({
+  item,
+  context,
+  onClose,
+  onAction,
+}: {
+  item: GroupedActionItem
+  context: MessageActionContext
+  onClose: () => void
+  onAction: (action: MessageAction) => void
+}) {
+  if (item.kind === "single") {
+    const action = item.action
+    return (
+      <>
+        {action.separatorBefore && <Divider />}
+        <DrawerActionPrimary action={action} context={context} onClose={onClose} onAction={onAction} />
+      </>
+    )
+  }
+
+  const { members } = item
+  const primary = members[0]
+  return (
+    <>
+      {primary.separatorBefore && <Divider />}
+      <DrawerActionSplitRow members={members} context={context} onClose={onClose} onAction={onAction} />
+    </>
+  )
+}
+
+/** Single-action row body (used both standalone and as the left half of a split row). */
+function DrawerActionPrimary({
+  action,
+  context,
+  onClose,
+  onAction,
+  className,
+}: {
+  action: MessageAction
+  context: MessageActionContext
+  onClose: () => void
+  onAction: (action: MessageAction) => void
+  className?: string
+}) {
+  const Icon = action.icon
+  const isDestructive = action.variant === "destructive"
+  const href = action.getHref?.(context)
+
+  const baseClassName = cn(
+    "flex items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors",
+    isDestructive ? "text-destructive active:bg-destructive/10" : "active:bg-muted/80"
+  )
+  const iconEl = (
+    <Icon className={cn("h-[18px] w-[18px] shrink-0", isDestructive ? "text-destructive" : "text-muted-foreground")} />
+  )
+
+  if (href) {
+    return (
+      <Link to={href} className={cn(baseClassName, "rounded-lg w-full", className)} onClick={onClose}>
+        {iconEl}
+        <span>{resolveActionLabel(action, context)}</span>
+      </Link>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className={cn(baseClassName, "w-full rounded-lg", className)}
+      onClick={() => onAction(action)}
+    >
+      {iconEl}
+      <span>{resolveActionLabel(action, context)}</span>
+    </button>
+  )
+}
+
+/**
+ * Split-row pattern (à la GitHub's merge button): the primary action is the
+ * default tap target on the left; a chevron button on the right opens a small
+ * dropdown listing ALL group members (primary first). Same data model as the
+ * desktop context menu — `messageActions` declares the group via `groupId`
+ * and `groupVisibleActions` collapses adjacent same-group entries into the
+ * `{ members }` shape this row consumes; the renderer always shows
+ * `members[0]` as the row's tap target and the full set in the dropdown.
+ */
+function DrawerActionSplitRow({
+  members,
+  context,
+  onClose,
+  onAction,
+}: {
+  members: MessageAction[]
+  context: MessageActionContext
+  onClose: () => void
+  onAction: (action: MessageAction) => void
+}) {
+  const primary = members[0]
+  return (
+    <div className="flex items-stretch w-full rounded-lg overflow-hidden">
+      <div className="flex-1 min-w-0">
+        <DrawerActionPrimary
+          action={primary}
+          context={context}
+          onClose={onClose}
+          onAction={onAction}
+          className="rounded-none rounded-l-lg"
+        />
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex items-center justify-center w-10 shrink-0 border-l border-border/50 text-muted-foreground active:bg-muted/80 transition-colors rounded-r-lg"
+            aria-label={`Other ${primary.groupId ?? "options"}`}
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={4} className="min-w-[220px]">
+          {members.map((member, idx) => {
+            const MemberIcon = member.icon
+            const isPrimary = idx === 0
+            return (
+              <DropdownMenuItem
+                key={member.id}
+                className={cn("gap-2 cursor-pointer", isPrimary && "font-medium")}
+                onSelect={() => {
+                  onClose()
+                  member.action?.(context)
+                }}
+              >
+                <MemberIcon className="h-4 w-4 text-muted-foreground" />
+                <span>{resolveActionLabel(member, context)}</span>
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
 }

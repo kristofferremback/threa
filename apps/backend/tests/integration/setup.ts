@@ -8,7 +8,7 @@ import { createDatabasePool } from "../../src/db"
 import { createMigrator } from "../../src/db/migrations"
 import { userId } from "../../src/lib/id"
 import type { Querier } from "../../src/db"
-import { UserRepository } from "../../src/features/workspaces"
+import { UserRepository, type InsertUserParams } from "../../src/features/workspaces"
 
 // Re-export production helpers for tests that need to persist data
 export { withClient, withTransaction } from "../../src/db"
@@ -112,7 +112,7 @@ export async function addTestMember(
   db: Querier,
   workspaceId: string,
   workosUserId: string,
-  role: "owner" | "admin" | "user" = "user"
+  role: InsertUserParams["role"] = "member"
 ) {
   const id = userId()
   const normalizedWorkosUserId = workosUserId.toLowerCase()

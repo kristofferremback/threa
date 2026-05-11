@@ -17,7 +17,7 @@ describe("RBAC Enforcement", () => {
     workspaceId = workspace.id
 
     await loginAs(memberClient, "rbac-member@example.com", "RBAC Member")
-    await joinWorkspace(memberClient, workspaceId, "user")
+    await joinWorkspace(memberClient, workspaceId, "member")
 
     await loginAs(adminClient, "rbac-admin@example.com", "RBAC Admin")
     await joinWorkspace(adminClient, workspaceId, "admin")
@@ -29,7 +29,7 @@ describe("RBAC Enforcement", () => {
     })
 
     expect(status).toBe(403)
-    expect((data as { error?: string }).error).toBe("Insufficient role")
+    expect((data as { error?: string }).error).toBe("Insufficient permissions")
   })
 
   test("admin can update AI budget", async () => {

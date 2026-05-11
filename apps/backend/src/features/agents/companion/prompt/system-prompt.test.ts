@@ -25,6 +25,7 @@ const persona: Persona = {
 const scratchpadContext: StreamContext = {
   streamType: StreamTypes.SCRATCHPAD,
   streamInfo: {
+    id: "stream_test",
     name: "Ideas",
     description: null,
     slug: null,
@@ -45,5 +46,36 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt(persona, scratchpadContext, null)
 
     expect(prompt).not.toContain("## Scratchpad Custom Instructions")
+  })
+
+  test("web search recency guidance references tool metadata when temporal context is absent", () => {
+    const prompt = buildSystemPrompt(persona, scratchpadContext, null)
+
+    expect(prompt).toContain("## Web Search")
+    expect(prompt).toContain("ground recency in web_search tool metadata")
+    expect(prompt).not.toContain(
+      "ground your search and answer against the Current Time section; do not mix stale search results"
+    )
+  })
+
+  test("web search recency guidance references Current Time when temporal context is present", () => {
+    const prompt = buildSystemPrompt(
+      persona,
+      {
+        ...scratchpadContext,
+        temporal: {
+          currentTime: "2026-11-15T10:00:00.000Z",
+          timezone: "UTC",
+          utcOffset: "UTC+0",
+          dateFormat: "YYYY-MM-DD",
+          timeFormat: "24h",
+        },
+      },
+      null
+    )
+
+    expect(prompt).toContain(
+      "ground your search and answer against the Current Time section; do not mix stale search results"
+    )
   })
 })

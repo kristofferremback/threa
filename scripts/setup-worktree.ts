@@ -176,6 +176,42 @@ async function cloneDatabase(container: string, sourceDb: string, targetDb: stri
   console.log(`Database '${targetDb}' cloned from '${sourceDb}'`)
 }
 
+async function countTableRows(container: string, dbName: string, tableName: string): Promise<number> {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tableName)) {
+    throw new Error(`Invalid table name: ${tableName}`)
+  }
+
+  const sql = `
+    SELECT CASE
+      WHEN to_regclass('public.${tableName}') IS NULL THEN -1
+      ELSE (SELECT count(*) FROM public.${tableName})
+    END
+  `
+  const result = await $`docker exec ${container} psql -U threa -d ${dbName} -Atc ${sql}`.quiet().nothrow()
+  if (result.exitCode !== 0) {
+    throw new Error(`Could not count ${dbName}.${tableName}: ${result.stderr.toString().trim()}`)
+  }
+
+  const count = Number(result.stdout.toString().trim())
+  if (!Number.isFinite(count)) {
+    throw new Error(`Invalid row count for ${dbName}.${tableName}: ${result.stdout.toString().trim()}`)
+  }
+  return count
+}
+
+async function existingDatabaseNeedsClone(
+  container: string,
+  sourceDb: string,
+  targetDb: string,
+  markerTable: string
+): Promise<boolean> {
+  const sourceCount = await countTableRows(container, sourceDb, markerTable)
+  const targetCount = await countTableRows(container, targetDb, markerTable)
+
+  if (sourceCount <= 0) return false
+  return targetCount <= 0
+}
+
 function copyMcpServers(mainWorktreePath: string, targetWorktreePath: string): void {
   const claudeConfigPath = path.join(os.homedir(), ".claude.json")
 
@@ -313,10 +349,16 @@ async function main() {
 
     const created = await createDatabaseIfNotExists(targetDbName)
     const forceClone = process.env.FORCE_DB_CLONE === "1"
+    const needsClone =
+      !created && !forceClone
+        ? await existingDatabaseNeedsClone(container, sourceDbName, targetDbName, "workspaces")
+        : false
 
-    if (created || forceClone) {
+    if (created || forceClone || needsClone) {
       if (!created && forceClone) {
         console.log(`FORCE_DB_CLONE=1 set, cloning into existing database '${targetDbName}'...`)
+      } else if (needsClone) {
+        console.log(`Existing database '${targetDbName}' appears unseeded; cloning from '${sourceDbName}'...`)
       }
       await cloneDatabase(container, sourceDbName, targetDbName)
     } else {
@@ -328,10 +370,16 @@ async function main() {
     const cpDbName = `${targetDbName}_cp`
     const sourceCpDbName = `${sourceDbName}_cp`
     const cpCreated = await createDatabaseIfNotExists(cpDbName)
+    const cpNeedsClone =
+      !cpCreated && !forceClone
+        ? await existingDatabaseNeedsClone(container, sourceCpDbName, cpDbName, "workspace_registry")
+        : false
 
-    if (cpCreated || forceClone) {
+    if (cpCreated || forceClone || cpNeedsClone) {
       if (!cpCreated && forceClone) {
         console.log(`FORCE_DB_CLONE=1 set, cloning into existing database '${cpDbName}'...`)
+      } else if (cpNeedsClone) {
+        console.log(`Existing database '${cpDbName}' appears unseeded; cloning from '${sourceCpDbName}'...`)
       }
       await cloneDatabase(container, sourceCpDbName, cpDbName)
     } else {

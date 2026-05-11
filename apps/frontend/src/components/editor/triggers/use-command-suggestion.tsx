@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react"
 import { useParams } from "react-router-dom"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, DISCUSS_WITH_ARIADNE_COMMAND } from "@threa/types"
 import type { CommandItem } from "./types"
 import { CommandList } from "./command-list"
 import { useWorkspaceMetadata, useWorkspaceStreams } from "@/stores/workspace-store"
@@ -34,6 +34,12 @@ function isInviteAllowed(streamId: string | undefined, streams: import("@/db").C
 /**
  * Hook that manages the command suggestion state and provides render callbacks.
  * Returns configuration for the CommandExtension and a render function for the popup.
+ *
+ * Client-action commands (e.g. `/discuss-with-ariadne`) still insert a chip
+ * into the composer via the normal suggestion flow; routing to the client
+ * handler happens at composer-send time (`message-input.tsx`) so the user
+ * gets the familiar "type command, press send" UX rather than an action
+ * firing the moment they pick from the autocomplete.
  */
 export function useCommandSuggestion() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
@@ -46,11 +52,14 @@ export function useCommandSuggestion() {
     return metadata.commands
       .filter((cmd) => {
         if (cmd.name === "invite") return inviteAllowed
+        // Gate discuss-with-ariadne on there being a source stream to reference.
+        if (cmd.clientActionId === DISCUSS_WITH_ARIADNE_COMMAND) return !!streamId
         return true
       })
       .map((cmd) => ({
         name: cmd.name,
         description: cmd.description,
+        clientActionId: cmd.clientActionId,
       }))
   }, [metadata?.commands, streamId, streams])
 

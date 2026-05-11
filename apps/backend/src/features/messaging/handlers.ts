@@ -11,52 +11,55 @@ import type { CommandRegistry, CommandDispatchedPayload } from "../commands"
 import { serializeBigInt } from "@threa/backend-common"
 import { eventId, commandId as generateCommandId } from "../../lib/id"
 import { toShortcode, normalizeMessage, toEmoji } from "../emoji"
-import { parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
+import { collectAttachmentReferenceIds, parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 import { messageMetadataSchema } from "./metadata-schema"
+
+// Fields shared by every create/update variant. Defining once keeps the
+// six schemas from drifting when a per-message option is added.
+// `confirmedPrivacyWarning` is required when a share node crosses a privacy
+// boundary; the service returns 409 + `SHARE_PRIVACY_CONFIRMATION_REQUIRED`
+// otherwise.
+const commonMessageOptionsSchema = {
+  attachmentIds: z.array(z.string()).optional(),
+  clientMessageId: z.string().min(1).optional(),
+  metadata: messageMetadataSchema.optional(),
+  confirmedPrivacyWarning: z.boolean().optional(),
+}
+
+const contentJsonSchema = z.object({
+  type: z.literal("doc"),
+  content: z.array(z.any()),
+})
 
 // Schema for JSON input to an existing stream (from rich clients)
 const createMessageJsonToStreamSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
-  contentJson: z.object({
-    type: z.literal("doc"),
-    content: z.array(z.any()),
-  }),
+  contentJson: contentJsonSchema,
   contentMarkdown: z.string().optional(),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Schema for markdown input to an existing stream (from AI/external)
 const createMessageMarkdownToStreamSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
   content: z.string().min(1, "content is required"),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Schema for JSON input to a DM target user (lazy stream creation on first message)
 const createMessageJsonToDmSchema = z.object({
   dmUserId: z.string().min(1, "dmUserId is required"),
-  contentJson: z.object({
-    type: z.literal("doc"),
-    content: z.array(z.any()),
-  }),
+  contentJson: contentJsonSchema,
   contentMarkdown: z.string().optional(),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Schema for markdown input to a DM target user (lazy stream creation on first message)
 const createMessageMarkdownToDmSchema = z.object({
   dmUserId: z.string().min(1, "dmUserId is required"),
   content: z.string().min(1, "content is required"),
-  attachmentIds: z.array(z.string()).optional(),
-  clientMessageId: z.string().min(1).optional(),
-  metadata: messageMetadataSchema.optional(),
+  ...commonMessageOptionsSchema,
 })
 
 // Union schema - accepts either format
@@ -69,15 +72,14 @@ const createMessageSchema = z.union([
 
 // Update can also be either format
 const updateMessageJsonSchema = z.object({
-  contentJson: z.object({
-    type: z.literal("doc"),
-    content: z.array(z.any()),
-  }),
+  contentJson: contentJsonSchema,
   contentMarkdown: z.string().optional(),
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 const updateMessageMarkdownSchema = z.object({
   content: z.string().min(1, "content is required"),
+  confirmedPrivacyWarning: z.boolean().optional(),
 })
 
 const updateMessageSchema = z.union([updateMessageJsonSchema, updateMessageMarkdownSchema])
@@ -86,11 +88,26 @@ const addReactionSchema = z.object({
   emoji: z.string().min(1, "emoji is required"),
 })
 
-export { createMessageSchema, updateMessageSchema, addReactionSchema }
+const moveMessagesToThreadSchema = z.object({
+  sourceStreamId: z.string().min(1, "sourceStreamId is required"),
+  targetMessageId: z.string().min(1, "targetMessageId is required"),
+  messageIds: z.array(z.string().min(1)).min(1).max(100),
+  leaseKey: z.string().min(1, "leaseKey is required"),
+})
+
+const validateMoveMessagesToThreadSchema = moveMessagesToThreadSchema.omit({ leaseKey: true })
+
+export {
+  createMessageSchema,
+  updateMessageSchema,
+  addReactionSchema,
+  moveMessagesToThreadSchema,
+  validateMoveMessagesToThreadSchema,
+}
 
 /**
  * Normalize input to both JSON and markdown formats.
- * - If JSON provided: serialize to markdown
+ * - If JSON provided: serialize to markdown, then normalize the markdown projection
  * - If markdown provided: normalize emoji, parse to JSON
  * Emoji normalization converts raw emoji (👍) to shortcodes (:+1:).
  */
@@ -99,8 +116,10 @@ function normalizeContent(input: z.infer<typeof createMessageSchema> | z.infer<t
   contentMarkdown: string
 } {
   if ("contentJson" in input) {
-    // Rich client: JSON provided, trust it and derive markdown
-    const contentMarkdown = input.contentMarkdown ?? serializeToMarkdown(input.contentJson)
+    // Rich client: JSON provided, trust the structure but still normalize the
+    // markdown projection so editable raw emoji text becomes canonical shortcode
+    // content for storage, usage tracking, and external consumers.
+    const contentMarkdown = normalizeMessage(input.contentMarkdown ?? serializeToMarkdown(input.contentJson))
     return { contentJson: input.contentJson, contentMarkdown }
   } else {
     // AI/external: Markdown provided, normalize and parse to JSON
@@ -161,7 +180,13 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       }
 
       const data = result.data
-      const attachmentIds = data.attachmentIds
+      // Explicit `data.attachmentIds` is the fresh-upload list (each row's
+      // `messageId === null`, claimed by `attachToMessage` on send).
+      // The contentJson-derived list catches inline `attachment:` references
+      // — fresh uploads aren't represented there, references are.
+      // Merging both into the deduped union covers all flavors with one
+      // gate run + one projection write (mirrors the edit path).
+      const explicitAttachmentIds = data.attachmentIds ?? []
 
       const stream = await streamService.resolveWritableMessageStream({
         workspaceId,
@@ -217,6 +242,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
 
       // Normalize to both JSON and markdown formats for normal message creation
       const { contentJson, contentMarkdown } = normalizeContent(data)
+      // Union of explicit fresh-upload ids and inline references parsed from
+      // the canonical contentJson. Without this, a markdown POST containing
+      // `[Image #1](attachment:att_x)` would skip the access gate AND the
+      // attachment_references projection write.
+      const inlineRefIds = collectAttachmentReferenceIds(contentJson)
+      const attachmentIds = [...new Set([...explicitAttachmentIds, ...inlineRefIds])]
 
       // Normal message creation
       const message = await eventService.createMessage({
@@ -226,9 +257,10 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         authorType: "user",
         contentJson,
         contentMarkdown,
-        attachmentIds,
+        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
         clientMessageId: data.clientMessageId,
         metadata: data.metadata,
+        confirmedPrivacyWarning: data.confirmedPrivacyWarning,
       })
 
       res.status(201).json({ message: serializeMessage(message) })
@@ -252,17 +284,13 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Read-access gate (visibility + workspace + thread inheritance), not
+      // a plain stream_members check — public channels and inherited thread
+      // access need to allow the message author through. The author-only
+      // restriction below still enforces "edit your own".
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       if (existing.authorId !== userId) {
@@ -272,6 +300,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       // Normalize to both JSON and markdown formats
       const { contentJson, contentMarkdown } = normalizeContent(result.data)
 
+      // Derive inline attachment ids from the new contentJson so event-service
+      // can refresh the `attachment_references` projection in sync (INV-7).
+      // Edits don't accept fresh-upload ids today (the schema only takes
+      // content), so this is reference-only by construction.
+      const attachmentIds = collectAttachmentReferenceIds(contentJson)
+
       const message = await eventService.editMessage({
         workspaceId,
         messageId,
@@ -279,6 +313,8 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         contentJson,
         contentMarkdown,
         actorId: userId,
+        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+        confirmedPrivacyWarning: result.data.confirmedPrivacyWarning,
       })
 
       if (!message) {
@@ -286,6 +322,74 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
       }
 
       res.json({ message: serializeMessage(message) })
+    },
+
+    async moveToThread(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+
+      const result = moveMessagesToThreadSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      await streamService.resolveWritableMessageStream({
+        workspaceId,
+        userId,
+        target: { streamId: result.data.sourceStreamId },
+      })
+
+      const moveResult = await eventService.moveMessagesToThread({
+        workspaceId,
+        sourceStreamId: result.data.sourceStreamId,
+        targetMessageId: result.data.targetMessageId,
+        messageIds: result.data.messageIds,
+        actorId: userId,
+        leaseKey: result.data.leaseKey,
+      })
+
+      res.json({
+        sourceStreamId: moveResult.sourceStreamId,
+        destinationStreamId: moveResult.destinationStreamId,
+        targetMessageId: moveResult.targetMessageId,
+        movedMessageIds: moveResult.movedMessageIds,
+        thread: moveResult.thread,
+        events: moveResult.events,
+        removedEventIds: moveResult.removedEventIds,
+        sourceTombstoneEvent: moveResult.sourceTombstoneEvent,
+      })
+    },
+
+    async validateMoveToThread(req: Request, res: Response) {
+      const userId = req.user!.id
+      const workspaceId = req.workspaceId!
+
+      const result = validateMoveMessagesToThreadSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      await streamService.resolveWritableMessageStream({
+        workspaceId,
+        userId,
+        target: { streamId: result.data.sourceStreamId },
+      })
+
+      const validation = await eventService.validateMoveMessagesToThread({
+        workspaceId,
+        sourceStreamId: result.data.sourceStreamId,
+        targetMessageId: result.data.targetMessageId,
+        messageIds: result.data.messageIds,
+        actorId: userId,
+      })
+
+      res.json(validation)
     },
 
     async delete(req: Request, res: Response) {
@@ -298,17 +402,11 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Same read-access reasoning as `update`: gate on tryAccess (visibility
+      // + workspace + thread inheritance), then enforce author-only below.
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       if (existing.authorId !== userId) {
@@ -348,17 +446,13 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Reactions are participation by anyone who can read the message.
+      // Plain `isMember` would reject workspace members reacting in a public
+      // channel they haven't joined and threads they're reading via root
+      // inheritance — neither is the intent.
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.addReaction({
@@ -391,17 +485,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Mirror addReaction: read-access gate so users can un-react in any
+      // stream they can read, including public channels and inherited
+      // thread access.
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.removeReaction({
@@ -429,17 +518,12 @@ export function createMessageHandlers({ pool, eventService, streamService, comma
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const [stream, isMember] = await Promise.all([
-        streamService.getStreamById(existing.streamId),
-        streamService.isMember(existing.streamId, userId),
-      ])
-
-      if (!stream || stream.workspaceId !== workspaceId) {
+      // Edit-history is a pure read of a message the viewer can see.
+      // Same read-access semantics as the message itself — gate on
+      // tryAccess, not bare membership.
+      const accessibleStream = await streamService.tryAccess(existing.streamId, workspaceId, userId)
+      if (!accessibleStream) {
         return res.status(404).json({ error: "Message not found" })
-      }
-
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const versions = await eventService.getMessageVersions(messageId)

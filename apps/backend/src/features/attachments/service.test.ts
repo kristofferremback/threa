@@ -2,9 +2,29 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { AttachmentSafetyStatuses } from "@threa/types"
 import * as db from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
-import { AttachmentRepository } from "./repository"
+import { AttachmentRepository, type Attachment } from "./repository"
+import { AttachmentReferenceRepository } from "./reference-repository"
 import { AttachmentExtractionRepository } from "./extraction-repository"
 import { AttachmentService } from "./service"
+
+function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
+  return {
+    id: "attach_1",
+    workspaceId: "ws_1",
+    streamId: "stream_origin",
+    messageId: "msg_origin",
+    uploadedBy: "usr_1",
+    filename: "f.png",
+    mimeType: "image/png",
+    sizeBytes: 1,
+    storageProvider: "s3",
+    storagePath: "k",
+    processingStatus: "completed",
+    safetyStatus: AttachmentSafetyStatuses.CLEAN,
+    createdAt: new Date(),
+    ...overrides,
+  }
+}
 
 function createService() {
   const storage = {
@@ -216,5 +236,77 @@ describe("AttachmentService", () => {
       "staleThresholdMs must be positive"
     )
     await expect(service.recoverStalePendingScans({ batchSize: 0 })).rejects.toThrow("batchSize must be positive")
+  })
+
+  describe("getAccessible", () => {
+    it("returns the attachment when its owning stream is in the accessible set", async () => {
+      spyOn(AttachmentRepository, "findById").mockResolvedValue(makeAttachment({ streamId: "stream_a" }))
+      const refSpy = spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue([])
+
+      const { service } = createService()
+      const result = await service.getAccessible("attach_1", { workspaceId: "ws_1", accessibleStreamIds: ["stream_a"] })
+
+      expect(result?.id).toBe("attach_1")
+      expect(refSpy).not.toHaveBeenCalled()
+    })
+
+    it("returns the attachment when a reference points to an accessible stream", async () => {
+      spyOn(AttachmentRepository, "findById").mockResolvedValue(makeAttachment({ streamId: "stream_origin" }))
+      const refSpy = spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue([
+        "stream_b",
+        "stream_other",
+      ])
+
+      const { service } = createService()
+      const result = await service.getAccessible("attach_1", { workspaceId: "ws_1", accessibleStreamIds: ["stream_b"] })
+
+      expect(result?.id).toBe("attach_1")
+      expect(refSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it("returns null when neither the owning stream nor any reference is accessible", async () => {
+      spyOn(AttachmentRepository, "findById").mockResolvedValue(makeAttachment({ streamId: "stream_origin" }))
+      spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue(["stream_other"])
+
+      const { service } = createService()
+      const result = await service.getAccessible("attach_1", { workspaceId: "ws_1", accessibleStreamIds: ["stream_a"] })
+
+      expect(result).toBeNull()
+    })
+
+    it("returns null when the attachment is unanchored (streamId null) and has no references", async () => {
+      spyOn(AttachmentRepository, "findById").mockResolvedValue(makeAttachment({ streamId: null, messageId: null }))
+      spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue([])
+
+      const { service } = createService()
+      const result = await service.getAccessible("attach_1", { workspaceId: "ws_1", accessibleStreamIds: ["stream_a"] })
+
+      expect(result).toBeNull()
+    })
+
+    it("returns null when the attachment belongs to another workspace", async () => {
+      spyOn(AttachmentRepository, "findById").mockResolvedValue(makeAttachment({ workspaceId: "ws_other" }))
+      const refSpy = spyOn(AttachmentReferenceRepository, "findReferencingStreamIds").mockResolvedValue([])
+
+      const { service } = createService()
+      const result = await service.getAccessible("attach_1", {
+        workspaceId: "ws_1",
+        accessibleStreamIds: ["stream_origin"],
+      })
+
+      expect(result).toBeNull()
+      expect(refSpy).not.toHaveBeenCalled()
+    })
+
+    it("returns null when the attachment is sharing-blocked even if the stream is accessible", async () => {
+      spyOn(AttachmentRepository, "findById").mockResolvedValue(
+        makeAttachment({ streamId: "stream_a", safetyStatus: AttachmentSafetyStatuses.QUARANTINED })
+      )
+
+      const { service } = createService()
+      const result = await service.getAccessible("attach_1", { workspaceId: "ws_1", accessibleStreamIds: ["stream_a"] })
+
+      expect(result).toBeNull()
+    })
   })
 })

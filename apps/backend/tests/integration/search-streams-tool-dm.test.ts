@@ -50,7 +50,7 @@ describe("search_streams DM matching", () => {
         email: `peer.${testWorkspaceId.slice(-6)}@example.com`,
         slug: "peer-user",
         name: "Peer User",
-        role: "user",
+        role: "member",
       })
 
       await StreamRepository.insert(client, {
@@ -143,7 +143,7 @@ describe("search_streams DM matching", () => {
         email: `peer.${testWorkspaceId.slice(-6)}@example.com`,
         slug: "peer-user",
         name: "Peer User",
-        role: "user",
+        role: "member",
       })
       const outsider = await UserRepository.insert(client, {
         id: userId(),
@@ -152,7 +152,7 @@ describe("search_streams DM matching", () => {
         email: `outsider.${testWorkspaceId.slice(-6)}@example.com`,
         slug: "outsider-user",
         name: "Outsider User",
-        role: "user",
+        role: "member",
       })
 
       const scratchpadId = streamId()
@@ -270,7 +270,7 @@ describe("search_streams DM matching", () => {
         email: `accented-peer.${testWorkspaceId.slice(-6)}@example.com`,
         slug: "accented-peer-user",
         name: "Åccént Peer",
-        role: "user",
+        role: "member",
       })
 
       await StreamRepository.insert(client, {
@@ -339,7 +339,7 @@ describe("search_streams DM matching", () => {
         email: `peer.${testWorkspaceId.slice(-6)}@example.com`,
         slug: "peer-user",
         name: "Peer User",
-        role: "user",
+        role: "member",
       })
 
       await StreamRepository.insert(client, {
@@ -398,7 +398,7 @@ describe("search_streams DM matching", () => {
         email: `testpeer.${testWorkspaceId.slice(-6)}@example.com`,
         slug: "testy-user",
         name: "Test",
-        role: "user",
+        role: "member",
       })
 
       const dmId = streamId()
@@ -480,7 +480,7 @@ describe("search_streams DM matching", () => {
         email: `peer.${testWorkspaceId.slice(-6)}@example.com`,
         slug: "peer-user",
         name: "Peer User",
-        role: "user",
+        role: "member",
       })
 
       await StreamRepository.insert(client, {
@@ -530,7 +530,7 @@ describe("search_streams DM matching", () => {
         email: `target.${testWorkspaceId.slice(-6)}@example.com`,
         slug: "pierre-boberg",
         name: "Target Peer",
-        role: "user",
+        role: "member",
       })
       const shortSlugPeer = await UserRepository.insert(client, {
         id: userId(),
@@ -539,7 +539,7 @@ describe("search_streams DM matching", () => {
         email: `short.${testWorkspaceId.slice(-6)}@example.com`,
         slug: "bo",
         name: "Bo",
-        role: "user",
+        role: "member",
       })
 
       const targetDmId = streamId()

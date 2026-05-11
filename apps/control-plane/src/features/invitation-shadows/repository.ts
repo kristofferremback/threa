@@ -3,11 +3,13 @@ import type { Querier } from "@threa/backend-common"
 export interface InvitationShadowRow {
   id: string
   workspace_id: string
-  email: string
+  kind: string
+  email: string | null
   region: string
   status: string
   workos_invitation_id: string | null
   inviter_workos_user_id: string | null
+  token_hash: string | null
   created_at: Date
   expires_at: Date
 }
@@ -19,7 +21,15 @@ export interface PendingInvitationRow {
   expires_at: Date
 }
 
-const SELECT_FIELDS = `id, workspace_id, email, region, status, workos_invitation_id, inviter_workos_user_id, created_at, expires_at`
+export interface LinkLookupRow {
+  id: string
+  workspace_id: string
+  workspace_name: string
+  status: string
+  expires_at: Date
+}
+
+const SELECT_FIELDS = `id, workspace_id, kind, email, region, status, workos_invitation_id, inviter_workos_user_id, token_hash, created_at, expires_at`
 
 export const InvitationShadowRepository = {
   async findById(db: Querier, id: string): Promise<InvitationShadowRow | null> {
@@ -47,15 +57,17 @@ export const InvitationShadowRepository = {
     shadow: {
       id: string
       workspaceId: string
-      email: string
       region: string
+      kind: "email" | "link"
+      email: string | null
+      tokenHash: string | null
       expiresAt: Date
       inviterWorkosUserId?: string
     }
   ): Promise<InvitationShadowRow> {
     const result = await db.query<InvitationShadowRow>(
-      `INSERT INTO invitation_shadows (id, workspace_id, email, region, expires_at, inviter_workos_user_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO invitation_shadows (id, workspace_id, kind, email, region, expires_at, inviter_workos_user_id, token_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (id) DO UPDATE SET
          expires_at = EXCLUDED.expires_at,
          inviter_workos_user_id = COALESCE(EXCLUDED.inviter_workos_user_id, invitation_shadows.inviter_workos_user_id)
@@ -63,13 +75,49 @@ export const InvitationShadowRepository = {
       [
         shadow.id,
         shadow.workspaceId,
-        shadow.email.toLowerCase(),
+        shadow.kind,
+        shadow.email ? shadow.email.toLowerCase() : null,
         shadow.region,
         shadow.expiresAt,
         shadow.inviterWorkosUserId ?? null,
+        shadow.tokenHash,
       ]
     )
     return result.rows[0]
+  },
+
+  /**
+   * Public-surface lookup by token hash. Returns minimal workspace metadata
+   * for the unauthenticated /join page. Never exposes email, role, or note.
+   */
+  async findByTokenHashWithWorkspace(db: Querier, tokenHash: string): Promise<LinkLookupRow | null> {
+    const result = await db.query<LinkLookupRow>(
+      `SELECT s.id, s.workspace_id, wr.name AS workspace_name, s.status, s.expires_at
+       FROM invitation_shadows s
+       JOIN workspace_registry wr ON wr.id = s.workspace_id
+       WHERE s.token_hash = $1 AND s.kind = 'link'
+       LIMIT 1`,
+      [tokenHash]
+    )
+    return result.rows[0] ?? null
+  },
+
+  /** Bind email + workosInvitationId on a previously-unbound link shadow. */
+  async setEmailFromClaim(
+    db: Querier,
+    id: string,
+    email: string,
+    workosInvitationId: string | null
+  ): Promise<InvitationShadowRow | null> {
+    const result = await db.query<InvitationShadowRow>(
+      `UPDATE invitation_shadows
+       SET email = $1,
+           workos_invitation_id = COALESCE($2, workos_invitation_id)
+       WHERE id = $3 AND kind = 'link'
+       RETURNING ${SELECT_FIELDS}`,
+      [email.toLowerCase(), workosInvitationId, id]
+    )
+    return result.rows[0] ?? null
   },
 
   async setWorkosInvitationId(db: Querier, id: string, workosInvitationId: string): Promise<void> {

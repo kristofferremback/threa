@@ -1,4 +1,4 @@
-import { describe, test, expect, spyOn, beforeEach } from "bun:test"
+import { afterAll, describe, test, expect, mock, spyOn, beforeEach } from "bun:test"
 import type { PoolClient } from "pg"
 import { StreamService } from "./service"
 import { StreamRepository } from "./repository"
@@ -6,6 +6,7 @@ import { StreamMemberRepository } from "./member-repository"
 import { StreamEventRepository } from "./event-repository"
 import { OutboxRepository } from "../../lib/outbox"
 import { UserRepository } from "../workspaces"
+import { MessageRepository } from "../messaging"
 import * as idModule from "../../lib/id"
 import * as db from "../../db"
 import { HttpError } from "../../lib/errors"
@@ -22,6 +23,13 @@ spyOn(idModule, "eventId").mockReturnValue("evt_1")
 spyOn(idModule, "streamId").mockReturnValue("stream_new")
 spyOn(db, "withClient").mockImplementation((_pool, fn) => fn({} as PoolClient))
 spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn({} as PoolClient))
+
+// Module-level spies (declared via `const x = spyOn(...)`) stay attached to the
+// target methods for the lifetime of this test file. Without this teardown the
+// spies leak into the next test file in the worker — since Bun's `spyOn`
+// returns the existing spy when a method is already patched, the next file
+// inherits the call history and breaks `expect(...).not.toHaveBeenCalled()`.
+afterAll(() => mock.restore())
 
 describe("StreamService.joinPublicChannel", () => {
   let service: StreamService
@@ -324,5 +332,160 @@ describe("StreamService.findOrCreateDm", () => {
     expect(error).toBeInstanceOf(HttpError)
     expect((error as HttpError).status).toBe(404)
     expect((error as HttpError).message).toBe("Both users must belong to this workspace")
+  })
+})
+
+describe("StreamService.createThread (via create)", () => {
+  let service: StreamService
+
+  const parentStream = {
+    id: "stream_channel",
+    workspaceId: "ws_1",
+    type: "channel",
+    visibility: "private",
+    rootStreamId: null,
+    companionMode: "off",
+    companionPersonaId: null,
+  }
+
+  const thread = {
+    id: "stream_new",
+    workspaceId: "ws_1",
+    type: "thread",
+    visibility: "private",
+    parentStreamId: "stream_channel",
+    parentMessageId: "msg_1",
+    rootStreamId: "stream_channel",
+    createdBy: "member_creator",
+    createdAt: new Date().toISOString(),
+  }
+
+  const mockInsertThreadOrFind = spyOn(StreamRepository, "insertThreadOrFind")
+  const mockMessageFindById = spyOn(MessageRepository, "findById")
+  const mockIsMember = spyOn(StreamMemberRepository, "isMember")
+  const mockFindByStreamAndMember = spyOn(StreamMemberRepository, "findByStreamAndMember")
+  const mockUpdateMember = spyOn(StreamMemberRepository, "update")
+
+  beforeEach(() => {
+    service = new StreamService({} as never)
+    mockFindById.mockReset().mockResolvedValue(parentStream as never)
+    mockInsertThreadOrFind.mockReset().mockResolvedValue({ stream: thread, created: true } as never)
+    mockIsMember.mockReset().mockResolvedValue(false)
+    mockInsertMember.mockReset().mockResolvedValue({
+      streamId: thread.id,
+      memberId: "member_creator",
+      pinned: false,
+      pinnedAt: null,
+      notificationLevel: null,
+      lastReadEventId: null,
+      lastReadAt: null,
+      joinedAt: new Date(),
+    } as never)
+    mockFindByStreamAndMember.mockReset().mockResolvedValue(null)
+    mockInsertEvent.mockReset().mockResolvedValue({
+      id: "evt_1",
+      streamId: thread.id,
+      sequence: 1n,
+      eventType: "member_added",
+      payload: {},
+      actorId: "member_author",
+      actorType: "user",
+      createdAt: new Date(),
+    } as never)
+    mockUpdateMember.mockReset().mockResolvedValue(undefined as never)
+    mockInsertOutbox.mockReset().mockResolvedValue({ id: 1n } as never)
+  })
+
+  test("emits stream:member_added for parent message author so they see the thread in real-time", async () => {
+    mockMessageFindById.mockResolvedValue({
+      id: "msg_1",
+      streamId: "stream_channel",
+      authorType: "user",
+      authorId: "member_author",
+    } as never)
+
+    await service.create({
+      workspaceId: "ws_1",
+      type: "thread",
+      parentStreamId: "stream_channel",
+      parentMessageId: "msg_1",
+      createdBy: "member_creator",
+    })
+
+    expect(mockInsertOutbox).toHaveBeenCalledWith(
+      {},
+      "stream:member_added",
+      expect.objectContaining({
+        workspaceId: "ws_1",
+        streamId: thread.id,
+        memberId: "member_author",
+      })
+    )
+  })
+
+  test("does not emit stream:member_added when author is the thread creator", async () => {
+    mockMessageFindById.mockResolvedValue({
+      id: "msg_1",
+      streamId: "stream_channel",
+      authorType: "user",
+      authorId: "member_creator",
+    } as never)
+
+    await service.create({
+      workspaceId: "ws_1",
+      type: "thread",
+      parentStreamId: "stream_channel",
+      parentMessageId: "msg_1",
+      createdBy: "member_creator",
+    })
+
+    const memberAddedCalls = mockInsertOutbox.mock.calls.filter(([, type]) => type === "stream:member_added")
+    expect(memberAddedCalls).toHaveLength(0)
+  })
+
+  test("does not emit stream:member_added for bot-authored parent messages", async () => {
+    mockMessageFindById.mockResolvedValue({
+      id: "msg_1",
+      streamId: "stream_channel",
+      authorType: "bot",
+      authorId: "bot_1",
+    } as never)
+
+    await service.create({
+      workspaceId: "ws_1",
+      type: "thread",
+      parentStreamId: "stream_channel",
+      parentMessageId: "msg_1",
+      createdBy: "member_creator",
+    })
+
+    const memberAddedCalls = mockInsertOutbox.mock.calls.filter(([, type]) => type === "stream:member_added")
+    expect(memberAddedCalls).toHaveLength(0)
+  })
+
+  test("emits stream:created to parent stream room when thread is newly created", async () => {
+    mockMessageFindById.mockResolvedValue({
+      id: "msg_1",
+      streamId: "stream_channel",
+      authorType: "user",
+      authorId: "member_author",
+    } as never)
+
+    await service.create({
+      workspaceId: "ws_1",
+      type: "thread",
+      parentStreamId: "stream_channel",
+      parentMessageId: "msg_1",
+      createdBy: "member_creator",
+    })
+
+    expect(mockInsertOutbox).toHaveBeenCalledWith(
+      {},
+      "stream:created",
+      expect.objectContaining({
+        workspaceId: "ws_1",
+        streamId: "stream_channel",
+      })
+    )
   })
 })

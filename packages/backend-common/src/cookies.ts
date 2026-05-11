@@ -1,3 +1,5 @@
+import type { CookieOptions, Response } from "express"
+
 const isProduction = process.env.NODE_ENV === "production"
 
 export const parseCookies = (cookieHeader: string): Record<string, string> => {
@@ -44,4 +46,34 @@ export const SESSION_COOKIE_CONFIG = {
   // session set at staging.threa.io during the WorkOS callback is visible on
   // sibling PR subdomains like pr-204-staging.threa.io.
   ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+}
+
+export type SessionCookieOptions = CookieOptions
+
+function clearOptions(options: SessionCookieOptions): SessionCookieOptions {
+  const { maxAge: _, ...rest } = options
+  return rest
+}
+
+function hostOnlyOptions(options: SessionCookieOptions): SessionCookieOptions {
+  const { domain: _, ...rest } = options
+  return rest
+}
+
+export function setSessionCookie(
+  res: Response,
+  session: string,
+  options: SessionCookieOptions = SESSION_COOKIE_CONFIG
+): void {
+  if (options.domain) {
+    res.clearCookie(SESSION_COOKIE_NAME, clearOptions(hostOnlyOptions(options)))
+  }
+  res.cookie(SESSION_COOKIE_NAME, session, options)
+}
+
+export function clearSessionCookie(res: Response, options: SessionCookieOptions = SESSION_COOKIE_CONFIG): void {
+  res.clearCookie(SESSION_COOKIE_NAME, clearOptions(options))
+  if (options.domain) {
+    res.clearCookie(SESSION_COOKIE_NAME, clearOptions(hostOnlyOptions(options)))
+  }
 }

@@ -1,4 +1,4 @@
-import { api, API_BASE } from "./client"
+import { api, API_BASE, parseApiError } from "./client"
 import type { Bot, BotApiKey, CreateBotApiKeyResponse } from "@threa/types"
 
 export interface CreateBotInput {
@@ -78,8 +78,7 @@ export const botsApi = {
       body: formData,
     })
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body.error ?? "Failed to upload avatar")
+      throw await parseApiError(response, { code: "AVATAR_UPLOAD_ERROR", message: "Failed to upload avatar" })
     }
     const body = await response.json()
     return body.data

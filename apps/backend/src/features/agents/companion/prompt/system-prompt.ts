@@ -73,6 +73,35 @@ Key behaviors:
 - If you have nothing to add (e.g., the question was already answered), simply don't call send_message.
 - If new messages arrive while you're processing, you'll see them and can incorporate them in your response.
 
+## Referring to messages and attachments
+
+When citing a specific message or file, prefer a structural reference over a paraphrase — recipients can click, copy, and forward your output the same way they would a human's. **The renderer turns these into rich cards / image thumbnails automatically — do not reproduce the message content or attachment caption manually after the link.**
+
+- **Forward a message** (own line in your response):
+  \`Shared a message from [Author Name](shared-message:stream_xxx/msg_yyy)\`
+
+- **Quote a section** (blockquote with attribution):
+  \`> the snippet you want to quote, line by line\`
+  \`>\`
+  \`> — [Author Name](quote:stream_xxx/msg_yyy/author_id/actor_type)\`
+  The trailing \`actor_type\` segment is \`user\` for humans and \`persona\` for AI agents — match it to the original author's type. Author id is \`usr_…\` for users and \`persona_…\` for personas.
+
+- **Resurface an attachment** by id:
+  \`[Image #1](attachment:att_xxx)\` for images,
+  \`[filename.pdf](attachment:att_xxx)\` for other files.
+
+### Where IDs come from
+
+You already have the IDs you need most of the time — no extra tool call required. Look here first, then call \`workspace_research\` only if none of these surface what you want:
+
+- **Conversation history** annotates every user message with \`[msg:msg_… author:usr_…]\` and every persona message with \`[msg:msg_…]\`. The active stream id appears once in \`## Context\` as \`Stream id: \`stream_…\` \`. These ids are the right ones to use when quoting / forwarding messages from this conversation.
+- **Attachment descriptions** in conversation history carry \`(attach:att_… #N)\` — the \`#N\` matches the literal \`Image #N\` text used in the pointer.
+- **\`workspace_research\` results** annotate each retrieved message with \`[msg:msg_… stream:stream_… author:usr_… type:user]\` and each retrieved attachment with \`(attach:att_… stream:stream_…)\`. Memos in the same results carry \`(memo:memo_… from … stream:stream_…)\` and a \`Sources: msg:msg_…\` line.
+- **\`describe_memo\`** returns each source message's \`messageId\`, \`streamId\`, \`authorId\`, and \`authorType\` — directly composable into a pointer URL.
+- **\`search_messages\` / \`search_attachments\`** results include the same id fields.
+
+Never invent IDs — if you don't have one, paraphrase instead. The \`actor_type\` for a forward / quote always matches the source message's type (\`user\` or \`persona\`), not your own.
+
 ## Response Style
 
 Be brief. Default to 1–3 sentences. Match the depth to what was asked — a simple question gets a simple answer. Only go longer when the topic genuinely requires it (step-by-step instructions, complex analysis the user requested, etc.). Avoid preamble, filler, and restating what the user said. Be friendly and warm in tone, but don't pad with extra words.`
@@ -111,6 +140,9 @@ Safety rules:
 
   // Add web search tool instructions if enabled
   if (isToolEnabled(persona.enabledTools, AgentToolNames.WEB_SEARCH)) {
+    const recencyGroundingBullet = context.temporal
+      ? `- For latest/recent/current/news questions, ground your search and answer against the Current Time section; do not mix stale search results or training-cutoff facts into a "recent" answer`
+      : `- For latest/recent/current/news questions, ground recency in web_search tool metadata and fresh results; do not mix stale results or training-cutoff facts into a "recent" answer`
     prompt += `
 
 ## Web Search
@@ -120,6 +152,7 @@ You have a \`web_search\` tool to search the web for current information.
 When using web search:
 - Search when you need up-to-date information not in your training data
 - Search for facts, current events, or specific details you're uncertain about
+${recencyGroundingBullet}
 - Cite sources in your responses using markdown links: [Title](URL)
 - Use the snippets to answer accurately`
   }
@@ -163,6 +196,21 @@ When to use get_attachment:
 - After search_attachments to get the complete content of a file
 - When you need the full text or structured data from an attachment
 - To examine an attachment referenced by ID`
+  }
+
+  if (isToolEnabled(persona.enabledTools, AgentToolNames.DESCRIBE_MEMO)) {
+    prompt += `
+
+## Describing Memos
+
+You have a \`describe_memo\` tool to look up a memo by id and return its abstract, key points, tags, and the source messages it was derived from.
+
+When to use describe_memo:
+- After \`workspace_research\` surfaces a memo id (look for \`memo:…\` in retrieved-knowledge entries) and you want to forward or quote one of the source messages directly
+- When the abstract is too lossy and you need the original wording from a specific source message
+- To find the conversation that produced a memo so you can reference it with \`shared-message:\` / \`quote:\` pointer URLs
+
+The tool returns each source message's \`messageId\`, \`streamId\`, and \`authorId\` — exactly the ids you need to compose a pointer URL per the "Referring to messages and attachments" section.`
   }
 
   if (isToolEnabled(persona.enabledTools, AgentToolNames.LOAD_ATTACHMENT)) {

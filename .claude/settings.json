@@ -1,6 +1,4 @@
 {
-  "enabledPlugins": {},
-  "plansDirectory": ".claude/plans",
   "hooks": {
     "SessionStart": [
       {
@@ -8,11 +6,25 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" = \"true\" ] && { cp -n .env.claude-code-web .env; docker compose up -d --wait 2>/dev/null; rm -rf node_modules; bun install; }; exit 0",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" = \"true\" ] && { [ -f .env.remote-dev ] || { echo \"Missing .env.remote-dev\" >&2; exit 1; }; cp -n .env.remote-dev .env; docker compose up -d --wait; rm -rf node_modules; bun install; }; exit 0",
             "timeout": 180
           }
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": false
+  },
+  "plansDirectory": ".claude/plans",
+  "availableModels": [
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "sonnet",
+    "haiku",
+    "opusplan"
+  ],
+  "env": {
+    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
   }
 }

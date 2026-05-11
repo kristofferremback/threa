@@ -59,7 +59,7 @@ describe("Trigram Search", () => {
         email: `kristoffer.${suffix}@example.com`,
         slug: `kristoffer-${suffix}`,
         name: "Kristoffer Remback",
-        role: "user",
+        role: "member",
       })
 
       await UserRepository.insert(client, {
@@ -69,7 +69,7 @@ describe("Trigram Search", () => {
         email: `jane.doe.${suffix}@example.com`,
         slug: `jane-doe-${suffix}`,
         name: "Jane Doe",
-        role: "user",
+        role: "member",
       })
 
       // Create streams with various names

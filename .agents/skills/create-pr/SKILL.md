@@ -134,6 +134,17 @@ gh api repos/{owner}/{repo}/pulls --method POST \
 
 Always provide the PR URL to the user when done.
 
+Use this URL capture order:
+
+1. If `gh pr create` succeeds, capture and return the URL printed by `gh`.
+2. If using the GitHub REST API, parse `html_url` from the response body and return it.
+3. If using the `make_pr` MCP tool, return the URL from tool output when available.
+4. If URL cannot be determined (e.g., missing remote/token/tool does not return URL), explicitly say so and include:
+   - the exact reason (for example, "no `origin` remote configured in this checkout")
+   - the PR title used
+   - the branch name used
+   - the next command/API call required to fetch the URL once connectivity/remote is available
+
 ## PR Title Conventions
 
 Use conventional commit format with Linear ticket ID when available:
