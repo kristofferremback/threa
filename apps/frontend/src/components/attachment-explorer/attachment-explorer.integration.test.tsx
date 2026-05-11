@@ -1,7 +1,7 @@
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, waitFor } from "@/test"
+import { render, screen, fireEvent, userEvent, waitFor } from "@/test"
 import { AttachmentExplorer } from "./attachment-explorer"
 import * as attachmentsApiModule from "@/api/attachments"
 import * as workspaceStoreModule from "@/stores/workspace-store"
@@ -115,6 +115,52 @@ describe("AttachmentExplorer", () => {
 
     await waitFor(() => expect(searchSpy).toHaveBeenCalled())
     expect(searchSpy.mock.calls[0]![1]).toMatchObject({ queryText: "q2 roadmap", exact: true })
+  })
+
+  it("reflects typed search text in the input synchronously, independent of URL state", async () => {
+    // Regression: when the input was driven directly by `useSearchParams`,
+    // mobile autocorrect's two-step word replacement saw a stale value
+    // mid-replacement and concatenated the suggestion ("gurl" -> "Guelirl")
+    // instead of substituting it. The input must update synchronously per
+    // keystroke; URL sync is debounced.
+    const searchSpy = vi
+      .spyOn(attachmentsApiModule.attachmentsApi, "search")
+      .mockResolvedValue({ items: [], nextCursor: null })
+
+    renderExplorer("/w/ws_1?explorer=")
+
+    const input = (await screen.findByLabelText("Search attachments")) as HTMLInputElement
+    const user = userEvent.setup()
+    await user.type(input, "girl")
+
+    expect(input.value).toBe("girl")
+
+    // And the URL eventually catches up so the search request fires.
+    await waitFor(() => {
+      const calls = searchSpy.mock.calls
+      expect(calls[calls.length - 1]![1]).toMatchObject({ queryText: "girl" })
+    })
+  })
+
+  it("autocorrect-style word replacement substitutes the word, not concatenates it", async () => {
+    // Mobile autocorrect (iOS Safari, Android Chrome) replaces the misspelled
+    // word in a single input event with `inputType: "insertReplacementText"`,
+    // emitted as one onChange that swaps the whole value. Seed the input
+    // with "gurl", then fire one change to "girl" — the same shape the
+    // browser produces — and assert the local-state contract: the input
+    // shows exactly the corrected word, not the concatenated "Guelirl".
+    vi.spyOn(attachmentsApiModule.attachmentsApi, "search").mockResolvedValue({ items: [], nextCursor: null })
+
+    renderExplorer("/w/ws_1?explorer=")
+
+    const input = (await screen.findByLabelText("Search attachments")) as HTMLInputElement
+
+    const user = userEvent.setup()
+    await user.type(input, "gurl")
+    expect(input.value).toBe("gurl")
+
+    fireEvent.change(input, { target: { value: "girl" } })
+    expect(input.value).toBe("girl")
   })
 
   it("renders the filtered-empty state when filters are active and results are empty", async () => {

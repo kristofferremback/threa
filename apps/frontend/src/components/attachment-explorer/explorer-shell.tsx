@@ -27,12 +27,66 @@ interface ExplorerShellProps {
   enabled: boolean
 }
 
+const QUERY_DEBOUNCE_MS = 200
+
 export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps) {
   const { filters, close, update } = useExplorerUrlState()
   const streams = useWorkspaceStreams(workspaceId)
   const isMobile = useIsMobile()
 
   const search = useAttachmentSearch(workspaceId, filters, { enabled })
+
+  // The query input is locally controlled and debounced into URL state.
+  // Driving `value` directly off `filters.queryText` (which comes from
+  // `useSearchParams`) makes the input lag a tick behind keystrokes, and
+  // mobile autocorrect — which replaces the misspelled word in two DOM
+  // steps — sees a stale value mid-replacement and concatenates the
+  // suggestion onto the original ("gurl" + "girl" -> "Guelirl") instead
+  // of substituting it.
+  const [queryDraft, setQueryDraft] = useState(filters.queryText)
+  const queryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // The latest URL value we wrote ourselves. Lets the URL→draft sync
+  // distinguish our own debounced echo (skip — would clobber newer
+  // keystrokes typed during React Router's render delay) from external
+  // changes like Clear filters or back/forward (apply — cancel pending
+  // debounce so it can't resurrect stale typing).
+  const lastWrittenRef = useRef(filters.queryText)
+
+  // Always call the freshest `update` from the timer. Without this, a
+  // pending debounce captures an older `update` that closes over older
+  // searchParams; firing after another filter changed would write back
+  // a stale snapshot and revert that change.
+  const updateRef = useRef(update)
+  useEffect(() => {
+    updateRef.current = update
+  }, [update])
+
+  useEffect(() => {
+    if (filters.queryText === lastWrittenRef.current) return
+    if (queryDebounceRef.current) {
+      clearTimeout(queryDebounceRef.current)
+      queryDebounceRef.current = null
+    }
+    lastWrittenRef.current = filters.queryText
+    setQueryDraft(filters.queryText)
+  }, [filters.queryText])
+
+  useEffect(() => {
+    return () => {
+      if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current)
+    }
+  }, [])
+
+  const handleQueryChange = useCallback((value: string) => {
+    setQueryDraft(value)
+    if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current)
+    queryDebounceRef.current = setTimeout(() => {
+      queryDebounceRef.current = null
+      lastWrittenRef.current = value
+      updateRef.current({ queryText: value })
+    }, QUERY_DEBOUNCE_MS)
+  }, [])
 
   const parentStreamId = useMemo(() => {
     // Surface a single parent only when exactly one stream is filtered to —
@@ -165,8 +219,8 @@ export function ExplorerShell({ workspaceId, mode, enabled }: ExplorerShellProps
           // moment the explorer mounts, which is jarring for a surface the
           // user often opens just to browse.
           autoFocus={mode === "modal" && !isMobile}
-          value={filters.queryText}
-          onChange={(e) => update({ queryText: e.target.value })}
+          value={queryDraft}
+          onChange={(e) => handleQueryChange(e.target.value)}
           placeholder="Search filename, content, or use “quoted phrase” for exact"
           className="h-8 border-none px-1 shadow-none focus-visible:ring-0"
           aria-label="Search attachments"
