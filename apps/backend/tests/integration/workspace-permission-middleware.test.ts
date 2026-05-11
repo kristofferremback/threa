@@ -51,6 +51,32 @@ describe("requireWorkspacePermission", () => {
     expect(result.error?.status).toBe(403)
   })
 
+  test("session path: null claim falls back to role-derived permissions (legacy token)", async () => {
+    const middleware = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
+    const req = {
+      authUser: { permissions: null },
+      user: { role: "admin" },
+    } as unknown as Request
+
+    const result = await runMiddleware(middleware, req)
+    expect(result.allowed).toBe(true)
+  })
+
+  test("session path: explicit empty claim denies without falling back to role", async () => {
+    // An empty `permissions` array is a meaningful signal from WorkOS that the
+    // user has been granted nothing. Falling back to role here would silently
+    // re-grant access to a just-demoted admin (plan decision 3).
+    const middleware = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
+    const req = {
+      authUser: { permissions: [] },
+      user: { role: "owner" },
+    } as unknown as Request
+
+    const result = await runMiddleware(middleware, req)
+    expect(result.allowed).toBe(false)
+    expect(result.error?.status).toBe(403)
+  })
+
   test("user API key: granted when slug is in pre-clamped key scopes", async () => {
     // `public-api-auth.ts` clamps `req.userApiKey.scopes` against the owner
     // permission mirror at auth time, so this middleware checks the
