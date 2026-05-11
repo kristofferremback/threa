@@ -10,6 +10,7 @@ import {
   OutboxRepository,
   type WorkosOrgService,
 } from "@threa/backend-common"
+import { WORKSPACE_ROLE_SLUGS } from "@threa/types"
 import { WorkspaceRegistryRepository } from "./repository"
 import type { RegionalClient } from "../../lib/regional-client"
 import type { KvClient } from "../../lib/cloudflare-kv-client"
@@ -157,7 +158,7 @@ export class ControlPlaneWorkspaceService {
         await this.workosOrgService.ensureOrganizationMembership({
           organizationId: orgId,
           userId: workosUserId,
-          roleSlug: "admin",
+          roleSlug: WORKSPACE_ROLE_SLUGS.OWNER,
         })
       }
     } catch (error) {

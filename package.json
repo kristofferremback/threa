@@ -20,6 +20,8 @@
     "workos:sync": "bun scripts/sync-workos-permissions.ts",
     "workos:check": "bun scripts/sync-workos-permissions.ts --check",
     "workos-authz:backfill": "bun apps/control-plane/scripts/backfill-workos-authz.ts",
+    "workspace-owners:backfill": "bun apps/control-plane/scripts/backfill-workspace-owners.ts",
+    "workspace-owners:check": "bun apps/control-plane/scripts/backfill-workspace-owners.ts --check",
     "monitoring:start": "docker compose -f docker-compose.monitoring.yml up -d",
     "monitoring:stop": "docker compose -f docker-compose.monitoring.yml stop",
     "monitoring:logs": "docker compose -f docker-compose.monitoring.yml logs -f",

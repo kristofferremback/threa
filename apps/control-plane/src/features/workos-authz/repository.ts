@@ -206,6 +206,50 @@ export const WorkosAuthzRepository = {
   },
 
   /**
+   * One-shot owner backfill: workspaces whose creator is not yet recorded as
+   * an `owner` in the mirror. LEFT JOIN keeps workspaces where the creator
+   * has no membership row at all (mirror gap); `COALESCE(... ANY(...), false)`
+   * is needed because `ANY(NULL)` evaluates to NULL, not false.
+   */
+  async findWorkspaceCreatorsMissingOwnerRole(db: Querier): Promise<
+    Array<{
+      workspaceId: string
+      workosOrganizationId: string
+      createdByWorkosUserId: string
+      organizationMembershipId: string | null
+      roleSlugs: string[]
+    }>
+  > {
+    const result = await db.query<{
+      workspace_id: string
+      workos_organization_id: string
+      created_by_workos_user_id: string
+      organization_membership_id: string | null
+      role_slugs: string[] | null
+    }>(
+      `SELECT wr.id AS workspace_id,
+              wr.workos_organization_id,
+              wr.created_by_workos_user_id,
+              wom.organization_membership_id,
+              wom.role_slugs
+       FROM workspace_registry wr
+       LEFT JOIN workos_organization_memberships wom
+         ON wom.workos_organization_id = wr.workos_organization_id
+         AND wom.workos_user_id = wr.created_by_workos_user_id
+       WHERE wr.workos_organization_id IS NOT NULL
+         AND NOT COALESCE('owner' = ANY(wom.role_slugs), false)
+       ORDER BY wr.created_at ASC`
+    )
+    return result.rows.map((row) => ({
+      workspaceId: row.workspace_id,
+      workosOrganizationId: row.workos_organization_id,
+      createdByWorkosUserId: row.created_by_workos_user_id,
+      organizationMembershipId: row.organization_membership_id,
+      roleSlugs: row.role_slugs ?? [],
+    }))
+  },
+
+  /**
    * Count members of an org holding `role_slug`, optionally excluding one user.
    * Used by the last-owner guard: a `SELECT 1` filtered by role is bounded
    * regardless of org size, where `listByOrganization` would hydrate every row.

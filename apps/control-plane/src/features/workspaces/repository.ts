@@ -133,6 +133,18 @@ export const WorkspaceRegistryRepository = {
   },
 
   /**
+   * Count workspaces that have a non-null `workos_organization_id`. Used by the
+   * owner backfill to compute "already-owner" workspaces by subtraction without
+   * a second pass over all rows.
+   */
+  async countWithWorkosOrganizationId(db: Querier): Promise<number> {
+    const result = await db.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM workspace_registry WHERE workos_organization_id IS NOT NULL`
+    )
+    return Number(result.rows[0]?.count ?? 0)
+  },
+
+  /**
    * List the distinct WorkOS organization ids registered for any workspace.
    * Used by the WorkOS authz backfill to enumerate orgs without paying for
    * the membership-count join in {@link listAllWithMemberCounts}.
