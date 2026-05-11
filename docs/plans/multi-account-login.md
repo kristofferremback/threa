@@ -7,7 +7,14 @@ This forecloses two real-world cases:
 1. **Same WorkOS user, multiple workspaces.** Friend group + work, both reachable from the same email. Already supported in the data model — the control plane keys workspaces by `workosUserId` — but the UX is a clunky full-page detour.
 2. **Different WorkOS users, multiple workspaces.** Personal email + work email. Today, signing in as the second one logs out of the first. There is no concurrent-identity primitive at all.
 
-The PWA constraint forecloses the easy answer. Linear gets multi-account "for free" because each workspace is its own subdomain (`<ws>.linear.app`) with its own cookie jar. Threa is path-routed (`/w/{id}`), the PWA is installed at `app.threa.io/`, scope is `/`, there's one service worker and one PushManager subscription. We must carry N identities inside one origin.
+The PWA constraint shapes the solution space. The app is installed at `app.threa.io/`, scope is `/`, with one service worker and one PushManager subscription. Per-workspace browser profiles, per-workspace cookie jars, and per-workspace PWA installs are all off the table — multiple identities have to coexist inside one origin.
+
+The two natural ways to do this are:
+
+1. **Bearer tokens in client storage** (Linear, Notion, most multi-account web apps). N access tokens in IndexedDB or localStorage; each request sends one in `Authorization`. Clean per-request semantics, but the tokens are JS-readable — XSS exfiltrates every active session. Refresh tokens have to live somewhere similar or behind a custom refresh endpoint.
+2. **N HttpOnly cookies in one jar with a server-side selection mechanism** (this plan). Sealed sessions stay HttpOnly. Cost is more cookie-jar bookkeeping; benefit is XSS can't read sealed sessions at all.
+
+We pick (2) because we already get HttpOnly sealed sessions for free from WorkOS, and we'd rather not give that up.
 
 ## Goals
 
@@ -15,14 +22,14 @@ The PWA constraint forecloses the easy answer. Linear gets multi-account "for fr
 2. **No accidental leakage.** Server-side: every request authenticates as exactly one WorkOS user, and that user's workspace membership is independently checked. Client-side: cached data, IDB rows, query state, and notifications cannot bleed between identities.
 3. **Stay logged in.** Sessions for accounts the user rarely opens still refresh in the background, so an unused account doesn't silently expire.
 4. **Cross-account notification reach.** Push notifications fire for any account/workspace the user is signed into, not just the active one. Per-account and per-workspace mute toggles work.
-5. **Linear-style switcher.** A persistent control listing every signed-in account and its workspaces, with click-to-switch. New "Add another account" affordance kicks off OAuth into a parked slot without disturbing the active session.
-6. **Slack-style cross-account switch UX.** Switching between accounts performs a full reload. Switching between workspaces under the same account stays in-app.
+5. **Persistent in-app switcher.** A control listing every signed-in account and its workspaces, with click-to-switch. "Add another account" kicks off OAuth into a parked slot without disturbing the active session.
+6. **Full reload on cross-account switch, in-app navigation on same-account workspace switch.** Switching identity is heavyweight (clear in-memory caches, swap Dexie DB, reconnect socket); reload makes the boundary obvious and impossible to corrupt. Switching workspaces under one identity is cheap (existing path).
 
 ## Non-goals
 
 - **Multi-account in the backoffice.** The backoffice (`admin.threa.io`) is platform-admin-only and stays single-session. Its cookie name moves to `wos_session_backoffice` so it can never collide with workspace-app cookies on `.threa.io`.
 - **Concurrent active sessions in different tabs.** Cookies are per-origin, not per-tab. The "active" identity is a property of the cookie jar, not the tab. Other tabs reload to align after a switch.
-- **Linear-style subdomain-per-workspace.** Out of scope. We solve the PWA constraint with one origin + cookie-jar slots, not by changing how workspaces are addressed.
+- **Subdomain-per-workspace addressing.** Out of scope. We solve the multi-identity problem inside one origin via cookie-jar slots, not by changing how workspaces are addressed.
 - **Email-merging.** If two slots happen to resolve to the same WorkOS user, we coalesce to one slot (with a hidden override flag for QA). We do not attempt to merge accounts that are different WorkOS users with the same email.
 - **Federation between accounts.** Each account is independent. There is no "follow conversations across accounts" feature; cross-account presence is limited to unread badges and notification surfaces.
 
@@ -207,7 +214,7 @@ Notification click → SW opens `/w/{workspaceId}/...`. With multi-account, the 
 
 The service worker also participates: on OAuth callback completion, the SW posts the same events via `clients.matchAll()` so tabs that didn't initiate the OAuth still see the new account.
 
-### Switcher UX (Linear-inspired)
+### Switcher UX
 
 ```
 ┌─ Sidebar footer ────────────┐
