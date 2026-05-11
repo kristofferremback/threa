@@ -180,12 +180,16 @@ async function fetchProject(
   client: { request<T>(query: string, variables?: Record<string, unknown>): Promise<T> },
   id: string
 ) {
-  for (const candidate of projectLookupCandidates(id)) {
+  const candidates = projectLookupCandidates(id)
+  for (const [index, candidate] of candidates.entries()) {
     try {
       const response = await client.request<{ project: LinearProjectNode | null }>(GET_PROJECT_QUERY, { id: candidate })
       if (response.project) return toProjectDetail(response.project)
-    } catch {
-      // Some URL slug forms are rejected before returning null; try the next candidate.
+    } catch (error) {
+      // Some URL slug forms are rejected before returning null; try the short-id
+      // fallback when available, but preserve the final error so auth/rate-limit
+      // failures are not mislabeled as "not found".
+      if (index === candidates.length - 1) throw error
     }
   }
   return null

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createLinearGetIssueTool, createLinearGetProjectTool, createLinearListIssuesTool } from "./index"
+import { LinearApiError } from "../../../workspace-integrations"
 import type { LinearToolDeps } from "./deps"
 
 function deps(handler: (query: string, variables: Record<string, unknown>) => unknown): LinearToolDeps {
@@ -133,5 +134,20 @@ describe("linear_get_project", () => {
     const output = JSON.parse(result.output)
     expect(calls).toEqual([{ id: "smaller-improvements-2026-h1-623f5efd5685" }, { id: "623f5efd5685" }])
     expect(output.project.name).toBe("Smaller improvements 2026 H1")
+  })
+
+  test("preserves final Linear API errors instead of reporting not found", async () => {
+    const tool = createLinearGetProjectTool(
+      deps((_query, variables) => {
+        if (variables.id === "broken-project-623f5efd5685") throw new Error("invalid slug")
+        throw new LinearApiError("Linear API rate limit exceeded", 429, "RATELIMITED")
+      })
+    )
+
+    const result = await tool.config.execute({ id: "broken-project-623f5efd5685" }, { toolCallId: "call_1" })
+    expect(JSON.parse(result.output)).toEqual({
+      error: "Linear API rate limit exceeded. Try again later.",
+      code: "LINEAR_RATE_LIMITED",
+    })
   })
 })
