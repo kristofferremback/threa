@@ -20,6 +20,7 @@ import type { LinearClient } from "../workspace-integrations"
 const log = logger.child({ module: "linear-link-preview" })
 
 const LINEAR_FAVICON_URL = "https://linear.app/favicon.ico"
+const ISSUE_SUMMARY_MAX_LENGTH = 320
 const COMMENT_PREVIEW_MAX_LENGTH = 320
 const PROJECT_DESCRIPTION_MAX_LENGTH = 320
 const DOCUMENT_SUMMARY_MAX_LENGTH = 240
@@ -96,6 +97,7 @@ const ISSUE_QUERY = /* GraphQL */ `
       priorityLabel
       estimate
       dueDate
+      description
       state {
         name
         type
@@ -164,28 +166,31 @@ async function fetchIssuePreview(
 // ── Comment ─────────────────────────────────────────────────────────────
 
 const COMMENT_QUERY = /* GraphQL */ `
-  query ThreaCommentPreview($id: String!) {
-    comment(id: $id) {
-      id
-      body
-      createdAt
-      user {
-        id
+  query ThreaCommentPreview($issueId: String!) {
+    issue(id: $issueId) {
+      identifier
+      title
+      team {
+        key
         name
-        displayName
-        avatarUrl
       }
-      issue {
-        identifier
-        title
-        team {
-          key
-          name
-        }
-        state {
-          name
-          type
-          color
+      state {
+        name
+        type
+        color
+      }
+      comments(first: 50) {
+        nodes {
+          id
+          url
+          body
+          createdAt
+          user {
+            id
+            name
+            displayName
+            avatarUrl
+          }
         }
       }
     }
@@ -199,10 +204,13 @@ async function fetchCommentPreview(
   parsed: Extract<LinearUrlMatch, { type: "linear_comment" }>,
   fetchedAt: string
 ): Promise<UpdateLinkPreviewParams | null> {
-  const { comment } = await client.request<{ comment: LinearCommentNode | null }>(COMMENT_QUERY, {
-    id: parsed.commentId,
+  const { issue } = await client.request<{ issue: LinearCommentIssueNode | null }>(COMMENT_QUERY, {
+    issueId: parsed.identifier,
   })
-  if (!comment || !comment.issue) return null
+  if (!issue) return null
+
+  const comment = findLinearComment(issue.comments?.nodes ?? [], parsed.commentId)
+  if (!comment) return null
 
   const body = typeof comment.body === "string" ? comment.body : ""
   const truncated = body.length > COMMENT_PREVIEW_MAX_LENGTH
@@ -212,10 +220,10 @@ async function fetchCommentPreview(
     author: toLinearActor(comment.user),
     createdAt: comment.createdAt,
     parent: {
-      identifier: comment.issue.identifier,
-      title: comment.issue.title,
-      team: toLinearTeam(comment.issue.team),
-      state: toLinearIssueState(comment.issue.state),
+      identifier: issue.identifier,
+      title: issue.title,
+      team: toLinearTeam(issue.team),
+      state: toLinearIssueState(issue.state),
     },
   }
 
@@ -244,22 +252,24 @@ async function fetchCommentPreview(
 // ── Project ─────────────────────────────────────────────────────────────
 
 const PROJECT_QUERY = /* GraphQL */ `
-  query ThreaProjectPreview($slugId: String!) {
-    projects(filter: { slugId: { eq: $slugId } }, first: 1) {
-      nodes {
+  query ThreaProjectPreview($id: String!) {
+    project(id: $id) {
+      id
+      name
+      description
+      state
+      progress
+      startDate
+      targetDate
+      lead {
         id
         name
-        description
-        state
-        progress
-        startDate
-        targetDate
-        lead {
-          id
-          name
-          displayName
-          avatarUrl
-        }
+        displayName
+        avatarUrl
+      }
+      initiative {
+        id
+        name
       }
     }
   }
@@ -272,10 +282,7 @@ async function fetchProjectPreview(
   parsed: Extract<LinearUrlMatch, { type: "linear_project" }>,
   fetchedAt: string
 ): Promise<UpdateLinkPreviewParams | null> {
-  const { projects } = await client.request<{ projects: { nodes: LinearProjectNode[] } }>(PROJECT_QUERY, {
-    slugId: parsed.slugId,
-  })
-  const node = projects?.nodes?.[0]
+  const node = await fetchProjectNode(client, parsed.slugId)
   if (!node) return null
 
   const description = typeof node.description === "string" ? node.description : null
@@ -287,6 +294,7 @@ async function fetchProjectPreview(
     status: typeof node.state === "string" ? node.state : "",
     progress: typeof node.progress === "number" ? node.progress : 0,
     lead: toLinearActor(node.lead),
+    initiativeName: typeof node.initiative?.name === "string" ? node.initiative.name : null,
     targetDate: typeof node.targetDate === "string" ? node.targetDate : null,
     startDate: typeof node.startDate === "string" ? node.startDate : null,
   }
@@ -421,6 +429,7 @@ interface LinearIssueNode {
   priorityLabel?: string | null
   estimate?: number | null
   dueDate?: string | null
+  description?: string | null
   state: LinearStateNode
   assignee: LinearUserNode | null
   team: LinearTeamNode
@@ -432,15 +441,18 @@ interface LinearIssueNode {
 
 interface LinearCommentNode {
   id: string
+  url?: string | null
   body?: string
   createdAt: string
   user: LinearUserNode | null
-  issue: {
-    identifier: string
-    title: string
-    team: LinearTeamNode
-    state: LinearStateNode
-  } | null
+}
+
+interface LinearCommentIssueNode {
+  identifier: string
+  title: string
+  team: LinearTeamNode
+  state: LinearStateNode
+  comments?: { nodes?: LinearCommentNode[] } | null
 }
 
 interface LinearProjectNode {
@@ -452,6 +464,7 @@ interface LinearProjectNode {
   startDate?: string | null
   targetDate?: string | null
   lead?: LinearUserNode | null
+  initiative?: { id?: string; name?: string } | null
 }
 
 interface LinearDocumentNode {
@@ -480,6 +493,10 @@ function toIssuePreviewData(issue: LinearIssueNode): LinearIssuePreviewData {
   return {
     identifier: issue.identifier,
     title: issue.title,
+    summary: truncateWithEllipsis(
+      typeof issue.description === "string" ? issue.description.trim() : null,
+      ISSUE_SUMMARY_MAX_LENGTH
+    ),
     state: toLinearIssueState(issue.state),
     priority,
     team: toLinearTeam(issue.team),
@@ -494,10 +511,45 @@ function toIssuePreviewData(issue: LinearIssueNode): LinearIssuePreviewData {
 }
 
 function buildIssueDescription(data: LinearIssuePreviewData): string {
+  if (data.summary) return data.summary
+
   const parts: string[] = [`${data.team.key}`, data.state.name]
   if (data.priority) parts.push(data.priority.label)
   if (data.assignee) parts.push(`@${data.assignee.displayName}`)
   return parts.join(" · ")
+}
+
+async function fetchProjectNode(client: LinearClientLike, slugId: string): Promise<LinearProjectNode | null> {
+  for (const id of projectLookupCandidates(slugId)) {
+    try {
+      const { project } = await client.request<{ project: LinearProjectNode | null }>(PROJECT_QUERY, { id })
+      if (project) return project
+    } catch {
+      // Linear accepts project short IDs in `project(id:)`; some full URL slug
+      // forms may be rejected before returning null. Try the next candidate.
+    }
+  }
+  return null
+}
+
+function projectLookupCandidates(slugId: string): string[] {
+  const candidates = [slugId]
+  const shortId = slugId.split("-").at(-1)
+  if (shortId && shortId !== slugId && /^[a-zA-Z0-9]{6,}$/.test(shortId)) {
+    candidates.push(shortId)
+  }
+  return candidates
+}
+
+function findLinearComment(comments: LinearCommentNode[], commentId: string): LinearCommentNode | null {
+  const normalizedId = commentId.toLowerCase()
+  return (
+    comments.find((comment) => {
+      const id = typeof comment.id === "string" ? comment.id.toLowerCase() : ""
+      const url = typeof comment.url === "string" ? comment.url.toLowerCase() : ""
+      return id === normalizedId || id.startsWith(normalizedId) || url.includes(`#comment-${normalizedId}`)
+    }) ?? null
+  )
 }
 
 function toLinearActor(node: LinearUserNode | null | undefined): LinearActor | null {

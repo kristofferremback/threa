@@ -925,6 +925,7 @@ export interface LinearOrganizationSummary {
 export interface LinearIssuePreviewData {
   identifier: string
   title: string
+  summary: string | null
   state: LinearIssueState
   priority: { label: string; value: number } | null
   team: LinearTeam
@@ -958,6 +959,7 @@ export interface LinearProjectPreviewData {
   status: string
   progress: number
   lead: LinearActor | null
+  initiativeName: string | null
   targetDate: string | null
   startDate: string | null
 }
