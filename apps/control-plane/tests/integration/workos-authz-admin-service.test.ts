@@ -237,6 +237,78 @@ describe("WorkosAuthzAdminService", () => {
       )
     })
   })
+
+  describe("concurrent writes", () => {
+    test("two owners demoting each other in parallel: lock serializes, second sees LAST_OWNER", async () => {
+      // Two owners (A = ownerUserId from beforeEach, B = otherOwnerUserId).
+      // Each tries to demote the other; without the per-org advisory lock
+      // both reads would see "2 owners", both guards pass, and WorkOS ends
+      // with 0 owners. With the lock, the second caller re-reads WorkOS
+      // after the first commits and trips LAST_OWNER.
+      await seedMembership(pool, orgId, otherOwnerUserId, "om_owner_2", [WORKSPACE_ROLE_SLUGS.OWNER])
+      workos.setOrganizationMemberships(orgId, [
+        stubMembership("om_owner", orgId, ownerUserId, WORKSPACE_ROLE_SLUGS.OWNER),
+        stubMembership("om_owner_2", orgId, otherOwnerUserId, WORKSPACE_ROLE_SLUGS.OWNER),
+        stubMembership("om_admin", orgId, adminUserId, WORKSPACE_ROLE_SLUGS.ADMIN),
+        stubMembership("om_member", orgId, memberUserId, WORKSPACE_ROLE_SLUGS.MEMBER),
+      ])
+
+      const actorA: AdminActor = { workosUserId: ownerUserId, isPlatformAdmin: false }
+      const actorB: AdminActor = { workosUserId: otherOwnerUserId, isPlatformAdmin: false }
+
+      const results = await Promise.allSettled([
+        service.changeRole({
+          actor: actorA,
+          organizationId: orgId,
+          targetUserId: otherOwnerUserId,
+          roleSlug: WORKSPACE_ROLE_SLUGS.ADMIN,
+        }),
+        service.changeRole({
+          actor: actorB,
+          organizationId: orgId,
+          targetUserId: ownerUserId,
+          roleSlug: WORKSPACE_ROLE_SLUGS.ADMIN,
+        }),
+      ])
+
+      const fulfilled = results.filter((r) => r.status === "fulfilled")
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected")
+      expect(fulfilled).toHaveLength(1)
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0]!.reason).toBeInstanceOf(HttpError)
+      expect((rejected[0]!.reason as HttpError).code).toBe("LAST_OWNER")
+
+      const memberships = await workos.listOrganizationMemberships(orgId)
+      const remainingOwners = memberships.filter((m) => m.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER))
+      expect(remainingOwners).toHaveLength(1)
+    })
+
+    test("two parallel removes of co-owners: lock serializes, second sees LAST_OWNER", async () => {
+      await seedMembership(pool, orgId, otherOwnerUserId, "om_owner_2", [WORKSPACE_ROLE_SLUGS.OWNER])
+      workos.setOrganizationMemberships(orgId, [
+        stubMembership("om_owner", orgId, ownerUserId, WORKSPACE_ROLE_SLUGS.OWNER),
+        stubMembership("om_owner_2", orgId, otherOwnerUserId, WORKSPACE_ROLE_SLUGS.OWNER),
+      ])
+
+      // Platform admin removes each owner concurrently. Without the lock both
+      // guards would pass; with the lock the second sees one owner remaining
+      // and trips LAST_OWNER on its own removal.
+      const results = await Promise.allSettled([
+        service.removeMember({ actor: platformAdminActor, organizationId: orgId, targetUserId: ownerUserId }),
+        service.removeMember({ actor: platformAdminActor, organizationId: orgId, targetUserId: otherOwnerUserId }),
+      ])
+
+      const fulfilled = results.filter((r) => r.status === "fulfilled")
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected")
+      expect(fulfilled).toHaveLength(1)
+      expect(rejected).toHaveLength(1)
+      expect((rejected[0]!.reason as HttpError).code).toBe("LAST_OWNER")
+
+      const memberships = await workos.listOrganizationMemberships(orgId)
+      const remainingOwners = memberships.filter((m) => m.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER))
+      expect(remainingOwners).toHaveLength(1)
+    })
+  })
 })
 
 async function seedMembership(

@@ -1,7 +1,7 @@
 import type { Pool } from "pg"
-import { HttpError, logger, type WorkosOrgService } from "@threa/backend-common"
+import { HttpError, logger, type WorkosOrganizationMembership, type WorkosOrgService } from "@threa/backend-common"
 import { WORKSPACE_ROLE_SLUGS, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
-import { WorkosAuthzRepository, type WorkosOrgMembershipRow } from "./repository"
+import { withOrganizationAdminLock } from "./org-admin-lock"
 
 interface Dependencies {
   pool: Pool
@@ -41,13 +41,22 @@ export interface RemoveMemberParams {
 }
 
 /**
- * Write paths for WorkOS organization memberships. Reads the mirror to enforce
- * data-integrity guards and delegates the actual WorkOS mutation to
- * `WorkosOrgService`. Mirror updates land asynchronously through the regular
- * event poller — callers see eventual consistency, not read-your-write.
+ * Write paths for WorkOS organization memberships.
  *
- * INV-6: service owns the orchestration; no transaction is required because
- * the local mirror is read-only on this path.
+ * Concurrency model: every write acquires a per-organization advisory lock
+ * via `withOrganizationAdminLock`, then reads the *authoritative* membership
+ * list from WorkOS (not the local mirror, which is async-updated by the event
+ * poller and would be stale here). All guards — actor permission, target
+ * lookup, last-owner protection — derive from that single fresh snapshot.
+ *
+ * This is intentional: a check-then-act against the mirror is INV-20-unsafe
+ * because the mirror's `last_event_at` only advances after the poller picks
+ * up the WorkOS event, so two concurrent admin writes both see the pre-write
+ * state. The lock + WorkOS read makes the guard transactional from the
+ * caller's perspective.
+ *
+ * The poller continues to be the canonical mirror updater; this path does not
+ * write to the mirror.
  */
 export class WorkosAuthzAdminService {
   private pool: Pool
@@ -60,95 +69,97 @@ export class WorkosAuthzAdminService {
 
   async assignRole(params: AssignRoleParams): Promise<void> {
     assertKnownRole(params.roleSlug)
-    await this.assertActorMayManage(params.actor, params.organizationId)
+    await withOrganizationAdminLock(this.pool, params.organizationId, async () => {
+      const memberships = await this.workosOrgService.listOrganizationMemberships(params.organizationId)
+      this.assertActorMayManage(params.actor, memberships)
 
-    // Promotion to owner via assign is allowed (this is how a new owner gets
-    // their first membership). Demotion to non-owner of an existing owner is
-    // a `changeRole` concern and is guarded there.
-    await this.workosOrgService.ensureOrganizationMembership({
-      organizationId: params.organizationId,
-      userId: params.targetUserId,
-      roleSlug: params.roleSlug,
-    })
-    logger.info(
-      {
-        actor: params.actor.workosUserId,
+      // Promotion to owner via assign is allowed (this is how a new owner gets
+      // their first membership). Demotion of an existing owner is a
+      // `changeRole` concern and is guarded there.
+      await this.workosOrgService.ensureOrganizationMembership({
         organizationId: params.organizationId,
-        targetUserId: params.targetUserId,
+        userId: params.targetUserId,
         roleSlug: params.roleSlug,
-      },
-      "WorkosAuthzAdminService: assignRole"
-    )
+      })
+      logger.info(
+        {
+          actor: params.actor.workosUserId,
+          organizationId: params.organizationId,
+          targetUserId: params.targetUserId,
+          roleSlug: params.roleSlug,
+        },
+        "WorkosAuthzAdminService: assignRole"
+      )
+    })
   }
 
   async changeRole(params: ChangeRoleParams): Promise<void> {
     assertKnownRole(params.roleSlug)
-    await this.assertActorMayManage(params.actor, params.organizationId)
+    await withOrganizationAdminLock(this.pool, params.organizationId, async () => {
+      const memberships = await this.workosOrgService.listOrganizationMemberships(params.organizationId)
+      this.assertActorMayManage(params.actor, memberships)
 
-    const target = await this.requireTargetMembership(params.organizationId, params.targetUserId)
-    const wasOwner = target.role_slugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)
-    const willBeOwner = params.roleSlug === WORKSPACE_ROLE_SLUGS.OWNER
+      const target = requireTargetMembership(memberships, params.targetUserId)
+      const wasOwner = target.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)
+      const willBeOwner = params.roleSlug === WORKSPACE_ROLE_SLUGS.OWNER
 
-    if (wasOwner && !willBeOwner) {
-      this.assertNotSelfDemote(params.actor, params.targetUserId)
-      await this.assertNotLastOwner(params.organizationId, params.targetUserId)
-    }
+      if (wasOwner && !willBeOwner) {
+        this.assertNotSelfDemote(params.actor, params.targetUserId)
+        this.assertNotLastOwner(memberships, params.targetUserId)
+      }
 
-    await this.workosOrgService.changeOrganizationMembershipRole({
-      organizationMembershipId: target.organization_membership_id,
-      roleSlug: params.roleSlug,
+      await this.workosOrgService.changeOrganizationMembershipRole({
+        organizationMembershipId: target.id,
+        roleSlug: params.roleSlug,
+      })
+      logger.info(
+        {
+          actor: params.actor.workosUserId,
+          organizationId: params.organizationId,
+          targetUserId: params.targetUserId,
+          fromRoles: target.roleSlugs,
+          toRole: params.roleSlug,
+        },
+        "WorkosAuthzAdminService: changeRole"
+      )
     })
-    logger.info(
-      {
-        actor: params.actor.workosUserId,
-        organizationId: params.organizationId,
-        targetUserId: params.targetUserId,
-        fromRoles: target.role_slugs,
-        toRole: params.roleSlug,
-      },
-      "WorkosAuthzAdminService: changeRole"
-    )
   }
 
   async removeMember(params: RemoveMemberParams): Promise<void> {
-    await this.assertActorMayManage(params.actor, params.organizationId)
+    await withOrganizationAdminLock(this.pool, params.organizationId, async () => {
+      const memberships = await this.workosOrgService.listOrganizationMemberships(params.organizationId)
+      this.assertActorMayManage(params.actor, memberships)
 
-    const target = await this.requireTargetMembership(params.organizationId, params.targetUserId)
-    this.assertNotSelfDemote(params.actor, params.targetUserId)
-    if (target.role_slugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)) {
-      await this.assertNotLastOwner(params.organizationId, params.targetUserId)
-    }
+      const target = requireTargetMembership(memberships, params.targetUserId)
+      this.assertNotSelfDemote(params.actor, params.targetUserId)
+      if (target.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)) {
+        this.assertNotLastOwner(memberships, params.targetUserId)
+      }
 
-    await this.workosOrgService.removeOrganizationMembership(target.organization_membership_id)
-    logger.info(
-      {
-        actor: params.actor.workosUserId,
-        organizationId: params.organizationId,
-        targetUserId: params.targetUserId,
-      },
-      "WorkosAuthzAdminService: removeMember"
-    )
+      await this.workosOrgService.removeOrganizationMembership(target.id)
+      logger.info(
+        {
+          actor: params.actor.workosUserId,
+          organizationId: params.organizationId,
+          targetUserId: params.targetUserId,
+        },
+        "WorkosAuthzAdminService: removeMember"
+      )
+    })
   }
 
-  // --- guards --------------------------------------------------------------
+  // --- guards (all derived from a single WorkOS snapshot taken under the
+  // per-org advisory lock) --------------------------------------------------
 
-  private async assertActorMayManage(actor: AdminActor, organizationId: string): Promise<void> {
+  private assertActorMayManage(actor: AdminActor, memberships: WorkosOrganizationMembership[]): void {
     if (actor.isPlatformAdmin) return
-    const membership = await WorkosAuthzRepository.getByOrgAndUser(this.pool, organizationId, actor.workosUserId)
-    if (!membership || !membership.role_slugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)) {
+    const actorMembership = memberships.find((m) => m.userId === actor.workosUserId)
+    if (!actorMembership || !actorMembership.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)) {
       throw new HttpError("Only workspace owners may manage members", {
         status: 403,
         code: "FORBIDDEN",
       })
     }
-  }
-
-  private async requireTargetMembership(organizationId: string, targetUserId: string): Promise<WorkosOrgMembershipRow> {
-    const membership = await WorkosAuthzRepository.getByOrgAndUser(this.pool, organizationId, targetUserId)
-    if (!membership) {
-      throw new HttpError("Target member not found", { status: 404, code: "NOT_FOUND" })
-    }
-    return membership
   }
 
   private assertNotSelfDemote(actor: AdminActor, targetUserId: string): void {
@@ -160,12 +171,10 @@ export class WorkosAuthzAdminService {
     }
   }
 
-  private async assertNotLastOwner(organizationId: string, targetUserId: string): Promise<void> {
-    const remainingOwners = await WorkosAuthzRepository.countByRoleExcludingUser(this.pool, {
-      workosOrganizationId: organizationId,
-      roleSlug: WORKSPACE_ROLE_SLUGS.OWNER,
-      excludeWorkosUserId: targetUserId,
-    })
+  private assertNotLastOwner(memberships: WorkosOrganizationMembership[], targetUserId: string): void {
+    const remainingOwners = memberships.filter(
+      (m) => m.userId !== targetUserId && m.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)
+    ).length
     if (remainingOwners === 0) {
       throw new HttpError("Cannot leave the workspace without an owner", {
         status: 422,
@@ -173,6 +182,17 @@ export class WorkosAuthzAdminService {
       })
     }
   }
+}
+
+function requireTargetMembership(
+  memberships: WorkosOrganizationMembership[],
+  targetUserId: string
+): WorkosOrganizationMembership {
+  const target = memberships.find((m) => m.userId === targetUserId)
+  if (!target) {
+    throw new HttpError("Target member not found", { status: 404, code: "NOT_FOUND" })
+  }
+  return target
 }
 
 function assertKnownRole(slug: string): asserts slug is WorkspaceRoleSlug {
