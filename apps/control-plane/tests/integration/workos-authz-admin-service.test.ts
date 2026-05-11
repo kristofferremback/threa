@@ -145,6 +145,12 @@ describe("WorkosAuthzAdminService", () => {
 
     test("owner cannot demote themselves", async () => {
       await seedMembership(pool, orgId, otherOwnerUserId, "om_owner_2", [WORKSPACE_ROLE_SLUGS.OWNER])
+      workos.setOrganizationMemberships(orgId, [
+        stubMembership("om_owner", orgId, ownerUserId, WORKSPACE_ROLE_SLUGS.OWNER),
+        stubMembership("om_owner_2", orgId, otherOwnerUserId, WORKSPACE_ROLE_SLUGS.OWNER),
+        stubMembership("om_admin", orgId, adminUserId, WORKSPACE_ROLE_SLUGS.ADMIN),
+        stubMembership("om_member", orgId, memberUserId, WORKSPACE_ROLE_SLUGS.MEMBER),
+      ])
       await expectHttpError(
         service.changeRole({
           actor: ownerActor,
@@ -205,6 +211,12 @@ describe("WorkosAuthzAdminService", () => {
 
     test("owner cannot remove themselves even when a co-owner exists", async () => {
       await seedMembership(pool, orgId, otherOwnerUserId, "om_owner_2", [WORKSPACE_ROLE_SLUGS.OWNER])
+      workos.setOrganizationMemberships(orgId, [
+        stubMembership("om_owner", orgId, ownerUserId, WORKSPACE_ROLE_SLUGS.OWNER),
+        stubMembership("om_owner_2", orgId, otherOwnerUserId, WORKSPACE_ROLE_SLUGS.OWNER),
+        stubMembership("om_admin", orgId, adminUserId, WORKSPACE_ROLE_SLUGS.ADMIN),
+        stubMembership("om_member", orgId, memberUserId, WORKSPACE_ROLE_SLUGS.MEMBER),
+      ])
       await expectHttpError(
         service.removeMember({
           actor: ownerActor,
