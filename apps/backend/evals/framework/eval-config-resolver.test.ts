@@ -13,7 +13,7 @@ describe("EvalConfigResolver", () => {
     const resolver = createEvalConfigResolver({ base })
 
     const config = await resolver.resolve(COMPONENT_PATHS.BOUNDARY_EXTRACTION)
-    expect(config.modelId).toBe("openrouter:openai/gpt-4.1-mini")
+    expect(config.modelId).toBe("openrouter:openai/gpt-5.4-nano")
     expect(config.temperature).toBe(0.2)
   })
 
@@ -66,14 +66,14 @@ describe("convertYamlOverrides", () => {
   test("should handle partial overrides", () => {
     const yamlOverrides = {
       researcher: {
-        model: "openrouter:openai/gpt-4.1-mini",
+        model: "openrouter:openai/gpt-5.4-nano",
       },
     }
 
     const converted = convertYamlOverrides(yamlOverrides)
 
     expect(converted.researcher).toEqual({
-      modelId: "openrouter:openai/gpt-4.1-mini",
+      modelId: "openrouter:openai/gpt-5.4-nano",
     })
   })
 

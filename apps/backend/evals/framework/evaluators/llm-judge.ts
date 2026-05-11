@@ -38,15 +38,15 @@ export interface LLMJudgeOptions {
  * @example
  * llmJudgeEvaluator({
  *   criteria: "The output preserves all factual information from the input",
- *   model: "openrouter:openai/gpt-4.1-mini",
+ *   model: "openrouter:openai/gpt-5.4-nano",
  * })
  */
 export function llmJudgeEvaluator<TOutput, TExpected>(options: LLMJudgeOptions): Evaluator<TOutput, TExpected> {
   const {
     name = "llm-judge",
     criteria,
-    // Use GPT-4.1-mini for reliable structured output through OpenRouter
-    model = "openrouter:openai/gpt-4.1-mini",
+    // Use GPT-5.4-nano for reliable structured output through OpenRouter
+    model = "openrouter:openai/gpt-5.4-nano",
     passThreshold = 0.7,
     context: additionalContext,
   } = options
