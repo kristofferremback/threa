@@ -161,11 +161,12 @@ export class WorkosAuthzAdminService {
   }
 
   private async assertNotLastOwner(organizationId: string, targetUserId: string): Promise<void> {
-    const rows = await WorkosAuthzRepository.listByOrganization(this.pool, organizationId)
-    const remainingOwners = rows.filter(
-      (r) => r.workos_user_id !== targetUserId && r.role_slugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)
-    )
-    if (remainingOwners.length === 0) {
+    const remainingOwners = await WorkosAuthzRepository.countByRoleExcludingUser(this.pool, {
+      workosOrganizationId: organizationId,
+      roleSlug: WORKSPACE_ROLE_SLUGS.OWNER,
+      excludeWorkosUserId: targetUserId,
+    })
+    if (remainingOwners === 0) {
       throw new HttpError("Cannot leave the workspace without an owner", {
         status: 422,
         code: "LAST_OWNER",

@@ -118,11 +118,11 @@ export interface WorkosOrgService {
   getOrganization(organizationId: string): Promise<{ id: string; domains: string[] } | null>
   ensureOrganizationMembership(params: { organizationId: string; userId: string; roleSlug: string }): Promise<void>
   /**
-   * Update an existing membership's role. Targets `userManagement.updateOrganizationMembership`.
-   * Caller resolves `organization_membership_id` from the mirror; we don't repeat that lookup here.
+   * Update an existing membership's role. Caller resolves the membership id
+   * from the mirror — the SDK keys updates by membership id, not by
+   * `(orgId, userId)`, so the lookup belongs at the call site.
    */
   changeOrganizationMembershipRole(params: { organizationMembershipId: string; roleSlug: string }): Promise<void>
-  /** Remove a membership. Targets `userManagement.deleteOrganizationMembership`. */
   removeOrganizationMembership(organizationMembershipId: string): Promise<void>
   getWidgetToken(params: { organizationId: string; userId: string; scopes: string[] }): Promise<string>
   /**
