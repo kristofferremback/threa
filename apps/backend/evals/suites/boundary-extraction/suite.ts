@@ -13,7 +13,7 @@
  *   bun run eval -- -s boundary-extraction -c new-topic-fresh-stream-001
  *
  *   # Compare models
- *   bun run eval -- -s boundary-extraction -m openrouter:openai/gpt-4.1-mini,openrouter:anthropic/claude-haiku-4.5
+ *   bun run eval -- -s boundary-extraction -m openrouter:openai/gpt-5.4-nano,openrouter:anthropic/claude-haiku-4.5
  *
  * ## Key Evaluators
  *

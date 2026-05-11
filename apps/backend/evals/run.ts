@@ -6,7 +6,7 @@
  *   bun run evals/run.ts                         # Run all suites
  *   bun run evals/run.ts -s companion             # Run specific suite
  *   bun run evals/run.ts -s companion -c case-001  # Run specific case
- *   bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini  # Override model
+ *   bun run evals/run.ts -m openrouter:openai/gpt-5.4-nano  # Override model
  *   bun run evals/run.ts --no-langfuse           # Skip Langfuse recording
  */
 
@@ -58,10 +58,10 @@ Examples:
   bun run evals/run.ts -s ${allSuites[1]?.name || "suite-name"} -c case-001,case-002
     Run specific test cases
 
-  bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini
+  bun run evals/run.ts -m openrouter:openai/gpt-5.4-nano
     Override model for all suites
 
-  bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini,openrouter:anthropic/claude-haiku-4.5 -p 2
+  bun run evals/run.ts -m openrouter:openai/gpt-5.4-nano,openrouter:anthropic/claude-haiku-4.5 -p 2
     Compare models in parallel
 
   bun run evals/run.ts --config companion-config.yaml

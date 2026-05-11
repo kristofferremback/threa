@@ -13,7 +13,7 @@
  *   bun run eval -- -s companion -c scratchpad-companion-greeting-001
  *
  *   # Compare models
- *   bun run eval -- -s companion -m openrouter:anthropic/claude-haiku-4.5,openrouter:openai/gpt-4.1-mini
+ *   bun run eval -- -s companion -m openrouter:anthropic/claude-haiku-4.5,openrouter:openai/gpt-5.4-nano
  *
  * ## Case ID Format
  *
