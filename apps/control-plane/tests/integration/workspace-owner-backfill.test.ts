@@ -38,10 +38,10 @@ describe("WorkspaceOwnerBackfill", () => {
   })
 
   beforeEach(async () => {
-    await pool.query("DELETE FROM workspace_registry WHERE id = ANY($1::text[])", [[wsA, wsB, wsOrphan, wsNoOrg]])
-    await pool.query("DELETE FROM workos_organization_memberships WHERE workos_organization_id = ANY($1::text[])", [
-      [orgA, orgB, orgOrphan],
-    ])
+    // Backfill scans every workspace_registry row with a non-null
+    // workos_organization_id; truncate both tables so leaked rows from sibling
+    // integration tests can't inflate workspacesScanned.
+    await pool.query("TRUNCATE workspace_registry, workos_organization_memberships CASCADE")
     workos = new StubWorkosOrgService()
     adminService = new WorkosAuthzAdminService({ pool, workosOrgService: workos })
     backfill = new WorkspaceOwnerBackfill(pool, adminService, actor)
