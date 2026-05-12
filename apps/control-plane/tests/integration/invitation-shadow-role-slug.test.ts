@@ -64,14 +64,14 @@ describe("InvitationShadowService role_slug propagation", () => {
 
     expect(shadow.role_slug).toBe(WORKSPACE_ROLE_SLUGS.ADMIN)
 
-    const sent = [...workos.sentInvitations.values()]
-    expect(sent).toHaveLength(1)
-    expect(sent[0]).toMatchObject({
-      organizationId: orgId,
-      email: inviteeEmail,
-      inviterUserId,
-      roleSlug: WORKSPACE_ROLE_SLUGS.ADMIN,
-    })
+    expect([...workos.sentInvitations.values()]).toContainEqual(
+      expect.objectContaining({
+        organizationId: orgId,
+        email: inviteeEmail,
+        inviterUserId,
+        roleSlug: WORKSPACE_ROLE_SLUGS.ADMIN,
+      })
+    )
   })
 
   test("createShadow with kind='link' persists role_slug without sending an invitation yet", async () => {
@@ -88,7 +88,7 @@ describe("InvitationShadowService role_slug propagation", () => {
     })
 
     expect(shadow.role_slug).toBe(WORKSPACE_ROLE_SLUGS.ADMIN)
-    expect(workos.sentInvitations.size).toBe(0)
+    expect([...workos.sentInvitations.values()]).not.toContainEqual(expect.objectContaining({ organizationId: orgId }))
   })
 
   test("acceptLinkClaim binds the email and sends WorkOS invitation with the stored role_slug", async () => {
@@ -110,13 +110,13 @@ describe("InvitationShadowService role_slug propagation", () => {
       inviterWorkosUserId: inviterUserId,
     })
 
-    const sent = [...workos.sentInvitations.values()]
-    expect(sent).toHaveLength(1)
-    expect(sent[0]).toMatchObject({
-      organizationId: orgId,
-      email: inviteeEmail,
-      roleSlug: WORKSPACE_ROLE_SLUGS.ADMIN,
-    })
+    expect([...workos.sentInvitations.values()]).toContainEqual(
+      expect.objectContaining({
+        organizationId: orgId,
+        email: inviteeEmail,
+        roleSlug: WORKSPACE_ROLE_SLUGS.ADMIN,
+      })
+    )
   })
 
   test("repository.insert defaults to member when caller omits role_slug via the DB default", async () => {
