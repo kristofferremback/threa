@@ -20,6 +20,10 @@ export const integrationsApi = {
     await api.delete(`/api/workspaces/${workspaceId}/integrations/github`)
   },
 
+  async syncGithub(workspaceId: string): Promise<GitHubIntegrationResponse> {
+    return api.post<GitHubIntegrationResponse>(`/api/workspaces/${workspaceId}/integrations/github/sync`)
+  },
+
   async getLinear(workspaceId: string): Promise<LinearIntegrationResponse> {
     return api.get<LinearIntegrationResponse>(`/api/workspaces/${workspaceId}/integrations/linear`)
   },
