@@ -42,6 +42,16 @@ export const InvitationShadowRepository = {
     return result.rows[0] ?? null
   },
 
+  async listPendingByWorkspace(db: Querier, workspaceId: string): Promise<InvitationShadowRow[]> {
+    const result = await db.query<InvitationShadowRow>(
+      `SELECT ${SELECT_FIELDS} FROM invitation_shadows
+       WHERE workspace_id = $1 AND status = 'pending' AND expires_at > NOW()
+       ORDER BY created_at DESC`,
+      [workspaceId]
+    )
+    return result.rows
+  },
+
   async findPendingByEmailWithWorkspace(db: Querier, email: string): Promise<PendingInvitationRow[]> {
     const result = await db.query<PendingInvitationRow>(
       `SELECT s.id, s.workspace_id, wr.name AS workspace_name, s.expires_at

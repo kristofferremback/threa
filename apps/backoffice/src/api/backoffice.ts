@@ -63,10 +63,25 @@ export interface WorkspaceMember {
   lastEventAt: string
 }
 
+export interface WorkspaceInvitation {
+  id: string
+  kind: "email" | "link"
+  email: string | null
+  roleSlug: string
+  expiresAt: string
+  createdAt: string
+  inviter: {
+    workosUserId: string
+    email: string | null
+    name: string | null
+  } | null
+}
+
 export const backofficeKeys = {
   workspaces: ["backoffice", "workspaces"] as const,
   workspace: (id: string) => ["backoffice", "workspaces", id] as const,
   workspaceMembers: (id: string) => ["backoffice", "workspaces", id, "members"] as const,
+  workspaceInvitations: (id: string) => ["backoffice", "workspaces", id, "invitations"] as const,
   invitations: ["backoffice", "invitations"] as const,
   config: ["backoffice", "config"] as const,
 }
@@ -115,4 +130,10 @@ export function listWorkspaceMembers(id: string): Promise<WorkspaceMember[]> {
   return api
     .get<{ members: WorkspaceMember[] }>(`/api/backoffice/workspaces/${encodeURIComponent(id)}/members`)
     .then((r) => r.members)
+}
+
+export function listWorkspaceInvitations(id: string): Promise<WorkspaceInvitation[]> {
+  return api
+    .get<{ invitations: WorkspaceInvitation[] }>(`/api/backoffice/workspaces/${encodeURIComponent(id)}/invitations`)
+    .then((r) => r.invitations)
 }

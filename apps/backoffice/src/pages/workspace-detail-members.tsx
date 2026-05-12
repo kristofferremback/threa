@@ -1,7 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { Section } from "@/components/layout/section"
-import { backofficeKeys, listWorkspaceMembers, type WorkspaceDetail, type WorkspaceMember } from "@/api/backoffice"
+import {
+  backofficeKeys,
+  listWorkspaceInvitations,
+  listWorkspaceMembers,
+  type WorkspaceDetail,
+  type WorkspaceInvitation,
+  type WorkspaceMember,
+} from "@/api/backoffice"
 import { ApiError } from "@/api/client"
 import { cn } from "@/lib/utils"
 import { formatDateTime } from "@/lib/format"
@@ -24,6 +31,24 @@ function formatRelativeTimestamp(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "2-digit" })
 }
 
+function formatRelativeFuture(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return iso
+  const seconds = Math.floor((then - Date.now()) / 1000)
+  if (seconds <= 0) return "expired"
+  if (seconds < 3600) {
+    const m = Math.max(1, Math.floor(seconds / 60))
+    return `in ${m}m`
+  }
+  if (seconds < 86_400) {
+    const h = Math.floor(seconds / 3600)
+    return `in ${h}h`
+  }
+  const d = Math.floor(seconds / 86_400)
+  if (d < 30) return `in ${d}d`
+  return new Date(iso).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "2-digit" })
+}
+
 function memberDisplayName(m: WorkspaceMember): string | null {
   const parts = [m.firstName, m.lastName].filter((x): x is string => !!x && x.length > 0)
   if (parts.length > 0) return parts.join(" ")
@@ -43,6 +68,15 @@ export function WorkspaceDetailMembersPage() {
     enabled: !!id,
   })
 
+  const invitationsQ = useQuery({
+    queryKey: id ? backofficeKeys.workspaceInvitations(id) : ["backoffice", "workspaces", "missing", "invitations"],
+    queryFn: () => {
+      if (!id) throw new Error("Missing workspace id")
+      return listWorkspaceInvitations(id)
+    },
+    enabled: !!id,
+  })
+
   // Cache-only observer (the layout owns the actual fetch). We read the
   // workspace to differentiate "not linked to WorkOS" from "linked but empty"
   // in the empty state, since both currently come back as `members: []`.
@@ -56,12 +90,20 @@ export function WorkspaceDetailMembersPage() {
   const notLinked = workspaceQ.data ? workspaceQ.data.workosOrganizationId === null : false
 
   return (
-    <Section
-      label="Members"
-      description="Mirror of WorkOS organization memberships. Updates within ~5s of changes in the WorkOS dashboard."
-    >
-      <MembersBody loading={query.isLoading} error={query.error} members={query.data} notLinked={notLinked} />
-    </Section>
+    <div className="flex flex-col gap-10">
+      <Section
+        label="Pending invitations"
+        description="Invitations sent but not yet accepted. Link invitations stay here until someone claims them."
+      >
+        <InvitationsBody loading={invitationsQ.isLoading} error={invitationsQ.error} invitations={invitationsQ.data} />
+      </Section>
+      <Section
+        label="Members"
+        description="Mirror of WorkOS organization memberships. Updates within ~5s of changes in the WorkOS dashboard."
+      >
+        <MembersBody loading={query.isLoading} error={query.error} members={query.data} notLinked={notLinked} />
+      </Section>
+    </div>
   )
 }
 
@@ -149,6 +191,89 @@ function RoleChips({ roles }: { roles: string[] }) {
           {role}
         </span>
       ))}
+    </span>
+  )
+}
+
+function InvitationsBody({
+  loading,
+  error,
+  invitations,
+}: {
+  loading: boolean
+  error: unknown
+  invitations: WorkspaceInvitation[] | undefined
+}) {
+  if (loading) {
+    return <div className="border-y px-1 py-10 text-center text-sm text-muted-foreground">Loading invitations…</div>
+  }
+
+  if (error) {
+    const notFound = ApiError.isApiError(error) && error.status === 404
+    return (
+      <div className="border-y px-1 py-10 text-center text-sm text-muted-foreground">
+        {notFound ? "That workspace doesn't exist." : "Couldn't load invitations."}
+      </div>
+    )
+  }
+
+  if (!invitations || invitations.length === 0) {
+    return <div className="border-y px-1 py-10 text-center text-sm text-muted-foreground">No pending invitations.</div>
+  }
+
+  return (
+    <ul className="divide-y border-y">
+      {invitations.map((inv) => (
+        <InvitationRow key={inv.id} invitation={inv} />
+      ))}
+    </ul>
+  )
+}
+
+function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
+  const primary = invitation.email ?? "Unclaimed link"
+  const inviterName = invitation.inviter?.name ?? invitation.inviter?.email ?? null
+  return (
+    <li className="flex items-center justify-between gap-4 py-4 pl-1 pr-3">
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="truncate text-sm font-medium text-foreground">{primary}</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+          <KindBadge kind={invitation.kind} />
+          <RoleChips roles={[invitation.roleSlug]} />
+          {inviterName ? (
+            <>
+              <span className="text-muted-foreground/50">·</span>
+              <span className="truncate">Invited by {inviterName}</span>
+            </>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-3">
+        <span
+          className="hidden text-xs tabular-nums text-muted-foreground sm:inline"
+          title={formatDateTime(invitation.expiresAt)}
+        >
+          Expires {formatRelativeFuture(invitation.expiresAt)}
+        </span>
+      </div>
+    </li>
+  )
+}
+
+const KIND_VARIANTS: Record<WorkspaceInvitation["kind"], string> = {
+  email: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  link: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+}
+
+function KindBadge({ kind }: { kind: WorkspaceInvitation["kind"] }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+        KIND_VARIANTS[kind]
+      )}
+    >
+      {kind}
     </span>
   )
 }
