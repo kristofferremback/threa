@@ -117,10 +117,74 @@ export class StubWorkosOrgService implements WorkosOrgService {
     userId: string
     roleSlug: string
   }): Promise<void> {
+    const memberships = this.membershipsByOrg.get(params.organizationId) ?? []
+    const existing = memberships.find((m) => m.userId === params.userId)
+    if (existing) {
+      existing.roleSlugs = [params.roleSlug]
+      existing.updatedAt = new Date()
+    } else {
+      memberships.push({
+        id: `om_stub_${ulid()}`,
+        organizationId: params.organizationId,
+        userId: params.userId,
+        status: "active",
+        roleSlugs: [params.roleSlug],
+        updatedAt: new Date(),
+      })
+      this.membershipsByOrg.set(params.organizationId, memberships)
+    }
     logger.info(
       { organizationId: params.organizationId, userId: params.userId, roleSlug: params.roleSlug },
       "Stub: Ensured organization membership"
     )
+  }
+
+  async changeOrganizationMembershipRole(params: {
+    organizationMembershipId: string
+    roleSlug: string
+  }): Promise<void> {
+    const found = this.findMembershipById(params.organizationMembershipId)
+    if (!found) {
+      logger.warn(
+        { organizationMembershipId: params.organizationMembershipId },
+        "Stub: changeOrganizationMembershipRole called with unknown id"
+      )
+      return
+    }
+    found.membership.roleSlugs = [params.roleSlug]
+    found.membership.updatedAt = new Date()
+    logger.info(
+      { organizationMembershipId: params.organizationMembershipId, roleSlug: params.roleSlug },
+      "Stub: Changed organization membership role"
+    )
+  }
+
+  async removeOrganizationMembership(organizationMembershipId: string): Promise<void> {
+    const found = this.findMembershipById(organizationMembershipId)
+    if (!found) {
+      logger.warn({ organizationMembershipId }, "Stub: removeOrganizationMembership called with unknown id")
+      return
+    }
+    found.memberships.splice(found.index, 1)
+    if (found.memberships.length === 0) this.membershipsByOrg.delete(found.orgId)
+    logger.info({ organizationMembershipId }, "Stub: Removed organization membership")
+  }
+
+  private findMembershipById(
+    organizationMembershipId: string
+  ): {
+    orgId: string
+    memberships: WorkosOrganizationMembership[]
+    index: number
+    membership: WorkosOrganizationMembership
+  } | null {
+    for (const [orgId, memberships] of this.membershipsByOrg) {
+      const index = memberships.findIndex((m) => m.id === organizationMembershipId)
+      if (index >= 0) {
+        return { orgId, memberships, index, membership: memberships[index]! }
+      }
+    }
+    return null
   }
 
   async getWidgetToken(_params: { organizationId: string; userId: string; scopes: string[] }): Promise<string> {

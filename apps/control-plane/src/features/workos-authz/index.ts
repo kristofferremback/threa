@@ -1,4 +1,6 @@
 export { WorkosAuthzService } from "./service"
+export { WorkosAuthzAdminService } from "./admin-service"
+export type { AdminActor, AssignRoleParams, ChangeRoleParams, RemoveMemberParams } from "./admin-service"
 export { WorkosAuthzBackfill } from "./backfill"
 export type { WorkosAuthzBackfillResult } from "./backfill"
 export { WorkosAuthzPoller } from "./poller"

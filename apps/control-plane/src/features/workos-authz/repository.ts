@@ -204,4 +204,24 @@ export const WorkosAuthzRepository = {
     )
     return result.rows[0] ?? null
   },
+
+  /**
+   * Count members of an org holding `role_slug`, optionally excluding one user.
+   * Used by the last-owner guard: a `SELECT 1` filtered by role is bounded
+   * regardless of org size, where `listByOrganization` would hydrate every row.
+   */
+  async countByRoleExcludingUser(
+    db: Querier,
+    params: { workosOrganizationId: string; roleSlug: string; excludeWorkosUserId: string }
+  ): Promise<number> {
+    const result = await db.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM workos_organization_memberships
+       WHERE workos_organization_id = $1
+         AND workos_user_id <> $2
+         AND $3 = ANY(role_slugs)`,
+      [params.workosOrganizationId, params.excludeWorkosUserId, params.roleSlug]
+    )
+    return Number(result.rows[0]?.count ?? 0)
+  },
 }
