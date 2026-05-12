@@ -24,6 +24,24 @@ interface UseSwipeActionReturn {
 }
 
 /**
+ * True when the touch began inside an element that can scroll horizontally
+ * (e.g. a wide code block's `<pre>` with `overflow-x: auto`). Those elements
+ * consume the horizontal gesture for scrolling, so the swipe-to-quote action
+ * must stay out of the way.
+ */
+function startedInHorizontalScroller(target: EventTarget | null): boolean {
+  let node = target instanceof Element ? target : null
+  while (node) {
+    const overflowX = window.getComputedStyle(node).overflowX
+    if ((overflowX === "auto" || overflowX === "scroll") && node.scrollWidth > node.clientWidth) {
+      return true
+    }
+    node = node.parentElement
+  }
+  return false
+}
+
+/**
  * Swipe-from-right gesture for mobile quote reply.
  * The user swipes left on a message; once they cross the threshold,
  * haptic feedback fires and the action locks in. Releasing triggers the callback.
@@ -53,6 +71,7 @@ export function useSwipeAction({
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (!enabled) return
+      if (startedInHorizontalScroller(e.target)) return
       const touch = e.touches[0]
       startPos.current = { x: touch.clientX, y: touch.clientY }
       isHorizontalRef.current = null
