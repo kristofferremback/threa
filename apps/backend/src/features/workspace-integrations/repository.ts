@@ -30,6 +30,10 @@ export interface UpdateWorkspaceIntegrationParams {
   installedBy?: string
 }
 
+export interface UpdateWorkspaceIntegrationOptions {
+  expectedStatus?: WorkspaceIntegrationStatus
+}
+
 function mapRow(row: Record<string, unknown>): WorkspaceIntegrationRecord {
   return {
     id: row.id as string,
@@ -89,7 +93,7 @@ export const WorkspaceIntegrationRepository = {
     workspaceId: string,
     provider: WorkspaceIntegrationProvider,
     params: UpdateWorkspaceIntegrationParams,
-    options?: { expectedStatus?: WorkspaceIntegrationStatus }
+    options?: UpdateWorkspaceIntegrationOptions
   ): Promise<WorkspaceIntegrationRecord | null> {
     const result = await querier.query(
       sql`UPDATE workspace_integrations
