@@ -93,6 +93,24 @@ describe("ConnectionStatus", () => {
 
       expect(screen.getByText("Offline")).toBeInTheDocument()
     })
+
+    it("does not re-arm the delay when flipping between unstable subtypes", () => {
+      mockState.socketStatus = "reconnecting"
+      const { rerender } = render(<ConnectionStatus />)
+
+      act(() => {
+        vi.advanceTimersByTime(2000)
+      })
+
+      mockState.socketStatus = "disconnected"
+      rerender(<ConnectionStatus />)
+
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+
+      expect(screen.getByText("Disconnected")).toBeInTheDocument()
+    })
   })
 
   it("does not render when the page is hidden during teardown", () => {

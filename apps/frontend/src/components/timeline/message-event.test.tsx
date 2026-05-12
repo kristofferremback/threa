@@ -431,6 +431,10 @@ describe("MessageEvent", () => {
   })
 
   describe("pending message", () => {
+    beforeEach(() => {
+      vi.spyOn(connectionStatusModule, "useIsOnline").mockReturnValue(true)
+    })
+
     it("should not show a sending indicator initially when online", () => {
       mockGetStatus = () => "pending"
       const event = createMessageEvent("msg_pending", "Pending message")

@@ -33,17 +33,18 @@ export function useConnectionState(): ConnectionState {
   return "disconnected"
 }
 
-function useStableConnectionState(state: ConnectionState): ConnectionState {
-  const [visibleState, setVisibleState] = useState<ConnectionState>("connected")
+function useUnstableConnectionVisible(state: ConnectionState): boolean {
+  const isStable = state === "connected" || state === "connecting"
+  const [visible, setVisible] = useState(false)
   useEffect(() => {
-    if (state === "connected" || state === "connecting") {
-      setVisibleState(state)
+    if (isStable) {
+      setVisible(false)
       return
     }
-    const id = window.setTimeout(() => setVisibleState(state), UNSTABLE_STATE_DELAY_MS)
+    const id = window.setTimeout(() => setVisible(true), UNSTABLE_STATE_DELAY_MS)
     return () => window.clearTimeout(id)
-  }, [state])
-  return visibleState
+  }, [isStable])
+  return visible
 }
 
 /**
@@ -53,10 +54,11 @@ function useStableConnectionState(state: ConnectionState): ConnectionState {
  */
 export function ConnectionStatus() {
   const { phase } = useCoordinatedLoading()
-  const state = useStableConnectionState(useConnectionState())
+  const state = useConnectionState()
+  const showPill = useUnstableConnectionVisible(state)
   const pageActivity = usePageActivity()
 
-  if (phase !== "ready" || !pageActivity.isVisible || state === "connected" || state === "connecting") return null
+  if (phase !== "ready" || !pageActivity.isVisible || !showPill) return null
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center pt-2">
