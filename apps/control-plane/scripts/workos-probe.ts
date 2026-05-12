@@ -37,11 +37,19 @@ interface ProbeResult {
   notes?: string
 }
 
+const MIN_PROBE = 1
+const MAX_PROBE = 5
+
 function pickProbeFilter(): number | null {
   const arg = process.argv.find((a) => a.startsWith("--probe="))
   if (!arg) return null
-  const n = Number(arg.split("=")[1])
-  return Number.isFinite(n) ? n : null
+  const raw = arg.split("=")[1]
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < MIN_PROBE || n > MAX_PROBE) {
+    console.error(`Invalid --probe value "${raw}". Expected an integer in ${MIN_PROBE}..${MAX_PROBE}.`)
+    process.exit(1)
+  }
+  return n
 }
 
 async function main() {

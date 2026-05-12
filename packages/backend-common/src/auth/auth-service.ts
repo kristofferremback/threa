@@ -171,18 +171,13 @@ export class WorkosAuthService implements AuthService {
   }
 
   getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { prompt?: string }): string {
-    // The `prompt` param isn't on the public WorkOS SDK type yet, but the SDK
-    // forwards unknown OIDC params straight through to AuthKit, which honors
-    // them. We pass it as part of a typed cast rather than via string
-    // concatenation so we still get the SDK's URL building.
-    const params = {
+    return this.workos.userManagement.getAuthorizationUrl({
       provider: "authkit",
       redirectUri: redirectUri ?? this.redirectUri,
       clientId: this.clientId,
       state: redirectTo ? Buffer.from(redirectTo).toString("base64") : undefined,
       ...(options?.prompt ? { prompt: options.prompt } : {}),
-    } as Parameters<typeof this.workos.userManagement.getAuthorizationUrl>[0]
-    return this.workos.userManagement.getAuthorizationUrl(params)
+    })
   }
 
   async getLogoutUrl(sealedSession: string, returnTo?: string): Promise<string | null> {

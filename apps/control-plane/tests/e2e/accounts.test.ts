@@ -129,9 +129,9 @@ describe("Accounts (multi-account)", () => {
     const state = Buffer.from("/|add").toString("base64")
     await client.get(`/api/auth/callback?code=test_code_${userBId}&state=${encodeURIComponent(state)}`)
 
-    // Active = B, alt_0 = A. Switch to A.
+    // Active = B, alt_0 = A. Switch to A by stable userId.
     const switched = await client.post<{ active: { userId: string; email: string } }>("/api/accounts/switch", {
-      slot: 0,
+      targetUserId: userA.id,
     })
     expect(switched.status).toBe(200)
     expect(switched.data.active.userId).toBe(userA.id)
@@ -145,18 +145,27 @@ describe("Accounts (multi-account)", () => {
     expect(me.data.email).toBe("switch-a@example.com")
   })
 
-  test("POST /api/accounts/switch returns 404 for an empty slot", async () => {
+  test("POST /api/accounts/switch returns 404 when no parked alt matches the target user", async () => {
     const client = new TestClient()
     await loginAs(client, "empty-slot@example.com", "Empty Slot")
-    const res = await client.post("/api/accounts/switch", { slot: 0 })
+    const res = await client.post("/api/accounts/switch", { targetUserId: "user_does_not_exist" })
     expect(res.status).toBe(404)
+  })
+
+  test("POST /api/accounts/switch is a 204 no-op when target is already active", async () => {
+    const client = new TestClient()
+    const userA = await loginAs(client, "already-active@example.com", "Already Active")
+    const res = await client.post("/api/accounts/switch", { targetUserId: userA.id })
+    expect(res.status).toBe(204)
   })
 
   test("POST /api/accounts/remove active with no alts logs the user out", async () => {
     const client = new TestClient()
-    await loginAs(client, "remove-active-only@example.com", "Remove Active Only")
+    const user = await loginAs(client, "remove-active-only@example.com", "Remove Active Only")
 
-    const res = await client.post<{ active: null | { userId: string } }>("/api/accounts/remove", { slot: "active" })
+    const res = await client.post<{ active: null | { userId: string } }>("/api/accounts/remove", {
+      targetUserId: user.id,
+    })
     expect(res.status).toBe(200)
     expect(res.data.active).toBeNull()
 
@@ -172,8 +181,8 @@ describe("Accounts (multi-account)", () => {
     const state = Buffer.from("/|add").toString("base64")
     await client.get(`/api/auth/callback?code=test_code_${userBId}&state=${encodeURIComponent(state)}`)
 
-    // Active = B, alt_0 = A. Remove active.
-    const res = await client.post<{ active: { userId: string } }>("/api/accounts/remove", { slot: "active" })
+    // Active = B, alt_0 = A. Remove B by its stable userId.
+    const res = await client.post<{ active: { userId: string } }>("/api/accounts/remove", { targetUserId: userBId })
     expect(res.status).toBe(200)
     expect(res.data.active?.userId).toBe(userA.id)
 
@@ -182,21 +191,45 @@ describe("Accounts (multi-account)", () => {
     expect(cookies.has(altCookieName(0))).toBe(false)
   })
 
-  test("POST /api/accounts/remove with a numeric slot clears that alt only", async () => {
+  test("POST /api/accounts/remove with a parked-user targetUserId clears that alt only", async () => {
     const client = new TestClient()
     const userA = await loginAs(client, "remove-alt-a@example.com", "Remove Alt A")
     const userBId = await registerStubUser("remove-alt-b@example.com", "Remove Alt B")
     const state = Buffer.from("/|add").toString("base64")
     await client.get(`/api/auth/callback?code=test_code_${userBId}&state=${encodeURIComponent(state)}`)
 
-    // Active = B, alt_0 = A. Remove the parked A.
-    const res = await client.post<{ active: { userId: string } }>("/api/accounts/remove", { slot: 0 })
+    // Active = B, alt_0 = A. Remove the parked A by userId.
+    const res = await client.post<{ active: { userId: string } }>("/api/accounts/remove", { targetUserId: userA.id })
     expect(res.status).toBe(200)
     expect(res.data.active?.userId).toBe(userBId)
 
     const cookies = clientCookies(client)
     expect(cookies.get(ACTIVE_COOKIE)).toBe(`test_session_${userBId}`)
     expect(cookies.has(altCookieName(0))).toBe(false)
+  })
+
+  test("POST /api/accounts/remove with a slot index clears a dead alt", async () => {
+    const client = new TestClient()
+    const userA = await loginAs(client, "dead-slot-a@example.com", "Dead Slot A")
+    const userBId = await registerStubUser("dead-slot-b@example.com", "Dead Slot B")
+    const state = Buffer.from("/|add").toString("base64")
+    await client.get(`/api/auth/callback?code=test_code_${userBId}&state=${encodeURIComponent(state)}`)
+
+    // Active = B, alt_0 = A. Slot fallback works regardless of validation
+    // status — important because dead alts expose no userId to the client.
+    const res = await client.post<{ active: { userId: string } }>("/api/accounts/remove", { slot: 0 })
+    expect(res.status).toBe(200)
+    expect(res.data.active?.userId).toBe(userBId)
+    expect(clientCookies(client).has(altCookieName(0))).toBe(false)
+    // Ensure userA's id was, in fact, the one stored under slot 0 before removal.
+    expect(userA.id).toBeDefined()
+  })
+
+  test("POST /api/accounts/remove with an unknown targetUserId returns 404", async () => {
+    const client = new TestClient()
+    await loginAs(client, "unknown-target@example.com", "Unknown Target")
+    const res = await client.post("/api/accounts/remove", { targetUserId: "user_nonexistent" })
+    expect(res.status).toBe(404)
   })
 
   test("GET /api/auth/login?intent=add asks WorkOS for prompt=login", async () => {

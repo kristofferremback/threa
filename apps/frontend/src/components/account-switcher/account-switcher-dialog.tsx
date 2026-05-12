@@ -26,9 +26,21 @@ function statusLabel(status: AccountSummary["status"]): string {
   return "Switch"
 }
 
+/**
+ * Stable per-row key for "this row is loading" state. Active is `"active"`,
+ * authenticated alts use their stable userId, dead alts (which have no userId)
+ * fall back to their slot index. Mirrors the identifier the server resolves
+ * against, so a busy row stays busy even if slot indices shift in another tab.
+ */
+function rowKey(account: AccountSummary): string {
+  if (account.slot === "active") return "active"
+  if (account.userId) return `user:${account.userId}`
+  return `slot:${account.slot}`
+}
+
 export function AccountSwitcherDialog({ open, onOpenChange }: AccountSwitcherDialogProps) {
   const { accounts, maxAccounts, switchAccount, removeAccount, addAccount } = useAuth()
-  const [busySlot, setBusySlot] = useState<string | null>(null)
+  const [busyRow, setBusyRow] = useState<string | null>(null)
 
   // The active account always renders first; parked accounts follow in slot order.
   const active = accounts.find((a) => a.slot === "active") ?? null
@@ -36,29 +48,29 @@ export function AccountSwitcherDialog({ open, onOpenChange }: AccountSwitcherDia
   const canAddMore = accounts.length < maxAccounts
 
   const handleSwitch = async (account: AccountSummary) => {
-    if (typeof account.slot !== "number") return
     if (account.status === "dead") {
       // Re-auth via the OAuth add flow — server coalesces by userId so the slot
       // gets refreshed in place rather than creating a duplicate.
       addAccount()
       return
     }
-    setBusySlot(String(account.slot))
+    if (!account.userId) return
+    setBusyRow(rowKey(account))
     try {
-      await switchAccount(account.slot)
+      await switchAccount(account.userId)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not switch accounts")
-      setBusySlot(null)
+      setBusyRow(null)
     }
   }
 
   const handleRemove = async (account: AccountSummary) => {
-    setBusySlot(String(account.slot))
+    setBusyRow(rowKey(account))
     try {
-      await removeAccount(account.slot)
+      await removeAccount(account)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not remove account")
-      setBusySlot(null)
+      setBusyRow(null)
     }
   }
 
@@ -77,12 +89,12 @@ export function AccountSwitcherDialog({ open, onOpenChange }: AccountSwitcherDia
         </ResponsiveDialogHeader>
 
         <div className="flex flex-col gap-1 px-2 pb-4 sm:px-4 sm:pb-2">
-          {active && <AccountRow account={active} busy={busySlot === "active"} onRemove={handleRemove} />}
+          {active && <AccountRow account={active} busy={busyRow === rowKey(active)} onRemove={handleRemove} />}
           {parked.map((account) => (
             <AccountRow
-              key={String(account.slot)}
+              key={rowKey(account)}
               account={account}
-              busy={busySlot === String(account.slot)}
+              busy={busyRow === rowKey(account)}
               onSwitch={handleSwitch}
               onRemove={handleRemove}
               actionLabel={statusLabel(account.status)}

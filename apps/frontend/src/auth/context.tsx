@@ -15,10 +15,14 @@ interface AuthContextValue extends AuthState {
   refetch: () => Promise<void>
   /** Start the WorkOS "add another account" flow. Returns via OAuth redirect. */
   addAccount: (redirectTo?: string) => void
-  /** Promote a parked alt slot to active. Server swaps cookies; we hard-reload to swap the per-account DB. */
-  switchAccount: (slot: number) => Promise<void>
-  /** Remove a slot. `"active"` logs the user out (or promotes a parked alt if present). */
-  removeAccount: (slot: "active" | number) => Promise<void>
+  /** Promote a parked alt to active. Identified by stable WorkOS userId. Hard-reloads after to swap the per-account DB. */
+  switchAccount: (targetUserId: string) => Promise<void>
+  /**
+   * Remove an account from the jar. Pass the full AccountSummary so the caller
+   * doesn't have to know that dead alts must be addressed by slot index (their
+   * userId is `null`) while authenticated accounts use a stable userId.
+   */
+  removeAccount: (account: AccountSummary) => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
@@ -192,19 +196,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [])
 
   const switchAccount = useCallback(
-    async (slot: number) => {
+    async (targetUserId: string) => {
       const res = await fetch(`${API_BASE}/api/accounts/switch`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot }),
+        body: JSON.stringify({ targetUserId }),
       })
       if (!res.ok) {
         throw new Error(`Switch failed: ${res.status}`)
       }
-      const body = (await res.json()) as { active: { userId: string } | null }
-      if (body.active) {
-        localStorage.setItem(ACTIVE_USER_KEY, body.active.userId)
+      // 204 means the target was already active — no body, no DB swap needed.
+      if (res.status !== 204) {
+        const body = (await res.json()) as { active: { userId: string } | null }
+        if (body.active) {
+          localStorage.setItem(ACTIVE_USER_KEY, body.active.userId)
+        }
       }
       broadcast("switched")
       window.location.reload()
@@ -213,19 +220,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
   )
 
   const removeAccount = useCallback(
-    async (slot: "active" | number) => {
+    async (account: AccountSummary) => {
+      // Authenticated accounts (active or parked) use a stable userId; dead
+      // alts have no resolvable userId, so the slot index is the only handle.
+      const body = account.userId !== null ? { targetUserId: account.userId } : { slot: account.slot as number }
       const res = await fetch(`${API_BASE}/api/accounts/remove`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         throw new Error(`Remove failed: ${res.status}`)
       }
-      const body = (await res.json()) as { active: { userId: string } | null }
-      if (body.active) {
-        localStorage.setItem(ACTIVE_USER_KEY, body.active.userId)
+      const respBody = (await res.json()) as { active: { userId: string } | null }
+      if (respBody.active) {
+        localStorage.setItem(ACTIVE_USER_KEY, respBody.active.userId)
       } else {
         localStorage.removeItem(ACTIVE_USER_KEY)
       }

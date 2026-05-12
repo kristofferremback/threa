@@ -4,7 +4,6 @@ import {
   HttpError,
   MAX_ALT_SLOTS,
   SESSION_COOKIE_NAME,
-  altSessionCookieName,
   clearAltSessionCookie,
   clearSessionCookie,
   decodeAndSanitizeRedirectState,
@@ -128,7 +127,7 @@ async function parkActiveAndSetNewImpl(
         setAltSessionCookie(res, i, currentActive)
       } else {
         // No active to park — just clear the alt slot since we promoted it.
-        res.clearCookie(altSessionCookieName(i))
+        clearAltSessionCookie(res, i)
       }
       setSessionCookie(res, newSealed)
       return

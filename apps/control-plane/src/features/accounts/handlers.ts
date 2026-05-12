@@ -38,24 +38,24 @@ interface AccountSummary {
   status: "active" | "parked" | "dead"
 }
 
+// Switch + remove identify accounts by `targetUserId` (stable across slot
+// renumbering from concurrent add/switch/remove in other tabs). Dead alts
+// expose no userId to the client — they can only be addressed by slot index,
+// so `remove` also accepts a `slot` fallback for those.
 const switchSchema = z.object({
-  slot: z
-    .number()
-    .int()
-    .min(0)
-    .max(MAX_ALT_SLOTS - 1),
+  targetUserId: z.string().min(1),
 })
 
-const removeSchema = z.object({
-  slot: z.union([
-    z.literal("active"),
-    z
+const removeSchema = z.union([
+  z.object({ targetUserId: z.string().min(1) }),
+  z.object({
+    slot: z
       .number()
       .int()
       .min(0)
       .max(MAX_ALT_SLOTS - 1),
-  ]),
-})
+  }),
+])
 
 /**
  * Resolve a parked alt cookie to a summary. Returns `null` if the slot is empty.
@@ -118,6 +118,10 @@ export function createAccountsHandlers({ authService }: Dependencies) {
      * active cookie is parked into the slot the target came from. Atomic from
      * the browser's perspective because we set both `Set-Cookie` headers in
      * one response.
+     *
+     * Identified by `targetUserId` rather than slot index so concurrent
+     * add/remove activity in another tab can't shift the index out from under
+     * a stale switch request.
      */
     async switch(req: Request, res: Response) {
       if (!req.authUser) {
@@ -125,41 +129,55 @@ export function createAccountsHandlers({ authService }: Dependencies) {
       }
       const parsed = switchSchema.safeParse(req.body)
       if (!parsed.success) {
-        throw new HttpError("Invalid slot", { status: 400, code: "INVALID_SLOT" })
+        throw new HttpError("Invalid target", { status: 400, code: "INVALID_TARGET" })
       }
-      const { slot } = parsed.data
+      const { targetUserId } = parsed.data
+
+      // No-op if already active.
+      if (req.authUser.id === targetUserId) {
+        return res.status(204).end()
+      }
 
       const altCookies = readAltSessionCookies(req.cookies as Record<string, string | undefined>)
-      const targetSealed = altCookies[slot]
-      if (!targetSealed) {
-        throw new HttpError("Slot is empty", { status: 404, code: "SLOT_EMPTY" })
+      let matchedSlot = -1
+      let matchedAuth: Awaited<ReturnType<AuthService["authenticateSession"]>> | null = null
+      let matchedSealed: string | null = null
+      for (let i = 0; i < altCookies.length; i++) {
+        const sealed = altCookies[i]
+        if (!sealed) continue
+        const auth = await authService.authenticateSession(sealed)
+        if (auth.success && auth.user?.id === targetUserId) {
+          matchedSlot = i
+          matchedAuth = auth
+          matchedSealed = sealed
+          break
+        }
       }
 
-      const targetAuth = await authService.authenticateSession(targetSealed)
-      if (!targetAuth.success || !targetAuth.user) {
-        throw new HttpError("Parked session is no longer valid — re-authenticate", {
-          status: 409,
-          code: "SLOT_DEAD",
+      if (matchedSlot === -1 || !matchedAuth?.user || !matchedSealed) {
+        throw new HttpError("No parked account matches that user", {
+          status: 404,
+          code: "TARGET_NOT_FOUND",
         })
       }
 
       // Refreshed-during-auth: if WorkOS rotated the sealed session, use the
       // new value so the cookie we install reflects the fresh refresh token.
-      const newActive = targetAuth.refreshed && targetAuth.sealedSession ? targetAuth.sealedSession : targetSealed
+      const newActive = matchedAuth.refreshed && matchedAuth.sealedSession ? matchedAuth.sealedSession : matchedSealed
       const currentActive = req.cookies[SESSION_COOKIE_NAME] as string | undefined
 
       if (currentActive) {
-        setAltSessionCookie(res, slot, currentActive)
+        setAltSessionCookie(res, matchedSlot, currentActive)
       } else {
-        clearAltSessionCookie(res, slot)
+        clearAltSessionCookie(res, matchedSlot)
       }
       setSessionCookie(res, newActive)
 
       res.json({
         active: {
-          userId: targetAuth.user.id,
-          email: targetAuth.user.email,
-          name: displayNameFromWorkos(targetAuth.user),
+          userId: matchedAuth.user.id,
+          email: matchedAuth.user.email,
+          name: displayNameFromWorkos(matchedAuth.user),
         },
       })
     },
@@ -167,14 +185,15 @@ export function createAccountsHandlers({ authService }: Dependencies) {
     /**
      * POST /api/accounts/remove — drop an account from the jar.
      *
-     * - slot === "active": clear the active cookie. If a parked alt exists,
-     *   promote it (and call WorkOS getLogoutUrl on the removed session so
-     *   the refresh token is invalidated server-side).
-     * - slot === number: clear that alt cookie and invalidate it at WorkOS.
-     *   The active session is untouched.
+     * Body accepts:
+     * - `{ targetUserId }`: stable identifier for an authenticated account
+     *   (active or parked). If it matches the active user, the active cookie
+     *   is cleared and the lowest-indexed parked alt is promoted; otherwise
+     *   the matching alt slot is cleared.
+     * - `{ slot }`: numeric fallback for dead alts, which expose no userId.
      *
-     * Returns the new active account summary (or `null` if the user is now
-     * fully logged out).
+     * Returns the new active account summary, or `null` if the user is now
+     * fully logged out.
      */
     async remove(req: Request, res: Response) {
       if (!req.authUser) {
@@ -182,22 +201,41 @@ export function createAccountsHandlers({ authService }: Dependencies) {
       }
       const parsed = removeSchema.safeParse(req.body)
       if (!parsed.success) {
-        throw new HttpError("Invalid slot", { status: 400, code: "INVALID_SLOT" })
+        throw new HttpError("Invalid target", { status: 400, code: "INVALID_TARGET" })
       }
-      const { slot } = parsed.data
+      const data = parsed.data
 
-      if (slot === "active") {
+      // Dead-alt removal: client-supplied slot index is the only handle they
+      // have on an alt that doesn't authenticate. Clear it and best-effort
+      // revoke at WorkOS in case the sealed session still partially decodes.
+      if ("slot" in data) {
+        const altCookies = readAltSessionCookies(req.cookies as Record<string, string | undefined>)
+        const sealed = altCookies[data.slot]
+        if (sealed) {
+          await authService.getLogoutUrl(sealed).catch(() => null)
+        }
+        clearAltSessionCookie(res, data.slot)
+        return res.json({
+          active: {
+            userId: req.authUser.id,
+            email: req.authUser.email,
+            name: displayNameFromWorkos(req.authUser),
+          },
+        })
+      }
+
+      const { targetUserId } = data
+
+      // Active-user removal: revoke + promote lowest parked alt.
+      if (req.authUser.id === targetUserId) {
         const active = req.cookies[SESSION_COOKIE_NAME] as string | undefined
         if (active) {
-          // Fire-and-forget WorkOS logout — we don't redirect through it, we
-          // just want the refresh token revoked. getLogoutUrl side-effects
-          // the revocation on WorkOS when followed; here we settle for a
-          // best-effort call and surface failures only in logs.
+          // Best-effort refresh-token revocation. getLogoutUrl side-effects
+          // the revocation on WorkOS; we don't redirect through it.
           await authService.getLogoutUrl(active).catch(() => null)
         }
         clearSessionCookie(res)
 
-        // Promote the lowest-indexed parked alt into the active slot.
         const altCookies = readAltSessionCookies(req.cookies as Record<string, string | undefined>)
         for (let i = 0; i < altCookies.length; i++) {
           const sealed = altCookies[i]
@@ -219,23 +257,31 @@ export function createAccountsHandlers({ authService }: Dependencies) {
           clearAltSessionCookie(res, i)
         }
 
-        // No parked alts — fully logged out.
         return res.json({ active: null })
       }
 
-      // Parked alt removal.
+      // Parked-alt removal by userId: walk alts, match, clear.
       const altCookies = readAltSessionCookies(req.cookies as Record<string, string | undefined>)
-      const sealed = altCookies[slot]
-      if (sealed) {
-        await authService.getLogoutUrl(sealed).catch(() => null)
+      for (let i = 0; i < altCookies.length; i++) {
+        const sealed = altCookies[i]
+        if (!sealed) continue
+        const auth = await authService.authenticateSession(sealed)
+        if (auth.success && auth.user?.id === targetUserId) {
+          await authService.getLogoutUrl(sealed).catch(() => null)
+          clearAltSessionCookie(res, i)
+          return res.json({
+            active: {
+              userId: req.authUser.id,
+              email: req.authUser.email,
+              name: displayNameFromWorkos(req.authUser),
+            },
+          })
+        }
       }
-      clearAltSessionCookie(res, slot)
-      res.json({
-        active: {
-          userId: req.authUser.id,
-          email: req.authUser.email,
-          name: displayNameFromWorkos(req.authUser),
-        },
+
+      throw new HttpError("No account matches that user", {
+        status: 404,
+        code: "TARGET_NOT_FOUND",
       })
     },
   }

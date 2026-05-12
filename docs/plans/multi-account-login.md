@@ -51,7 +51,7 @@ The single biggest design decision: every API request, every WebSocket handshake
 | Cookie                 | Purpose                                             | HttpOnly             | Notes                                                                                                                                                                       |
 | ---------------------- | --------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `wos_session`          | Active sealed session — authenticates every request | yes                  | Identical to today; auth middleware unchanged                                                                                                                               |
-| `wos_session_alt_0..6` | Parked sealed sessions — storage only               | yes                  | Never read by auth middleware. Read only by `/api/auth/accounts`, `/api/auth/switch`, `/api/auth/refresh-all`                                                               |
+| `wos_session_alt_0..6` | Parked sealed sessions — storage only               | yes                  | Never read by auth middleware. Read only by `/api/accounts`, `/api/accounts/switch`, `/api/accounts/remove`, `/api/accounts/refresh-all`                                    |
 | `threa_active_user`    | Cold-start hint: the active `workosUserId`          | **no** (JS-readable) | Used by the eager pre-React fetch to know who's active without parsing HttpOnly cookies. Not security-bearing — server-side auth is still gated on `wos_session` validation |
 
 Why this shape works:
@@ -65,7 +65,7 @@ Why this shape works:
 
 Slots are a server-internal detail. They appear in **only** these four control-plane endpoints; everywhere else in the codebase (auth middleware, regional backend, workspace router, frontend) is slot-agnostic.
 
-#### `GET /api/auth/accounts`
+#### `GET /api/accounts`
 
 Replaces `GET /api/auth/me` for switcher rendering. One trip returns the full picture.
 
@@ -97,7 +97,7 @@ Server walks `wos_session` plus every present `wos_session_alt_*`, validates eac
 
 `GET /api/auth/me` stays for backwards compat — backoffice and other single-account consumers keep using it.
 
-#### `POST /api/auth/switch`
+#### `POST /api/accounts/switch`
 
 ```jsonc
 // request
@@ -125,9 +125,9 @@ Server logic:
 
 **Idempotency.** Switching to the current active is a 204. Repeated switches to the same already-active target are 204s.
 
-#### `POST /api/auth/refresh-all`
+#### `POST /api/accounts/refresh-all`
 
-The "stay logged in" mechanism. Walks every present `wos_session*` cookie, calls WorkOS `session.authenticate()` on each, and re-seals where a refresh occurred. Returns the same shape as `/api/auth/accounts` so the frontend can update switcher state in one round trip.
+The "stay logged in" mechanism. Walks every present `wos_session*` cookie, calls WorkOS `session.authenticate()` on each, and re-seals where a refresh occurred. Returns the same shape as `/api/accounts` so the frontend can update switcher state in one round trip.
 
 Called:
 
@@ -141,7 +141,7 @@ Slots inside their refresh window are no-ops on the WorkOS side (sealed session 
 
 The OAuth state param already carries `host|path` for cross-origin redirects (`apps/control-plane/src/features/auth/handlers.ts:74-86`). We extend it to a versioned structured form:
 
-```
+```text
 state = "v2:" + base64(JSON({ host?, path, intent: "login" | "add", forceNewSlot?: boolean }))
 ```
 
@@ -201,7 +201,7 @@ The OS-level PushManager subscription is one per browser/origin. The backend tab
 | Slot session expires unrecoverably (refresh fails) | Backend already drops rows on push delivery failures. Add: when `refresh-all` confirms a slot is dead, proactively delete that account's push rows so the OS doesn't wake the user with notifications they can't enter. |
 | OS endpoint rotates (browser-initiated)            | Before deleting old rows, re-register the new endpoint against every (account, workspace) the user has via a single batch call from the SW (or app on cold start).                                                      |
 
-Notification click → SW opens `/w/{workspaceId}/...`. With multi-account, the SW additionally writes the target account's `workosUserId` to `threa_active_user` and triggers a switch via `/api/auth/switch` before the navigation, so the destination workspace loads under the right identity.
+Notification click → SW opens `/w/{workspaceId}/...`. With multi-account, the SW additionally writes the target account's `workosUserId` to `threa_active_user` and triggers a switch via `/api/accounts/switch` before the navigation, so the destination workspace loads under the right identity.
 
 ### Cross-tab / cross-instance synchronization
 
@@ -216,7 +216,7 @@ The service worker also participates: on OAuth callback completion, the SW posts
 
 ### Switcher UX
 
-```
+```text
 ┌─ Sidebar footer ────────────┐
 │  ▾ Account: alex@gmail.com  │
 │   • Friends           ✓     │
@@ -234,7 +234,7 @@ The service worker also participates: on OAuth callback completion, the SW posts
 ```
 
 - Click a workspace under the **active account** → in-app navigate (existing `/w/{id}` path).
-- Click a workspace under a **parked alt** → `POST /api/auth/switch { targetUserId }`, then full reload to `/w/{newWorkspaceId}`.
+- Click a workspace under a **parked alt** → `POST /api/accounts/switch { targetUserId }`, then full reload to `/w/{newWorkspaceId}`.
 - Click a **Re-authenticate** account → OAuth flow with `intent=add` and the existing alt slot identified by `workosUserId`; coalesce path refreshes the alt in place.
 - "Add another account" → OAuth with `intent=add`, allocator picks the lowest free alt slot.
 - Cmd/Ctrl-Opt-1..N to cycle through accounts and their workspaces in switcher order.
@@ -250,7 +250,7 @@ This entire design assumes WorkOS tolerates multiple concurrent sealed sessions 
 - **Each sealed session refreshes independently.** Refresh tokens are per-session; "Refresh tokens may be rotated after use, so be sure to replace the old refresh token with the newly returned one." No documented "one active session per WorkOS user" rule. N sealed sessions = N independent refresh streams.
 - **`getAuthorizationUrl` accepts the OIDC `prompt` parameter** (listed in the official parameter table on the authorize endpoint).
 - **`login_hint` is supported** to pre-fill the email field. Use it for "Re-authenticate this slot" — pass the known email so the user lands on a pre-filled login form.
-- **Inactivity timeout is dashboard-configurable.** "Ends sessions if a refresh has not occurred in this length of time." `POST /api/auth/refresh-all` must run at an interval shorter than this setting, or dormant slots silently die server-side.
+- **Inactivity timeout is dashboard-configurable.** "Ends sessions if a refresh has not occurred in this length of time." `POST /api/accounts/refresh-all` must run at an interval shorter than this setting, or dormant slots silently die server-side.
 
 ### Not documented — must verify empirically
 
@@ -304,7 +304,7 @@ These probes should be cheap (an afternoon) and the answers materially shape the
 1. **No data migration.** Existing single-account users keep their `wos_session` cookie as-is. It becomes the "active" session automatically. Their existing IDB database (`Threa` or whatever the current name is) is migrated lazily: on first multi-account-aware load, if the legacy DB exists, rename/copy to `threa_{workosUserId}` and delete the legacy DB. (The exact rename mechanic — Dexie doesn't support rename — is "open both, copy each table, delete legacy." A separate sub-task.)
 2. **Backoffice cookie rename.** Backoffice deploys gain `SESSION_COOKIE_NAME=wos_session_backoffice`. Existing backoffice sessions are invalidated on rollout (one re-login). The `SESSION_COOKIE_NAME` env var already exists; only deployment config changes.
 3. **Workspace-router and regional backend.** No changes. Both already pass cookies through transparently and read `wos_session` for auth. Alts are present in the `Cookie:` header but ignored by the auth middleware — they're only consumed by the four control-plane endpoints listed above.
-4. **Frontend rollout order.** Server endpoints first (`/api/auth/accounts`, `/api/auth/switch`, `/api/auth/refresh-all`, OAuth `intent=add`). Then per-slot Dexie wrapper. Then switcher UI. Then push lifecycle changes. Then cross-tab BroadcastChannel. Each can ship behind a flag if needed.
+4. **Frontend rollout order.** Server endpoints first (`/api/accounts`, `/api/accounts/switch`, `/api/accounts/remove`, `/api/accounts/refresh-all`, OAuth `intent=add`). Then per-slot Dexie wrapper. Then switcher UI. Then push lifecycle changes. Then cross-tab BroadcastChannel. Each can ship behind a flag if needed.
 
 ## Test matrix
 
@@ -313,11 +313,11 @@ The leakage threat model justifies aggressive testing.
 ### Server-side
 
 - **Auth middleware unchanged.** Existing tests should still pass without modification. Add: requests with multiple `wos_session_alt_*` cookies still authenticate as `wos_session`; alts are ignored.
-- **`/api/auth/switch` happy path.** Active is alex, alt is bob, switch to bob: response sets both cookies, subsequent requests authenticate as bob. Switch back: same in reverse.
-- **`/api/auth/switch` to non-existent target.** Returns 410 `{ status: "expired" }`. Active cookie not modified.
-- **`/api/auth/switch` to current active.** Returns 204. Cookies not modified.
-- **`/api/auth/switch` with expired alt.** Alt cookie present but WorkOS validation fails. Returns 410. Alt cookie not cleared (re-auth path keeps it).
-- **`/api/auth/accounts` enumerates correctly.** Returns active + parked, with correct `status` per slot.
+- **`/api/accounts/switch` happy path.** Active is alex, alt is bob, switch to bob: response sets both cookies, subsequent requests authenticate as bob. Switch back: same in reverse.
+- **`/api/accounts/switch` to non-existent target.** Returns 404 `TARGET_NOT_FOUND`. Active cookie not modified.
+- **`/api/accounts/switch` to current active.** Returns 204. Cookies not modified.
+- **`/api/accounts/switch` with expired alt.** Alt cookie present but WorkOS validation fails. Returns 404. Alt cookie not cleared (re-auth path keeps it).
+- **`/api/accounts` enumerates correctly.** Returns active + parked, with correct `status` per slot.
 - **OAuth `intent=add` allocation.** Picks lowest free alt. If 7 alts are taken, returns `MAX_ACCOUNTS_REACHED`. With `forceNewSlot=true`, allows duplicates of the same WorkOS user; without, coalesces.
 - **Cross-workspace membership enforcement.** Requesting `/api/workspaces/X/...` with the active session whose `workosUserId` is not a member of X returns 403 — same as today; we add tests where alts have different memberships to make sure the active session's check is what governs.
 

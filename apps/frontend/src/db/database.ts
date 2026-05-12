@@ -483,8 +483,14 @@ const LEGACY_DB_NAME = "threa"
 
 function resolveDbName(): string {
   if (typeof localStorage === "undefined") return LEGACY_DB_NAME
-  const id = localStorage.getItem(ACTIVE_USER_KEY)
-  return id ? `${LEGACY_DB_NAME}_${id}` : LEGACY_DB_NAME
+  // Privacy modes (Safari private, locked-down PWAs) can throw on access;
+  // a throw here would white-screen the app before auth bootstrap runs.
+  try {
+    const id = localStorage.getItem(ACTIVE_USER_KEY)
+    return id ? `${LEGACY_DB_NAME}_${id}` : LEGACY_DB_NAME
+  } catch {
+    return LEGACY_DB_NAME
+  }
 }
 
 // Database class with typed tables
