@@ -1,8 +1,10 @@
-import { useSyncExternalStore } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { useCoordinatedLoading, useSocketStatus } from "@/contexts"
 import { usePageActivity } from "@/hooks/use-page-activity"
 import { WifiOff, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+const UNSTABLE_STATE_DELAY_MS = 3000
 
 export function useIsOnline(): boolean {
   return useSyncExternalStore(
@@ -31,6 +33,20 @@ export function useConnectionState(): ConnectionState {
   return "disconnected"
 }
 
+function useUnstableConnectionVisible(state: ConnectionState): boolean {
+  const isStable = state === "connected" || state === "connecting"
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    if (isStable) {
+      setVisible(false)
+      return
+    }
+    const id = window.setTimeout(() => setVisible(true), UNSTABLE_STATE_DELAY_MS)
+    return () => window.clearTimeout(id)
+  }, [isStable])
+  return visible
+}
+
 /**
  * Floating pill that overlays the content area when not connected.
  * Uses absolute positioning so it never affects layout or pushes
@@ -39,9 +55,10 @@ export function useConnectionState(): ConnectionState {
 export function ConnectionStatus() {
   const { phase } = useCoordinatedLoading()
   const state = useConnectionState()
+  const showPill = useUnstableConnectionVisible(state)
   const pageActivity = usePageActivity()
 
-  if (phase !== "ready" || !pageActivity.isVisible || state === "connected" || state === "connecting") return null
+  if (phase !== "ready" || !pageActivity.isVisible || !showPill) return null
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center pt-2">

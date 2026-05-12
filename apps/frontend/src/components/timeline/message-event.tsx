@@ -63,8 +63,11 @@ import { useStreamFromStore } from "@/stores/stream-store"
 import { queueShareHandoff } from "@/stores/share-handoff-store"
 import { navigateAfterShareHandoff } from "@/lib/share-navigation"
 import { ShareMessageModal } from "@/components/share/share-message-modal"
+import { useIsOnline } from "@/components/layout/connection-status"
 import type { BatchTimelineState } from "./event-list"
 import { dispatchStartBatchSelect } from "@/lib/batch-selection-events"
+
+const SLOW_SEND_THRESHOLD_MS = 5000
 
 interface MessagePayload {
   messageId: string
@@ -1319,10 +1322,27 @@ function PendingMessageEvent({
   isFirstMessage,
 }: MessageEventInnerProps) {
   const { markEditing, deleteMessage } = usePendingMessages()
+  const isOnline = useIsOnline()
   const isMobile = useIsMobile()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const longPress = useLongPress({ onLongPress: openDrawer, enabled: isMobile, deferToNativeLinks: true })
+
+  const [slowEnough, setSlowEnough] = useState(
+    () => Date.now() - new Date(event.createdAt).getTime() >= SLOW_SEND_THRESHOLD_MS
+  )
+  useEffect(() => {
+    if (slowEnough) return
+    const remaining = SLOW_SEND_THRESHOLD_MS - (Date.now() - new Date(event.createdAt).getTime())
+    if (remaining <= 0) {
+      setSlowEnough(true)
+      return
+    }
+    const id = window.setTimeout(() => setSlowEnough(true), remaining)
+    return () => window.clearTimeout(id)
+  }, [slowEnough, event.createdAt])
+
+  const showPendingState = !isOnline || slowEnough
 
   return (
     <>
@@ -1336,13 +1356,17 @@ function PendingMessageEvent({
         deferSecondaryHydration={deferSecondaryHydration}
         isGroupContinuation={groupContinuation}
         containerClassName={cn(
-          "opacity-60",
+          showPendingState && "opacity-60",
           isMobile && "select-none",
           longPress.isPressed && "opacity-40 transition-opacity duration-100"
         )}
         touchHandlers={isMobile ? longPress.handlers : undefined}
         statusIndicator={
-          <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
+          showPendingState ? (
+            <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">
+              {isOnline ? "Sending..." : "Waiting to send"}
+            </span>
+          ) : null
         }
         actions={
           <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity hidden sm:flex">

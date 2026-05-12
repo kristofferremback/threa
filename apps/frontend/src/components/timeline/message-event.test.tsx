@@ -14,6 +14,7 @@ import * as syncEngineModule from "@/sync/sync-engine"
 import * as contextsModule from "@/contexts"
 import * as authModule from "@/auth"
 import * as userProfileModule from "@/components/user-profile"
+import * as connectionStatusModule from "@/components/layout/connection-status"
 import userEvent from "@testing-library/user-event"
 import type { StreamEvent } from "@threa/types"
 import type { JSONContent } from "@threa/types"
@@ -430,15 +431,43 @@ describe("MessageEvent", () => {
   })
 
   describe("pending message", () => {
-    it("should show Sending indicator and Edit/Delete buttons on hover", () => {
+    beforeEach(() => {
+      vi.spyOn(connectionStatusModule, "useIsOnline").mockReturnValue(true)
+    })
+
+    it("should not show a sending indicator initially when online", () => {
       mockGetStatus = () => "pending"
       const event = createMessageEvent("msg_pending", "Pending message")
 
       render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
 
-      expect(screen.getByText("Sending...")).toBeInTheDocument()
+      expect(screen.queryByText("Sending...")).not.toBeInTheDocument()
+      expect(screen.queryByText("Waiting to send")).not.toBeInTheDocument()
       expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument()
       expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument()
+    })
+
+    it("should show Sending indicator once the slow threshold has elapsed", () => {
+      mockGetStatus = () => "pending"
+      const event = {
+        ...createMessageEvent("msg_pending", "Pending message"),
+        createdAt: new Date(Date.now() - 6000).toISOString(),
+      }
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      expect(screen.getByText("Sending...")).toBeInTheDocument()
+    })
+
+    it("should show Waiting to send immediately when offline", () => {
+      vi.spyOn(connectionStatusModule, "useIsOnline").mockReturnValue(false)
+      mockGetStatus = () => "pending"
+      const event = createMessageEvent("msg_pending", "Pending message")
+
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />, { wrapper: Wrapper })
+
+      expect(screen.getByText("Waiting to send")).toBeInTheDocument()
+      expect(screen.queryByText("Sending...")).not.toBeInTheDocument()
     })
 
     it("should call markEditing when Edit is clicked", async () => {
