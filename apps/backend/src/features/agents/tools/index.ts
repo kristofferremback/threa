@@ -65,6 +65,14 @@ export {
   createMemoizedGithubClient,
   type GitHubToolDeps,
 } from "./github"
+export {
+  createLinearListIssuesTool,
+  createLinearGetIssueTool,
+  createLinearListProjectsTool,
+  createLinearGetProjectTool,
+  createMemoizedLinearClient,
+  type LinearToolDeps,
+} from "./linear"
 
 /**
  * Check if a tool is enabled for a persona.

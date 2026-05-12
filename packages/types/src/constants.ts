@@ -292,6 +292,10 @@ export const AGENT_TOOL_NAMES = [
   "github_get_release",
   "github_search_issues",
   "github_get_issue",
+  "linear_list_issues",
+  "linear_get_issue",
+  "linear_list_projects",
+  "linear_get_project",
 ] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
@@ -325,6 +329,10 @@ export const AgentToolNames = {
   GITHUB_GET_RELEASE: "github_get_release",
   GITHUB_SEARCH_ISSUES: "github_search_issues",
   GITHUB_GET_ISSUE: "github_get_issue",
+  LINEAR_LIST_ISSUES: "linear_list_issues",
+  LINEAR_GET_ISSUE: "linear_get_issue",
+  LINEAR_LIST_PROJECTS: "linear_list_projects",
+  LINEAR_GET_PROJECT: "linear_get_project",
 } as const satisfies Record<string, AgentToolName>
 
 // Source types for message citations
@@ -364,6 +372,7 @@ export const AGENT_STEP_TYPES = [
   "visit_page",
   "workspace_search",
   "github_access",
+  "linear_access",
   "message_sent",
   "message_edited",
   "tool_call",
@@ -379,6 +388,7 @@ export const AgentStepTypes = {
   VISIT_PAGE: "visit_page",
   WORKSPACE_SEARCH: "workspace_search",
   GITHUB_ACCESS: "github_access",
+  LINEAR_ACCESS: "linear_access",
   MESSAGE_SENT: "message_sent",
   MESSAGE_EDITED: "message_edited",
   TOOL_CALL: "tool_call",

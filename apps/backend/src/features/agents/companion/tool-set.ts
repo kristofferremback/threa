@@ -1,7 +1,7 @@
 import { AgentToolNames } from "@threa/types"
 import type { AgentTool } from "../runtime"
 import type { WorkspaceAgentResult } from "../researcher"
-import type { GitHubToolDeps, RunWorkspaceAgentOptions } from "../tools"
+import type { GitHubToolDeps, LinearToolDeps, RunWorkspaceAgentOptions } from "../tools"
 import type { WorkspaceToolDeps } from "../tools/tool-deps"
 import { logger } from "../../../lib/logger"
 import {
@@ -34,6 +34,10 @@ import {
   createGithubGetReleaseTool,
   createGithubSearchIssuesTool,
   createGithubGetIssueTool,
+  createLinearListIssuesTool,
+  createLinearGetIssueTool,
+  createLinearListProjectsTool,
+  createLinearGetProjectTool,
   isToolEnabled,
 } from "../tools"
 
@@ -46,6 +50,7 @@ export interface ToolSetConfig {
   runWorkspaceAgent?: (query: string, opts: RunWorkspaceAgentOptions) => Promise<WorkspaceAgentResult>
   workspace?: WorkspaceToolDeps
   github?: GitHubToolDeps
+  linear?: LinearToolDeps
   supportsVision?: boolean
 }
 
@@ -55,8 +60,17 @@ export interface ToolSetConfig {
  * Returns AgentTool[] — send_message is NOT included (the runtime handles it).
  */
 export function buildToolSet(config: ToolSetConfig): AgentTool[] {
-  const { enabledTools, tavilyApiKey, currentTime, timezone, runWorkspaceAgent, workspace, github, supportsVision } =
-    config
+  const {
+    enabledTools,
+    tavilyApiKey,
+    currentTime,
+    timezone,
+    runWorkspaceAgent,
+    workspace,
+    github,
+    linear,
+    supportsVision,
+  } = config
 
   if (!github && enabledTools !== null) {
     const requestedGithubTools = enabledTools.filter((t) => t.startsWith("github_"))
@@ -64,6 +78,16 @@ export function buildToolSet(config: ToolSetConfig): AgentTool[] {
       logger.warn(
         { requestedGithubTools },
         "persona has GitHub tools enabled but no GitHub deps were provided; the tools will be silently unavailable"
+      )
+    }
+  }
+
+  if (!linear && enabledTools !== null) {
+    const requestedLinearTools = enabledTools.filter((t) => t.startsWith("linear_"))
+    if (requestedLinearTools.length > 0) {
+      logger.warn(
+        { requestedLinearTools },
+        "persona has Linear tools enabled but no Linear deps were provided; the tools will be silently unavailable"
       )
     }
   }
@@ -147,6 +171,18 @@ export function buildToolSet(config: ToolSetConfig): AgentTool[] {
       ? createGithubSearchIssuesTool(github)
       : null,
     github && isToolEnabled(enabledTools, AgentToolNames.GITHUB_GET_ISSUE) ? createGithubGetIssueTool(github) : null,
+
+    // Linear tools (workspace-scoped via installed Linear OAuth app; read-only)
+    linear && isToolEnabled(enabledTools, AgentToolNames.LINEAR_LIST_ISSUES)
+      ? createLinearListIssuesTool(linear)
+      : null,
+    linear && isToolEnabled(enabledTools, AgentToolNames.LINEAR_GET_ISSUE) ? createLinearGetIssueTool(linear) : null,
+    linear && isToolEnabled(enabledTools, AgentToolNames.LINEAR_LIST_PROJECTS)
+      ? createLinearListProjectsTool(linear)
+      : null,
+    linear && isToolEnabled(enabledTools, AgentToolNames.LINEAR_GET_PROJECT)
+      ? createLinearGetProjectTool(linear)
+      : null,
   ]
 
   return tools.filter((t): t is AgentTool => t !== null)
