@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { createLinearGetIssueTool, createLinearGetProjectTool, createLinearListIssuesTool } from "./index"
+import {
+  createLinearGetIssueTool,
+  createLinearGetProjectTool,
+  createLinearListIssuesTool,
+  createLinearListProjectsTool,
+} from "./index"
 import { LinearApiError } from "../../../workspace-integrations"
 import type { LinearToolDeps } from "./deps"
 
@@ -98,6 +103,54 @@ describe("linear_list_issues", () => {
     const result = await tool.config.execute({ first: 5 }, { toolCallId: "call_1" })
     const output = JSON.parse(result.output)
     expect(output).toMatchObject({ count: 1, issues: [{ identifier: "ENG-1", title: "One" }] })
+  })
+})
+
+describe("linear_list_projects", () => {
+  test("lists projects and preserves request/response shape", async () => {
+    const calls: Record<string, unknown>[] = []
+    const tool = createLinearListProjectsTool(
+      deps((_query, variables) => {
+        calls.push(variables)
+        return {
+          projects: {
+            nodes: [
+              {
+                id: "prj_1",
+                name: "Integrations",
+                url: "https://linear.app/threa/project/integrations-prj1",
+                description: "Connect external tools",
+                state: "started",
+                progress: 0.25,
+                startDate: "2026-05-01",
+                targetDate: "2026-06-01",
+                updatedAt: "2026-05-02T10:00:00Z",
+                lead: { id: "u_1", name: "Kris", displayName: "Kris", email: "kris@example.com" },
+                initiative: { id: "init_1", name: "Workflow integrations" },
+              },
+            ],
+          },
+        }
+      })
+    )
+
+    const result = await tool.config.execute({ first: 7 }, { toolCallId: "call_1" })
+    const output = JSON.parse(result.output)
+    expect(calls).toEqual([{ first: 7 }])
+    expect(output).toMatchObject({
+      count: 1,
+      projects: [
+        {
+          id: "prj_1",
+          name: "Integrations",
+          url: "https://linear.app/threa/project/integrations-prj1",
+          status: "started",
+          progress: 0.25,
+          lead: { id: "u_1", displayName: "Kris" },
+          initiative: { id: "init_1", name: "Workflow integrations" },
+        },
+      ],
+    })
   })
 })
 
