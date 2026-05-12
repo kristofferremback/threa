@@ -96,6 +96,8 @@ export interface WorkosOrgService {
     organizationId?: string
     email: string
     inviterUserId: string
+    /** WorkOS role slug applied when the invitation is accepted. */
+    roleSlug?: string
   }): Promise<{ id: string; expiresAt: Date }>
   revokeInvitation(invitationId: string): Promise<void>
   /** Resend an existing invitation. WorkOS issues a fresh token + expiry. */
@@ -199,13 +201,18 @@ export class WorkosOrgServiceImpl implements WorkosOrgService {
     organizationId?: string
     email: string
     inviterUserId: string
+    roleSlug?: string
   }): Promise<{ id: string; expiresAt: Date }> {
     const invitation = await this.workos.userManagement.sendInvitation({
       email: params.email,
       inviterUserId: params.inviterUserId,
       ...(params.organizationId ? { organizationId: params.organizationId } : {}),
+      ...(params.roleSlug ? { roleSlug: params.roleSlug } : {}),
     })
-    logger.info({ invitationId: invitation.id, email: params.email }, "Sent WorkOS invitation")
+    logger.info(
+      { invitationId: invitation.id, email: params.email, roleSlug: params.roleSlug },
+      "Sent WorkOS invitation"
+    )
     return {
       id: invitation.id,
       expiresAt: new Date(invitation.expiresAt),

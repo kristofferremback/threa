@@ -11,6 +11,7 @@ import type {
   Bot as WireBot,
   SavedMessageView,
   ScheduledMessageView,
+  WorkspaceInvitableRole,
 } from "@threa/types"
 
 /**
@@ -369,21 +370,21 @@ export interface UserPreferencesUpdatedOutboxPayload extends WorkspaceScopedPayl
 export interface InvitationSentOutboxPayload extends WorkspaceScopedPayload {
   invitationId: string
   email: string
-  role: string
+  role: WorkspaceInvitableRole
   inviterWorkosUserId?: string
 }
 
 export interface InvitationLinkCreatedOutboxPayload extends WorkspaceScopedPayload {
   invitationId: string
   tokenHash: string
-  role: string
+  role: WorkspaceInvitableRole
   expiresAt: string
 }
 
 export interface InvitationLinkClaimedOutboxPayload extends WorkspaceScopedPayload {
   invitationId: string
   email: string
-  role: string
+  role: WorkspaceInvitableRole
   inviterWorkosUserId?: string
 }
 

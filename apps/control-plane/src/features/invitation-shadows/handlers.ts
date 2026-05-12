@@ -1,6 +1,7 @@
 import type { Request, Response } from "express"
 import { z } from "zod/v4"
 import { HttpError } from "@threa/backend-common"
+import { WORKSPACE_INVITABLE_ROLES, WORKSPACE_ROLE_SLUGS } from "@threa/types"
 import type { InvitationShadowService } from "./service"
 
 interface Dependencies {
@@ -16,6 +17,7 @@ const createShadowSchema = z
     kind: z.enum(["email", "link"]).default("email"),
     email: z.string().email().nullable().optional(),
     tokenHash: z.string().min(1).nullable().optional(),
+    roleSlug: z.enum(WORKSPACE_INVITABLE_ROLES).default(WORKSPACE_ROLE_SLUGS.MEMBER),
     inviterWorkosUserId: z.string().min(1).optional(),
   })
   .refine(
@@ -60,6 +62,7 @@ export function createInvitationShadowHandlers({ shadowService }: Dependencies) 
         kind: parsed.data.kind,
         email: parsed.data.email ?? null,
         tokenHash: parsed.data.tokenHash ?? null,
+        roleSlug: parsed.data.roleSlug,
         expiresAt: new Date(parsed.data.expiresAt),
         inviterWorkosUserId: parsed.data.inviterWorkosUserId,
       })

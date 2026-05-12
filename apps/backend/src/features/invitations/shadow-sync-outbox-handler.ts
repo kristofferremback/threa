@@ -87,7 +87,7 @@ export class InvitationShadowSyncHandler implements OutboxHandler {
           }
 
           if (isOutboxEventType(event, "invitation:sent")) {
-            const { invitationId, workspaceId, email, inviterWorkosUserId } = event.payload
+            const { invitationId, workspaceId, email, role, inviterWorkosUserId } = event.payload
             const invitation = await InvitationRepository.findById(this.db, invitationId)
             if (!invitation) {
               logger.warn({ invitationId }, "Invitation not found for shadow sync, skipping")
@@ -102,11 +102,12 @@ export class InvitationShadowSyncHandler implements OutboxHandler {
               kind: "email",
               email,
               tokenHash: null,
+              roleSlug: role,
               expiresAt: invitation.expiresAt,
               inviterWorkosUserId,
             })
           } else if (isOutboxEventType(event, "invitation:link-created")) {
-            const { invitationId, workspaceId, tokenHash } = event.payload
+            const { invitationId, workspaceId, tokenHash, role } = event.payload
             const invitation = await InvitationRepository.findById(this.db, invitationId)
             if (!invitation) {
               logger.warn({ invitationId }, "Link invitation not found for shadow sync, skipping")
@@ -121,6 +122,7 @@ export class InvitationShadowSyncHandler implements OutboxHandler {
               kind: "link",
               email: null,
               tokenHash,
+              roleSlug: role,
               expiresAt: invitation.expiresAt,
             })
           } else if (isOutboxEventType(event, "invitation:link-claimed")) {
