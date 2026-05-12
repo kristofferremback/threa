@@ -655,6 +655,12 @@ function MessageLayout({
               // header row.
               "pointer-events-none absolute right-4 z-10 hidden sm:block",
               "bottom-[calc(100%-20px)] opacity-0 group-hover:pointer-events-auto group-hover:opacity-100",
+              // Keyboard users tabbing through the timeline land on the toolbar
+              // buttons even while it's visually hidden (opacity-0 doesn't
+              // remove descendants from the tab order, and `pointer-events-none`
+              // only affects mouse/touch). Reveal on `focus-within` so the
+              // focused control is visible.
+              "focus-within:pointer-events-auto focus-within:opacity-100",
               "has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100",
               "transition-opacity",
               isEditing && "pointer-events-none opacity-0"
