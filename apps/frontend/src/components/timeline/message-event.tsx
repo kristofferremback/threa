@@ -534,7 +534,14 @@ function MessageLayout({
   // accessible name; heads already have a visible author label.
   const rowAriaLabel = renderAsContinuation ? `Message from ${actorName}` : undefined
   const rowDataGroupContinuation = renderAsContinuation ? "true" : undefined
-  const rowVerticalPadding = renderAsContinuation ? "py-0.5" : "py-3"
+  // Heads keep a generous top pad to separate groups visually, but a tight
+  // bottom pad so the gap from the head body to the first continuation body
+  // matches the cont-to-cont gap (4px). Without this, heads with a follow-up
+  // continuation got 12px+2px = 14px below them and the first message in a
+  // group felt detached. Group separation is preserved by the next head's
+  // pt-3 (2px + 12px = 14px between groups, consistent regardless of whether
+  // the previous group ended with a head or a continuation).
+  const rowVerticalPadding = renderAsContinuation ? "py-0.5" : "pt-3 pb-0.5"
   const isSelected = batch?.selectedMessageIds.has(payload.messageId) ?? false
   const isInvalidTarget = batch?.invalidTargetIds.has(payload.messageId) ?? false
   const isHoveredTarget = batch?.hoveredTargetId === payload.messageId
@@ -644,7 +651,8 @@ function MessageLayout({
               // Floats at the top of the row so hover interactions on heads and
               // continuations share the same toolbar. The 20px upward overlap keeps
               // the toolbar readable on py-0.5 continuations without pushing past
-              // the viewport — on heads (py-3) it sits just above the header row.
+              // the viewport — on heads (pt-3 pb-0.5) it sits just above the
+              // header row.
               "pointer-events-none absolute right-4 z-10 hidden sm:block",
               "bottom-[calc(100%-20px)] opacity-0 group-hover:pointer-events-auto group-hover:opacity-100",
               "has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100",
@@ -1368,8 +1376,15 @@ function PendingMessageEvent({
             </span>
           ) : null
         }
-        actions={
-          <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity hidden sm:flex">
+        // Edit/Delete live in the floating hover toolbar — same slot sent
+        // messages use — so the inline header height matches sent rows. Without
+        // this, the h-6 buttons inflated the `items-baseline` header row of a
+        // pending head, then collapsed when the message confirmed, shifting
+        // surrounding rows by a few pixels at the moment of send. The hover
+        // toolbar also renders for grouped continuations (where the header row
+        // is collapsed), which the inline `actions` slot couldn't.
+        hoverActions={
+          <>
             <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => void markEditing(event.id)}>
               Edit
             </Button>
@@ -1381,7 +1396,7 @@ function PendingMessageEvent({
             >
               Delete
             </Button>
-          </div>
+          </>
         }
         footer={null}
       />
