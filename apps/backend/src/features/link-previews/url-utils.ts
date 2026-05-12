@@ -7,6 +7,32 @@ export interface MessagePermalink {
   messageId: string
 }
 
+export type LinearUrlMatch =
+  | {
+      type: "linear_issue"
+      workspaceSlug: string
+      /** Human identifier like `ENG-123`. */
+      identifier: string
+    }
+  | {
+      type: "linear_comment"
+      workspaceSlug: string
+      identifier: string
+      /** Linear comment UUID parsed from `#comment-<id>` fragment. */
+      commentId: string
+    }
+  | {
+      type: "linear_project"
+      workspaceSlug: string
+      /** Trailing `{slug}-{shortId}` segment — resolve server-side via `projects(filter: { slugId: { eq } })`. */
+      slugId: string
+    }
+  | {
+      type: "linear_document"
+      workspaceSlug: string
+      slugId: string
+    }
+
 export type GitHubUrlMatch =
   | { type: "github_pr"; owner: string; repo: string; number: number }
   | { type: "github_issue"; owner: string; repo: string; number: number }
@@ -152,6 +178,7 @@ export function normalizeUrl(raw: string): string {
     }
 
     const githubMatch = parseGitHubUrl(raw)
+    const linearMatch = githubMatch ? null : parseLinearUrl(raw)
     if (githubMatch?.type === "github_comment") {
       url.hash = `issuecomment-${githubMatch.commentId}`
     } else if (githubMatch?.type === "github_diff") {
@@ -161,6 +188,8 @@ export function normalizeUrl(raw: string): string {
         githubMatch.lineEnd && githubMatch.lineEnd !== githubMatch.lineStart
           ? `L${githubMatch.lineStart}-L${githubMatch.lineEnd}`
           : `L${githubMatch.lineStart}`
+    } else if (linearMatch?.type === "linear_comment") {
+      url.hash = `comment-${linearMatch.commentId}`
     } else {
       url.hash = ""
     }
@@ -437,4 +466,66 @@ function formatGitHubDiffHash(match: Extract<GitHubUrlMatch, { type: "github_dif
   }
 
   return `${base}${sidePrefix}${match.anchorStartLine}-${sidePrefix}${match.anchorEndLine}`
+}
+
+/** Team/issue identifier like `ENG-123` (uppercase team key, positive integer). */
+const LINEAR_IDENTIFIER_PATTERN = /^[A-Z][A-Z0-9_]{0,9}-\d+$/
+/** Alphanumeric slug id (trailing segment of project/document URLs). */
+const LINEAR_SLUG_ID_PATTERN = /^[a-zA-Z0-9_-]+$/
+/** Linear comment UUIDs — case-insensitive hex with dashes. */
+const LINEAR_COMMENT_ID_PATTERN = /^[a-f0-9-]{8,64}$/i
+
+/**
+ * Parse a Linear URL into a preview-ready discriminated union.
+ *
+ * Supported shapes (hostname-gated to `linear.app`):
+ * - `/{workspace}/issue/{TEAM-123}[/slug][#comment-{uuid}]` → `linear_issue` or `linear_comment`
+ * - `/{workspace}/project/{slug-id}[/overview|/updates|...]` → `linear_project`
+ * - `/{workspace}/document/{slug-id}` → `linear_document`
+ */
+export function parseLinearUrl(raw: string): LinearUrlMatch | null {
+  try {
+    const url = new URL(raw)
+    const hostname = url.hostname.toLowerCase()
+    if (hostname !== "linear.app" && hostname !== "www.linear.app") {
+      return null
+    }
+
+    const segments = url.pathname.split("/").filter(Boolean)
+    if (segments.length < 3) return null
+
+    const [workspaceSlug, kind, head, ...rest] = segments
+
+    if (kind === "issue") {
+      const identifier = head?.toUpperCase()
+      if (!identifier || !LINEAR_IDENTIFIER_PATTERN.test(identifier)) return null
+
+      const commentId = parseLinearCommentHash(url.hash)
+      if (commentId) {
+        return { type: "linear_comment", workspaceSlug, identifier, commentId }
+      }
+      return { type: "linear_issue", workspaceSlug, identifier }
+    }
+
+    if (kind === "project" || kind === "document") {
+      // `/project/{slug-id}` or `/project/{slug-id}/overview` both resolve to the same project.
+      // `rest` content (overview/updates/etc.) is intentionally discarded.
+      void rest
+      if (!head || !LINEAR_SLUG_ID_PATTERN.test(head)) return null
+      return kind === "project"
+        ? { type: "linear_project", workspaceSlug, slugId: head }
+        : { type: "linear_document", workspaceSlug, slugId: head }
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
+function parseLinearCommentHash(hash: string): string | null {
+  const match = hash.match(/^#comment-([a-f0-9-]+)$/i)
+  if (!match) return null
+  const id = match[1]
+  return LINEAR_COMMENT_ID_PATTERN.test(id) ? id : null
 }

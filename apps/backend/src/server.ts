@@ -467,6 +467,7 @@ export async function startServer(): Promise<ServerInstance> {
   const workspaceIntegrationService = new WorkspaceIntegrationService({
     pool,
     github: config.github,
+    linear: config.linear,
   })
   const linkPreviewService = new LinkPreviewService({ pool, streamService })
 

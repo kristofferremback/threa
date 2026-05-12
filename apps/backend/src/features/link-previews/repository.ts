@@ -1,5 +1,17 @@
 import { sql, type Querier } from "@threa/backend-common"
-import type { GitHubPreview, GitHubPreviewType, LinkPreviewContentType, LinkPreviewStatus } from "@threa/types"
+import type {
+  GitHubPreview,
+  GitHubPreviewType,
+  LinearPreview,
+  LinearPreviewType,
+  LinkPreviewContentType,
+  LinkPreviewStatus,
+} from "@threa/types"
+
+/** Union of all rich provider preview types persisted in `link_previews.preview_type`. */
+export type RichPreviewType = GitHubPreviewType | LinearPreviewType
+/** Union of all rich provider preview payloads stored in `link_previews.preview_data`. */
+export type RichPreview = GitHubPreview | LinearPreview
 
 // =============================================================================
 // Row types
@@ -17,8 +29,8 @@ export interface LinkPreview {
   siteName: string | null
   contentType: LinkPreviewContentType
   status: LinkPreviewStatus
-  previewType: GitHubPreviewType | null
-  previewData: GitHubPreview | null
+  previewType: RichPreviewType | null
+  previewData: RichPreview | null
   targetWorkspaceId: string | null
   targetStreamId: string | null
   targetMessageId: string | null
@@ -45,8 +57,8 @@ export interface UpdateLinkPreviewParams {
   faviconUrl?: string | null
   siteName?: string | null
   contentType?: LinkPreviewContentType
-  previewType?: GitHubPreviewType | null
-  previewData?: GitHubPreview | null
+  previewType?: RichPreviewType | null
+  previewData?: RichPreview | null
   status: LinkPreviewStatus
   expiresAt?: Date | null
 }
@@ -74,8 +86,8 @@ function mapRow(row: Record<string, unknown>): LinkPreview {
     siteName: row.site_name as string | null,
     contentType: row.content_type as LinkPreviewContentType,
     status: row.status as LinkPreviewStatus,
-    previewType: (row.preview_type as GitHubPreviewType | null) ?? null,
-    previewData: (row.preview_data as GitHubPreview | null) ?? null,
+    previewType: (row.preview_type as RichPreviewType | null) ?? null,
+    previewData: (row.preview_data as RichPreview | null) ?? null,
     targetWorkspaceId: (row.target_workspace_id as string | null) ?? null,
     targetStreamId: (row.target_stream_id as string | null) ?? null,
     targetMessageId: (row.target_message_id as string | null) ?? null,

@@ -486,11 +486,12 @@ export const InjectionStrategies = {
 } as const satisfies Record<string, InjectionStrategy>
 
 // Workspace integration providers
-export const WORKSPACE_INTEGRATION_PROVIDERS = ["github"] as const
+export const WORKSPACE_INTEGRATION_PROVIDERS = ["github", "linear"] as const
 export type WorkspaceIntegrationProvider = (typeof WORKSPACE_INTEGRATION_PROVIDERS)[number]
 
 export const WorkspaceIntegrationProviders = {
   GITHUB: "github",
+  LINEAR: "linear",
 } as const satisfies Record<string, WorkspaceIntegrationProvider>
 
 // Workspace integration lifecycle statuses
@@ -543,6 +544,17 @@ export const GitHubPreviewTypes = {
   DIFF: "github_diff",
   COMMENT: "github_comment",
 } as const satisfies Record<string, GitHubPreviewType>
+
+// Rich Linear preview variants returned through the link preview pipeline
+export const LINEAR_PREVIEW_TYPES = ["linear_issue", "linear_comment", "linear_project", "linear_document"] as const
+export type LinearPreviewType = (typeof LINEAR_PREVIEW_TYPES)[number]
+
+export const LinearPreviewTypes = {
+  ISSUE: "linear_issue",
+  COMMENT: "linear_comment",
+  PROJECT: "linear_project",
+  DOCUMENT: "linear_document",
+} as const satisfies Record<string, LinearPreviewType>
 
 // Share flavors (cross-stream message sharing)
 export const SHARE_FLAVORS = ["pointer", "quote"] as const

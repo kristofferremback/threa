@@ -22,41 +22,52 @@ interface Dependencies {
 }
 
 export function createIntegrationHandlers({ workspaceService, regions }: Dependencies) {
+  const proxy = createIntegrationProxyCallback({ workspaceService, regions })
   return {
-    async githubCallback(req: Request, res: Response) {
-      const rawState = req.query.state
-      const state = typeof rawState === "string" ? rawState : null
-      const workspaceId = state ? extractWorkspaceIdFromGithubInstallState(state) : null
-      if (!workspaceId) {
-        return res.status(400).json({ error: "Missing or invalid state parameter" })
+    githubCallback: proxy,
+    /**
+     * Linear uses the same state wire format (`workspaceId.issuedAtMs.hexSig`)
+     * as GitHub — only the HMAC domain differs — so the provider-agnostic
+     * extractor correctly recovers the workspace ID for both.
+     */
+    linearCallback: proxy,
+  }
+}
+
+function createIntegrationProxyCallback({ workspaceService, regions }: Dependencies) {
+  return async function proxyCallback(req: Request, res: Response) {
+    const rawState = req.query.state
+    const state = typeof rawState === "string" ? rawState : null
+    const workspaceId = state ? extractWorkspaceIdFromGithubInstallState(state) : null
+    if (!workspaceId) {
+      return res.status(400).json({ error: "Missing or invalid state parameter" })
+    }
+
+    const region = await workspaceService.getRegion(workspaceId)
+    if (!region) {
+      return res.status(404).json({ error: "Workspace not found" })
+    }
+
+    const target = regions[region]
+    if (!target) {
+      return res.status(502).json({ error: "Workspace region is not configured" })
+    }
+
+    const proxyResponse = await fetch(new URL(req.originalUrl, target.internalUrl), {
+      method: req.method,
+      headers: forwardHeaders(req),
+      redirect: "manual",
+    })
+
+    res.status(proxyResponse.status)
+    proxyResponse.headers.forEach((value, key) => {
+      if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) {
+        res.setHeader(key, value)
       }
+    })
 
-      const region = await workspaceService.getRegion(workspaceId)
-      if (!region) {
-        return res.status(404).json({ error: "Workspace not found" })
-      }
-
-      const target = regions[region]
-      if (!target) {
-        return res.status(502).json({ error: "Workspace region is not configured" })
-      }
-
-      const proxyResponse = await fetch(new URL(req.originalUrl, target.internalUrl), {
-        method: req.method,
-        headers: forwardHeaders(req),
-        redirect: "manual",
-      })
-
-      res.status(proxyResponse.status)
-      proxyResponse.headers.forEach((value, key) => {
-        if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) {
-          res.setHeader(key, value)
-        }
-      })
-
-      const body = Buffer.from(await proxyResponse.arrayBuffer())
-      res.send(body)
-    },
+    const body = Buffer.from(await proxyResponse.arrayBuffer())
+    res.send(body)
   }
 }
 

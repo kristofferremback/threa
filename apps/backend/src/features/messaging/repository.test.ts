@@ -101,8 +101,12 @@ describe("MessageRepository.updateStreamScopedReferences", () => {
     const sharedMessageQueries = queries.filter((q) => /UPDATE shared_messages/i.test(q.text))
     expect(sharedMessageQueries).toHaveLength(2)
 
-    const sourceSideQuery = sharedMessageQueries.find((q) => /source_stream_id\s*=/.test(q.text.split("WHERE")[1] ?? ""))
-    const targetSideQuery = sharedMessageQueries.find((q) => /target_stream_id\s*=/.test(q.text.split("WHERE")[1] ?? ""))
+    const sourceSideQuery = sharedMessageQueries.find((q) =>
+      /source_stream_id\s*=/.test(q.text.split("WHERE")[1] ?? "")
+    )
+    const targetSideQuery = sharedMessageQueries.find((q) =>
+      /target_stream_id\s*=/.test(q.text.split("WHERE")[1] ?? "")
+    )
 
     expect(sourceSideQuery).toBeDefined()
     expect(sourceSideQuery!.text).toMatch(/source_message_id\s*=\s*ANY/i)

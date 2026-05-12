@@ -1,7 +1,14 @@
 import { createCipheriv, createHmac, randomBytes } from "crypto"
 import { describe, expect, test } from "bun:test"
 import { WorkspaceIntegrationProviders, type WorkspaceIntegrationProvider } from "@threa/types"
-import { createGithubInstallState, decryptJson, encryptJson, verifyGithubInstallState } from "./crypto"
+import {
+  createGithubInstallState,
+  createLinearInstallState,
+  decryptJson,
+  encryptJson,
+  verifyGithubInstallState,
+  verifyLinearInstallState,
+} from "./crypto"
 
 describe("workspace integration crypto helpers", () => {
   test("encrypts and decrypts JSON payloads", () => {
@@ -89,6 +96,44 @@ describe("workspace integration crypto helpers", () => {
     const state = createGithubInstallState(secret, "ws_123", now)
 
     expect(verifyGithubInstallState(secret, state, now + 10 * 60 * 1000 - 1)).toEqual({ workspaceId: "ws_123" })
+  })
+
+  test("signs and verifies Linear installation state", () => {
+    const secret = "workspace-integration-secret"
+    const now = Date.UTC(2026, 3, 7, 12, 0, 0)
+    const state = createLinearInstallState(secret, "ws_abc", now)
+
+    expect(verifyLinearInstallState(secret, state, now + 1_000)).toEqual({ workspaceId: "ws_abc" })
+  })
+
+  test("rejects a Linear state replayed against the GitHub verifier (cross-provider replay)", () => {
+    const secret = "workspace-integration-secret"
+    const now = Date.UTC(2026, 3, 7, 12, 0, 0)
+    const linearState = createLinearInstallState(secret, "ws_abc", now)
+
+    expect(() => verifyGithubInstallState(secret, linearState, now + 1_000)).toThrow(
+      "Invalid GitHub install state signature"
+    )
+  })
+
+  test("rejects a GitHub state replayed against the Linear verifier (cross-provider replay)", () => {
+    const secret = "workspace-integration-secret"
+    const now = Date.UTC(2026, 3, 7, 12, 0, 0)
+    const githubState = createGithubInstallState(secret, "ws_abc", now)
+
+    expect(() => verifyLinearInstallState(secret, githubState, now + 1_000)).toThrow(
+      "Invalid Linear install state signature"
+    )
+  })
+
+  test("rejects expired Linear installation state", () => {
+    const secret = "workspace-integration-secret"
+    const now = Date.UTC(2026, 3, 7, 12, 0, 0)
+    const state = createLinearInstallState(secret, "ws_abc", now)
+
+    expect(() => verifyLinearInstallState(secret, state, now + 10 * 60 * 1000 + 1)).toThrow(
+      "Linear install state has expired"
+    )
   })
 })
 

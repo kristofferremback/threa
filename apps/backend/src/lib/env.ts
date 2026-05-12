@@ -43,6 +43,16 @@ export interface GitHubAppConfig {
   integrationSecret: string
 }
 
+export interface LinearOAuthConfig {
+  enabled: boolean
+  clientId: string
+  clientSecret: string
+  /** Global (workspace-less) callback registered with Linear's OAuth app. */
+  redirectUri: string
+  /** Shared with GitHub: HMAC secret for signing install state round-trips. */
+  integrationSecret: string
+}
+
 export interface MediaConvertConfig {
   /** IAM role ARN that MediaConvert assumes to access S3 */
   roleArn: string
@@ -75,6 +85,7 @@ export interface Config {
   attachments: AttachmentSafetyConfig
   push: PushConfig
   github: GitHubAppConfig
+  linear: LinearOAuthConfig
   mediaConvert: MediaConvertConfig
   /** Control-plane URL for inter-service communication (optional — only needed in multi-region) */
   controlPlaneUrl: string | null
@@ -171,6 +182,18 @@ export function loadConfig(): Config {
       privateKey: (process.env.GITHUB_APP_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
       integrationSecret: process.env.WORKSPACE_INTEGRATIONS_SECRET || "",
     },
+    linear: {
+      enabled: !!(
+        process.env.LINEAR_OAUTH_CLIENT_ID &&
+        process.env.LINEAR_OAUTH_CLIENT_SECRET &&
+        process.env.LINEAR_OAUTH_REDIRECT_URI &&
+        process.env.WORKSPACE_INTEGRATIONS_SECRET
+      ),
+      clientId: process.env.LINEAR_OAUTH_CLIENT_ID || "",
+      clientSecret: process.env.LINEAR_OAUTH_CLIENT_SECRET || "",
+      redirectUri: process.env.LINEAR_OAUTH_REDIRECT_URI || "",
+      integrationSecret: process.env.WORKSPACE_INTEGRATIONS_SECRET || "",
+    },
     mediaConvert: {
       roleArn: process.env.MEDIACONVERT_ROLE_ARN || "",
       endpoint: process.env.MEDIACONVERT_ENDPOINT || undefined,
@@ -201,6 +224,23 @@ export function loadConfig(): Config {
     throw new Error(
       "GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_PRIVATE_KEY, and WORKSPACE_INTEGRATIONS_SECRET must all be set together"
     )
+  }
+
+  // Linear OAuth credentials must be co-present. WORKSPACE_INTEGRATIONS_SECRET is shared with
+  // GitHub and excluded from the per-provider check so either provider can be enabled alone.
+  const linearProviderVars = [
+    process.env.LINEAR_OAUTH_CLIENT_ID,
+    process.env.LINEAR_OAUTH_CLIENT_SECRET,
+    process.env.LINEAR_OAUTH_REDIRECT_URI,
+  ]
+  const linearSetCount = linearProviderVars.filter(Boolean).length
+  if (linearSetCount > 0 && linearSetCount < linearProviderVars.length) {
+    throw new Error(
+      "LINEAR_OAUTH_CLIENT_ID, LINEAR_OAUTH_CLIENT_SECRET, and LINEAR_OAUTH_REDIRECT_URI must all be set together"
+    )
+  }
+  if (linearSetCount === linearProviderVars.length && !process.env.WORKSPACE_INTEGRATIONS_SECRET) {
+    throw new Error("WORKSPACE_INTEGRATIONS_SECRET is required when Linear OAuth credentials are configured")
   }
 
   if (config.mediaConvert.enabled && !config.mediaConvert.roleArn) {
