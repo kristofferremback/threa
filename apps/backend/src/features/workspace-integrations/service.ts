@@ -207,6 +207,58 @@ export class WorkspaceIntegrationService {
     })
   }
 
+  async syncGithubRepositories(workspaceId: string): Promise<GitHubWorkspaceIntegration> {
+    this.requireGitHubEnabled()
+
+    const record = await WorkspaceIntegrationRepository.findByWorkspaceAndProvider(
+      this.deps.pool,
+      workspaceId,
+      WorkspaceIntegrationProviders.GITHUB
+    )
+    if (!record || record.status !== WorkspaceIntegrationStatuses.ACTIVE) {
+      throw new HttpError("GitHub integration is not active for this workspace", {
+        status: 404,
+        code: "GITHUB_INTEGRATION_NOT_ACTIVE",
+      })
+    }
+
+    let credentials: GitHubIntegrationCredentials
+    try {
+      credentials = this.parseCredentials(workspaceId, record.credentials)
+    } catch (error) {
+      log.warn({ err: error, workspaceId }, "GitHub integration credentials could not be decrypted during sync")
+      throw new HttpError("GitHub integration credentials could not be decrypted", {
+        status: 500,
+        code: "GITHUB_CREDENTIALS_DECRYPT_FAILED",
+      })
+    }
+
+    const metadata = this.parseMetadata(record.metadata)
+    const refreshed = await this.refreshGithubCredentials(
+      workspaceId,
+      record,
+      credentials.installationId,
+      metadata,
+      undefined,
+      true
+    )
+    if (!refreshed) {
+      throw new HttpError("Failed to sync GitHub repositories", {
+        status: 502,
+        code: "GITHUB_SYNC_FAILED",
+      })
+    }
+
+    const integration = await this.getGithubIntegration(workspaceId)
+    if (!integration) {
+      throw new HttpError("GitHub integration not found after sync", {
+        status: 500,
+        code: "GITHUB_INTEGRATION_NOT_FOUND",
+      })
+    }
+    return integration
+  }
+
   async handleGithubCallback(params: {
     state: string
     installationId: string

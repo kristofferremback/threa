@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Github, ExternalLink } from "lucide-react"
+import { Github, ExternalLink, RefreshCw } from "lucide-react"
 import { useAuth } from "@/auth/hooks"
 import { integrationsApi } from "@/api/integrations"
 import { Button } from "@/components/ui/button"
@@ -48,6 +48,13 @@ export function IntegrationsTab({ workspaceId }: IntegrationsTabProps) {
     mutationFn: () => integrationsApi.disconnectGithub(workspaceId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["workspace-integrations", workspaceId, "github"] })
+    },
+  })
+
+  const syncMutation = useMutation({
+    mutationFn: () => integrationsApi.syncGithub(workspaceId),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["workspace-integrations", workspaceId, "github"], data)
     },
   })
 
@@ -162,6 +169,17 @@ export function IntegrationsTab({ workspaceId }: IntegrationsTabProps) {
             </Button>
             {isActive && (
               <Button
+                variant="outline"
+                size="sm"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                {syncMutation.isPending ? "Syncing\u2026" : "Sync repos"}
+              </Button>
+            )}
+            {isActive && (
+              <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => disconnectMutation.mutate()}
@@ -171,6 +189,12 @@ export function IntegrationsTab({ workspaceId }: IntegrationsTabProps) {
               </Button>
             )}
           </div>
+        )}
+
+        {syncMutation.error && (
+          <p className="mt-2 text-sm text-destructive">
+            {syncMutation.error instanceof Error ? syncMutation.error.message : "Failed to sync GitHub repositories."}
+          </p>
         )}
 
         {query.error && (

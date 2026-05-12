@@ -420,6 +420,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     requireWorkspaceAdmin,
     workspaceIntegration.disconnectGithub
   )
+  app.post(
+    "/api/workspaces/:workspaceId/integrations/github/sync",
+    ...authed,
+    requireWorkspaceAdmin,
+    workspaceIntegration.syncGithub
+  )
 
   app.get(
     "/api/workspaces/:workspaceId/integrations/linear",

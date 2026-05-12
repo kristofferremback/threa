@@ -81,6 +81,15 @@ export function createWorkspaceIntegrationHandlers({
       res.status(204).send()
     },
 
+    async syncGithub(req: Request, res: Response) {
+      const workspaceId = req.workspaceId!
+      const integration = await workspaceIntegrationService.syncGithubRepositories(workspaceId)
+      res.json({
+        configured: workspaceIntegrationService.isGitHubEnabled(),
+        integration,
+      })
+    },
+
     async githubCallback(req: Request, res: Response) {
       const parsed = githubCallbackSchema.safeParse(req.query)
       if (!parsed.success) {
