@@ -88,7 +88,8 @@ export const WorkspaceIntegrationRepository = {
     querier: Querier,
     workspaceId: string,
     provider: WorkspaceIntegrationProvider,
-    params: UpdateWorkspaceIntegrationParams
+    params: UpdateWorkspaceIntegrationParams,
+    options?: { expectedStatus?: WorkspaceIntegrationStatus }
   ): Promise<WorkspaceIntegrationRecord | null> {
     const result = await querier.query(
       sql`UPDATE workspace_integrations
@@ -99,6 +100,7 @@ export const WorkspaceIntegrationRepository = {
             installed_by = COALESCE($6, installed_by),
             updated_at = NOW()
           WHERE workspace_id = $1 AND provider = $2
+            AND ($7::text IS NULL OR status = $7)
           RETURNING *`,
       [
         workspaceId,
@@ -107,6 +109,7 @@ export const WorkspaceIntegrationRepository = {
         params.credentials ? JSON.stringify(params.credentials) : null,
         params.metadata ? JSON.stringify(params.metadata) : null,
         params.installedBy ?? null,
+        options?.expectedStatus ?? null,
       ]
     )
 

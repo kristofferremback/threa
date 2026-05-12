@@ -233,19 +233,59 @@ export class WorkspaceIntegrationService {
       })
     }
 
-    const metadata = this.parseMetadata(record.metadata)
-    const refreshed = await this.refreshGithubCredentials(
-      workspaceId,
-      record,
-      credentials.installationId,
-      metadata,
-      undefined,
-      true
-    )
-    if (!refreshed) {
+    // Mint a fresh installation token and re-list repositories against
+    // GitHub. The network round-trip happens before any DB write so we
+    // don't hold a connection open during slow remote calls (INV-41).
+    let accessToken: string
+    let tokenExpiresAt: string
+    let nextPermissions: Record<string, string>
+    let repositories: GitHubInstalledRepository[]
+    try {
+      const tokenResponse = await this.getAppOctokit().request(
+        "POST /app/installations/{installation_id}/access_tokens",
+        { installation_id: credentials.installationId }
+      )
+      accessToken = tokenResponse.data.token
+      tokenExpiresAt = tokenResponse.data.expires_at
+      nextPermissions = normalizePermissions(tokenResponse.data.permissions)
+      repositories = await listInstallationRepositories(new Octokit({ auth: accessToken }))
+    } catch (error) {
+      log.warn({ err: error, workspaceId }, "GitHub sync network call failed")
       throw new HttpError("Failed to sync GitHub repositories", {
         status: 502,
         code: "GITHUB_SYNC_FAILED",
+      })
+    }
+
+    const metadata = this.parseMetadata(record.metadata)
+    const nextMetadata: GitHubIntegrationMetadata = {
+      ...metadata,
+      permissions: nextPermissions || metadata.permissions,
+      repositories,
+    }
+
+    // Optimistic predicate on status='active' so a concurrent disconnect
+    // (which flips status to 'inactive' and clears credentials/metadata)
+    // causes sync to fail cleanly instead of resurrecting the integration
+    // with the freshly-minted token (INV-20).
+    const updated = await WorkspaceIntegrationRepository.update(
+      this.deps.pool,
+      workspaceId,
+      WorkspaceIntegrationProviders.GITHUB,
+      {
+        credentials: encryptJson(
+          this.deps.github.integrationSecret,
+          { installationId: credentials.installationId, accessToken, tokenExpiresAt },
+          { workspaceId, provider: WorkspaceIntegrationProviders.GITHUB }
+        ),
+        metadata: nextMetadata,
+      },
+      { expectedStatus: WorkspaceIntegrationStatuses.ACTIVE }
+    )
+    if (!updated) {
+      throw new HttpError("GitHub integration was disconnected during sync", {
+        status: 409,
+        code: "GITHUB_INTEGRATION_NOT_ACTIVE",
       })
     }
 
