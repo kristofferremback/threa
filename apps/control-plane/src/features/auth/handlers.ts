@@ -2,10 +2,15 @@ import type { Request, Response } from "express"
 import { z } from "zod/v4"
 import {
   HttpError,
+  MAX_ALT_SLOTS,
   SESSION_COOKIE_NAME,
+  altSessionCookieName,
+  clearAltSessionCookie,
   clearSessionCookie,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
+  readAltSessionCookies,
+  setAltSessionCookie,
   setSessionCookie,
   type AuthService,
 } from "@threa/backend-common"
@@ -55,15 +60,117 @@ function isTrustedHost(host: string, allowedDomain: string, dedicatedHosts: stri
   return false
 }
 
+/**
+ * State carries `host|path` (forwarded-host redirect) and optionally a
+ * trailing `|add` intent marker for the multi-account "Add account" flow.
+ *
+ * Format: base64( `host|path` ) or base64( `host|path|add` ) or base64( path ).
+ * Detecting `|add` BY SUFFIX (not by pipe count) keeps the parser safe even if
+ * a path itself contains a `|` — only the literal trailing `|add` triggers
+ * intent handling.
+ */
+function parseCallbackState(state: string | undefined): { host: string | null; path: string; intent: "add" | null } {
+  const decoded = state ? Buffer.from(state, "base64").toString("utf-8") : ""
+  let intent: "add" | null = null
+  let body = decoded
+  if (body.endsWith("|add")) {
+    intent = "add"
+    body = body.slice(0, -"|add".length)
+  }
+  const pipeIndex = body.indexOf("|")
+  if (pipeIndex !== -1) {
+    const host = body.substring(0, pipeIndex)
+    const path = decodeAndSanitizeRedirectState(Buffer.from(body.substring(pipeIndex + 1)).toString("base64"))
+    return { host, path, intent }
+  }
+  const path = body ? decodeAndSanitizeRedirectState(Buffer.from(body).toString("base64")) : "/"
+  return { host: null, path, intent }
+}
+
+/**
+ * Park the currently-active sealed session into a free alt slot and set the
+ * newly authenticated sealed session as active. Coalesce by userId — if the
+ * new user already matches the active user or any parked alt's user, we
+ * simply set them as active without duplicating a slot.
+ */
+async function parkActiveAndSetNewImpl(
+  req: Request,
+  res: Response,
+  authService: AuthService,
+  newUserId: string,
+  newSealed: string
+): Promise<void> {
+  const currentActive = req.cookies[SESSION_COOKIE_NAME] as string | undefined
+
+  // Coalesce against the current active user: if they're the same user, do
+  // nothing exotic — just refresh the active cookie with the new sealed value.
+  if (currentActive) {
+    const activeAuth = await authService.authenticateSession(currentActive)
+    if (activeAuth.success && activeAuth.user?.id === newUserId) {
+      setSessionCookie(res, newSealed)
+      return
+    }
+  }
+
+  // Coalesce against any parked alt: if the new user matches a parked one,
+  // swap them with the current active rather than burn an additional slot.
+  const altCookies = readAltSessionCookies(req.cookies as Record<string, string | undefined>)
+  for (let i = 0; i < altCookies.length; i++) {
+    const altSealed = altCookies[i]
+    if (!altSealed) continue
+    const altAuth = await authService.authenticateSession(altSealed)
+    if (altAuth.success && altAuth.user?.id === newUserId) {
+      // Park the current active into slot i (where the duplicate was),
+      // and set the new sealed as active. The alt cookie is overwritten
+      // with the (different) current active session — keeps slot count
+      // stable.
+      if (currentActive) {
+        setAltSessionCookie(res, i, currentActive)
+      } else {
+        // No active to park — just clear the alt slot since we promoted it.
+        res.clearCookie(altSessionCookieName(i))
+      }
+      setSessionCookie(res, newSealed)
+      return
+    }
+  }
+
+  // New user — find a free slot to park the current active into.
+  if (currentActive) {
+    let freeSlot = -1
+    for (let i = 0; i < altCookies.length; i++) {
+      if (!altCookies[i]) {
+        freeSlot = i
+        break
+      }
+    }
+    if (freeSlot === -1) {
+      throw new HttpError("Account slots full — remove an account first", {
+        status: 409,
+        code: "MAX_ACCOUNTS_REACHED",
+      })
+    }
+    setAltSessionCookie(res, freeSlot, currentActive)
+  }
+  setSessionCookie(res, newSealed)
+}
+
 export function createControlPlaneAuthHandlers({
   authService,
   frontendUrl,
   allowedRedirectDomain,
   dedicatedRedirectHosts,
 }: Dependencies) {
+  const parkActiveAndSetNew = (req: Request, res: Response, newUserId: string, newSealed: string) =>
+    parkActiveAndSetNewImpl(req, res, authService, newUserId, newSealed)
   return {
     async login(req: Request, res: Response) {
       const redirectTo = req.query.redirect_to as string | undefined
+      // `intent=add` is the multi-account "Add another account" flow: park the
+      // currently-active sealed session into a free alt slot when the callback
+      // lands and request `prompt=login` so WorkOS doesn't silently reuse the
+      // tenant SSO session for the same user.
+      const intent = req.query.intent === "add" ? "add" : null
 
       // Capture the forwarded host so the callback can redirect back to the correct origin.
       // The workspace-router (and backoffice-router) set X-Forwarded-Host on all proxied
@@ -83,8 +190,17 @@ export function createControlPlaneAuthHandlers({
           redirectUriOverride = `https://${forwardedHost}/api/auth/callback`
         }
       }
+      if (intent === "add") {
+        // Suffix-encode intent so the parser can detect it without depending on
+        // pipe count (path may itself contain `|`).
+        statePayload = `${statePayload ?? "/"}|add`
+      }
 
-      const url = authService.getAuthorizationUrl(statePayload, redirectUriOverride)
+      const url = authService.getAuthorizationUrl(
+        statePayload,
+        redirectUriOverride,
+        intent === "add" ? { prompt: "login" } : undefined
+      )
       res.redirect(url)
     },
 
@@ -102,25 +218,24 @@ export function createControlPlaneAuthHandlers({
         throw new HttpError("Authentication failed", { status: 401, code: "AUTH_FAILED" })
       }
 
-      let redirectUrl: string
-      const decoded = state ? Buffer.from(state, "base64").toString("utf-8") : ""
-      const pipeIndex = decoded.indexOf("|")
-
-      if (pipeIndex !== -1) {
-        // State contains "host|path" — redirect to the original forwarded host
-        const host = decoded.substring(0, pipeIndex)
-        const path = decodeAndSanitizeRedirectState(Buffer.from(decoded.substring(pipeIndex + 1)).toString("base64"))
-        if (isTrustedHost(host, allowedRedirectDomain, dedicatedRedirectHosts)) {
-          redirectUrl = `https://${host}${path}`
-        } else {
-          redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
+      const { host, path, intent } = parseCallbackState(state)
+      const resolveRedirect = (): string => {
+        if (host && isTrustedHost(host, allowedRedirectDomain, dedicatedRedirectHosts)) {
+          return `https://${host}${path}`
         }
-      } else {
-        const path = state ? decodeAndSanitizeRedirectState(state) : "/"
-        redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
+        return frontendUrl ? `${frontendUrl}${path}` : path
       }
+      const redirectUrl = resolveRedirect()
 
-      setSessionCookie(res, result.sealedSession)
+      if (intent === "add") {
+        // Multi-account add flow: park the currently-active session (if any
+        // and it's a *different* user) into a free alt slot, then promote
+        // the newly authenticated session as active. Coalesce by userId so
+        // adding the same user twice doesn't duplicate slots.
+        await parkActiveAndSetNew(req, res, result.user.id, result.sealedSession)
+      } else {
+        setSessionCookie(res, result.sealedSession)
+      }
       res.redirect(redirectUrl)
     },
 
@@ -128,6 +243,12 @@ export function createControlPlaneAuthHandlers({
       const session = req.cookies[SESSION_COOKIE_NAME]
 
       clearSessionCookie(res)
+      // Full logout wipes every parked alt too so the next visit is a clean
+      // logged-out state. Partial single-account removal goes through
+      // POST /api/accounts/remove instead.
+      for (let i = 0; i < MAX_ALT_SLOTS; i++) {
+        clearAltSessionCookie(res, i)
+      }
 
       const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
 

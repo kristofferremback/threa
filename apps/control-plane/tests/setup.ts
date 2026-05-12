@@ -7,6 +7,14 @@
  * 3. Cleans up the server after all tests complete
  */
 
+// SESSION_COOKIE_NAME is read once at module-load time inside
+// `@threa/backend-common/cookies.ts`. Test files import that package (via the
+// TestClient) BEFORE `beforeAll` runs, so we must set the env var here at
+// preload top-level — before any test file imports — or the server emits
+// cookies under the unset-fallback name and tests asserting on the test cookie
+// name will see undefined.
+process.env.SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || "wos_session_test"
+
 import { beforeAll, afterAll, setDefaultTimeout } from "bun:test"
 import { startTestServer, type TestServer } from "./test-server"
 

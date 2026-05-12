@@ -75,6 +75,8 @@ describe("WorkspaceSelectPage", () => {
       },
       loading: false,
       error: null,
+      accounts: [{ slot: "active", userId: "user_1", email: "kris@example.com", name: "Kris", status: "active" }],
+      maxAccounts: 8,
     })
 
     mockUseCreateWorkspace.mockReturnValue({

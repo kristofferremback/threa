@@ -464,6 +464,29 @@ export interface CachedWorkspaceMetadata {
   _cachedAt: number
 }
 
+/**
+ * Per-account Dexie isolation.
+ *
+ * The active account's workosUserId is persisted to localStorage by the
+ * AuthProvider as soon as `/api/auth/me` returns. We read it here at module
+ * load so the singleton `db` opens `threa_<userId>` rather than the legacy
+ * shared `threa`. The two-step bootstrap (load DB → fetch /me → reload if the
+ * userId disagrees) is handled in the AuthProvider — by the time any UI that
+ * touches IDB renders, the DB matches the active account.
+ *
+ * Cold start before first login: localStorage is empty, so we fall back to
+ * the legacy `threa` name and the first `/me` response triggers a one-time
+ * hard reload to swap to the per-account DB.
+ */
+const ACTIVE_USER_KEY = "threa_active_user"
+const LEGACY_DB_NAME = "threa"
+
+function resolveDbName(): string {
+  if (typeof localStorage === "undefined") return LEGACY_DB_NAME
+  const id = localStorage.getItem(ACTIVE_USER_KEY)
+  return id ? `${LEGACY_DB_NAME}_${id}` : LEGACY_DB_NAME
+}
+
 // Database class with typed tables
 class ThreaDatabase extends Dexie {
   workspaces!: EntityTable<CachedWorkspace, "id">
@@ -488,8 +511,8 @@ class ThreaDatabase extends Dexie {
   savedMessages!: EntityTable<CachedSavedMessage, "id">
   scheduledMessages!: EntityTable<CachedScheduledMessage, "id">
 
-  constructor() {
-    super("threa")
+  constructor(dbName: string = resolveDbName()) {
+    super(dbName)
 
     this.version(1).stores({
       workspaces: "id, slug, _cachedAt",

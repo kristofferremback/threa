@@ -125,13 +125,17 @@ export class StubAuthService implements AuthService {
     }
   }
 
-  getAuthorizationUrl(redirectTo?: string, redirectUri?: string): string {
-    // Encode both state and (optional) redirect_uri into the stub login URL so
-    // tests can assert on either. The stub login page ignores redirect_uri.
+  getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { prompt?: string }): string {
+    // Encode state, (optional) redirect_uri, and (optional) prompt into the
+    // stub login URL so tests can assert on each. The stub login page ignores
+    // redirect_uri and prompt — they're surfaced purely for assertion.
     const state = redirectTo ? Buffer.from(redirectTo).toString("base64") : ""
     const params = new URLSearchParams({ state })
     if (redirectUri) {
       params.set("redirect_uri", redirectUri)
+    }
+    if (options?.prompt) {
+      params.set("prompt", options.prompt)
     }
     return `/test-auth-login?${params.toString()}`
   }

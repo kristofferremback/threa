@@ -27,6 +27,8 @@ describe("SidebarFooter", () => {
 
     vi.spyOn(authModule, "useAuth").mockReturnValue({
       logout,
+      accounts: [],
+      maxAccounts: 8,
     } as unknown as ReturnType<typeof authModule.useAuth>)
 
     vi.spyOn(contextsModule, "useSettings").mockReturnValue({

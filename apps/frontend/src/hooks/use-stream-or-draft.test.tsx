@@ -47,9 +47,16 @@ function createWrapper(
                   user: { id: "workos_1", email: "kris@example.com", name: "Kris" },
                   loading: false,
                   error: null,
+                  accounts: [
+                    { slot: "active", userId: "workos_1", email: "kris@example.com", name: "Kris", status: "active" },
+                  ],
+                  maxAccounts: 8,
                   login: vi.fn(),
                   logout: vi.fn(),
                   refetch: vi.fn(),
+                  addAccount: vi.fn(),
+                  switchAccount: vi.fn(),
+                  removeAccount: vi.fn(),
                 },
               },
               createElement(PendingMessagesProvider, undefined, children)

@@ -36,6 +36,18 @@ function resolveSessionCookieName(): string {
 
 export const SESSION_COOKIE_NAME = resolveSessionCookieName()
 
+/**
+ * Max concurrent accounts in a single browser: 1 active + 7 parked alts.
+ * Slot indices 0..6 map to cookies `${SESSION_COOKIE_NAME}_alt_${i}`.
+ */
+export const MAX_ACCOUNTS = 8
+export const MAX_ALT_SLOTS = MAX_ACCOUNTS - 1
+
+/** Cookie name for parked alt at index `slot` (0..MAX_ALT_SLOTS-1). */
+export function altSessionCookieName(slot: number): string {
+  return `${SESSION_COOKIE_NAME}_alt_${slot}`
+}
+
 export const SESSION_COOKIE_CONFIG = {
   path: "/",
   httpOnly: true,
@@ -75,5 +87,56 @@ export function clearSessionCookie(res: Response, options: SessionCookieOptions 
   res.clearCookie(SESSION_COOKIE_NAME, clearOptions(options))
   if (options.domain) {
     res.clearCookie(SESSION_COOKIE_NAME, clearOptions(hostOnlyOptions(options)))
+  }
+}
+
+/**
+ * Set a parked alt-slot session cookie. Same flags/domain handling as the
+ * active cookie — when COOKIE_DOMAIN is set we also clear any host-only
+ * cookie that might be present so the browser doesn't end up with two cookies
+ * of the same name at different scopes.
+ */
+export function setAltSessionCookie(
+  res: Response,
+  slot: number,
+  session: string,
+  options: SessionCookieOptions = SESSION_COOKIE_CONFIG
+): void {
+  assertSlot(slot)
+  const name = altSessionCookieName(slot)
+  if (options.domain) {
+    res.clearCookie(name, clearOptions(hostOnlyOptions(options)))
+  }
+  res.cookie(name, session, options)
+}
+
+export function clearAltSessionCookie(
+  res: Response,
+  slot: number,
+  options: SessionCookieOptions = SESSION_COOKIE_CONFIG
+): void {
+  assertSlot(slot)
+  const name = altSessionCookieName(slot)
+  res.clearCookie(name, clearOptions(options))
+  if (options.domain) {
+    res.clearCookie(name, clearOptions(hostOnlyOptions(options)))
+  }
+}
+
+/**
+ * Read every parked alt-slot session cookie from the request. Returns a sparse
+ * array keyed by slot index — missing slots are `undefined`.
+ */
+export function readAltSessionCookies(cookies: Record<string, string | undefined>): Array<string | undefined> {
+  const out: Array<string | undefined> = new Array(MAX_ALT_SLOTS)
+  for (let i = 0; i < MAX_ALT_SLOTS; i++) {
+    out[i] = cookies[altSessionCookieName(i)]
+  }
+  return out
+}
+
+function assertSlot(slot: number): void {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_ALT_SLOTS) {
+    throw new Error(`Invalid alt session slot: ${slot} (expected 0..${MAX_ALT_SLOTS - 1})`)
   }
 }

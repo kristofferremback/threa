@@ -1,7 +1,8 @@
 import { forwardRef, useCallback, useMemo, useState, type ComponentPropsWithoutRef } from "react"
-import { ChevronUp, DollarSign, LogOut, Settings, User as UserIcon } from "lucide-react"
+import { ChevronUp, DollarSign, LogOut, Settings, Users, User as UserIcon } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useAuth } from "@/auth"
+import { AccountSwitcherDialog } from "@/components/account-switcher"
 import { useSettings, useSidebar } from "@/contexts"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -68,10 +69,11 @@ function SidebarFooterHeader({ avatarSrc, currentUser }: { avatarSrc?: string | 
 export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) {
   const [, setSearchParams] = useSearchParams()
   const { openSettings } = useSettings()
-  const { logout } = useAuth()
+  const { logout, accounts } = useAuth()
   const { collapseOnMobile } = useSidebar()
   const isMobile = useIsMobile()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false)
 
   const handleOpenSettings = useCallback(
     (tab: "profile" | "appearance") => {
@@ -94,6 +96,12 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
   }, [collapseOnMobile, setSearchParams])
 
   const avatarSrc = currentUser ? getAvatarUrl(workspaceId, currentUser.avatarUrl, 64) : null
+  // The accounts list always contains at least the active row; only show the
+  // switcher entry as something other than "Add account" once the user has at
+  // least one parked alt or is interested in adding one. Showing it always —
+  // even with a single account — gives users a discoverable surface to add.
+  const showAccountSwitcher = accounts.length > 0
+  const switcherLabel = accounts.length > 1 ? `Switch account (${accounts.length})` : "Add account"
   const menuActions = useMemo<SidebarActionItem[]>(
     () => [
       {
@@ -114,13 +122,27 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
         icon: Settings,
         onSelect: openWorkspaceSettings,
       },
+      ...(showAccountSwitcher
+        ? [
+            {
+              id: "switch-account",
+              label: switcherLabel,
+              icon: Users,
+              onSelect: () => {
+                collapseOnMobile()
+                setAccountSwitcherOpen(true)
+              },
+              separatorBefore: true,
+            } satisfies SidebarActionItem,
+          ]
+        : []),
       {
         id: "ai-usage",
         label: "AI Usage",
         icon: DollarSign,
         href: `/w/${workspaceId}/admin/ai-usage`,
         onSelect: collapseOnMobile,
-        separatorBefore: true,
+        separatorBefore: !showAccountSwitcher,
       },
       {
         id: "logout",
@@ -130,7 +152,15 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
         separatorBefore: true,
       },
     ],
-    [handleOpenSettings, openWorkspaceSettings, collapseOnMobile, logout, workspaceId]
+    [
+      handleOpenSettings,
+      openWorkspaceSettings,
+      collapseOnMobile,
+      logout,
+      workspaceId,
+      showAccountSwitcher,
+      switcherLabel,
+    ]
   )
 
   if (!currentUser) return null
@@ -147,18 +177,22 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
           description="Choose an account action."
           header={<SidebarFooterHeader avatarSrc={avatarSrc} currentUser={currentUser} />}
         />
+        <AccountSwitcherDialog open={accountSwitcherOpen} onOpenChange={setAccountSwitcherOpen} />
       </>
     )
   }
 
   return (
-    <SidebarActionMenu
-      actions={menuActions}
-      ariaLabel="Account menu"
-      side="top"
-      align="start"
-      contentClassName="w-56"
-      trigger={<SidebarFooterTrigger avatarSrc={avatarSrc} currentUser={currentUser} />}
-    />
+    <>
+      <SidebarActionMenu
+        actions={menuActions}
+        ariaLabel="Account menu"
+        side="top"
+        align="start"
+        contentClassName="w-56"
+        trigger={<SidebarFooterTrigger avatarSrc={avatarSrc} currentUser={currentUser} />}
+      />
+      <AccountSwitcherDialog open={accountSwitcherOpen} onOpenChange={setAccountSwitcherOpen} />
+    </>
   )
 }
