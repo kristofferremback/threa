@@ -343,7 +343,7 @@ async function fetchFilePreview(
   }))
   const truncated = parsed.lineStart == null ? allLines.length > endLine : false
   const language = detectProgrammingLanguage(resolved.path)
-  const renderMode = parsed.source === "blob" ? "snippet" : "markdown"
+  const renderMode = shouldRenderAsMarkdown(parsed, resolved.path) ? "markdown" : "snippet"
   const markdownContent = renderMode === "markdown" ? buildMarkdownPreview(lines, truncated) : null
 
   const preview: GitHubPreview = {
@@ -375,6 +375,15 @@ async function fetchFilePreview(
     status: "completed",
     expiresAt: minutesFromNow(15),
   }
+}
+
+const MARKDOWN_EXTENSIONS = new Set(["md", "markdown"])
+
+function shouldRenderAsMarkdown(parsed: Extract<GitHubUrlMatch, { type: "github_file" }>, path: string): boolean {
+  if (parsed.source !== "blob") return true
+  if (parsed.lineStart != null) return false
+  const extension = path.split(".").pop()?.toLowerCase() ?? ""
+  return MARKDOWN_EXTENSIONS.has(extension)
 }
 
 function buildMarkdownPreview(lines: Array<{ number: number; text: string }>, truncated: boolean): string | null {

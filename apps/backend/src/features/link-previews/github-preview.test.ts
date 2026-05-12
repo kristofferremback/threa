@@ -488,4 +488,191 @@ describe("fetchGitHubPreview", () => {
       { route: "GET /repos/{owner}/{repo}/readme", params: { owner: "octocat", repo: "hello-world" } },
     ])
   })
+
+  test("renders blob URLs to .md files as markdown", async () => {
+    const preview = await fetchGitHubPreview(
+      "ws_123",
+      "https://github.com/octocat/hello-world/blob/main/docs/notes.md",
+      {
+        async getGithubClient() {
+          return {
+            async request(route: string, params?: Record<string, unknown>) {
+              if (route === "GET /repos/{owner}/{repo}") {
+                return {
+                  owner: { login: "octocat" },
+                  name: "hello-world",
+                  full_name: "octocat/hello-world",
+                  private: false,
+                }
+              }
+
+              if (route === "GET /repos/{owner}/{repo}/contents/{path}") {
+                if (params?.ref === "main" && params?.path === "docs/notes.md") {
+                  return {
+                    type: "file",
+                    content: Buffer.from("# Notes\n\nSome body text.").toString("base64"),
+                  }
+                }
+              }
+
+              throw new Error(`Unexpected route: ${route}`)
+            },
+          }
+        },
+      } as unknown as WorkspaceIntegrationService
+    )
+
+    expect(preview).toMatchObject({
+      previewType: "github_file",
+      title: "docs/notes.md",
+      previewData: {
+        data: {
+          renderMode: "markdown",
+          markdownContent: "# Notes\n\nSome body text.",
+          ref: "main",
+          path: "docs/notes.md",
+        },
+      },
+    })
+  })
+
+  test("renders .markdown blob URLs as markdown", async () => {
+    const preview = await fetchGitHubPreview(
+      "ws_123",
+      "https://github.com/octocat/hello-world/blob/main/CHANGELOG.markdown",
+      {
+        async getGithubClient() {
+          return {
+            async request(route: string, params?: Record<string, unknown>) {
+              if (route === "GET /repos/{owner}/{repo}") {
+                return {
+                  owner: { login: "octocat" },
+                  name: "hello-world",
+                  full_name: "octocat/hello-world",
+                  private: false,
+                }
+              }
+
+              if (
+                route === "GET /repos/{owner}/{repo}/contents/{path}" &&
+                params?.ref === "main" &&
+                params?.path === "CHANGELOG.markdown"
+              ) {
+                return {
+                  type: "file",
+                  content: Buffer.from("## v1\n\n- first release").toString("base64"),
+                }
+              }
+
+              throw new Error(`Unexpected route: ${route}`)
+            },
+          }
+        },
+      } as unknown as WorkspaceIntegrationService
+    )
+
+    expect(preview).toMatchObject({
+      previewType: "github_file",
+      previewData: {
+        data: {
+          renderMode: "markdown",
+          markdownContent: "## v1\n\n- first release",
+        },
+      },
+    })
+  })
+
+  test("keeps snippet view for blob URLs to .md files when a line range is requested", async () => {
+    const preview = await fetchGitHubPreview(
+      "ws_123",
+      "https://github.com/octocat/hello-world/blob/main/docs/notes.md#L2-L3",
+      {
+        async getGithubClient() {
+          return {
+            async request(route: string, params?: Record<string, unknown>) {
+              if (route === "GET /repos/{owner}/{repo}") {
+                return {
+                  owner: { login: "octocat" },
+                  name: "hello-world",
+                  full_name: "octocat/hello-world",
+                  private: false,
+                }
+              }
+
+              if (
+                route === "GET /repos/{owner}/{repo}/contents/{path}" &&
+                params?.ref === "main" &&
+                params?.path === "docs/notes.md"
+              ) {
+                return {
+                  type: "file",
+                  content: Buffer.from("# Notes\n\nSome body text.\nMore.").toString("base64"),
+                }
+              }
+
+              throw new Error(`Unexpected route: ${route}`)
+            },
+          }
+        },
+      } as unknown as WorkspaceIntegrationService
+    )
+
+    expect(preview).toMatchObject({
+      previewType: "github_file",
+      previewData: {
+        data: {
+          renderMode: "snippet",
+          markdownContent: null,
+          startLine: 2,
+          endLine: 3,
+          lines: [
+            { number: 2, text: "" },
+            { number: 3, text: "Some body text." },
+          ],
+        },
+      },
+    })
+  })
+
+  test("keeps snippet view for blob URLs to non-markdown files", async () => {
+    const preview = await fetchGitHubPreview("ws_123", "https://github.com/octocat/hello-world/blob/main/src/app.ts", {
+      async getGithubClient() {
+        return {
+          async request(route: string, params?: Record<string, unknown>) {
+            if (route === "GET /repos/{owner}/{repo}") {
+              return {
+                owner: { login: "octocat" },
+                name: "hello-world",
+                full_name: "octocat/hello-world",
+                private: false,
+              }
+            }
+
+            if (
+              route === "GET /repos/{owner}/{repo}/contents/{path}" &&
+              params?.ref === "main" &&
+              params?.path === "src/app.ts"
+            ) {
+              return {
+                type: "file",
+                content: Buffer.from("const x = 1").toString("base64"),
+              }
+            }
+
+            throw new Error(`Unexpected route: ${route}`)
+          },
+        }
+      },
+    } as unknown as WorkspaceIntegrationService)
+
+    expect(preview).toMatchObject({
+      previewType: "github_file",
+      previewData: {
+        data: {
+          renderMode: "snippet",
+          markdownContent: null,
+        },
+      },
+    })
+  })
 })
