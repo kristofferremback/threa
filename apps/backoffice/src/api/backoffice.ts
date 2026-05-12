@@ -1,3 +1,4 @@
+import type { WorkspaceInvitableRole } from "@threa/types"
 import { api } from "./client"
 
 /**
@@ -67,7 +68,7 @@ export interface WorkspaceInvitation {
   id: string
   kind: "email" | "link"
   email: string | null
-  roleSlug: string
+  roleSlug: WorkspaceInvitableRole
   expiresAt: string
   createdAt: string
   inviter: {

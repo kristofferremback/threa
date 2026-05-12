@@ -206,4 +206,28 @@ describe("WorkspaceDetailMembersPage", () => {
     renderAt("/workspaces/ws_abc/members")
     await screen.findByText("No pending invitations.")
   })
+
+  it("renders 'Invited by Unknown' when the inviter lookup misses", async () => {
+    installBackofficeFetch({
+      invitations: {
+        body: {
+          invitations: [
+            {
+              id: "inv_unknown_inviter",
+              kind: "email",
+              email: "anon@example.com",
+              roleSlug: "member",
+              expiresAt: daysFromNow(2),
+              createdAt: new Date().toISOString(),
+              inviter: { workosUserId: "user_missing", email: null, name: null },
+            },
+          ],
+        },
+      },
+    })
+
+    renderAt("/workspaces/ws_abc/members")
+
+    await screen.findByText(/Invited by Unknown/)
+  })
 })

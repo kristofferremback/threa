@@ -232,7 +232,7 @@ function InvitationsBody({
 
 function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
   const primary = invitation.email ?? "Unclaimed link"
-  const inviterName = invitation.inviter?.name ?? invitation.inviter?.email ?? null
+  const inviterName = invitation.inviter ? (invitation.inviter.name ?? invitation.inviter.email ?? "Unknown") : null
   return (
     <li className="flex items-center justify-between gap-4 py-4 pl-1 pr-3">
       <div className="flex min-w-0 flex-col gap-1">
