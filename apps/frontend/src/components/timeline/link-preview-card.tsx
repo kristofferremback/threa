@@ -577,7 +577,7 @@ function GitHubFileContent({ preview, data }: { preview: LinkPreviewSummary; dat
       {data.truncated && (
         <p className="mt-2 text-[11px] text-muted-foreground">
           {data.renderMode === "markdown"
-            ? "Showing the beginning of the README only."
+            ? "Showing the beginning of the file only."
             : "Showing the first snippet lines only."}
         </p>
       )}
