@@ -3,14 +3,9 @@ import type { WorkspaceRoleSlug } from "@threa/types"
 import { workspaceMembersApi } from "@/api/workspace-members"
 import { db } from "@/db"
 
-/**
- * Optimistic role/remove mutations for workspace members.
- *
- * Writes the new state straight to Dexie under `onMutate` so the UI flips
- * immediately; on error we restore the previous snapshot. Server is the source
- * of truth — the regional event poller + WorkOS fan-out reconciles within a
- * few seconds and overwrites if the server chose a different state.
- */
+// Server is the source of truth; the regional event poller reconciles Dexie
+// within a few seconds, so optimistic writes only need to survive that
+// window.
 export function useChangeWorkspaceMemberRole(workspaceId: string) {
   return useMutation({
     mutationFn: async (params: { userId: string; roleSlug: WorkspaceRoleSlug }) => {

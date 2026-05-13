@@ -504,6 +504,8 @@ export {
   WORKSPACE_INVITABLE_ROLES,
   permissionsForRole,
   parseJwtPermissions,
+  pickPrimaryRoleSlug,
+  roleDisplayName,
   roleRank,
   type WorkspacePermission,
   type WorkspacePermissionSlug,

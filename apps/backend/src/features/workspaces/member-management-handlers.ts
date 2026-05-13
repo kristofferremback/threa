@@ -1,7 +1,7 @@
 import type { Request, Response } from "express"
 import { z } from "zod"
 import type { Pool } from "pg"
-import { WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
+import { WORKSPACE_USER_ROLES } from "@threa/types"
 import { HttpError } from "../../lib/errors"
 import type { ControlPlaneClient } from "../../lib/control-plane-client"
 import { UserRepository } from "./user-repository"
@@ -11,10 +11,8 @@ interface Dependencies {
   controlPlaneClient: ControlPlaneClient
 }
 
-const roleSlugSchema = z.enum(WORKSPACE_USER_ROLES as readonly [WorkspaceRoleSlug, ...WorkspaceRoleSlug[]])
-
 const changeRoleBody = z.object({
-  roleSlug: roleSlugSchema,
+  roleSlug: z.enum(WORKSPACE_USER_ROLES),
 })
 
 async function resolveTargetWorkosUserId(pool: Pool, workspaceId: string, userId: string): Promise<string> {
@@ -25,15 +23,9 @@ async function resolveTargetWorkosUserId(pool: Pool, workspaceId: string, userId
   return user.workosUserId
 }
 
-/**
- * Regional pass-through for workspace member admin actions.
- *
- * The regional service does NOT mutate its own membership mirror — WorkOS is
- * the source of truth and the control plane's event poller fans changes back
- * out under INV-20 timestamp guards. Each handler just resolves the local
- * `users.id` to a WorkOS user id and forwards to the control plane, which
- * applies the role/remove against WorkOS under a per-org advisory lock.
- */
+// Pass-through to the control plane: WorkOS is the source of truth and the
+// CP event poller fans changes back into the regional mirror under INV-20
+// timestamp guards, so we never write to the local mirror here.
 export function createWorkspaceMemberManagementHandlers({ pool, controlPlaneClient }: Dependencies) {
   return {
     async changeRole(req: Request, res: Response): Promise<void> {

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { RefreshCw, MoreHorizontal, Ban } from "lucide-react"
-import { WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
+import { pickPrimaryRoleSlug, roleDisplayName, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
 import { Section } from "@/components/layout/section"
 import { InlineBanner } from "@/components/inline-banner"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -51,21 +51,6 @@ import { formatDateTime } from "@/lib/format"
 const RESYNC_POLL_TIMEOUT_MS = 15_000
 const RESYNC_POLL_INTERVAL_MS = 1_500
 
-const ROLE_LABELS: Record<WorkspaceRoleSlug, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  member: "Member",
-}
-
-function pickPrimaryRole(roles: readonly string[]): WorkspaceRoleSlug | null {
-  // `WORKSPACE_USER_ROLES` is ordered ascending by privilege (member < admin < owner),
-  // so walk it in reverse to pick the highest-privilege role the user holds.
-  for (let i = WORKSPACE_USER_ROLES.length - 1; i >= 0; i -= 1) {
-    const slug = WORKSPACE_USER_ROLES[i]!
-    if (roles.includes(slug)) return slug
-  }
-  return null
-}
 
 function formatRelativeTimestamp(iso: string): string {
   const then = new Date(iso).getTime()
@@ -193,7 +178,6 @@ export function WorkspaceDetailMembersPage() {
     if (pollStartedAt === null) return
     const data = statusQ.data
     if (data && data.every((s) => s.status !== "pending")) {
-      // All terminal — let the banner settle and stop the timer.
       setPollStartedAt(null)
       return
     }
@@ -222,9 +206,8 @@ export function WorkspaceDetailMembersPage() {
   const resyncError = readApiError(resyncMutation.error)
   const isPolling = pollStartedAt !== null
 
-  // Apply mutations directly to the cached members list — the WorkOS event
-  // poller fans changes back in within ~5s, so a full refetch per click would
-  // be wasted bandwidth.
+  // Patch the cached members list in place. The WorkOS event poller will
+  // reconcile within ~5s, so we skip a full refetch per click.
   const patchMembers = (mutate: (members: WorkspaceMember[]) => WorkspaceMember[]) => {
     if (!id) return
     queryClient.setQueryData<WorkspaceMember[]>(backofficeKeys.workspaceMembers(id), (prev) =>
@@ -258,8 +241,6 @@ export function WorkspaceDetailMembersPage() {
   const changeRoleError = readApiError(changeRoleMutation.error)
   const removeError = readApiError(removeMutation.error)
 
-  // Track which member is currently being mutated so only its row reflects the
-  // disabled/pending state.
   let busyMemberId: string | null = null
   if (changeRoleMutation.isPending) busyMemberId = changeRoleMutation.variables?.workosUserId ?? null
   else if (removeMutation.isPending) busyMemberId = removeMutation.variables ?? null
@@ -506,7 +487,7 @@ function MemberRow({
 }) {
   const name = memberDisplayName(member)
   const fallback = member.email ?? member.workosUserId
-  const currentRole = pickPrimaryRole(member.roleSlugs)
+  const currentRole = pickPrimaryRoleSlug(member.roleSlugs)
   // Owner role transfer is its own flow — surface only admin/member here.
   const isOwner = currentRole === "owner"
   return (
@@ -552,7 +533,7 @@ function MemberRow({
                   disabled={busy || slug === currentRole}
                   onSelect={() => onChangeRole(slug)}
                 >
-                  {ROLE_LABELS[slug]}
+                  {roleDisplayName(slug)}
                   {slug === currentRole ? <span className="ml-2 text-xs text-muted-foreground">current</span> : null}
                 </DropdownMenuItem>
               ))}

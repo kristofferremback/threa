@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { Check, ChevronDown, Copy, KeyRound, Link as LinkIcon, Mail, MoreHorizontal } from "lucide-react"
 import { toast } from "sonner"
-import { WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
+import { roleDisplayName, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -27,12 +27,6 @@ import { useUser } from "@/auth"
 type WorkspaceUserRow = ReturnType<typeof useWorkspaceUsers>[number]
 import { InviteDialog } from "./invite-dialog"
 import { CreateInviteLinkDialog } from "./create-invite-link-dialog"
-
-const ROLE_LABELS: Record<WorkspaceRoleSlug, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  member: "Member",
-}
 
 function CopyLinkLabel({ isCopied, tokenInMemory }: { isCopied: boolean; tokenInMemory: boolean }) {
   if (isCopied) {
@@ -157,7 +151,6 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
         {users.map((user) => {
           const isSelf = user.workosUserId === authUser?.id
           // Owners aren't demotable here — ownership transfer is its own flow.
-          // Self can't change own role (server enforces self-demote guard too).
           const canEditRole = canManageMembers && !isSelf && user.role !== "owner"
           const canRemove = canManageMembers && !isSelf && user.role !== "owner"
           const isRoleChanging = changeRoleMutation.isPending && changeRoleMutation.variables?.userId === user.id
@@ -198,13 +191,13 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
                     <SelectContent>
                       {WORKSPACE_USER_ROLES.filter((slug) => slug !== "owner").map((slug) => (
                         <SelectItem key={slug} value={slug}>
-                          {ROLE_LABELS[slug]}
+                          {roleDisplayName(slug)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 ) : (
-                  <Badge variant={user.role === "owner" ? "default" : "secondary"}>{ROLE_LABELS[user.role]}</Badge>
+                  <Badge variant={user.role === "owner" ? "default" : "secondary"}>{roleDisplayName(user.role)}</Badge>
                 )}
                 {canRemove && (
                   <DropdownMenu>

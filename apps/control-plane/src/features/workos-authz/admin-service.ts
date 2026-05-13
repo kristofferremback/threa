@@ -196,7 +196,7 @@ function requireTargetMembership(
 }
 
 function assertKnownRole(slug: string): asserts slug is WorkspaceRoleSlug {
-  if (!(WORKSPACE_USER_ROLES as readonly string[]).includes(slug)) {
+  if (!WORKSPACE_USER_ROLES.includes(slug as WorkspaceRoleSlug)) {
     throw new HttpError(`Unknown workspace role: ${slug}`, { status: 400, code: "INVALID_ROLE" })
   }
 }

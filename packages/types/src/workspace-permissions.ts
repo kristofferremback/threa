@@ -178,7 +178,10 @@ export const WORKSPACE_ROLE_DEFINITIONS: readonly WorkspaceRoleDefinition[] = Ob
   },
 ])
 
-export const WORKSPACE_USER_ROLES = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug) as readonly WorkspaceRoleSlug[]
+export const WORKSPACE_USER_ROLES = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug) as unknown as readonly [
+  WorkspaceRoleSlug,
+  ...WorkspaceRoleSlug[],
+]
 
 /**
  * Roles that can be granted via invitation (everything except `owner`, which
@@ -210,6 +213,32 @@ export function permissionsForRole(slug: WorkspaceRoleSlug): WorkspacePermission
     throw new Error(`Unknown workspace role: ${slug}`)
   }
   return [...definition.permissions]
+}
+
+const ROLE_DISPLAY_NAMES: Record<WorkspaceRoleSlug, string> = Object.fromEntries(
+  WORKSPACE_ROLE_DEFINITIONS.map((r) => [r.slug, r.name])
+) as Record<WorkspaceRoleSlug, string>
+
+/** Human-readable label for a role (e.g. "Owner", "Admin", "Member"). */
+export function roleDisplayName(slug: WorkspaceRoleSlug): string {
+  return ROLE_DISPLAY_NAMES[slug] ?? slug
+}
+
+/**
+ * From a list of raw role slugs the user holds, pick the highest-privilege
+ * one according to `WORKSPACE_ROLE_DEFINITIONS` order. Returns `null` if none
+ * match a known role.
+ */
+export function pickPrimaryRoleSlug(roles: readonly string[]): WorkspaceRoleSlug | null {
+  let best: WorkspaceRoleSlug | null = null
+  for (const slug of roles) {
+    if (!(slug in ROLE_RANK)) continue
+    const typed = slug as WorkspaceRoleSlug
+    if (best === null || roleRank(typed) > roleRank(best)) {
+      best = typed
+    }
+  }
+  return best
 }
 
 const PERMISSION_SLUG_SET = new Set<string>(Object.values(WORKSPACE_PERMISSION_SCOPES))

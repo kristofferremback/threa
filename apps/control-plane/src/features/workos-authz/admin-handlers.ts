@@ -2,7 +2,7 @@ import type { Request, Response } from "express"
 import { z } from "zod/v4"
 import type { Pool } from "pg"
 import { HttpError } from "@threa/backend-common"
-import { WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
+import { WORKSPACE_USER_ROLES } from "@threa/types"
 import type { AdminActor, WorkosAuthzAdminService } from "./admin-service"
 import { WorkspaceRegistryRepository } from "../workspaces"
 
@@ -11,7 +11,7 @@ interface Dependencies {
   adminService: WorkosAuthzAdminService
 }
 
-const roleSlugSchema = z.enum(WORKSPACE_USER_ROLES as readonly [WorkspaceRoleSlug, ...WorkspaceRoleSlug[]])
+const roleSlugSchema = z.enum(WORKSPACE_USER_ROLES)
 
 const internalActor = z.object({ workosUserId: z.string().min(1) })
 
@@ -46,14 +46,9 @@ function requireParam(value: string | undefined, name: string): string {
   return value
 }
 
-/**
- * Internal endpoints called by regional backends on behalf of a workspace
- * owner. The regional service has already enforced
- * `requireWorkspacePermission("members:write")`; the body's `actor` is the
- * authenticated user id from that session. `isPlatformAdmin` is hard-coded
- * `false` — the platform-admin bypass is only reachable via the backoffice
- * surface, which gates on `requirePlatformAdmin`.
- */
+// `isPlatformAdmin` is hard-coded `false` here: the platform-admin bypass is
+// only reachable via the backoffice surface, which gates on
+// `requirePlatformAdmin`.
 export function createInternalAuthzAdminHandlers({ pool, adminService }: Dependencies) {
   return {
     async changeRole(req: Request, res: Response): Promise<void> {
@@ -93,13 +88,9 @@ export function createInternalAuthzAdminHandlers({ pool, adminService }: Depende
   }
 }
 
-/**
- * Backoffice endpoints called directly by the backoffice frontend. The actor
- * is always the authenticated session user with `isPlatformAdmin: true`
- * (`requirePlatformAdmin` has already gated the route). The admin service
- * still applies data-integrity guards (last-owner, self-demote), so a
- * platform admin can't accidentally orphan a workspace.
- */
+// Platform admin is set true here, but the admin service still applies
+// last-owner / self-demote guards so a platform admin can't orphan a
+// workspace.
 export function createBackofficeAuthzAdminHandlers({ pool, adminService }: Dependencies) {
   return {
     async changeRole(req: Request, res: Response): Promise<void> {
