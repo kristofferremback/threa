@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { persistComposerHeight } from "@/lib/composer-height-storage"
 
 /**
  * Measures the element referenced by `ref` and publishes its height (in px) as
@@ -10,7 +11,11 @@ import { useEffect } from "react"
  * Pass `active: false` (e.g. while the expand-to-fullscreen overlay is open)
  * to disconnect the observer. The CSS variable is intentionally *not* cleared
  * on cleanup so that stream navigation preserves the last-known height; the
- * next composer mount overwrites it with its own measurement.
+ * next composer mount overwrites it with its own measurement. The same value
+ * is also mirrored to localStorage so the next hard refresh starts with a
+ * sensible global default on `:root` instead of falling back to 0px — that
+ * fallback grew the timeline's footer spacer mid-paint and caused Virtuoso
+ * to shift content up on every reload.
  */
 export function useComposerHeightPublish(
   ref: React.RefObject<HTMLElement | null>,
@@ -24,7 +29,9 @@ export function useComposerHeightPublish(
     if (!zone) return
 
     const write = (h: number) => {
-      zone.style.setProperty("--composer-height", `${Math.ceil(h)}px`)
+      const px = Math.ceil(h)
+      zone.style.setProperty("--composer-height", `${px}px`)
+      persistComposerHeight(px)
     }
 
     write(el.getBoundingClientRect().height)

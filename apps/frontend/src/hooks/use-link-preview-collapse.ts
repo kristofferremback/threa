@@ -1,6 +1,5 @@
 import { useCallback } from "react"
-import { useLiveQuery } from "dexie-react-hooks"
-import { db } from "@/db"
+import { setLinkPreviewExpand, useLinkPreviewExpandStore } from "@/lib/markdown/collapse-cache"
 
 export interface LinkPreviewCollapseState {
   expanded: boolean
@@ -15,29 +14,23 @@ export interface LinkPreviewCollapseState {
  * messages. Mirrors the pattern used by `useBlockCollapse` for collapsible
  * markdown blocks.
  *
+ * Reads are synchronous via the shared `collapse-cache` so the first paint
+ * already reflects the persisted state — important inside the timeline so
+ * Virtuoso doesn't see preview cards resize after mount.
+ *
  * A missing `messageId` (e.g. tests or transient render contexts) disables
  * persistence — toggles become no-ops and `canToggle` reports false.
  */
 export function useLinkPreviewCollapse(messageId: string | undefined, previewId: string): LinkPreviewCollapseState {
   const id = messageId ? `${messageId}:${previewId}` : null
 
-  const persistedOverride = useLiveQuery(async () => {
-    if (!id) return undefined
-    const row = await db.linkPreviewCollapse.get(id)
-    return row?.expanded
-  }, [id])
+  const persistedOverride = useLinkPreviewExpandStore(id)
 
   const expanded = persistedOverride ?? false
 
   const toggle = useCallback(() => {
     if (!id || !messageId) return
-    void db.linkPreviewCollapse.put({
-      id,
-      messageId,
-      previewId,
-      expanded: !expanded,
-      updatedAt: Date.now(),
-    })
+    setLinkPreviewExpand(id, messageId, previewId, !expanded)
   }, [id, messageId, previewId, expanded])
 
   return {

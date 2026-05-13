@@ -3,7 +3,14 @@ import { createRoot } from "react-dom/client"
 import { App } from "./App"
 import { router } from "./routes"
 import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED } from "./lib/sw-messages"
+import { hydrateCollapseCache } from "./lib/markdown/collapse-cache"
+import { applyPersistedComposerHeight } from "./lib/composer-height-storage"
 import "./index.css"
+
+// Apply the last-observed composer height to `:root` so the timeline's footer
+// spacer paints at roughly the correct size on first render. The composer's
+// own ResizeObserver overwrites the variable on the editor zone once mounted.
+applyPersistedComposerHeight()
 
 // Handle messages from the service worker
 navigator.serviceWorker?.addEventListener("message", (event) => {
@@ -32,8 +39,32 @@ if ("serviceWorker" in navigator) {
   })
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-)
+// Bulk-load persisted markdown-block + link-preview collapse state into the
+// in-memory mirror before mounting React. Synchronous consumers
+// (`useBlockCollapse`, `useLinkPreviewCollapse`) see the persisted choices on
+// their first render, eliminating the post-mount resize cascade that Virtuoso
+// otherwise compensates for by shifting sibling rows.
+//
+// We race hydration against a short timeout: when IDB is healthy (the common
+// case, ~5–20ms) the await guarantees a populated cache on first paint; when
+// IDB is pathologically slow (busy disk, locked database, etc.) we mount
+// anyway and accept the original flip rather than block boot indefinitely.
+// `hydrateCollapseCache()` continues running and `notify()` wakes subscribers
+// once it finishes, so even after the timeout the cache eventually heals.
+const HYDRATION_CAP_MS = 100
+
+async function bootstrap() {
+  try {
+    await Promise.race([hydrateCollapseCache(), new Promise((resolve) => setTimeout(resolve, HYDRATION_CAP_MS))])
+  } catch {
+    // Hydration already swallows IDB errors internally; the catch here is a
+    // belt-and-braces guard so a thrown rejection never blocks the mount.
+  }
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  )
+}
+
+void bootstrap()
