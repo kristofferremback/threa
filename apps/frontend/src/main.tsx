@@ -7,13 +7,6 @@ import { hydrateCollapseCache } from "./lib/markdown/collapse-cache"
 import { applyPersistedComposerHeight } from "./lib/composer-height-storage"
 import "./index.css"
 
-// Bulk-load persisted markdown-block + link-preview collapse state into the
-// in-memory mirror before the first timeline paint. Synchronous consumers
-// (`useBlockCollapse`, `useLinkPreviewCollapse`) see the persisted choices on
-// their first render, eliminating the post-mount resize cascade that Virtuoso
-// otherwise compensates for by shifting sibling rows.
-void hydrateCollapseCache()
-
 // Apply the last-observed composer height to `:root` so the timeline's footer
 // spacer paints at roughly the correct size on first render. The composer's
 // own ResizeObserver overwrites the variable on the editor zone once mounted.
@@ -46,8 +39,25 @@ if ("serviceWorker" in navigator) {
   })
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-)
+// Bulk-load persisted markdown-block + link-preview collapse state into the
+// in-memory mirror before mounting React. Synchronous consumers
+// (`useBlockCollapse`, `useLinkPreviewCollapse`) see the persisted choices on
+// their first render, eliminating the post-mount resize cascade that Virtuoso
+// otherwise compensates for by shifting sibling rows. We await so a component
+// reading the cache during first render is guaranteed to see the hydrated value
+// — even if some future refactor mounts the timeline before workspace bootstrap.
+async function bootstrap() {
+  try {
+    await hydrateCollapseCache()
+  } catch {
+    // Hydration already swallows IDB errors internally; the catch here is a
+    // belt-and-braces guard so a thrown rejection never blocks the mount.
+  }
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  )
+}
+
+void bootstrap()
