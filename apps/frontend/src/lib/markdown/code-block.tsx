@@ -189,11 +189,17 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
         data-native-context="true"
       >
         {header}
+        {/* Match the exact font sizing/line-height shiki applies to its <pre> (via
+         * [&>pre]:* below) so swapping placeholder → highlighted HTML doesn't
+         * shift row height — that shift was the small post-load jump. */}
         <pre
-          className={cn("px-2.5 py-2 overflow-x-auto", bodyTogglesExpand && "cursor-pointer")}
+          className={cn(
+            "px-2.5 py-2 overflow-x-auto text-xs font-mono leading-snug",
+            bodyTogglesExpand && "cursor-pointer"
+          )}
           onClick={bodyClickHandler}
         >
-          <code className="text-xs font-mono leading-snug">{displayCode}</code>
+          <code>{displayCode}</code>
         </pre>
       </div>
     )
