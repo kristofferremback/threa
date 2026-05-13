@@ -18,6 +18,17 @@ export class ApiError extends Error {
 }
 
 /**
+ * Formats an unknown error (typically `useMutation`'s `error`) into a string
+ * suitable for an inline banner. Returns null for the no-error case so callers
+ * can short-circuit conditional rendering.
+ */
+export function readApiError(error: unknown): string | null {
+  if (!error) return null
+  if (ApiError.isApiError(error)) return error.message
+  return "Something went wrong"
+}
+
+/**
  * Base URL for API calls. Empty string = same-origin, which is what we use
  * both in dev (vite proxy → control-plane) and in prod (CF Worker proxy →
  * control-plane). A full origin can be supplied via VITE_API_BASE_URL for

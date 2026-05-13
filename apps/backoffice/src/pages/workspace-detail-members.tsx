@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
-import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react"
+import { RefreshCw } from "lucide-react"
 import { Section } from "@/components/layout/section"
+import { InlineBanner } from "@/components/inline-banner"
 import { Button } from "@/components/ui/button"
 import {
   backofficeKeys,
@@ -13,7 +14,7 @@ import {
   type WorkspaceInvitation,
   type WorkspaceMember,
 } from "@/api/backoffice"
-import { ApiError } from "@/api/client"
+import { ApiError, readApiError } from "@/api/client"
 import { cn } from "@/lib/utils"
 import { formatDateTime } from "@/lib/format"
 
@@ -137,12 +138,6 @@ export function WorkspaceDetailMembersPage() {
   )
 }
 
-function readApiError(error: unknown): string | null {
-  if (!error) return null
-  if (ApiError.isApiError(error)) return error.message
-  return "Something went wrong"
-}
-
 function ResyncBanner({ result }: { result: ResyncWorkspaceMembersResult }) {
   const { membershipsUpserted, membershipsRemoved } = result
   const total = membershipsUpserted + membershipsRemoved
@@ -153,20 +148,6 @@ function ResyncBanner({ result }: { result: ResyncWorkspaceMembersResult }) {
   if (membershipsUpserted > 0) parts.push(`${membershipsUpserted} upserted`)
   if (membershipsRemoved > 0) parts.push(`${membershipsRemoved} removed`)
   return <InlineBanner tone="success">Re-sync complete — {parts.join(", ")}.</InlineBanner>
-}
-
-function InlineBanner({ tone, children }: { tone: "success" | "error"; children: React.ReactNode }) {
-  const Icon = tone === "success" ? CheckCircle2 : AlertTriangle
-  const toneClasses =
-    tone === "success"
-      ? "border-primary/30 bg-accent/40 text-accent-foreground"
-      : "border-destructive/40 bg-destructive/5 text-destructive"
-  return (
-    <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${toneClasses}`}>
-      <Icon className="mt-0.5 size-4 shrink-0" />
-      <span>{children}</span>
-    </div>
-  )
 }
 
 function MembersBody({
