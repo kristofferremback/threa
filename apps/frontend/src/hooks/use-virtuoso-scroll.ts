@@ -210,29 +210,39 @@ export function useVirtuosoScroll({
     if (!scrollerEl) return
 
     let prevHeight = scrollerEl.clientHeight
+    let isInitialFire = true
 
     const observer = new ResizeObserver(() => {
       const newHeight = scrollerEl.clientHeight
       const delta = prevHeight - newHeight
       prevHeight = newHeight
+      const wasInitialFire = isInitialFire
+      isInitialFire = false
 
-      if (isAtBottomRef.current) {
-        // Always (re)arm the LAST scroll on every fire, including the initial
-        // observe() callback where delta is 0. Virtuoso's own
-        // initialTopMostItemIndex is not always sufficient when the scroller
-        // mounts inside a coordinated-loading gate; this acts as a safety net
-        // that lands the user at the bottom on first paint.
-        window.clearTimeout(resizeTimerRef.current)
-        resizeTimerRef.current = window.setTimeout(() => {
-          virtuosoRef.current?.scrollToIndex({
-            index: "LAST",
-            align: "end",
-            behavior: "auto",
-          })
-        }, 100)
-      } else if (delta !== 0) {
-        scrollerEl.scrollTop += delta
+      if (!isAtBottomRef.current) {
+        if (delta !== 0) scrollerEl.scrollTop += delta
+        return
       }
+
+      // The LAST safety-net snap fires on two specific events: the initial
+      // observe() callback (cold-boot inside CoordinatedLoadingGate, where
+      // no resize delta occurs but the scroller needs to land at the bottom)
+      // and real height changes (mobile keyboard opens/closes). Intermediate,
+      // delta=0 fires from Virtuoso's own item-measurement passes must NOT
+      // re-arm the snap — when a deep-link jump is centering a target message,
+      // those measurement fires would otherwise repeatedly snap to LAST and
+      // fight scrollToMessage, ending the user on the latest message instead
+      // of the linked one.
+      if (!wasInitialFire && delta === 0) return
+
+      window.clearTimeout(resizeTimerRef.current)
+      resizeTimerRef.current = window.setTimeout(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: "LAST",
+          align: "end",
+          behavior: "auto",
+        })
+      }, 100)
     })
 
     observer.observe(scrollerEl)
