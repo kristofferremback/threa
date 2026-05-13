@@ -1,8 +1,22 @@
 import { beforeEach, describe, it, expect, vi } from "vitest"
 import { spyOnExport } from "@/test/spy"
-import { render, screen } from "@testing-library/react"
+import { render as rtlRender, screen } from "@testing-library/react"
+import type { ReactElement } from "react"
+import { MemoryRouter } from "react-router-dom"
 import { MarkdownContent } from "./markdown-content"
 import * as codeBlockModule from "@/lib/markdown/code-block"
+
+// MarkdownLink intercepts same-origin links through useNavigate, which requires
+// a Router context. Wrap every render with MemoryRouter so existing tests
+// continue to exercise the real component tree. rerender is wrapped too so
+// the memoization test stays a true rerender of the same root.
+const render = (ui: ReactElement) => {
+  const result = rtlRender(<MemoryRouter>{ui}</MemoryRouter>)
+  return {
+    ...result,
+    rerender: (next: ReactElement) => result.rerender(<MemoryRouter>{next}</MemoryRouter>),
+  }
+}
 
 describe("MarkdownContent", () => {
   beforeEach(() => {
@@ -128,6 +142,22 @@ describe("MarkdownContent", () => {
       render(<MarkdownContent content="Visit www.example.com today" />)
       const link = screen.getByRole("link")
       expect(link).toHaveAttribute("href", "http://www.example.com")
+    })
+
+    it("should keep same-origin links in-app instead of opening a new tab", () => {
+      const internalUrl = `${window.location.origin}/w/ws_1/s/stream_1?m=msg_1`
+      render(<MarkdownContent content={`See [the message](${internalUrl})`} />)
+      const link = screen.getByRole("link", { name: "the message" })
+      expect(link).toHaveAttribute("href", internalUrl)
+      expect(link).not.toHaveAttribute("target")
+      expect(link).not.toHaveAttribute("rel")
+    })
+
+    it("should still open cross-origin links in a new tab", () => {
+      render(<MarkdownContent content="[outside](https://example.com/x)" />)
+      const link = screen.getByRole("link", { name: "outside" })
+      expect(link).toHaveAttribute("target", "_blank")
+      expect(link).toHaveAttribute("rel", "noopener noreferrer")
     })
   })
 
