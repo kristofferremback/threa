@@ -1,8 +1,27 @@
 import { logger } from "./logger"
-import { INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
+import { HttpError, INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
 import type { WorkspaceInvitableRole, WorkspaceRoleSlug } from "@threa/types"
 
 const REQUEST_TIMEOUT_MS = 10_000
+
+// CP's shared error middleware always responds with `{ error, code? }` JSON.
+// Translate that into an HttpError carrying the CP's status + code so the
+// regional error middleware surfaces the same code (OWNER_ACTION, LAST_OWNER,
+// SELF_DEMOTE, FORBIDDEN, ...) to the frontend instead of a generic 500.
+function toControlPlaneHttpError(status: number, bodyText: string, fallbackMessage: string): HttpError {
+  let message = fallbackMessage
+  let code: string | undefined
+  if (bodyText) {
+    try {
+      const parsed = JSON.parse(bodyText) as { error?: unknown; code?: unknown }
+      if (typeof parsed.error === "string" && parsed.error.length > 0) message = parsed.error
+      if (typeof parsed.code === "string" && parsed.code.length > 0) code = parsed.code
+    } catch {
+      // Non-JSON body — fall through with fallback message and no code.
+    }
+  }
+  return new HttpError(message, { status, code })
+}
 
 export class ControlPlaneClient {
   constructor(
@@ -102,7 +121,7 @@ export class ControlPlaneClient {
         { workspaceId: params.workspaceId, targetUserId: params.targetUserId, status: res.status, body },
         "Failed to change workspace member role"
       )
-      throw new Error(`Control-plane returned ${res.status}: ${body}`)
+      throw toControlPlaneHttpError(res.status, body, "Failed to change workspace member role")
     }
   }
 
@@ -130,7 +149,7 @@ export class ControlPlaneClient {
         { workspaceId: params.workspaceId, targetUserId: params.targetUserId, status: res.status, body },
         "Failed to remove workspace member"
       )
-      throw new Error(`Control-plane returned ${res.status}: ${body}`)
+      throw toControlPlaneHttpError(res.status, body, "Failed to remove workspace member")
     }
   }
 
