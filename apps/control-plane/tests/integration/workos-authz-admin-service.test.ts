@@ -257,9 +257,10 @@ describe("WorkosAuthzAdminService", () => {
       // both reads would see "2 owners", both guards pass, and WorkOS ends
       // with 0 owners. With the lock, the second caller re-reads WorkOS
       // after the first commits and sees that they themselves are no longer
-      // an owner — assertActorMayManage trips FORBIDDEN. (If the second
-      // caller had remained an owner, the last-owner guard would trip
-      // LAST_OWNER instead; either rejection proves the race is closed.)
+      // an owner — assertActorMayTouchOwnership trips OWNER_ACTION because
+      // demoting an owner requires owner-level permission. (If the second
+      // caller had still held the owner role, the last-owner guard would
+      // trip LAST_OWNER instead; either rejection proves the race is closed.)
       await seedMembership(pool, orgId, otherOwnerUserId, "om_owner_2", [WORKSPACE_ROLE_SLUGS.OWNER])
       workos.setOrganizationMemberships(orgId, [
         stubMembership("om_owner", orgId, ownerUserId, WORKSPACE_ROLE_SLUGS.OWNER),
@@ -291,7 +292,7 @@ describe("WorkosAuthzAdminService", () => {
       expect(fulfilled).toHaveLength(1)
       expect(rejected).toHaveLength(1)
       expect(rejected[0]!.reason).toBeInstanceOf(HttpError)
-      expect(["FORBIDDEN", "LAST_OWNER"]).toContain((rejected[0]!.reason as HttpError).code)
+      expect(["OWNER_ACTION", "LAST_OWNER"]).toContain((rejected[0]!.reason as HttpError).code)
 
       const memberships = await workos.listOrganizationMemberships(orgId)
       const remainingOwners = memberships.filter((m) => m.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER))
