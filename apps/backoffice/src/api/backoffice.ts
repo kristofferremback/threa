@@ -67,6 +67,19 @@ export interface WorkspaceMember {
 export interface ResyncWorkspaceMembersResult {
   membershipsUpserted: number
   membershipsRemoved: number
+  /**
+   * Decimal-encoded outbox event ids emitted by the re-sync. Empty when the
+   * mirror was already up to date. Poll {@link getOutboxEventsStatus} with
+   * these to surface fan-out progress.
+   */
+  outboxEventIds: string[]
+}
+
+export type OutboxEventProcessingStatus = "processed" | "pending" | "dead_lettered"
+
+export interface OutboxEventStatus {
+  id: string
+  status: OutboxEventProcessingStatus
 }
 
 export interface WorkspaceInvitation {
@@ -144,6 +157,14 @@ export function resyncWorkspaceMembers(id: string): Promise<ResyncWorkspaceMembe
       result: ResyncWorkspaceMembersResult
     }>(`/api/backoffice/workspaces/${encodeURIComponent(id)}/members/resync`)
     .then((r) => r.result)
+}
+
+export function getOutboxEventsStatus(ids: string[]): Promise<OutboxEventStatus[]> {
+  if (ids.length === 0) return Promise.resolve([])
+  const params = new URLSearchParams({ ids: ids.join(",") })
+  return api
+    .get<{ statuses: OutboxEventStatus[] }>(`/api/backoffice/outbox-events/status?${params.toString()}`)
+    .then((r) => r.statuses)
 }
 
 export function listWorkspaceInvitations(id: string): Promise<WorkspaceInvitation[]> {

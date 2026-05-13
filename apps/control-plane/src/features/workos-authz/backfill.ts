@@ -26,6 +26,14 @@ export interface WorkosAuthzBackfillResult {
 export interface WorkosAuthzOrganizationBackfillResult {
   membershipsUpserted: number
   membershipsRemoved: number
+  /**
+   * Outbox event ids emitted by this run (BigInt serialised as decimal string
+   * so the value crosses the wire safely). Empty when both `membershipsUpserted`
+   * and `membershipsRemoved` are zero. The backoffice "Re-sync members" flow
+   * polls these via the outbox-events status endpoint to surface fan-out
+   * progress to the operator.
+   */
+  outboxEventIds: string[]
 }
 
 /**
@@ -63,6 +71,9 @@ export class WorkosAuthzBackfill {
         logger.error({ err, organizationId: orgId }, "Failed to backfill WorkOS memberships for organization")
       }
     }
+    // `run()` doesn't propagate per-org outbox ids — operator-facing progress
+    // is only useful for `runForOrganization()`. Full backfill drains via the
+    // poller logs, not a UI banner.
 
     // Only stamp last_backfill_at on a fully successful run — otherwise the
     // first-boot guard in server.ts would suppress retry of failed orgs.
@@ -93,6 +104,7 @@ export class WorkosAuthzBackfill {
         organizationId: workosOrganizationId,
         membershipsUpserted: result.membershipsUpserted,
         membershipsRemoved: result.membershipsRemoved,
+        outboxEventCount: result.outboxEventIds.length,
       },
       "WorkOS authz per-organization backfill complete"
     )
@@ -105,7 +117,7 @@ export class WorkosAuthzBackfill {
     // survives the reconcile delete below.
     const observedAt = new Date()
     const memberships = await this.workosOrgService.listOrganizationMemberships(orgId)
-    const reconciled = await withTransaction(this.pool, async (client) => {
+    const { reconciled, outboxEventIds } = await withTransaction(this.pool, async (client) => {
       for (const m of memberships) {
         await WorkosAuthzRepository.upsertMembershipFromBackfill(client, {
           organizationMembershipId: m.id,
@@ -152,9 +164,16 @@ export class WorkosAuthzBackfill {
           })
         ),
       ]
-      await OutboxRepository.insertMany(client, outboxEntries)
-      return removedRows.length
+      const inserted = await OutboxRepository.insertMany(client, outboxEntries)
+      return {
+        reconciled: removedRows.length,
+        outboxEventIds: inserted.map((e) => e.id.toString()),
+      }
     })
-    return { membershipsUpserted: memberships.length, membershipsRemoved: reconciled }
+    return {
+      membershipsUpserted: memberships.length,
+      membershipsRemoved: reconciled,
+      outboxEventIds,
+    }
   }
 }

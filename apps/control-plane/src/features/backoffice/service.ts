@@ -2,8 +2,10 @@ import type { Pool } from "pg"
 import {
   HttpError,
   logger,
+  OutboxRepository,
   getWorkosErrorCode,
   displayNameFromWorkos,
+  type OutboxEventStatus,
   type WorkosOrgService,
   type WorkosUserSummary,
 } from "@threa/backend-common"
@@ -13,6 +15,7 @@ import { WorkspaceRegistryRepository } from "../workspaces"
 import { WorkosAuthzBackfill, WorkosAuthzRepository } from "../workos-authz"
 import type { WorkosAuthzOrganizationBackfillResult } from "../workos-authz"
 import { InvitationShadowRepository } from "../invitation-shadows"
+import { CONTROL_PLANE_LISTENER_ID } from "../../lib/outbox-listeners"
 
 /** Platform roles recognised by the backoffice gate. */
 export const PLATFORM_ROLES = ["admin"] as const
@@ -362,8 +365,11 @@ export class BackofficeService {
    * Idempotent; useful when the event poller has drifted or fan-out has
    * stalled and PATs are 401-ing with `OWNER_INACTIVE`.
    *
-   * Returns counts so the UI can show what changed. 400 (`NOT_LINKED`) when
-   * the workspace has no WorkOS organization attached.
+   * Returns counts plus the outbox event ids the backfill emitted, so the UI
+   * can poll `getOutboxEventStatuses` to surface fan-out progress and make
+   * dead-lettered failures visible — otherwise a "Re-sync complete" banner
+   * would lie about regional reality. 400 (`NOT_LINKED`) when the workspace
+   * has no WorkOS organization attached.
    */
   async resyncWorkspaceMembers(workspaceId: string): Promise<WorkosAuthzOrganizationBackfillResult> {
     const workspace = await WorkspaceRegistryRepository.findById(this.pool, workspaceId)
@@ -377,6 +383,28 @@ export class BackofficeService {
       })
     }
     return this.authzBackfill.runForOrganization(workspace.workos_organization_id)
+  }
+
+  /**
+   * Report processing state for a set of outbox event ids against the
+   * control-plane listener. Used by the backoffice "Re-sync members" UI to
+   * poll until fan-out has drained (or to surface dead-lettered events).
+   *
+   * The listener id is fixed server-side rather than accepted from the
+   * client: backoffice consumers only ever care about the single CP listener,
+   * and exposing an arbitrary listener id would leak internal infra naming
+   * onto a privileged surface.
+   */
+  async getOutboxEventStatuses(eventIds: string[]): Promise<OutboxEventStatus[]> {
+    if (eventIds.length === 0) return []
+    const bigIntIds = eventIds.map((id) => {
+      try {
+        return BigInt(id)
+      } catch {
+        throw new HttpError("Invalid outbox event id", { status: 400, code: "VALIDATION_ERROR" })
+      }
+    })
+    return OutboxRepository.getEventStatuses(this.pool, CONTROL_PLANE_LISTENER_ID, bigIntIds)
   }
 
   /**

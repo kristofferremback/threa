@@ -43,9 +43,10 @@ import {
   type AuthzMembershipRemovedPayload,
 } from "./features/workos-authz"
 import { WorkosEventPollerLock } from "./lib/workos-event-poller-lock"
+import { CONTROL_PLANE_LISTENER_ID } from "./lib/outbox-listeners"
 
 const MIGRATIONS_GLOB = path.join(import.meta.dirname, "db/migrations/*.sql")
-const LISTENER_ID = "control-plane"
+const LISTENER_ID = CONTROL_PLANE_LISTENER_ID
 
 export interface ControlPlaneInstance {
   server: Server

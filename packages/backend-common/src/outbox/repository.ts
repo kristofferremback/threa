@@ -30,6 +30,26 @@ export interface DeleteRetainedOutboxEventsParams {
   limit: number
 }
 
+/**
+ * Per-event processing state against one listener, suitable for surfacing
+ * outbox propagation progress in operator UIs.
+ *
+ * - `processed`: the listener has fully handled the event (cursor advanced
+ *   past it, or it sits in the sliding-window of recently-processed ids).
+ * - `pending`: the listener has not yet processed the event. It may still be
+ *   draining normally, in retry backoff, or stuck — the state can't tell
+ *   those apart without inspecting `outbox_listeners.retry_after`.
+ * - `dead_lettered`: the listener gave up after `maxRetries` and moved the
+ *   event to `outbox_dead_letters`. Fan-out for this event will not retry
+ *   without operator intervention.
+ */
+export type OutboxEventProcessingStatus = "processed" | "pending" | "dead_lettered"
+
+export interface OutboxEventStatus {
+  id: string
+  status: OutboxEventProcessingStatus
+}
+
 function mapRowToOutbox(row: OutboxRow): OutboxEvent {
   return {
     id: BigInt(row.id),
@@ -148,6 +168,65 @@ export const OutboxRepository = {
     }
 
     return BigInt(row.min_last_processed_id)
+  },
+
+  /**
+   * Reports per-event processing state against a single listener. Used by
+   * operator UIs that trigger work and want to watch its propagation.
+   *
+   * An event is `processed` when its id is at or below the listener's base
+   * cursor (`last_processed_id`), or appears in its sliding-window
+   * `processed_ids` map (handled but cursor hasn't compacted past it yet).
+   * Events in `outbox_dead_letters` for the listener are surfaced as
+   * `dead_lettered` regardless of cursor — fan-out gave up on them and
+   * silently advancing the cursor past would otherwise look like success.
+   *
+   * Returns one entry per input id, preserving input order. Missing listener
+   * row returns all events as `pending` (the listener hasn't bootstrapped
+   * yet, so by definition nothing it owns is processed).
+   */
+  async getEventStatuses(client: Querier, listenerId: string, eventIds: bigint[]): Promise<OutboxEventStatus[]> {
+    if (eventIds.length === 0) return []
+
+    const eventIdStrings = eventIds.map((id) => id.toString())
+
+    const [listenerResult, dlqResult] = await Promise.all([
+      client.query<{ last_processed_id: string; processed_ids: Record<string, string> | null }>(sql`
+        SELECT last_processed_id, processed_ids
+        FROM outbox_listeners
+        WHERE listener_id = ${listenerId}
+      `),
+      client.query<{ outbox_event_id: string }>(sql`
+        SELECT outbox_event_id::text AS outbox_event_id
+        FROM outbox_dead_letters
+        WHERE listener_id = ${listenerId}
+          AND outbox_event_id = ANY(${eventIdStrings}::bigint[])
+      `),
+    ])
+
+    const dlqIds = new Set(dlqResult.rows.map((r) => r.outbox_event_id))
+
+    if (listenerResult.rows.length === 0) {
+      return eventIds.map((id) => {
+        const idStr = id.toString()
+        return { id: idStr, status: dlqIds.has(idStr) ? "dead_lettered" : "pending" }
+      })
+    }
+
+    const row = listenerResult.rows[0]
+    const cursor = BigInt(row.last_processed_id)
+    const processedSet = new Set(Object.keys(row.processed_ids ?? {}))
+
+    return eventIds.map((id) => {
+      const idStr = id.toString()
+      if (dlqIds.has(idStr)) {
+        return { id: idStr, status: "dead_lettered" }
+      }
+      if (id <= cursor || processedSet.has(idStr)) {
+        return { id: idStr, status: "processed" }
+      }
+      return { id: idStr, status: "pending" }
+    })
   },
 
   /**

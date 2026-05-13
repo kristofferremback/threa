@@ -322,12 +322,88 @@ describe("Backoffice", () => {
 
       const ws = await createWorkspace(client, "Resync Test")
       const res = await client.post<{
-        result: { membershipsUpserted: number; membershipsRemoved: number }
+        result: { membershipsUpserted: number; membershipsRemoved: number; outboxEventIds: string[] }
       }>(`/api/backoffice/workspaces/${ws.id}/members/resync`)
 
       expect(res.status).toBe(200)
       expect(typeof res.data.result.membershipsUpserted).toBe("number")
       expect(typeof res.data.result.membershipsRemoved).toBe("number")
+      // outboxEventIds is required for the UI's propagation polling. Empty
+      // when the stub has no memberships; should always be an array.
+      expect(Array.isArray(res.data.result.outboxEventIds)).toBe(true)
+    })
+  })
+
+  describe("GET /api/backoffice/outbox-events/status", () => {
+    test("returns 401 without session", async () => {
+      const client = new TestClient()
+      const res = await client.get("/api/backoffice/outbox-events/status?ids=1,2,3")
+      expect(res.status).toBe(401)
+    })
+
+    test("returns 403 when authenticated but not a platform admin", async () => {
+      const client = new TestClient()
+      await loginAs(client, "outbox-status-nonadmin@example.com", "Outbox Status Non Admin")
+
+      const res = await client.get<{ code: string }>("/api/backoffice/outbox-events/status?ids=1")
+      expect(res.status).toBe(403)
+      expect(res.data.code).toBe("NOT_PLATFORM_ADMIN")
+    })
+
+    test("returns empty statuses for empty ids query", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "outbox-status-admin-empty@example.com", "Outbox Status Admin")
+      await grantAdmin(user.id)
+
+      const res = await client.get<{ statuses: Array<{ id: string; status: string }> }>(
+        "/api/backoffice/outbox-events/status"
+      )
+      expect(res.status).toBe(200)
+      expect(res.data.statuses).toEqual([])
+    })
+
+    test("returns 400 for non-numeric ids", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "outbox-status-admin-bad@example.com", "Outbox Status Admin")
+      await grantAdmin(user.id)
+
+      const res = await client.get<{ code: string }>("/api/backoffice/outbox-events/status?ids=not-a-number")
+      expect(res.status).toBe(400)
+      expect(res.data.code).toBe("VALIDATION_ERROR")
+    })
+
+    test("returns processed status for ids the control-plane listener has drained", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "outbox-status-admin@example.com", "Outbox Status Admin")
+      await grantAdmin(user.id)
+
+      // The control-plane listener bootstrap runs `ensureListenerFromLatest`,
+      // so anything inserted before will sit at or below `last_processed_id`
+      // and read back as `processed` — a low-fidelity but stable signal.
+      const pool = new Pool({
+        connectionString:
+          process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_control_plane_test",
+      })
+      try {
+        const row = await pool.query<{ id: string }>(
+          `INSERT INTO outbox (event_type, payload) VALUES ('test_outbox_status', '{}'::jsonb) RETURNING id::text AS id`
+        )
+        const eventId = row.rows[0]!.id
+        await pool.query(
+          `INSERT INTO outbox_listeners (listener_id, last_processed_id, processed_ids)
+             VALUES ('control-plane', $1::bigint, '{}'::jsonb)
+             ON CONFLICT (listener_id) DO UPDATE SET last_processed_id = GREATEST(outbox_listeners.last_processed_id, EXCLUDED.last_processed_id)`,
+          [eventId]
+        )
+
+        const res = await client.get<{ statuses: Array<{ id: string; status: string }> }>(
+          `/api/backoffice/outbox-events/status?ids=${eventId}`
+        )
+        expect(res.status).toBe(200)
+        expect(res.data.statuses).toEqual([{ id: eventId, status: "processed" }])
+      } finally {
+        await pool.end()
+      }
     })
   })
 
