@@ -43,12 +43,19 @@ if ("serviceWorker" in navigator) {
 // in-memory mirror before mounting React. Synchronous consumers
 // (`useBlockCollapse`, `useLinkPreviewCollapse`) see the persisted choices on
 // their first render, eliminating the post-mount resize cascade that Virtuoso
-// otherwise compensates for by shifting sibling rows. We await so a component
-// reading the cache during first render is guaranteed to see the hydrated value
-// — even if some future refactor mounts the timeline before workspace bootstrap.
+// otherwise compensates for by shifting sibling rows.
+//
+// We race hydration against a short timeout: when IDB is healthy (the common
+// case, ~5–20ms) the await guarantees a populated cache on first paint; when
+// IDB is pathologically slow (busy disk, locked database, etc.) we mount
+// anyway and accept the original flip rather than block boot indefinitely.
+// `hydrateCollapseCache()` continues running and `notify()` wakes subscribers
+// once it finishes, so even after the timeout the cache eventually heals.
+const HYDRATION_CAP_MS = 100
+
 async function bootstrap() {
   try {
-    await hydrateCollapseCache()
+    await Promise.race([hydrateCollapseCache(), new Promise((resolve) => setTimeout(resolve, HYDRATION_CAP_MS))])
   } catch {
     // Hydration already swallows IDB errors internally; the catch here is a
     // belt-and-braces guard so a thrown rejection never blocks the mount.
