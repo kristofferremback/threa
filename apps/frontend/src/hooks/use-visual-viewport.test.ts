@@ -85,18 +85,33 @@ describe("useVisualViewport", () => {
     renderHook(() => useVisualViewport(true))
     expect(document.documentElement.style.getPropertyValue("--viewport-height")).toBe("800px")
 
+    // Focus an input so the shrink is treated as a real keyboard open and
+    // propagates to `--viewport-height` rather than being clamped as phantom.
+    const input = document.createElement("input")
+    document.body.appendChild(input)
+    input.focus()
+
     act(() => {
       fakeVV.height = 520
       fakeVV.emitResize()
     })
 
     expect(document.documentElement.style.getPropertyValue("--viewport-height")).toBe("520px")
+
+    input.remove()
   })
 
   it("reports keyboard open when the visual viewport shrinks well below layout viewport", () => {
     fakeVV.height = 800
     const { result } = renderHook(() => useVisualViewport(true))
     expect(result.current).toBe(false)
+
+    // Focus an editable element first — the keyboard can only legitimately
+    // open if an input in this page has focus. Without focus the shrink is
+    // treated as a phantom (see "ignores phantom shrink…" test below).
+    const input = document.createElement("input")
+    document.body.appendChild(input)
+    input.focus()
 
     // Chrome/Safari: layout viewport stays at innerHeight, visual shrinks.
     act(() => {
@@ -110,6 +125,76 @@ describe("useVisualViewport", () => {
       fakeVV.emitResize()
     })
     expect(result.current).toBe(false)
+
+    input.remove()
+  })
+
+  it("ignores phantom visual-viewport shrink when no editable element is focused", () => {
+    // Repro for the PWA scroll-offset bug: Chrome on Android can briefly
+    // report vv.height < innerHeight when the PWA is foregrounded after
+    // another app had the OS keyboard up. No input in this document has
+    // focus, so no keyboard for this page can be open — the shrink must
+    // not propagate to `--viewport-height` (which AppShell sizes off).
+    fakeVV.height = 800
+    const { result } = renderHook(() => useVisualViewport(true))
+    expect(document.documentElement.style.getPropertyValue("--viewport-height")).toBe("800px")
+
+    act(() => {
+      fakeVV.height = 500
+      fakeVV.emitResize()
+    })
+
+    expect(result.current).toBe(false)
+    expect(document.documentElement.style.getPropertyValue("--viewport-height")).toBe("800px")
+  })
+
+  it("recognizes a real keyboard the moment focus moves to an editable element", () => {
+    // Same shrink as the phantom test, but with focus on an input — the
+    // hook must treat it as a real keyboard open, shrink `--viewport-height`
+    // accordingly, and flip `isKeyboardOpen` to true.
+    fakeVV.height = 800
+    const { result } = renderHook(() => useVisualViewport(true))
+
+    const input = document.createElement("input")
+    document.body.appendChild(input)
+    input.focus()
+
+    act(() => {
+      fakeVV.height = 500
+      fakeVV.emitResize()
+    })
+
+    expect(result.current).toBe(true)
+    expect(document.documentElement.style.getPropertyValue("--viewport-height")).toBe("500px")
+
+    input.remove()
+  })
+
+  it("treats a contenteditable focus as a legitimate keyboard surface", () => {
+    // ProseMirror (composer, editor) uses contenteditable rather than INPUT
+    // or TEXTAREA. The focus check must accept it the same way. jsdom does
+    // not implement `isContentEditable`, so we polyfill the getter on the
+    // element for this test — the real DOM exposes it natively.
+    fakeVV.height = 800
+    const { result } = renderHook(() => useVisualViewport(true))
+
+    const editable = document.createElement("div")
+    editable.contentEditable = "true"
+    Object.defineProperty(editable, "isContentEditable", { configurable: true, get: () => true })
+    editable.tabIndex = 0 // make it focusable in jsdom
+    document.body.appendChild(editable)
+    editable.focus()
+    expect(document.activeElement).toBe(editable)
+
+    act(() => {
+      fakeVV.height = 500
+      fakeVV.emitResize()
+    })
+
+    expect(result.current).toBe(true)
+    expect(document.documentElement.style.getPropertyValue("--viewport-height")).toBe("500px")
+
+    editable.remove()
   })
 
   it("detects keyboard via the baseline fallback when both viewports shrink together", () => {
