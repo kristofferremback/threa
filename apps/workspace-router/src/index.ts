@@ -108,10 +108,17 @@ export default {
     // This is what keeps staging.threa.io stable: PRs clone the staging DB and
     // share its workspace IDs, but the worker never resolves region from the
     // shared workspace ID — it's always derived from the request's hostname.
+    //
+    // When the hostname pins a region, API routes MUST terminate inside this
+    // block — never fall through to workspace-id-based routing, even if the
+    // pinned region is missing from the regions map. Falling through to the
+    // workspace KV lookup would let a stale per-workspace KV entry (e.g. one
+    // written by a previous PR deploy) decide the route, which is the exact
+    // failure mode hostname pinning exists to prevent.
     const pinnedRegion = resolvePinnedRegion(url.hostname, env.STAGING_DOMAIN)
-    const pinnedBackend = pinnedRegion ? getRegionConfig(pinnedRegion, regions) : null
+    if (pinnedRegion) {
+      const pinnedBackend = getRegionConfig(pinnedRegion, regions)
 
-    if (pinnedRegion && pinnedBackend) {
       // Control-plane routes still go to the shared CP
       if (env.CONTROL_PLANE_URL) {
         const method = request.method
@@ -136,19 +143,26 @@ export default {
       // Config endpoint: return the pinned region's WS URL
       const configMatch2 = path.match(CONFIG_ROUTE_RE)
       if (configMatch2 && request.method === "GET") {
+        if (!pinnedBackend) return errorResponse(502, "Region not configured")
         const wsUrl = env.WS_STAGING_DOMAIN
           ? `https://${env.WS_STAGING_DOMAIN}?region=${pinnedRegion}`
           : pinnedBackend.wsUrl
         return Response.json({ region: pinnedRegion, wsUrl })
       }
 
-      // All other API routes go to the pinned region's backend
+      // All other API routes go to the pinned region's backend. We refuse to
+      // fall through for /api/* even when the region is missing — that path
+      // would hit the workspace-id KV lookup we deliberately bypass here.
       if (path.startsWith("/api/")) {
+        if (!pinnedBackend) return errorResponse(502, "Region not configured")
         return proxyRequest(request, pinnedBackend.apiUrl)
       }
+
+      // Non-API routes (frontend assets) fall through to proxyToPages below,
+      // which derives the Pages host from the same hostname.
     }
 
-    // --- Standard routing (production; staging fallback for unknown hostnames) ---
+    // --- Standard routing (production; staging non-API frontend fallback) ---
 
     // Control-plane routes (auth, workspace list/create, regions, dev auth)
     if (env.CONTROL_PLANE_URL) {

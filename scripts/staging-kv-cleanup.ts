@@ -70,22 +70,23 @@ async function listKvKeys(prefix: string): Promise<string[]> {
   return names
 }
 
-async function bulkDelete(keys: string[]): Promise<void> {
-  // CF KV bulk delete tops out at 10k keys per request — our orphaned set is
-  // well under that, but chunk anyway to keep the script honest.
-  const CHUNK = 1000
-  for (let i = 0; i < keys.length; i += CHUNK) {
-    const batch = keys.slice(i, i + CHUNK)
-    const res = await fetch(`${CF_KV_BASE}/bulk/delete`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(batch),
-    })
-    if (!res.ok) throw new Error(`KV bulk delete failed: ${await res.text()}`)
-    console.log(`Deleted ${batch.length} keys (batch ${i / CHUNK + 1})`)
+async function deleteKey(key: string): Promise<void> {
+  const res = await fetch(`${CF_KV_BASE}/values/${encodeURIComponent(key)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}` },
+  })
+  if (!res.ok) throw new Error(`KV delete failed for key '${key}': ${await res.text()}`)
+}
+
+async function deleteAll(keys: string[]): Promise<void> {
+  // One-shot cleanup, expected to be <100 keys. Stick with the single-key
+  // endpoint already in use elsewhere instead of the bulk endpoint whose path
+  // has shifted between CF API versions.
+  let done = 0
+  for (const key of keys) {
+    await deleteKey(key)
+    done++
+    if (done % 25 === 0) console.log(`  ${done}/${keys.length}...`)
   }
 }
 
@@ -106,7 +107,7 @@ async function main(): Promise<void> {
     return
   }
 
-  await bulkDelete(keys)
+  await deleteAll(keys)
   console.log(`\nDone — deleted ${keys.length} keys`)
 }
 

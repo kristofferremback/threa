@@ -565,6 +565,76 @@ describe("workspace-router", () => {
       }
     })
 
+    test("staging.threa.io returns 502 when 'staging' region is missing — does NOT fall back to workspace KV lookup", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        // Regions config has pr-228 but no "staging" entry. The workspace-id
+        // KV has a stale "ws_abc → pr-228" mapping. Falling back to standard
+        // routing would proxy to pr-228 — exactly the failure mode hostname
+        // pinning exists to prevent. The worker must 502 instead.
+        const kvRegions = JSON.stringify({
+          "pr-228": { apiUrl: "http://pr-228.backend:3002", wsUrl: "ws://pr-228.backend:3002" },
+        })
+        const env = {
+          WORKSPACE_REGIONS: {
+            get: mock((key: string) =>
+              Promise.resolve(key === "__regions_config__" ? kvRegions : key === "ws_abc" ? "pr-228" : null)
+            ),
+            put: mock(() => Promise.resolve()),
+          },
+          REGIONS: "{}",
+          USE_KV_REGIONS: "true",
+          STAGING_DOMAIN,
+          WS_STAGING_DOMAIN: "ws-staging.threa.io",
+        } as any
+
+        const res = await worker.fetch(makeStagingRequest(STAGING_DOMAIN, "/api/workspaces/ws_abc/messages"), env)
+        expect(res.status).toBe(502)
+        expect(await getJson<{ error: string }>(res)).toEqual({ error: "Region not configured" })
+        // Crucially: no proxy fetch happened (so pr-228 was NOT contacted)
+        expect(fn).not.toHaveBeenCalled()
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("staging.threa.io config endpoint returns 502 when region missing", async () => {
+      const env = {
+        WORKSPACE_REGIONS: {
+          get: mock((key: string) => Promise.resolve(key === "__regions_config__" ? "{}" : null)),
+          put: mock(() => Promise.resolve()),
+        },
+        REGIONS: "{}",
+        USE_KV_REGIONS: "true",
+        STAGING_DOMAIN,
+        WS_STAGING_DOMAIN: "ws-staging.threa.io",
+      } as any
+      const res = await worker.fetch(makeStagingRequest(STAGING_DOMAIN, "/api/workspaces/ws_abc/config"), env)
+      expect(res.status).toBe(502)
+    })
+
+    test("staging.threa.io non-API requests fall through to Pages even when region missing", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn(new Response("frontend html"))
+      try {
+        const env = {
+          WORKSPACE_REGIONS: {
+            get: mock((key: string) => Promise.resolve(key === "__regions_config__" ? "{}" : null)),
+            put: mock(() => Promise.resolve()),
+          },
+          REGIONS: "{}",
+          USE_KV_REGIONS: "true",
+          STAGING_DOMAIN,
+          PAGES_PROJECT: "threa-staging",
+        } as any
+        await worker.fetch(makeStagingRequest(STAGING_DOMAIN, "/"), env)
+        expect(getProxiedUrl(fn)).toBe("https://threa-staging.pages.dev/")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
     test("falls through to standard routing for unknown hostnames", async () => {
       const originalFetch = globalThis.fetch
       const fn = mockFetchFn()
