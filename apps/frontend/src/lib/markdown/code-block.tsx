@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Copy, Check, ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD } from "@threa/types"
@@ -103,6 +103,10 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   // (still booting or unknown language) falls through to the effect below.
   const syncHtml = useMemo(() => tryHighlightSync(displayCode, language), [displayCode, language])
   const [html, setHtml] = useState<string | null>(syncHtml)
+  // Captured once on mount: did we hit the cold path? If yes, we'll fade the
+  // highlighted output in when it eventually arrives. Hot path renders chrome
+  // and code together with no animation.
+  const renderedColdRef = useRef(syncHtml === null)
 
   useEffect(() => {
     if (syncHtml !== null) {
@@ -186,15 +190,18 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
         data-native-context="true"
       >
         {header}
-        {/* Match the exact font sizing/line-height shiki applies to its <pre> (via
-         * [&>pre]:* below) so swapping placeholder → highlighted HTML doesn't
-         * shift row height — that shift was the small post-load jump. */}
+        {/* Pre matches the font sizing/line-height shiki applies to its own <pre>
+         * so the row keeps the right height while we're waiting for highlight.
+         * Text is `invisible` (kept in layout, hidden visually) so the user
+         * doesn't see unstyled raw code flash before the highlighted version
+         * fades in. */}
         <pre
           className={cn(
-            "px-2.5 py-2 overflow-x-auto text-xs font-mono leading-snug",
+            "px-2.5 py-2 overflow-x-auto text-xs font-mono leading-snug invisible",
             bodyTogglesExpand && "cursor-pointer"
           )}
           onClick={bodyClickHandler}
+          aria-hidden="true"
         >
           <code>{displayCode}</code>
         </pre>
@@ -211,7 +218,11 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
       <div
         className={cn(
           "[&>pre]:px-2.5 [&>pre]:py-2 [&>pre]:text-xs [&>pre]:leading-snug [&>pre]:overflow-x-auto [&>pre]:bg-transparent [&>pre]:m-0",
-          bodyTogglesExpand && "cursor-pointer"
+          bodyTogglesExpand && "cursor-pointer",
+          // Fade in only when we previously rendered the invisible placeholder
+          // (cold path). Hot-path first render skips animation so chrome and
+          // code appear together.
+          renderedColdRef.current && "animate-in fade-in duration-200"
         )}
         onClick={bodyClickHandler}
         // Safe: Shiki generates this HTML internally from the code string - no user HTML passthrough
