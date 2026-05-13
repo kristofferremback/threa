@@ -38,9 +38,10 @@ const CODE_TO_HTML_OPTIONS = {
   defaultColor: false as const,
 }
 
+// Lazy singleton: warmed on the first `ensureHighlight` call, then reused.
 // Failures aren't cached so a transient dynamic-import error doesn't
 // permanently disable highlighting; the next caller retries.
-export function initHighlighter(): Promise<HighlighterGeneric<Lang, Theme>> {
+function initHighlighter(): Promise<HighlighterGeneric<Lang, Theme>> {
   if (highlighter) return Promise.resolve(highlighter)
   if (initPromise) return initPromise
   initPromise = createHighlighter({
