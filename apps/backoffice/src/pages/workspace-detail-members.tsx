@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { RefreshCw } from "lucide-react"
@@ -104,6 +105,13 @@ export function WorkspaceDetailMembersPage() {
       queryClient.invalidateQueries({ queryKey: backofficeKeys.workspaceMembers(id) })
     },
   })
+
+  // Clear the resync banner when navigating to a different workspace —
+  // otherwise a success/error from workspace A briefly leaks onto workspace B.
+  const { reset: resetResync } = resyncMutation
+  useEffect(() => {
+    resetResync()
+  }, [id, resetResync])
 
   const resyncError = readApiError(resyncMutation.error)
 
