@@ -159,12 +159,21 @@ export function resyncWorkspaceMembers(id: string): Promise<ResyncWorkspaceMembe
     .then((r) => r.result)
 }
 
-export function getOutboxEventsStatus(ids: string[]): Promise<OutboxEventStatus[]> {
-  if (ids.length === 0) return Promise.resolve([])
-  const params = new URLSearchParams({ ids: ids.join(",") })
-  return api
-    .get<{ statuses: OutboxEventStatus[] }>(`/api/backoffice/outbox-events/status?${params.toString()}`)
-    .then((r) => r.statuses)
+const OUTBOX_STATUS_BATCH_SIZE = 200
+
+export async function getOutboxEventsStatus(ids: string[]): Promise<OutboxEventStatus[]> {
+  if (ids.length === 0) return []
+  const batches: string[][] = []
+  for (let i = 0; i < ids.length; i += OUTBOX_STATUS_BATCH_SIZE) {
+    batches.push(ids.slice(i, i + OUTBOX_STATUS_BATCH_SIZE))
+  }
+  const responses = await Promise.all(
+    batches.map((batch) => {
+      const params = new URLSearchParams({ ids: batch.join(",") })
+      return api.get<{ statuses: OutboxEventStatus[] }>(`/api/backoffice/outbox-events/status?${params.toString()}`)
+    })
+  )
+  return responses.flatMap((r) => r.statuses)
 }
 
 export function listWorkspaceInvitations(id: string): Promise<WorkspaceInvitation[]> {

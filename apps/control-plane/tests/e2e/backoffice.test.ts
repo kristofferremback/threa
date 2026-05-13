@@ -4,6 +4,7 @@ import { TestClient, loginAs, createWorkspace } from "../client"
 import { PlatformRoleRepository } from "../../src/features/backoffice"
 import { WorkosAuthzRepository } from "../../src/features/workos-authz"
 import { WorkspaceRegistryRepository } from "../../src/features/workspaces"
+import { CONTROL_PLANE_LISTENER_ID } from "../../src/lib/outbox-listeners"
 
 /**
  * Opens a short-lived pool to seed a platform-admin row directly. Tests run in
@@ -391,9 +392,9 @@ describe("Backoffice", () => {
         const eventId = row.rows[0]!.id
         await pool.query(
           `INSERT INTO outbox_listeners (listener_id, last_processed_id, processed_ids)
-             VALUES ('control-plane', $1::bigint, '{}'::jsonb)
+             VALUES ($2, $1::bigint, '{}'::jsonb)
              ON CONFLICT (listener_id) DO UPDATE SET last_processed_id = GREATEST(outbox_listeners.last_processed_id, EXCLUDED.last_processed_id)`,
-          [eventId]
+          [eventId, CONTROL_PLANE_LISTENER_ID]
         )
 
         const res = await client.get<{ statuses: Array<{ id: string; status: string }> }>(

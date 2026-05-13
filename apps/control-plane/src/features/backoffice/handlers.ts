@@ -32,7 +32,7 @@ const outboxStatusQuerySchema = z.object({
     })
     .pipe(
       z
-        .array(z.string().regex(/^\d+$/, "Outbox event id must be a positive integer"))
+        .array(z.string().regex(/^[1-9]\d*$/, "Outbox event id must be a positive integer"))
         .max(MAX_STATUS_IDS, `Too many ids (max ${MAX_STATUS_IDS})`)
     ),
 })
