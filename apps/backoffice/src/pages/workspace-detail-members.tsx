@@ -1,15 +1,35 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, MoreHorizontal, Ban } from "lucide-react"
+import { WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
 import { Section } from "@/components/layout/section"
 import { InlineBanner } from "@/components/inline-banner"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog"
 import {
   backofficeKeys,
+  changeWorkspaceMemberRole,
   getOutboxEventsStatus,
   listWorkspaceInvitations,
   listWorkspaceMembers,
+  removeWorkspaceMember,
   resyncWorkspaceMembers,
   type OutboxEventStatus,
   type ResyncWorkspaceMembersResult,
@@ -30,6 +50,22 @@ import { formatDateTime } from "@/lib/format"
  */
 const RESYNC_POLL_TIMEOUT_MS = 15_000
 const RESYNC_POLL_INTERVAL_MS = 1_500
+
+const ROLE_LABELS: Record<WorkspaceRoleSlug, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  member: "Member",
+}
+
+function pickPrimaryRole(roles: readonly string[]): WorkspaceRoleSlug | null {
+  // `WORKSPACE_USER_ROLES` is ordered ascending by privilege (member < admin < owner),
+  // so walk it in reverse to pick the highest-privilege role the user holds.
+  for (let i = WORKSPACE_USER_ROLES.length - 1; i >= 0; i -= 1) {
+    const slug = WORKSPACE_USER_ROLES[i]!
+    if (roles.includes(slug)) return slug
+  }
+  return null
+}
 
 function formatRelativeTimestamp(iso: string): string {
   const then = new Date(iso).getTime()
@@ -76,6 +112,7 @@ function memberDisplayName(m: WorkspaceMember): string | null {
 export function WorkspaceDetailMembersPage() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
+  const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null)
 
   const query = useQuery({
     queryKey: id ? backofficeKeys.workspaceMembers(id) : ["backoffice", "workspaces", "missing", "members"],
@@ -185,6 +222,48 @@ export function WorkspaceDetailMembersPage() {
   const resyncError = readApiError(resyncMutation.error)
   const isPolling = pollStartedAt !== null
 
+  // Apply mutations directly to the cached members list — the WorkOS event
+  // poller fans changes back in within ~5s, so a full refetch per click would
+  // be wasted bandwidth.
+  const patchMembers = (mutate: (members: WorkspaceMember[]) => WorkspaceMember[]) => {
+    if (!id) return
+    queryClient.setQueryData<WorkspaceMember[]>(backofficeKeys.workspaceMembers(id), (prev) =>
+      prev ? mutate(prev) : prev
+    )
+  }
+
+  const changeRoleMutation = useMutation({
+    mutationFn: (vars: { workosUserId: string; roleSlug: WorkspaceRoleSlug }) => {
+      if (!id) throw new Error("Missing workspace id")
+      return changeWorkspaceMemberRole(id, vars.workosUserId, vars.roleSlug)
+    },
+    onSuccess: (_data, vars) => {
+      patchMembers((members) =>
+        members.map((m) => (m.workosUserId === vars.workosUserId ? { ...m, roleSlugs: [vars.roleSlug] } : m))
+      )
+    },
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (workosUserId: string) => {
+      if (!id) throw new Error("Missing workspace id")
+      return removeWorkspaceMember(id, workosUserId)
+    },
+    onSuccess: (_data, workosUserId) => {
+      patchMembers((members) => members.filter((m) => m.workosUserId !== workosUserId))
+      setRemoveTarget(null)
+    },
+  })
+
+  const changeRoleError = readApiError(changeRoleMutation.error)
+  const removeError = readApiError(removeMutation.error)
+
+  // Track which member is currently being mutated so only its row reflects the
+  // disabled/pending state.
+  let busyMemberId: string | null = null
+  if (changeRoleMutation.isPending) busyMemberId = changeRoleMutation.variables?.workosUserId ?? null
+  else if (removeMutation.isPending) busyMemberId = removeMutation.variables ?? null
+
   return (
     <div className="flex flex-col gap-10">
       <Section
@@ -217,8 +296,61 @@ export function WorkspaceDetailMembersPage() {
           />
         ) : null}
         {resyncError ? <InlineBanner tone="error">Couldn't re-sync members: {resyncError}</InlineBanner> : null}
-        <MembersBody loading={query.isLoading} error={query.error} members={query.data} notLinked={notLinked} />
+        {changeRoleError ? (
+          <InlineBanner tone="error">Couldn't change role: {changeRoleError}</InlineBanner>
+        ) : null}
+        {removeError ? <InlineBanner tone="error">Couldn't remove member: {removeError}</InlineBanner> : null}
+        <MembersBody
+          loading={query.isLoading}
+          error={query.error}
+          members={query.data}
+          notLinked={notLinked}
+          busyMemberId={busyMemberId}
+          onChangeRole={(workosUserId, roleSlug) => changeRoleMutation.mutate({ workosUserId, roleSlug })}
+          onRequestRemove={(member) => setRemoveTarget(member)}
+        />
       </Section>
+
+      <ResponsiveAlertDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null)
+        }}
+      >
+        <ResponsiveAlertDialogContent className="gap-5 border-t-4 border-t-destructive/70">
+          <ResponsiveAlertDialogHeader>
+            <div className="mb-1 flex justify-center sm:justify-start">
+              <span className="inline-flex size-12 items-center justify-center rounded-full bg-destructive/10 text-destructive ring-4 ring-destructive/5">
+                <Ban className="size-6" strokeWidth={2.25} />
+              </span>
+            </div>
+            <ResponsiveAlertDialogTitle className="text-xl">Remove this member?</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
+              {removeTarget ? (
+                <>
+                  <span className="font-medium text-foreground">
+                    {memberDisplayName(removeTarget) ?? removeTarget.email ?? removeTarget.workosUserId}
+                  </span>{" "}
+                  will lose access to this workspace immediately. They can be re-invited later.
+                </>
+              ) : null}
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel disabled={removeMutation.isPending}>Keep member</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              disabled={removeMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault()
+                if (removeTarget) removeMutation.mutate(removeTarget.workosUserId)
+              }}
+            >
+              Yes, remove
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
     </div>
   )
 }
@@ -311,11 +443,17 @@ function MembersBody({
   error,
   members,
   notLinked,
+  busyMemberId,
+  onChangeRole,
+  onRequestRemove,
 }: {
   loading: boolean
   error: unknown
   members: WorkspaceMember[] | undefined
   notLinked: boolean
+  busyMemberId: string | null
+  onChangeRole: (workosUserId: string, roleSlug: WorkspaceRoleSlug) => void
+  onRequestRemove: (member: WorkspaceMember) => void
 }) {
   if (loading) {
     return <div className="border-y px-1 py-10 text-center text-sm text-muted-foreground">Loading members…</div>
@@ -343,15 +481,34 @@ function MembersBody({
   return (
     <ul className="divide-y border-y">
       {members.map((m) => (
-        <MemberRow key={`${m.workosUserId}`} member={m} />
+        <MemberRow
+          key={`${m.workosUserId}`}
+          member={m}
+          busy={busyMemberId === m.workosUserId}
+          onChangeRole={(roleSlug) => onChangeRole(m.workosUserId, roleSlug)}
+          onRequestRemove={() => onRequestRemove(m)}
+        />
       ))}
     </ul>
   )
 }
 
-function MemberRow({ member }: { member: WorkspaceMember }) {
+function MemberRow({
+  member,
+  busy,
+  onChangeRole,
+  onRequestRemove,
+}: {
+  member: WorkspaceMember
+  busy: boolean
+  onChangeRole: (roleSlug: WorkspaceRoleSlug) => void
+  onRequestRemove: () => void
+}) {
   const name = memberDisplayName(member)
   const fallback = member.email ?? member.workosUserId
+  const currentRole = pickPrimaryRole(member.roleSlugs)
+  // Owner role transfer is its own flow — surface only admin/member here.
+  const isOwner = currentRole === "owner"
   return (
     <li className="flex items-center justify-between gap-4 py-4 pl-1 pr-3">
       <div className="flex min-w-0 flex-col gap-1">
@@ -374,6 +531,42 @@ function MemberRow({ member }: { member: WorkspaceMember }) {
         >
           {formatRelativeTimestamp(member.lastEventAt)}
         </span>
+        {!isOwner ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8"
+                disabled={busy}
+                aria-label={`Manage ${name ?? fallback}`}
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Change role</div>
+              {WORKSPACE_USER_ROLES.filter((slug) => slug !== "owner").map((slug) => (
+                <DropdownMenuItem
+                  key={slug}
+                  disabled={busy || slug === currentRole}
+                  onSelect={() => onChangeRole(slug)}
+                >
+                  {ROLE_LABELS[slug]}
+                  {slug === currentRole ? <span className="ml-2 text-xs text-muted-foreground">current</span> : null}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                disabled={busy}
+                onSelect={onRequestRemove}
+              >
+                Remove from workspace
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </div>
     </li>
   )

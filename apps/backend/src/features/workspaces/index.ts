@@ -1,4 +1,5 @@
 export { createWorkspaceHandlers, createWorkspaceSchema } from "./handlers"
+export { createWorkspaceMemberManagementHandlers } from "./member-management-handlers"
 export { WorkspaceService } from "./service"
 export type { CreateWorkspaceParams } from "./service"
 export { WorkspaceRepository } from "./repository"

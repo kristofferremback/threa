@@ -508,6 +508,7 @@ export async function startServer(): Promise<ServerInstance> {
     botApiKeyService,
     storage,
     ai,
+    controlPlaneClient,
   })
 
   app.use(errorHandler)

@@ -1,4 +1,5 @@
 import type { Express, Request } from "express"
+import type { Pool } from "pg"
 import {
   createAuthMiddleware,
   createRateLimit,
@@ -12,6 +13,11 @@ import { createIntegrationHandlers } from "./features/integrations"
 import { createWorkspaceHandlers, type ControlPlaneWorkspaceService } from "./features/workspaces"
 import { createInvitationShadowHandlers, type InvitationShadowService } from "./features/invitation-shadows"
 import { createBackofficeHandlers, createPlatformAdminMiddleware, type BackofficeService } from "./features/backoffice"
+import {
+  createBackofficeAuthzAdminHandlers,
+  createInternalAuthzAdminHandlers,
+  type WorkosAuthzAdminService,
+} from "./features/workos-authz"
 import { createInternalAuthMiddleware } from "./lib/internal-auth"
 import type { RegionConfig } from "./config"
 
@@ -21,10 +27,12 @@ interface RateLimitConfig {
 }
 
 interface Dependencies {
+  pool: Pool
   authService: AuthService
   workspaceService: ControlPlaneWorkspaceService
   shadowService: InvitationShadowService
   backofficeService: BackofficeService
+  workosAuthzAdminService: WorkosAuthzAdminService
   internalApiKey: string
   allowDevAuthRoutes: boolean
   frontendUrl: string
@@ -35,7 +43,16 @@ interface Dependencies {
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
-  const { authService, workspaceService, shadowService, backofficeService, internalApiKey, allowDevAuthRoutes } = deps
+  const {
+    pool,
+    authService,
+    workspaceService,
+    shadowService,
+    backofficeService,
+    workosAuthzAdminService,
+    internalApiKey,
+    allowDevAuthRoutes,
+  } = deps
 
   const auth = createAuthMiddleware({ authService })
   const internalAuth = createInternalAuthMiddleware(internalApiKey)
@@ -60,6 +77,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const shadow = createInvitationShadowHandlers({ shadowService })
   const integrations = createIntegrationHandlers({ workspaceService, regions: deps.regions })
   const backoffice = createBackofficeHandlers({ backofficeService })
+  const backofficeAuthz = createBackofficeAuthzAdminHandlers({ pool, adminService: workosAuthzAdminService })
+  const internalAuthz = createInternalAuthzAdminHandlers({ pool, adminService: workosAuthzAdminService })
 
   // Readiness probe
   app.get("/readyz", (_, res) => res.json({ status: "ok" }))
@@ -145,11 +164,27 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     backoffice.revokeWorkspaceOwnerInvitation
   )
 
+  // Backoffice member management — actor is the authenticated platform admin.
+  app.post(
+    "/api/backoffice/workspaces/:id/members/:userId/role",
+    auth,
+    requirePlatformAdmin,
+    backofficeAuthz.changeRole
+  )
+  app.post(
+    "/api/backoffice/workspaces/:id/members/:userId/remove",
+    auth,
+    requirePlatformAdmin,
+    backofficeAuthz.removeMember
+  )
+
   // Internal API (inter-service)
   app.get("/internal/workspaces/:workspaceId/region", internalAuth, workspace.getRegion)
   app.post("/internal/invitation-shadows", internalAuth, shadow.create)
   app.patch("/internal/invitation-shadows/:id", internalAuth, shadow.update)
   app.post("/internal/invitation-shadows/:id/claim", internalAuth, shadow.notifyClaim)
+  app.post("/internal/workspaces/:workspaceId/members/:userId/role", internalAuth, internalAuthz.changeRole)
+  app.post("/internal/workspaces/:workspaceId/members/:userId/remove", internalAuth, internalAuthz.removeMember)
 
   app.use(errorHandler)
 }

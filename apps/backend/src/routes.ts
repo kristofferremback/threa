@@ -8,7 +8,12 @@ import { createOpsAccessMiddleware } from "./middleware/ops-access"
 import { createRequireWorkspacePermission } from "./middleware/workspace-permission"
 import { createWorkspaceAuthzHandlers, WorkspaceAuthzService } from "./features/workspace-authz"
 import { createAuthHandlers } from "./auth/handlers"
-import { createWorkspaceHandlers, WorkspaceRepository } from "./features/workspaces"
+import {
+  createWorkspaceHandlers,
+  createWorkspaceMemberManagementHandlers,
+  WorkspaceRepository,
+} from "./features/workspaces"
+import type { ControlPlaneClient } from "./lib/control-plane-client"
 import { createStreamHandlers } from "./features/streams"
 import { createMessageHandlers } from "./features/messaging"
 import { createAttachmentHandlers } from "./features/attachments"
@@ -101,6 +106,7 @@ interface Dependencies {
   botApiKeyService: BotApiKeyService
   storage: StorageProvider
   ai: AI
+  controlPlaneClient: ControlPlaneClient | null
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -138,6 +144,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     botApiKeyService,
     storage,
     ai,
+    controlPlaneClient,
   } = deps
 
   const auth = createAuthMiddleware({ authService })
@@ -309,8 +316,25 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/commands/dispatch", ...authed, rateLimits.commandDispatch, command.dispatch)
   app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
 
-  // Invitations — gated on members:write
+  // Invitations and member management — gated on members:write
   const requireMembersWrite = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
+
+  if (controlPlaneClient) {
+    const memberManagement = createWorkspaceMemberManagementHandlers({ pool, controlPlaneClient })
+    app.post(
+      "/api/workspaces/:workspaceId/users/:userId/role",
+      ...authed,
+      requireMembersWrite,
+      memberManagement.changeRole
+    )
+    app.delete(
+      "/api/workspaces/:workspaceId/users/:userId",
+      ...authed,
+      requireMembersWrite,
+      memberManagement.removeMember
+    )
+  }
+
   app.get("/api/workspaces/:workspaceId/invitations", ...authed, requireMembersWrite, invitation.list)
   app.post("/api/workspaces/:workspaceId/invitations", ...authed, requireMembersWrite, invitation.send)
   app.post("/api/workspaces/:workspaceId/invitations/links", ...authed, requireMembersWrite, invitation.createLink)

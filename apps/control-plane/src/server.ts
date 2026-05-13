@@ -33,6 +33,7 @@ import { InvitationShadowService } from "./features/invitation-shadows"
 import { BackofficeService, seedPlatformAdmins } from "./features/backoffice"
 import {
   WorkosAuthzService,
+  WorkosAuthzAdminService,
   WorkosAuthzBackfill,
   WorkosAuthzPoller,
   WORKOS_EVENT_POLLER_NAME,
@@ -80,6 +81,7 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     requireWorkspaceCreationInvite: config.workspaceCreationRequiresInvite,
   })
   const shadowService = new InvitationShadowService({ pool, regionalClient, workosOrgService })
+  const workosAuthzAdminService = new WorkosAuthzAdminService({ pool, workosOrgService })
   await seedPlatformAdmins(pool, config.platformAdminWorkosUserIds)
 
   // Outbox — single handler for all control-plane events (no sharding needed)
@@ -192,10 +194,12 @@ export async function startServer(): Promise<ControlPlaneInstance> {
     const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins })
 
     registerRoutes(app, {
+      pool,
       authService,
       workspaceService,
       shadowService,
       backofficeService,
+      workosAuthzAdminService,
       internalApiKey: config.internalApiKey,
       allowDevAuthRoutes: config.useStubAuth && !isProduction,
       frontendUrl: config.frontendUrl,
