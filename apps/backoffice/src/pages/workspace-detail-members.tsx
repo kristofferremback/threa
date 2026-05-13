@@ -1,10 +1,14 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
+import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react"
 import { Section } from "@/components/layout/section"
+import { Button } from "@/components/ui/button"
 import {
   backofficeKeys,
   listWorkspaceInvitations,
   listWorkspaceMembers,
+  resyncWorkspaceMembers,
+  type ResyncWorkspaceMembersResult,
   type WorkspaceDetail,
   type WorkspaceInvitation,
   type WorkspaceMember,
@@ -89,6 +93,19 @@ export function WorkspaceDetailMembersPage() {
 
   const notLinked = workspaceQ.data ? workspaceQ.data.workosOrganizationId === null : false
 
+  const resyncMutation = useMutation({
+    mutationFn: () => {
+      if (!id) throw new Error("Missing workspace id")
+      return resyncWorkspaceMembers(id)
+    },
+    onSuccess: () => {
+      if (!id) return
+      queryClient.invalidateQueries({ queryKey: backofficeKeys.workspaceMembers(id) })
+    },
+  })
+
+  const resyncError = readApiError(resyncMutation.error)
+
   return (
     <div className="flex flex-col gap-10">
       <Section
@@ -100,9 +117,54 @@ export function WorkspaceDetailMembersPage() {
       <Section
         label="Members"
         description="Mirror of WorkOS organization memberships. Updates within ~5s of changes in the WorkOS dashboard."
+        actions={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => resyncMutation.mutate()}
+            disabled={notLinked || resyncMutation.isPending || !id}
+          >
+            <RefreshCw className={cn("size-3.5", resyncMutation.isPending && "animate-spin")} />
+            {resyncMutation.isPending ? "Re-syncing…" : "Re-sync members"}
+          </Button>
+        }
       >
+        {resyncMutation.isSuccess ? <ResyncBanner result={resyncMutation.data} /> : null}
+        {resyncError ? <InlineBanner tone="error">Couldn't re-sync members: {resyncError}</InlineBanner> : null}
         <MembersBody loading={query.isLoading} error={query.error} members={query.data} notLinked={notLinked} />
       </Section>
+    </div>
+  )
+}
+
+function readApiError(error: unknown): string | null {
+  if (!error) return null
+  if (ApiError.isApiError(error)) return error.message
+  return "Something went wrong"
+}
+
+function ResyncBanner({ result }: { result: ResyncWorkspaceMembersResult }) {
+  const { membershipsUpserted, membershipsRemoved } = result
+  const total = membershipsUpserted + membershipsRemoved
+  if (total === 0) {
+    return <InlineBanner tone="success">Already up to date — no changes.</InlineBanner>
+  }
+  const parts: string[] = []
+  if (membershipsUpserted > 0) parts.push(`${membershipsUpserted} upserted`)
+  if (membershipsRemoved > 0) parts.push(`${membershipsRemoved} removed`)
+  return <InlineBanner tone="success">Re-sync complete — {parts.join(", ")}.</InlineBanner>
+}
+
+function InlineBanner({ tone, children }: { tone: "success" | "error"; children: React.ReactNode }) {
+  const Icon = tone === "success" ? CheckCircle2 : AlertTriangle
+  const toneClasses =
+    tone === "success"
+      ? "border-primary/30 bg-accent/40 text-accent-foreground"
+      : "border-destructive/40 bg-destructive/5 text-destructive"
+  return (
+    <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${toneClasses}`}>
+      <Icon className="mt-0.5 size-4 shrink-0" />
+      <span>{children}</span>
     </div>
   )
 }
