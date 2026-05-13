@@ -82,10 +82,13 @@ describe("collapse-cache localStorage mirror", () => {
     // hydrated, so a subsequent hydrateCollapseCache() does no IDB work.
     vi.resetModules()
     const fresh = await import("./collapse-cache")
+    // Import @/db after reset to get the same instance that the freshly
+    // loaded collapse-cache module holds — top-level `db` is stale.
+    const { db: freshDb } = await import("@/db")
 
     // No IDB rows exist, but the IDB read should not even happen — assert by
     // spying on the table.
-    const idbSpy = vi.spyOn(db.markdownBlockCollapse, "toArray")
+    const idbSpy = vi.spyOn(freshDb.markdownBlockCollapse, "toArray")
     await fresh.hydrateCollapseCache()
     expect(idbSpy).not.toHaveBeenCalled()
     idbSpy.mockRestore()

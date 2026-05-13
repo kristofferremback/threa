@@ -45,7 +45,8 @@ const linkPreviewExpand = new Map<string, boolean>()
 const blockListeners = new Set<() => void>()
 const linkPreviewListeners = new Set<() => void>()
 
-let hydrated = false
+let blockHydrated = false
+let linkPreviewHydrated = false
 let hydrationPromise: Promise<void> | null = null
 
 function notify(set: Set<() => void>) {
@@ -81,18 +82,18 @@ function writePersistedMap(key: string, map: Map<string, boolean>): void {
  * module import time so the very first React render sees the persisted
  * state — see the module banner for why this matters.
  *
- * Returns whether any entries were loaded so the IDB migration path can be
- * skipped for users who already have localStorage state.
+ * Sets per-cache hydration flags independently so a missing or corrupt key
+ * for one cache doesn't prevent IDB fallback for the other.
  */
-function hydrateFromLocalStorageSync(): boolean {
+function hydrateFromLocalStorageSync(): void {
   const blocks = readPersistedMap(BLOCK_COLLAPSE_LS_KEY)
   const previews = readPersistedMap(LINK_PREVIEW_LS_KEY)
-  let any = false
+  if (blocks !== null) blockHydrated = true
+  if (previews !== null) linkPreviewHydrated = true
   if (blocks) {
     for (const [k, v] of Object.entries(blocks)) {
       if (typeof v === "boolean") {
         blockCollapse.set(k, v)
-        any = true
       }
     }
   }
@@ -100,16 +101,12 @@ function hydrateFromLocalStorageSync(): boolean {
     for (const [k, v] of Object.entries(previews)) {
       if (typeof v === "boolean") {
         linkPreviewExpand.set(k, v)
-        any = true
       }
     }
   }
-  return any
 }
 
-if (hydrateFromLocalStorageSync()) {
-  hydrated = true
-}
+hydrateFromLocalStorageSync()
 
 /**
  * One-time migration from the legacy IDB tables for users whose state
@@ -121,14 +118,12 @@ if (hydrateFromLocalStorageSync()) {
  * IDB error to block the entire timeline.
  */
 export function hydrateCollapseCache(): Promise<void> {
-  if (hydrated) return Promise.resolve()
+  if (blockHydrated && linkPreviewHydrated) return Promise.resolve()
   if (hydrationPromise) return hydrationPromise
   hydrationPromise = (async () => {
     try {
-      const [blocks, previews] = await Promise.all([
-        db.markdownBlockCollapse.toArray(),
-        db.linkPreviewCollapse.toArray(),
-      ])
+      const blocks = blockHydrated ? [] : await db.markdownBlockCollapse.toArray()
+      const previews = linkPreviewHydrated ? [] : await db.linkPreviewCollapse.toArray()
       // Skip keys already in the cache so a user toggle that races with
       // hydration doesn't get clobbered by the stale persisted value.
       let blockChanged = false
@@ -152,7 +147,8 @@ export function hydrateCollapseCache(): Promise<void> {
     } catch {
       // Empty cache → consumers fall back to their `defaultCollapsed` / `false`.
     } finally {
-      hydrated = true
+      blockHydrated = true
+      linkPreviewHydrated = true
       notify(blockListeners)
       notify(linkPreviewListeners)
     }
@@ -236,7 +232,8 @@ export function __resetCollapseCacheForTests(): void {
   linkPreviewExpand.clear()
   blockListeners.clear()
   linkPreviewListeners.clear()
-  hydrated = false
+  blockHydrated = false
+  linkPreviewHydrated = false
   hydrationPromise = null
   if (typeof localStorage !== "undefined") {
     try {
