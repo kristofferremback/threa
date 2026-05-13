@@ -213,11 +213,15 @@ export function useVirtuosoScroll({
 
     const observer = new ResizeObserver(() => {
       const newHeight = scrollerEl.clientHeight
-      if (newHeight === prevHeight) return
       const delta = prevHeight - newHeight
       prevHeight = newHeight
 
       if (isAtBottomRef.current) {
+        // Always (re)arm the LAST scroll on every fire, including the initial
+        // observe() callback where delta is 0. Virtuoso's own
+        // initialTopMostItemIndex is not always sufficient when the scroller
+        // mounts inside a coordinated-loading gate; this acts as a safety net
+        // that lands the user at the bottom on first paint.
         window.clearTimeout(resizeTimerRef.current)
         resizeTimerRef.current = window.setTimeout(() => {
           virtuosoRef.current?.scrollToIndex({
