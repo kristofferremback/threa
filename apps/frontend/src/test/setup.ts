@@ -1,5 +1,14 @@
 import "fake-indexeddb/auto"
 import "@testing-library/jest-dom/vitest"
+import { beforeEach } from "vitest"
+import { __resetCollapseCacheForTests } from "@/lib/markdown/collapse-cache"
+
+// The markdown-block + link-preview collapse cache is module-scoped, so its
+// state would otherwise leak between tests. Reset it before each case so
+// every test starts with an empty (unhydrated) cache.
+beforeEach(() => {
+  __resetCollapseCacheForTests()
+})
 
 // Mock scrollIntoView (not available in jsdom)
 Element.prototype.scrollIntoView = () => {}

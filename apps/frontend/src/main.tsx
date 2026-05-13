@@ -3,7 +3,21 @@ import { createRoot } from "react-dom/client"
 import { App } from "./App"
 import { router } from "./routes"
 import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED } from "./lib/sw-messages"
+import { hydrateCollapseCache } from "./lib/markdown/collapse-cache"
+import { applyPersistedComposerHeight } from "./lib/composer-height-storage"
 import "./index.css"
+
+// Bulk-load persisted markdown-block + link-preview collapse state into the
+// in-memory mirror before the first timeline paint. Synchronous consumers
+// (`useBlockCollapse`, `useLinkPreviewCollapse`) see the persisted choices on
+// their first render, eliminating the post-mount resize cascade that Virtuoso
+// otherwise compensates for by shifting sibling rows.
+void hydrateCollapseCache()
+
+// Apply the last-observed composer height to `:root` so the timeline's footer
+// spacer paints at roughly the correct size on first render. The composer's
+// own ResizeObserver overwrites the variable on the editor zone once mounted.
+applyPersistedComposerHeight()
 
 // Handle messages from the service worker
 navigator.serviceWorker?.addEventListener("message", (event) => {

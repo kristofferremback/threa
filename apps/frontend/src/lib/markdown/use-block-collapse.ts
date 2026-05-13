@@ -1,6 +1,4 @@
 import { useCallback, useMemo } from "react"
-import { useLiveQuery } from "dexie-react-hooks"
-import { db } from "@/db"
 import {
   composeBlockCollapseKey,
   hashMarkdownBlock,
@@ -8,6 +6,7 @@ import {
   useMarkdownBlockContext,
   type MarkdownBlockKind,
 } from "./markdown-block-context"
+import { setBlockCollapse, useBlockCollapseStore } from "./collapse-cache"
 
 export interface BlockCollapseState {
   collapsed: boolean
@@ -32,7 +31,9 @@ interface UseBlockCollapseOptions {
 /**
  * Shared collapse-state hook for collapsible markdown blocks. Persists
  * toggles per `(messageId, kind, contentHash)` in IDB so choices survive
- * reloads without leaking between messages.
+ * reloads without leaking between messages. Reads are synchronous via the
+ * shared `collapse-cache` so the first paint already reflects the persisted
+ * state — preventing the timeline from resizing rows after mount.
  */
 export function useBlockCollapse({
   kind,
@@ -48,11 +49,7 @@ export function useBlockCollapse({
     return composeBlockCollapseKey(messageContext.messageId, kind, hashMarkdownBlock(content, hashNamespace))
   }, [messageContext, nested, kind, hashNamespace, content])
 
-  const persistedOverride = useLiveQuery(async () => {
-    if (!collapseKey) return undefined
-    const row = await db.markdownBlockCollapse.get(collapseKey)
-    return row?.collapsed
-  }, [collapseKey])
+  const persistedOverride = useBlockCollapseStore(collapseKey)
 
   // Nested blocks render plain (always expanded, no toggle) so only the
   // outermost foldable block folds.
@@ -60,13 +57,7 @@ export function useBlockCollapse({
 
   const toggle = useCallback(() => {
     if (!collapseKey || !messageContext) return
-    void db.markdownBlockCollapse.put({
-      id: collapseKey,
-      messageId: messageContext.messageId,
-      kind,
-      collapsed: !collapsed,
-      updatedAt: Date.now(),
-    })
+    setBlockCollapse(collapseKey, messageContext.messageId, kind, !collapsed)
   }, [collapseKey, messageContext, collapsed, kind])
 
   return {

@@ -5,6 +5,7 @@ import { DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD } from "@threa/types"
 import { db } from "@/db"
 import CodeBlock from "./code-block"
 import { MarkdownBlockProvider, hashMarkdownBlock, composeBlockCollapseKey } from "./markdown-block-context"
+import { hydrateCollapseCache } from "./collapse-cache"
 import * as preferencesModule from "@/contexts/preferences-context"
 
 // Stubbable preferences mock: each test can override via `currentPrefs`.
@@ -176,6 +177,9 @@ describe("CodeBlock collapse behavior", () => {
         collapsed: true,
         updatedAt: Date.now(),
       })
+      // Bulk-load the seeded row into the synchronous in-memory cache so
+      // `useBlockCollapse`'s first paint already reflects the persisted state.
+      await hydrateCollapseCache()
     })
 
     renderCodeBlock(code, messageId)
