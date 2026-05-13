@@ -453,16 +453,6 @@ async function kvPut(key: string, value: string): Promise<void> {
   }
 }
 
-async function kvDelete(key: string): Promise<void> {
-  const res = await fetch(`${CF_KV_BASE}/values/${encodeURIComponent(key)}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}` },
-  })
-  if (!res.ok) {
-    throw new Error(`KV delete failed for key '${key}': ${await res.text()}`)
-  }
-}
-
 /**
  * Register this PR's region in the shared KV regions config.
  *
@@ -483,16 +473,48 @@ async function registerRegion(backendUrl: string): Promise<void> {
   console.log(`Registered region '${regionName}' → ${backendUrl}`)
 }
 
-async function registerWorkspaceRegion(dbName: string): Promise<void> {
-  // Get workspace ID from the cloned database
-  const workspaceId = await runPsql(dbName, "SELECT id FROM workspaces LIMIT 1")
-  if (!workspaceId) {
-    console.warn("No workspace found in cloned database — skipping KV workspace mapping")
+/**
+ * Ensure the "staging" region in `__regions_config__` points at the stable
+ * main staging backend (Railway service named "backend"). Idempotent — runs on
+ * every PR deploy so the entry self-heals if the URL changes or KV is wiped.
+ *
+ * Without this, staging.threa.io has no region to route to, since the worker's
+ * hostname-pinned routing for staging.threa.io looks up region "staging" in the
+ * regions map.
+ */
+async function registerStagingRegion(): Promise<void> {
+  const services = await listServices()
+  const mainBackend = services.find((s) => s.name === "backend")
+  if (!mainBackend) {
+    console.warn("Main staging 'backend' service not found — skipping 'staging' region registration")
     return
   }
 
-  await kvPut(workspaceId, regionName)
-  console.log(`Mapped workspace '${workspaceId}' → region '${regionName}'`)
+  const environmentId = await getEnvironmentId()
+  const domainData = (await railwayGql(`{
+    serviceInstance(serviceId: "${mainBackend.id}", environmentId: "${environmentId}") {
+      domains { serviceDomains { domain } }
+    }
+  }`)) as { serviceInstance: { domains: { serviceDomains: { domain: string }[] } } }
+
+  const domain = domainData.serviceInstance.domains.serviceDomains[0]?.domain
+  if (!domain) {
+    console.warn("Main staging 'backend' has no service domain — skipping 'staging' region registration")
+    return
+  }
+  const backendUrl = `https://${domain}`
+
+  const existing = await kvGet("__regions_config__")
+  const regions: Record<string, { apiUrl: string; wsUrl: string }> = existing ? JSON.parse(existing) : {}
+  const current = regions["staging"]
+  if (current?.apiUrl === backendUrl && current?.wsUrl === backendUrl) {
+    console.log(`Staging region already registered → ${backendUrl}`)
+    return
+  }
+
+  regions["staging"] = { apiUrl: backendUrl, wsUrl: backendUrl }
+  await kvPut("__regions_config__", JSON.stringify(regions))
+  console.log(`Registered 'staging' region → ${backendUrl}`)
 }
 
 async function unregisterRegion(): Promise<void> {
@@ -503,19 +525,6 @@ async function unregisterRegion(): Promise<void> {
   delete regions[regionName]
   await kvPut("__regions_config__", JSON.stringify(regions))
   console.log(`Unregistered region '${regionName}'`)
-}
-
-async function unregisterWorkspaceRegion(): Promise<void> {
-  // We need to find the workspace ID — check if PR DB still exists
-  try {
-    const workspaceId = await runPsql(prDbName, "SELECT id FROM workspaces LIMIT 1")
-    if (workspaceId) {
-      await kvDelete(workspaceId)
-      console.log(`Removed workspace mapping for '${workspaceId}'`)
-    }
-  } catch {
-    console.warn("Could not look up workspace ID for KV cleanup — DB may already be dropped")
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -658,10 +667,16 @@ async function deploy(): Promise<void> {
   const backendUrl = await deployRailwayService()
 
   // 3. Register in Cloudflare KV
+  //    - This PR's ephemeral region (pr-N → PR backend URL)
+  //    - The stable "staging" region (idempotent, self-healing)
+  //
+  //    We do NOT write a workspace_id → region mapping. The worker resolves
+  //    region from hostname (pr-N-staging.threa.io → pr-N, staging.threa.io →
+  //    staging) for all staging traffic, so the per-workspace KV mapping is
+  //    unnecessary in staging — and actively harmful, since cloned PR DBs
+  //    share workspace IDs with staging_main and would clobber each other.
   await registerRegion(backendUrl)
-  if (needsClone) {
-    await registerWorkspaceRegion(prDbName)
-  }
+  await registerStagingRegion()
 
   // 4. Create DNS record + worker route for pr-N-staging.threa.io
   await createPrDnsAndRoute()
@@ -676,8 +691,7 @@ async function deploy(): Promise<void> {
 async function teardown(): Promise<void> {
   console.log(`\n=== Tearing down staging environment for PR #${prNumber} ===\n`)
 
-  // 1. Unregister from KV (before dropping DB, since we need workspace ID)
-  await unregisterWorkspaceRegion()
+  // 1. Unregister this PR's region from KV
   await unregisterRegion()
 
   // 2. Delete DNS record + worker route

@@ -477,4 +477,164 @@ describe("workspace-router", () => {
       )
     })
   })
+
+  describe("staging hostname-pinned routing", () => {
+    const STAGING_DOMAIN = "staging.threa.io"
+    const STAGING_REGIONS_KV = JSON.stringify({
+      staging: { apiUrl: "http://main-staging.backend:3002", wsUrl: "ws://main-staging.backend:3002" },
+      "pr-228": { apiUrl: "http://pr-228.backend:3002", wsUrl: "ws://pr-228.backend:3002" },
+    })
+
+    function makeStagingEnv(kvRegions: string = STAGING_REGIONS_KV) {
+      return {
+        WORKSPACE_REGIONS: {
+          // KV.get is called for both the regions config key and per-workspace
+          // lookups. Return regions for the config key; null otherwise — staging
+          // hostname routing must not depend on per-workspace KV entries.
+          get: mock((key: string) => Promise.resolve(key === "__regions_config__" ? kvRegions : null)),
+          put: mock(() => Promise.resolve()),
+        },
+        REGIONS: "{}",
+        USE_KV_REGIONS: "true",
+        STAGING_DOMAIN,
+        WS_STAGING_DOMAIN: "ws-staging.threa.io",
+      } as any
+    }
+
+    function makeStagingRequest(hostname: string, path: string, method = "GET") {
+      return new Request(`https://${hostname}${path}`, { method })
+    }
+
+    test("staging.threa.io routes workspace API to 'staging' region regardless of workspace ID", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        const env = makeStagingEnv()
+        // Even with a workspace ID that has NO KV mapping, the request goes to
+        // the main staging backend because the hostname pins it.
+        await worker.fetch(makeStagingRequest(STAGING_DOMAIN, "/api/workspaces/ws_unmapped/messages"), env)
+        expect(getProxiedUrl(fn)).toBe("http://main-staging.backend:3002/api/workspaces/ws_unmapped/messages")
+        // The worker must NOT consult per-workspace KV keys for staging hostname routing
+        expect(env.WORKSPACE_REGIONS.get).not.toHaveBeenCalledWith("ws_unmapped")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("staging.threa.io is immune to stale workspace_id → region mappings in KV", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        // KV is polluted: ws_abc currently maps to a PR region.
+        const env = {
+          ...makeStagingEnv(),
+          WORKSPACE_REGIONS: {
+            get: mock((key: string) =>
+              Promise.resolve(key === "__regions_config__" ? STAGING_REGIONS_KV : key === "ws_abc" ? "pr-228" : null)
+            ),
+            put: mock(() => Promise.resolve()),
+          },
+        }
+        await worker.fetch(makeStagingRequest(STAGING_DOMAIN, "/api/workspaces/ws_abc/messages"), env)
+        // Must hit main staging, NOT pr-228
+        expect(getProxiedUrl(fn)).toBe("http://main-staging.backend:3002/api/workspaces/ws_abc/messages")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("staging.threa.io config endpoint returns the 'staging' region", async () => {
+      const env = makeStagingEnv()
+      const res = await worker.fetch(makeStagingRequest(STAGING_DOMAIN, "/api/workspaces/ws_abc/config"), env)
+      expect(res.status).toBe(200)
+      expect(await getJson<{ region: string; wsUrl: string }>(res)).toEqual({
+        region: "staging",
+        wsUrl: "https://ws-staging.threa.io?region=staging",
+      })
+    })
+
+    test("pr-N-staging.threa.io routes to pr-N region", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        const env = makeStagingEnv()
+        await worker.fetch(makeStagingRequest("pr-228-staging.threa.io", "/api/workspaces/ws_abc/messages"), env)
+        expect(getProxiedUrl(fn)).toBe("http://pr-228.backend:3002/api/workspaces/ws_abc/messages")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("falls through to standard routing for unknown hostnames", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        const env = {
+          ...makeStagingEnv(),
+          WORKSPACE_REGIONS: {
+            get: mock((key: string) =>
+              Promise.resolve(key === "__regions_config__" ? STAGING_REGIONS_KV : key === "ws_abc" ? "pr-228" : null)
+            ),
+            put: mock(() => Promise.resolve()),
+          },
+        }
+        // Unknown hostname → standard routing kicks in → per-workspace KV lookup → pr-228
+        await worker.fetch(makeStagingRequest("some-other-host.example.com", "/api/workspaces/ws_abc/messages"), env)
+        expect(getProxiedUrl(fn)).toBe("http://pr-228.backend:3002/api/workspaces/ws_abc/messages")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+  })
+
+  describe("env + KV regions merge", () => {
+    test("merges env REGIONS with KV regions (KV overrides on collision)", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        const env = {
+          WORKSPACE_REGIONS: {
+            get: mock((key: string) =>
+              Promise.resolve(
+                key === "__regions_config__"
+                  ? JSON.stringify({
+                      // Override "local" to verify KV wins on collision
+                      local: { apiUrl: "http://kv-override:3002", wsUrl: "ws://kv-override:3002" },
+                      // New ephemeral region only in KV
+                      "pr-1": { apiUrl: "http://pr-1.backend:3002", wsUrl: "ws://pr-1.backend:3002" },
+                    })
+                  : key === "ws_local"
+                    ? "local"
+                    : key === "ws_pr1"
+                      ? "pr-1"
+                      : null
+              )
+            ),
+            put: mock(() => Promise.resolve()),
+          },
+          REGIONS: REGIONS_JSON,
+          USE_KV_REGIONS: "true",
+        } as any
+
+        // env-only region still resolves
+        await worker.fetch(makeRequest("/api/workspaces/ws_local/messages"), env)
+        expect(getProxiedUrl(fn)).toBe("http://kv-override:3002/api/workspaces/ws_local/messages")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("env-only regions resolve when KV is empty (USE_KV_REGIONS unset)", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        // Production-style env: no USE_KV_REGIONS, regions hardcoded in env
+        const env = makeEnvWithKv("eu-north-1")
+        await worker.fetch(makeRequest("/api/workspaces/ws_prod/messages"), env)
+        expect(getProxiedUrl(fn)).toBe("http://eu-north-1.backend:3002/api/workspaces/ws_prod/messages")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+  })
 })
