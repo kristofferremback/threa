@@ -68,7 +68,7 @@ describe("WorkosAuthzAdminService.changeRole — actor gates", () => {
       { userId: "the_owner", roleSlugs: [WORKSPACE_ROLE_SLUGS.OWNER] },
     ])
 
-    expect(
+    await expect(
       makeService(stub).changeRole({
         actor: ADMIN_ACTOR("actor_admin"),
         organizationId: ORG_ID,
@@ -86,7 +86,7 @@ describe("WorkosAuthzAdminService.changeRole — actor gates", () => {
       { userId: "the_owner", roleSlugs: [WORKSPACE_ROLE_SLUGS.OWNER] },
     ])
 
-    expect(
+    await expect(
       makeService(stub).changeRole({
         actor: ADMIN_ACTOR("actor_admin"),
         organizationId: ORG_ID,
@@ -104,7 +104,7 @@ describe("WorkosAuthzAdminService.changeRole — actor gates", () => {
       { userId: "the_owner", roleSlugs: [WORKSPACE_ROLE_SLUGS.OWNER] },
     ])
 
-    expect(
+    await expect(
       makeService(stub).changeRole({
         actor: ADMIN_ACTOR("actor_member"),
         organizationId: ORG_ID,
@@ -136,7 +136,7 @@ describe("WorkosAuthzAdminService.changeRole — actor gates", () => {
     const stub = new StubWorkosOrgService()
     seedMembers(stub, [{ userId: "the_owner", roleSlugs: [WORKSPACE_ROLE_SLUGS.OWNER] }])
 
-    expect(
+    await expect(
       makeService(stub).changeRole({
         actor: PLATFORM_ACTOR,
         organizationId: ORG_ID,
@@ -174,7 +174,7 @@ describe("WorkosAuthzAdminService.removeMember — actor gates", () => {
       { userId: "the_owner", roleSlugs: [WORKSPACE_ROLE_SLUGS.OWNER] },
     ])
 
-    expect(
+    await expect(
       makeService(stub).removeMember({
         actor: ADMIN_ACTOR("actor_admin"),
         organizationId: ORG_ID,
