@@ -1,5 +1,6 @@
 import type { Components } from "react-markdown"
 import { Suspense, lazy, Component, Children, isValidElement, type ReactNode, type MouseEvent } from "react"
+import { useNavigate } from "react-router-dom"
 import { parseQuoteHref, parseSharedMessageHref } from "@threa/prosemirror"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -10,6 +11,22 @@ import { useLinkPreviewContext } from "./link-preview-context"
 import { QuoteReplyBlock } from "./quote-reply-block"
 import { BlockquoteBlock } from "./blockquote-block"
 import { SharedMessagePointerBlock } from "./shared-message-block"
+
+/**
+ * Treat any link to our own origin as in-app navigation. Without this, a
+ * markdown link like `https://app.threa.io/w/.../s/...?m=msg_xxx` rendered
+ * inside the installed PWA on Android hops to a Custom Tab (browser chrome,
+ * "open in Firefox") because `target="_blank"` forces a new browsing context.
+ */
+function resolveInternalAppPath(href: string): string | null {
+  try {
+    const url = new URL(href, window.location.origin)
+    if (url.origin !== window.location.origin) return null
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return null
+  }
+}
 
 const CodeBlock = lazy(() => import("./code-block"))
 
@@ -115,6 +132,7 @@ function extractTextFromChildren(children: ReactNode): string {
 function MarkdownLink({ href, children }: { href?: string; children: ReactNode }) {
   const attachmentContext = useAttachmentContext()
   const linkPreviewContext = useLinkPreviewContext()
+  const navigate = useNavigate()
 
   // Check if this is an attachment link
   if (href?.startsWith("attachment:")) {
@@ -153,6 +171,29 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
 
   const handleMouseLeave = () => {
     linkPreviewContext?.setHoveredLinkUrl(null)
+  }
+
+  const internalPath = href ? resolveInternalAppPath(href) : null
+  if (internalPath) {
+    // Modifier-clicks and middle-clicks fall through to the native <a> so the
+    // user still gets "open in new tab" / right-click menu semantics.
+    const handleInternalClick = (e: MouseEvent<HTMLAnchorElement>) => {
+      if (e.defaultPrevented) return
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      e.preventDefault()
+      navigate(internalPath)
+    }
+    return (
+      <a
+        href={href}
+        onClick={handleInternalClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        className="break-all text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
+      >
+        <ProcessedChildren>{children}</ProcessedChildren>
+      </a>
+    )
   }
 
   // The message-level long-press hook skips its timer when the touch starts
