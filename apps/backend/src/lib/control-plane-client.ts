@@ -1,8 +1,27 @@
 import { logger } from "./logger"
-import { INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
-import type { WorkspaceInvitableRole } from "@threa/types"
+import { HttpError, INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
+import type { WorkspaceInvitableRole, WorkspaceRoleSlug } from "@threa/types"
 
 const REQUEST_TIMEOUT_MS = 10_000
+
+// CP's shared error middleware always responds with `{ error, code? }` JSON.
+// Translate that into an HttpError carrying the CP's status + code so the
+// regional error middleware surfaces the same code (OWNER_ACTION, LAST_OWNER,
+// SELF_DEMOTE, FORBIDDEN, ...) to the frontend instead of a generic 500.
+function toControlPlaneHttpError(status: number, bodyText: string, fallbackMessage: string): HttpError {
+  let message = fallbackMessage
+  let code: string | undefined
+  if (bodyText) {
+    try {
+      const parsed = JSON.parse(bodyText) as { error?: unknown; code?: unknown }
+      if (typeof parsed.error === "string" && parsed.error.length > 0) message = parsed.error
+      if (typeof parsed.code === "string" && parsed.code.length > 0) code = parsed.code
+    } catch {
+      // Non-JSON body — fall through with fallback message and no code.
+    }
+  }
+  return new HttpError(message, { status, code })
+}
 
 export class ControlPlaneClient {
   constructor(
@@ -73,6 +92,64 @@ export class ControlPlaneClient {
       const body = await res.text().catch(() => "")
       logger.error({ id: params.id, status: res.status, body }, "Failed to notify invitation link claim")
       throw new Error(`Control-plane returned ${res.status}: ${body}`)
+    }
+  }
+
+  async changeWorkspaceMemberRole(params: {
+    workspaceId: string
+    targetUserId: string
+    actorWorkosUserId: string
+    roleSlug: WorkspaceRoleSlug
+  }): Promise<void> {
+    const url = `${this.baseUrl}/internal/workspaces/${params.workspaceId}/members/${params.targetUserId}/role`
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
+      },
+      body: JSON.stringify({
+        actor: { workosUserId: params.actorWorkosUserId },
+        roleSlug: params.roleSlug,
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      logger.error(
+        { workspaceId: params.workspaceId, targetUserId: params.targetUserId, status: res.status, body },
+        "Failed to change workspace member role"
+      )
+      throw toControlPlaneHttpError(res.status, body, "Failed to change workspace member role")
+    }
+  }
+
+  async removeWorkspaceMember(params: {
+    workspaceId: string
+    targetUserId: string
+    actorWorkosUserId: string
+  }): Promise<void> {
+    const url = `${this.baseUrl}/internal/workspaces/${params.workspaceId}/members/${params.targetUserId}`
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
+      },
+      body: JSON.stringify({
+        actor: { workosUserId: params.actorWorkosUserId },
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      logger.error(
+        { workspaceId: params.workspaceId, targetUserId: params.targetUserId, status: res.status, body },
+        "Failed to remove workspace member"
+      )
+      throw toControlPlaneHttpError(res.status, body, "Failed to remove workspace member")
     }
   }
 

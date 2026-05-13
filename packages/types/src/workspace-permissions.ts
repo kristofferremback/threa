@@ -150,9 +150,10 @@ const ADMIN_ADDITIONS: readonly WorkspacePermissionSlug[] = Object.freeze([
   WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN,
 ])
 
-// Order is the canonical role hierarchy: index = privilege rank
-// (member < admin < owner). `roleRank()` and `WORKSPACE_USER_ROLES` derive
-// from this order so adding a role only requires editing this array.
+// Role definitions are the only place where role → permission mapping lives.
+// All authorization decisions derive from `permissions`, never from the role
+// slug itself. Roles are a packaging artifact for display and assignment;
+// permission checks are the actual gate.
 export const WORKSPACE_ROLE_DEFINITIONS: readonly WorkspaceRoleDefinition[] = Object.freeze([
   {
     slug: WORKSPACE_ROLE_SLUGS.MEMBER,
@@ -178,7 +179,10 @@ export const WORKSPACE_ROLE_DEFINITIONS: readonly WorkspaceRoleDefinition[] = Ob
   },
 ])
 
-export const WORKSPACE_USER_ROLES = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug) as readonly WorkspaceRoleSlug[]
+export const WORKSPACE_USER_ROLES = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug) as unknown as readonly [
+  WorkspaceRoleSlug,
+  ...WorkspaceRoleSlug[],
+]
 
 /**
  * Roles that can be granted via invitation (everything except `owner`, which
@@ -191,25 +195,36 @@ export const WORKSPACE_INVITABLE_ROLES: readonly [WorkspaceInvitableRole, ...Wor
   WORKSPACE_ROLE_SLUGS.ADMIN,
 ]
 
-const ROLE_RANK: Record<WorkspaceRoleSlug, number> = Object.fromEntries(
-  WORKSPACE_ROLE_DEFINITIONS.map((r, idx) => [r.slug, idx])
-) as Record<WorkspaceRoleSlug, number>
-
-/** Privilege rank for hierarchical comparisons (`member < admin < owner`). */
-export function roleRank(slug: WorkspaceRoleSlug): number {
-  const rank = ROLE_RANK[slug]
-  if (rank === undefined) {
-    throw new Error(`Unknown workspace role: ${slug}`)
-  }
-  return rank
-}
-
 export function permissionsForRole(slug: WorkspaceRoleSlug): WorkspacePermissionSlug[] {
   const definition = WORKSPACE_ROLE_DEFINITIONS.find((r) => r.slug === slug)
   if (!definition) {
     throw new Error(`Unknown workspace role: ${slug}`)
   }
   return [...definition.permissions]
+}
+
+const ROLE_DISPLAY_NAMES: Record<WorkspaceRoleSlug, string> = Object.fromEntries(
+  WORKSPACE_ROLE_DEFINITIONS.map((r) => [r.slug, r.name])
+) as Record<WorkspaceRoleSlug, string>
+
+/** Human-readable label for a role (e.g. "Owner", "Admin", "Member"). */
+export function roleDisplayName(slug: WorkspaceRoleSlug): string {
+  return ROLE_DISPLAY_NAMES[slug] ?? slug
+}
+
+/**
+ * True if any of the given role slugs grants `permission`. Unknown role slugs
+ * are ignored so historical WorkOS roles we don't model can't accidentally
+ * grant access. Use this anywhere a check would otherwise be phrased as
+ * `roleSlugs.includes("owner")` or similar — the gate is the permission, not
+ * the role name.
+ */
+export function rolesGrant(roleSlugs: readonly string[], permission: WorkspacePermissionSlug): boolean {
+  for (const slug of roleSlugs) {
+    const def = WORKSPACE_ROLE_DEFINITIONS.find((r) => r.slug === slug)
+    if (def?.permissions.includes(permission)) return true
+  }
+  return false
 }
 
 const PERMISSION_SLUG_SET = new Set<string>(Object.values(WORKSPACE_PERMISSION_SCOPES))

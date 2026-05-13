@@ -1,6 +1,7 @@
 export { WorkosAuthzService } from "./service"
 export { WorkosAuthzAdminService } from "./admin-service"
 export type { AdminActor, AssignRoleParams, ChangeRoleParams, RemoveMemberParams } from "./admin-service"
+export { createInternalAuthzAdminHandlers, createBackofficeAuthzAdminHandlers } from "./admin-handlers"
 export { WorkosAuthzBackfill } from "./backfill"
 export type { WorkosAuthzBackfillResult, WorkosAuthzOrganizationBackfillResult } from "./backfill"
 export { WorkspaceOwnerBackfill } from "./owner-backfill"

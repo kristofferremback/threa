@@ -1,15 +1,38 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, MoreHorizontal, Ban, UserPlus } from "lucide-react"
+import { roleDisplayName, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
 import { Section } from "@/components/layout/section"
 import { InlineBanner } from "@/components/inline-banner"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog"
+import {
+  assignWorkspaceMember,
   backofficeKeys,
+  changeWorkspaceMemberRole,
   getOutboxEventsStatus,
   listWorkspaceInvitations,
   listWorkspaceMembers,
+  removeWorkspaceMember,
   resyncWorkspaceMembers,
   type OutboxEventStatus,
   type ResyncWorkspaceMembersResult,
@@ -76,6 +99,7 @@ function memberDisplayName(m: WorkspaceMember): string | null {
 export function WorkspaceDetailMembersPage() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
+  const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null)
 
   const query = useQuery({
     queryKey: id ? backofficeKeys.workspaceMembers(id) : ["backoffice", "workspaces", "missing", "members"],
@@ -156,7 +180,6 @@ export function WorkspaceDetailMembersPage() {
     if (pollStartedAt === null) return
     const data = statusQ.data
     if (data && data.every((s) => s.status !== "pending")) {
-      // All terminal — let the banner settle and stop the timer.
       setPollStartedAt(null)
       return
     }
@@ -185,6 +208,56 @@ export function WorkspaceDetailMembersPage() {
   const resyncError = readApiError(resyncMutation.error)
   const isPolling = pollStartedAt !== null
 
+  // Patch the cached members list in place. The WorkOS event poller will
+  // reconcile within ~5s, so we skip a full refetch per click.
+  const patchMembers = (mutate: (members: WorkspaceMember[]) => WorkspaceMember[]) => {
+    if (!id) return
+    queryClient.setQueryData<WorkspaceMember[]>(backofficeKeys.workspaceMembers(id), (prev) =>
+      prev ? mutate(prev) : prev
+    )
+  }
+
+  const changeRoleMutation = useMutation({
+    mutationFn: (vars: { workosUserId: string; roleSlug: WorkspaceRoleSlug }) => {
+      if (!id) throw new Error("Missing workspace id")
+      return changeWorkspaceMemberRole(id, vars.workosUserId, vars.roleSlug)
+    },
+    onSuccess: (_data, vars) => {
+      patchMembers((members) =>
+        members.map((m) => (m.workosUserId === vars.workosUserId ? { ...m, roleSlugs: [vars.roleSlug] } : m))
+      )
+    },
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (workosUserId: string) => {
+      if (!id) throw new Error("Missing workspace id")
+      return removeWorkspaceMember(id, workosUserId)
+    },
+    onSuccess: (_data, workosUserId) => {
+      patchMembers((members) => members.filter((m) => m.workosUserId !== workosUserId))
+      setRemoveTarget(null)
+    },
+  })
+
+  const assignMutation = useMutation({
+    mutationFn: (vars: { workosUserId: string; roleSlug: WorkspaceRoleSlug }) => {
+      if (!id) throw new Error("Missing workspace id")
+      return assignWorkspaceMember(id, vars.workosUserId, vars.roleSlug)
+    },
+    onSuccess: () => {
+      if (id) queryClient.invalidateQueries({ queryKey: backofficeKeys.workspaceMembers(id) })
+    },
+  })
+
+  const changeRoleError = readApiError(changeRoleMutation.error)
+  const removeError = readApiError(removeMutation.error)
+  const assignError = readApiError(assignMutation.error)
+
+  let busyMemberId: string | null = null
+  if (changeRoleMutation.isPending) busyMemberId = changeRoleMutation.variables?.workosUserId ?? null
+  else if (removeMutation.isPending) busyMemberId = removeMutation.variables ?? null
+
   return (
     <div className="flex flex-col gap-10">
       <Section
@@ -208,6 +281,10 @@ export function WorkspaceDetailMembersPage() {
           </Button>
         }
       >
+        <AssignMemberForm
+          disabled={notLinked || assignMutation.isPending}
+          onSubmit={(vars) => assignMutation.mutate(vars)}
+        />
         {resyncMutation.isSuccess ? (
           <ResyncBanner
             result={resyncMutation.data}
@@ -217,9 +294,120 @@ export function WorkspaceDetailMembersPage() {
           />
         ) : null}
         {resyncError ? <InlineBanner tone="error">Couldn't re-sync members: {resyncError}</InlineBanner> : null}
-        <MembersBody loading={query.isLoading} error={query.error} members={query.data} notLinked={notLinked} />
+        {changeRoleError ? <InlineBanner tone="error">Couldn't change role: {changeRoleError}</InlineBanner> : null}
+        {removeError ? <InlineBanner tone="error">Couldn't remove member: {removeError}</InlineBanner> : null}
+        {assignError ? <InlineBanner tone="error">Couldn't add member: {assignError}</InlineBanner> : null}
+        <MembersBody
+          loading={query.isLoading}
+          error={query.error}
+          members={query.data}
+          notLinked={notLinked}
+          busyMemberId={busyMemberId}
+          onChangeRole={(workosUserId, roleSlug) => changeRoleMutation.mutate({ workosUserId, roleSlug })}
+          onRequestRemove={(member) => setRemoveTarget(member)}
+        />
       </Section>
+
+      <ResponsiveAlertDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null)
+        }}
+      >
+        <ResponsiveAlertDialogContent className="gap-5 border-t-4 border-t-destructive/70">
+          <ResponsiveAlertDialogHeader>
+            <div className="mb-1 flex justify-center sm:justify-start">
+              <span className="inline-flex size-12 items-center justify-center rounded-full bg-destructive/10 text-destructive ring-4 ring-destructive/5">
+                <Ban className="size-6" strokeWidth={2.25} />
+              </span>
+            </div>
+            <ResponsiveAlertDialogTitle className="text-xl">Remove this member?</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
+              {removeTarget ? (
+                <>
+                  <span className="font-medium text-foreground">
+                    {memberDisplayName(removeTarget) ?? removeTarget.email ?? removeTarget.workosUserId}
+                  </span>{" "}
+                  will lose access to this workspace immediately. They can be re-invited later.
+                </>
+              ) : null}
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel disabled={removeMutation.isPending}>Keep member</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              disabled={removeMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault()
+                if (removeTarget) removeMutation.mutate(removeTarget.workosUserId)
+              }}
+            >
+              Yes, remove
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
     </div>
+  )
+}
+
+function AssignMemberForm({
+  disabled,
+  onSubmit,
+}: {
+  disabled: boolean
+  onSubmit: (vars: { workosUserId: string; roleSlug: WorkspaceRoleSlug }) => void
+}) {
+  const [workosUserId, setWorkosUserId] = useState("")
+  const [roleSlug, setRoleSlug] = useState<WorkspaceRoleSlug>("member")
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    const trimmed = workosUserId.trim()
+    if (!trimmed) return
+    onSubmit({ workosUserId: trimmed, roleSlug })
+    setWorkosUserId("")
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mb-4 flex flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-3">
+      <div className="flex min-w-[260px] flex-1 flex-col gap-1">
+        <Label htmlFor="assign-workos-user-id" className="text-xs uppercase tracking-wider text-muted-foreground">
+          WorkOS user ID
+        </Label>
+        <Input
+          id="assign-workos-user-id"
+          value={workosUserId}
+          onChange={(e) => setWorkosUserId(e.target.value)}
+          placeholder="user_01H…"
+          autoComplete="off"
+          disabled={disabled}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <Label htmlFor="assign-role" className="text-xs uppercase tracking-wider text-muted-foreground">
+          Role
+        </Label>
+        <select
+          id="assign-role"
+          value={roleSlug}
+          onChange={(e) => setRoleSlug(e.target.value as WorkspaceRoleSlug)}
+          disabled={disabled}
+          className="h-10 rounded-input border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {WORKSPACE_USER_ROLES.map((slug) => (
+            <option key={slug} value={slug}>
+              {roleDisplayName(slug)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <Button type="submit" disabled={disabled || workosUserId.trim().length === 0} className="gap-1.5">
+        <UserPlus className="size-4" />
+        Add member
+      </Button>
+    </form>
   )
 }
 
@@ -311,11 +499,17 @@ function MembersBody({
   error,
   members,
   notLinked,
+  busyMemberId,
+  onChangeRole,
+  onRequestRemove,
 }: {
   loading: boolean
   error: unknown
   members: WorkspaceMember[] | undefined
   notLinked: boolean
+  busyMemberId: string | null
+  onChangeRole: (workosUserId: string, roleSlug: WorkspaceRoleSlug) => void
+  onRequestRemove: (member: WorkspaceMember) => void
 }) {
   if (loading) {
     return <div className="border-y px-1 py-10 text-center text-sm text-muted-foreground">Loading members…</div>
@@ -343,15 +537,32 @@ function MembersBody({
   return (
     <ul className="divide-y border-y">
       {members.map((m) => (
-        <MemberRow key={`${m.workosUserId}`} member={m} />
+        <MemberRow
+          key={`${m.workosUserId}`}
+          member={m}
+          busy={busyMemberId === m.workosUserId}
+          onChangeRole={(roleSlug) => onChangeRole(m.workosUserId, roleSlug)}
+          onRequestRemove={() => onRequestRemove(m)}
+        />
       ))}
     </ul>
   )
 }
 
-function MemberRow({ member }: { member: WorkspaceMember }) {
+function MemberRow({
+  member,
+  busy,
+  onChangeRole,
+  onRequestRemove,
+}: {
+  member: WorkspaceMember
+  busy: boolean
+  onChangeRole: (roleSlug: WorkspaceRoleSlug) => void
+  onRequestRemove: () => void
+}) {
   const name = memberDisplayName(member)
   const fallback = member.email ?? member.workosUserId
+  const memberRoleSet = new Set(member.roleSlugs)
   return (
     <li className="flex items-center justify-between gap-4 py-4 pl-1 pr-3">
       <div className="flex min-w-0 flex-col gap-1">
@@ -374,6 +585,39 @@ function MemberRow({ member }: { member: WorkspaceMember }) {
         >
           {formatRelativeTimestamp(member.lastEventAt)}
         </span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8"
+              disabled={busy}
+              aria-label={`Manage ${name ?? fallback}`}
+            >
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Change role</div>
+            {WORKSPACE_USER_ROLES.map((slug) => {
+              const memberHasRole = memberRoleSet.has(slug)
+              return (
+                <DropdownMenuItem key={slug} disabled={busy || memberHasRole} onSelect={() => onChangeRole(slug)}>
+                  {roleDisplayName(slug)}
+                  {memberHasRole ? <span className="ml-2 text-xs text-muted-foreground">current</span> : null}
+                </DropdownMenuItem>
+              )
+            })}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              disabled={busy}
+              onSelect={onRequestRemove}
+            >
+              Remove from workspace
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </li>
   )

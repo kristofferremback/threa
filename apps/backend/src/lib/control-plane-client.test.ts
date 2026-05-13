@@ -1,0 +1,77 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { HttpError } from "@threa/backend-common"
+import { ControlPlaneClient } from "./control-plane-client"
+
+const originalFetch = globalThis.fetch
+
+function makeResponse(status: number, body: string): Response {
+  return new Response(body, { status, headers: { "Content-Type": "application/json" } })
+}
+
+describe("ControlPlaneClient error translation", () => {
+  let client: ControlPlaneClient
+
+  beforeEach(() => {
+    client = new ControlPlaneClient("https://cp.test", "secret")
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    mock.restore()
+  })
+
+  test("changeWorkspaceMemberRole forwards CP status + code as HttpError", async () => {
+    globalThis.fetch = mock(async () =>
+      makeResponse(409, JSON.stringify({ error: "Workspaces must keep at least one owner.", code: "LAST_OWNER" }))
+    ) as unknown as typeof fetch
+
+    await expect(
+      client.changeWorkspaceMemberRole({
+        workspaceId: "ws_1",
+        targetUserId: "workos_target",
+        actorWorkosUserId: "workos_caller",
+        roleSlug: "member",
+      })
+    ).rejects.toMatchObject({
+      name: "HttpError",
+      status: 409,
+      code: "LAST_OWNER",
+      message: "Workspaces must keep at least one owner.",
+    })
+  })
+
+  test("removeWorkspaceMember forwards CP status + code as HttpError", async () => {
+    globalThis.fetch = mock(async () =>
+      makeResponse(403, JSON.stringify({ error: "Only workspace owners may manage ownership.", code: "OWNER_ACTION" }))
+    ) as unknown as typeof fetch
+
+    const err = await client
+      .removeWorkspaceMember({
+        workspaceId: "ws_1",
+        targetUserId: "workos_target",
+        actorWorkosUserId: "workos_caller",
+      })
+      .catch((e) => e)
+
+    expect(err).toBeInstanceOf(HttpError)
+    expect(err).toMatchObject({ status: 403, code: "OWNER_ACTION" })
+  })
+
+  test("falls back to a generic message when CP body is not JSON", async () => {
+    globalThis.fetch = mock(async () => makeResponse(502, "<html>bad gateway</html>")) as unknown as typeof fetch
+
+    await expect(
+      client.changeWorkspaceMemberRole({
+        workspaceId: "ws_1",
+        targetUserId: "workos_target",
+        actorWorkosUserId: "workos_caller",
+        roleSlug: "admin",
+      })
+    ).rejects.toMatchObject({
+      name: "HttpError",
+      status: 502,
+      code: undefined,
+      message: "Failed to change workspace member role",
+    })
+  })
+})

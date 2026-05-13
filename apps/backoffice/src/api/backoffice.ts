@@ -1,4 +1,4 @@
-import type { WorkspaceInvitableRole } from "@threa/types"
+import type { WorkspaceInvitableRole, WorkspaceRoleSlug } from "@threa/types"
 import { api } from "./client"
 
 /**
@@ -180,4 +180,32 @@ export function listWorkspaceInvitations(id: string): Promise<WorkspaceInvitatio
   return api
     .get<{ invitations: WorkspaceInvitation[] }>(`/api/backoffice/workspaces/${encodeURIComponent(id)}/invitations`)
     .then((r) => r.invitations)
+}
+
+export function assignWorkspaceMember(
+  workspaceId: string,
+  workosUserId: string,
+  roleSlug: WorkspaceRoleSlug
+): Promise<void> {
+  return api.post<void>(`/api/backoffice/workspaces/${encodeURIComponent(workspaceId)}/members`, {
+    workosUserId,
+    roleSlug,
+  })
+}
+
+export function changeWorkspaceMemberRole(
+  workspaceId: string,
+  workosUserId: string,
+  roleSlug: WorkspaceRoleSlug
+): Promise<void> {
+  return api.post<void>(
+    `/api/backoffice/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(workosUserId)}/role`,
+    { roleSlug }
+  )
+}
+
+export function removeWorkspaceMember(workspaceId: string, workosUserId: string): Promise<void> {
+  return api.delete<void>(
+    `/api/backoffice/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(workosUserId)}`
+  )
 }

@@ -1,13 +1,39 @@
 import { useMemo, useRef, useState } from "react"
-import { useQuery, useMutation } from "@tanstack/react-query"
-import { Check, ChevronDown, Copy, KeyRound, Link as LinkIcon, Mail } from "lucide-react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { Check, ChevronDown, Copy, KeyRound, Link as LinkIcon, Mail, MoreHorizontal } from "lucide-react"
+import { toast } from "sonner"
+import {
+  roleDisplayName,
+  WORKSPACE_PERMISSION_SCOPES,
+  WORKSPACE_USER_ROLES,
+  type WorkspaceBootstrap,
+  type WorkspaceRoleSlug,
+} from "@threa/types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { ActorAvatar } from "@/components/actor-avatar"
 import { invitationsApi } from "@/api/invitations"
+import { ApiError } from "@/api/client"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { useFormattedDate } from "@/hooks"
+import { workspaceKeys } from "@/hooks/use-workspaces"
+import { useChangeWorkspaceMemberRole, useRemoveWorkspaceMember } from "@/hooks/use-workspace-member-management"
+import { hasPermission } from "@/lib/permissions"
+import { useUser } from "@/auth"
+
+type WorkspaceUserRow = ReturnType<typeof useWorkspaceUsers>[number]
 import { InviteDialog } from "./invite-dialog"
 import { CreateInviteLinkDialog } from "./create-invite-link-dialog"
 
@@ -45,10 +71,27 @@ function buildJoinUrl(token: string): string {
   return `${window.location.origin}/join/${token}`
 }
 
+function memberErrorMessage(err: unknown, fallback: string): string {
+  if (!ApiError.isApiError(err)) return fallback
+  switch (err.code) {
+    case "OWNER_ACTION":
+      return "Only workspace owners can change ownership."
+    case "LAST_OWNER":
+      return "Workspaces must keep at least one owner. Transfer ownership first."
+    case "SELF_DEMOTE":
+      return "You can't demote or remove yourself as the last owner. Transfer ownership first."
+    case "FORBIDDEN":
+      return "You don't have permission to manage members."
+    default:
+      return fallback
+  }
+}
+
 export function UsersTab({ workspaceId }: UsersTabProps) {
   const [emailInviteOpen, setEmailInviteOpen] = useState(false)
   const [linkInviteOpen, setLinkInviteOpen] = useState(false)
   const [copiedInvitationId, setCopiedInvitationId] = useState<string | null>(null)
+  const [memberToRemove, setMemberToRemove] = useState<WorkspaceUserRow | null>(null)
 
   // Tokens are returned exactly once at create time; we keep them in-memory so
   // the admin can copy the link from the pending list. Refreshing the page
@@ -57,11 +100,24 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
 
   const { formatDate } = useFormattedDate()
 
+  const authUser = useUser()
+  const queryClient = useQueryClient()
   const workspaceUsers = useWorkspaceUsers(workspaceId)
   const users = useMemo(
     () => workspaceUsers.slice().sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug)),
     [workspaceUsers]
   )
+
+  const { data: bootstrap } = useQuery({
+    queryKey: workspaceKeys.bootstrap(workspaceId),
+    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    enabled: false,
+    staleTime: Infinity,
+  })
+  const canManageMembers = hasPermission(bootstrap?.viewerPermissions, WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
+
+  const changeRoleMutation = useChangeWorkspaceMemberRole(workspaceId)
+  const removeMutation = useRemoveWorkspaceMember(workspaceId)
 
   const invitationsQuery = useQuery({
     queryKey: ["invitations", workspaceId],
@@ -120,26 +176,83 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
       </div>
 
       <div className="space-y-2">
-        {users.map((user) => (
-          <div key={user.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <ActorAvatar
-                actorId={user.id}
-                actorType="user"
-                workspaceId={workspaceId}
-                size="sm"
-                alt={user.name || user.slug}
-              />
-              <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 min-w-0">
-                <span className="text-sm font-medium truncate">{user.name || user.slug}</span>
-                <span className="text-xs text-muted-foreground truncate">@{user.slug}</span>
+        {users.map((user) => {
+          const isSelf = user.workosUserId === authUser?.id
+          // Owners aren't demotable here — ownership transfer is its own flow.
+          const canEditRole = canManageMembers && !isSelf && user.role !== "owner"
+          const canRemove = canManageMembers && !isSelf && user.role !== "owner"
+          const isRoleChanging = changeRoleMutation.isPending && changeRoleMutation.variables?.userId === user.id
+
+          return (
+            <div key={user.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <ActorAvatar
+                  actorId={user.id}
+                  actorType="user"
+                  workspaceId={workspaceId}
+                  size="sm"
+                  alt={user.name || user.slug}
+                />
+                <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 min-w-0">
+                  <span className="text-sm font-medium truncate">{user.name || user.slug}</span>
+                  <span className="text-xs text-muted-foreground truncate">@{user.slug}</span>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {canEditRole ? (
+                  <Select
+                    value={user.role}
+                    disabled={isRoleChanging}
+                    onValueChange={(value) =>
+                      changeRoleMutation.mutate(
+                        { userId: user.id, roleSlug: value as WorkspaceRoleSlug },
+                        {
+                          onSuccess: () => toast.success("Role updated"),
+                          onError: (err) => toast.error(memberErrorMessage(err, "Failed to update role")),
+                        }
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-7 w-[110px] px-2 py-0 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {WORKSPACE_USER_ROLES.filter((slug) => slug !== "owner").map((slug) => (
+                        <SelectItem key={slug} value={slug}>
+                          {roleDisplayName(slug)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Badge variant={user.role === "owner" ? "default" : "secondary"}>{roleDisplayName(user.role)}</Badge>
+                )}
+                {canRemove && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        aria-label={`Manage ${user.name || user.slug}`}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => setMemberToRemove(user)}
+                      >
+                        Remove from workspace
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             </div>
-            <Badge variant={user.role === "owner" ? "default" : "secondary"} className="shrink-0">
-              {user.role}
-            </Badge>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {pendingInvitations.length > 0 && (
@@ -252,6 +365,40 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
           tokensRef.current.set(invitationId, token)
         }}
       />
+
+      <AlertDialog open={memberToRemove != null} onOpenChange={(open) => !open && setMemberToRemove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove member</AlertDialogTitle>
+            <AlertDialogDescription>
+              {memberToRemove
+                ? `Remove ${memberToRemove.name || memberToRemove.slug} from this workspace? They'll lose access immediately.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={removeMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault()
+                if (!memberToRemove) return
+                removeMutation.mutate(
+                  { userId: memberToRemove.id },
+                  {
+                    onSuccess: () => toast.success("Member removed"),
+                    onError: (err) => toast.error(memberErrorMessage(err, "Failed to remove member")),
+                    onSettled: () => setMemberToRemove(null),
+                  }
+                )
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
