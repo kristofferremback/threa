@@ -8,6 +8,14 @@ import { initHighlighter } from "./lib/markdown/highlighter"
 import { applyPersistedComposerHeight } from "./lib/composer-height-storage"
 import "./index.css"
 
+// Kick off shiki init at the earliest possible moment — before service-worker
+// registration, before bootstrap. The 500ms hydration cap below isn't enough
+// for shiki's dynamic-import of ~18 grammars + 2 themes, and if mount races
+// past it the first CodeBlock paints unstyled and then flickers to highlighted
+// once the async path resolves. Kicking off here gives shiki the longest
+// possible head start while the rest of main.tsx runs.
+const highlighterReady = initHighlighter().catch(() => null)
+
 // Apply the last-observed composer height to `:root` so the timeline's footer
 // spacer paints at roughly the correct size on first render. The composer's
 // own ResizeObserver overwrites the variable on the editor zone once mounted.
@@ -59,20 +67,22 @@ if ("serviceWorker" in navigator) {
 // keeps running and `notify()` still wakes subscribers, so the cache heals
 // even if the deadline fired.
 const HYDRATION_CAP_MS = 500
+// Shiki's dynamic imports routinely overshoot 500ms; sharing that cap with
+// the IDB hydration means the timeout wins before grammars finish and the
+// first CodeBlock paints unstyled. Give shiki its own longer ceiling and
+// settle on whichever finishes first per task.
+const HIGHLIGHTER_CAP_MS = 1500
+
+const waitMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function bootstrap() {
-  // Hydrate collapse cache and warm the shiki highlighter in parallel so
-  // first paint has both. Whichever overshoots the deadline heals post-mount
-  // (collapse cache via `notify()`, highlighter via per-CodeBlock effect).
-  try {
-    await Promise.race([
-      Promise.all([hydrateCollapseCache(), initHighlighter().catch(() => null)]),
-      new Promise((resolve) => setTimeout(resolve, HYDRATION_CAP_MS)),
-    ])
-  } catch {
-    // Hydration already swallows IDB errors internally; the catch here is a
-    // belt-and-braces guard so a thrown rejection never blocks the mount.
-  }
+  // Wait for collapse-cache hydration AND highlighter init, each capped
+  // independently so a slow shiki doesn't cause us to mount before its
+  // grammars are ready (which is what produces the unstyled-flash flicker).
+  await Promise.allSettled([
+    Promise.race([hydrateCollapseCache(), waitMs(HYDRATION_CAP_MS)]),
+    Promise.race([highlighterReady, waitMs(HIGHLIGHTER_CAP_MS)]),
+  ])
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />
