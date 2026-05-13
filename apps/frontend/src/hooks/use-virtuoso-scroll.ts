@@ -179,8 +179,20 @@ export function useVirtuosoScroll({
     [itemCount]
   )
 
-  // Re-scroll to bottom when the scroll container resizes (e.g. mobile keyboard
-  // opens/closes). Debounced to avoid fighting with the resize animation.
+  // Re-anchor scroll position when the scroll container resizes (e.g. mobile
+  // keyboard opens/closes). Two cases:
+  //  - User at bottom: scroll to LAST so the latest message stays glued
+  //    above the composer. Debounced because Chrome with
+  //    `interactive-widget=resizes-content` fires resize on every animation
+  //    frame, and scrollToIndex during the animation can fight Virtuoso's
+  //    own intra-resize reflow.
+  //  - User scrolled away from bottom: shift the scroller's scrollTop by
+  //    the height delta so the previously-visible bottom row stays anchored
+  //    at the new visible-area bottom. Browsers preserve scrollTop across
+  //    container shrink, so the bottom of the view otherwise drifts upward
+  //    relative to content and the message the user was reading slides
+  //    behind the keyboard. Applied synchronously across animation frames so
+  //    the anchor tracks continuously, not in a single jump at the end.
   const resizeTimerRef = useRef<number | undefined>(undefined)
 
   const handleScrollerRef = useCallback((ref: HTMLElement | Window | null) => {
@@ -197,16 +209,26 @@ export function useVirtuosoScroll({
   useEffect(() => {
     if (!scrollerEl) return
 
+    let prevHeight = scrollerEl.clientHeight
+
     const observer = new ResizeObserver(() => {
-      if (!isAtBottomRef.current) return
-      window.clearTimeout(resizeTimerRef.current)
-      resizeTimerRef.current = window.setTimeout(() => {
-        virtuosoRef.current?.scrollToIndex({
-          index: "LAST",
-          align: "end",
-          behavior: "auto",
-        })
-      }, 100)
+      const newHeight = scrollerEl.clientHeight
+      if (newHeight === prevHeight) return
+      const delta = prevHeight - newHeight
+      prevHeight = newHeight
+
+      if (isAtBottomRef.current) {
+        window.clearTimeout(resizeTimerRef.current)
+        resizeTimerRef.current = window.setTimeout(() => {
+          virtuosoRef.current?.scrollToIndex({
+            index: "LAST",
+            align: "end",
+            behavior: "auto",
+          })
+        }, 100)
+      } else if (delta !== 0) {
+        scrollerEl.scrollTop += delta
+      }
     })
 
     observer.observe(scrollerEl)
