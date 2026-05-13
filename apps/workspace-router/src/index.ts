@@ -51,6 +51,9 @@ const CONFIG_ROUTE_RE = /^\/api\/workspaces\/([^/]+)\/config$/
 /** KV key for dynamic regions config (used by staging CI to register PR backends) */
 const REGIONS_CONFIG_KV_KEY = "__regions_config__"
 
+/** Fixed region name for the stable main staging backend (staging.threa.io) */
+const MAIN_STAGING_REGION = "staging"
+
 /** Cache parsed regions per REGIONS string (static per env binding) */
 let cachedRegionsRaw: string | null = null
 let cachedRegions: RegionsMap | null = null
@@ -62,13 +65,19 @@ function getRegionsFromEnv(raw: string): RegionsMap {
   return cachedRegions
 }
 
-/** Resolve regions map: prefer KV-stored config (staging only), fall back to env var */
+/**
+ * Resolve regions map. In staging we merge env (stable regions like "staging")
+ * with KV (ephemeral per-PR regions written by scripts/staging-pr.ts). Env is
+ * the base; KV entries override on key collision. In production USE_KV_REGIONS
+ * is unset, so we use env only.
+ */
 async function getRegions(envRegions: string, kv: KVNamespace, useKv: boolean): Promise<RegionsMap> {
-  if (useKv) {
-    const kvRegions = await kv.get(REGIONS_CONFIG_KV_KEY)
-    if (kvRegions) return parseRegions(kvRegions)
-  }
-  return getRegionsFromEnv(envRegions)
+  const baseRegions = getRegionsFromEnv(envRegions)
+  if (!useKv) return baseRegions
+
+  const kvRegions = await kv.get(REGIONS_CONFIG_KV_KEY)
+  if (!kvRegions) return baseRegions
+  return { ...baseRegions, ...parseRegions(kvRegions) }
 }
 
 export default {
@@ -92,15 +101,24 @@ export default {
       return proxyRequest(request, config.apiUrl)
     }
 
-    // PR staging: pr-N-staging.threa.io — hostname determines the region.
-    // All API routes (including workspace-scoped) go to the PR backend directly,
-    // bypassing KV workspace→region lookup (the cloned workspace has the same ID).
-    const prStagingRe = buildPrStagingRe(env.STAGING_DOMAIN)
-    const prMatch = prStagingRe ? url.hostname.match(prStagingRe) : null
-    const prRegion = prMatch ? `pr-${prMatch[1]}` : null
-    const prBackend = prRegion ? getRegionConfig(prRegion, regions) : null
+    // Staging hostname-pinned routing. The hostname alone determines the region,
+    // bypassing the KV workspace→region lookup entirely. Two hostnames pin:
+    //   - pr-N-staging.threa.io        → region "pr-N"   (ephemeral PR backend)
+    //   - <STAGING_DOMAIN> (e.g. staging.threa.io) → region "staging" (stable main backend)
+    // This is what keeps staging.threa.io stable: PRs clone the staging DB and
+    // share its workspace IDs, but the worker never resolves region from the
+    // shared workspace ID — it's always derived from the request's hostname.
+    //
+    // When the hostname pins a region, API routes MUST terminate inside this
+    // block — never fall through to workspace-id-based routing, even if the
+    // pinned region is missing from the regions map. Falling through to the
+    // workspace KV lookup would let a stale per-workspace KV entry (e.g. one
+    // written by a previous PR deploy) decide the route, which is the exact
+    // failure mode hostname pinning exists to prevent.
+    const pinnedRegion = resolvePinnedRegion(url.hostname, env.STAGING_DOMAIN)
+    if (pinnedRegion) {
+      const pinnedBackend = getRegionConfig(pinnedRegion, regions)
 
-    if (prBackend) {
       // Control-plane routes still go to the shared CP
       if (env.CONTROL_PLANE_URL) {
         const method = request.method
@@ -122,20 +140,29 @@ export default {
         }
       }
 
-      // Config endpoint: return the PR region's WS URL
+      // Config endpoint: return the pinned region's WS URL
       const configMatch2 = path.match(CONFIG_ROUTE_RE)
       if (configMatch2 && request.method === "GET") {
-        const wsUrl = env.WS_STAGING_DOMAIN ? `https://${env.WS_STAGING_DOMAIN}?region=${prRegion}` : prBackend.wsUrl
-        return Response.json({ region: prRegion, wsUrl })
+        if (!pinnedBackend) return errorResponse(502, "Region not configured")
+        const wsUrl = env.WS_STAGING_DOMAIN
+          ? `https://${env.WS_STAGING_DOMAIN}?region=${pinnedRegion}`
+          : pinnedBackend.wsUrl
+        return Response.json({ region: pinnedRegion, wsUrl })
       }
 
-      // All other API routes go to the PR backend
+      // All other API routes go to the pinned region's backend. We refuse to
+      // fall through for /api/* even when the region is missing — that path
+      // would hit the workspace-id KV lookup we deliberately bypass here.
       if (path.startsWith("/api/")) {
-        return proxyRequest(request, prBackend.apiUrl)
+        if (!pinnedBackend) return errorResponse(502, "Region not configured")
+        return proxyRequest(request, pinnedBackend.apiUrl)
       }
+
+      // Non-API routes (frontend assets) fall through to proxyToPages below,
+      // which derives the Pages host from the same hostname.
     }
 
-    // --- Standard routing (staging.threa.io and production) ---
+    // --- Standard routing (production; staging non-API frontend fallback) ---
 
     // Control-plane routes (auth, workspace list/create, regions, dev auth)
     if (env.CONTROL_PLANE_URL) {
@@ -318,6 +345,24 @@ function buildPrStagingRe(stagingDomain: string | undefined): RegExp | null {
   // Drop the leading subdomain label ("staging") and keep the base domain
   const escapedDomain = stagingDomain.replace(/\./g, "\\.")
   return new RegExp(`^pr-(\\d+)-${escapedDomain}$`)
+}
+
+/**
+ * Map a hostname to a fixed region name when staging routing applies.
+ * Returns null in production (no STAGING_DOMAIN) or for unrecognised hostnames.
+ */
+function resolvePinnedRegion(hostname: string, stagingDomain: string | undefined): string | null {
+  if (!stagingDomain) return null
+
+  // pr-N-staging.threa.io → "pr-N"
+  const prRe = buildPrStagingRe(stagingDomain)
+  const prMatch = prRe ? hostname.match(prRe) : null
+  if (prMatch) return `pr-${prMatch[1]}`
+
+  // staging.threa.io → "staging" (stable main staging backend)
+  if (hostname === stagingDomain) return MAIN_STAGING_REGION
+
+  return null
 }
 
 /**
