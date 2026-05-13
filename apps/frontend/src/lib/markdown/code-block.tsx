@@ -98,10 +98,9 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
     [trimmedCode]
   )
 
-  // Sync-first: if the singleton highlighter was warmed during bootstrap, we
-  // get highlighted HTML on the very first render — no placeholder swap, no
-  // row remeasure jump. Cold path (highlighter still booting, or a language
-  // not in the pre-load list) falls back to `ensureHighlight` in the effect.
+  // Sync-first: warmed highlighter returns HTML on first render, skipping the
+  // placeholder → highlighted swap that caused row remeasure jumps. Cold path
+  // (still booting or unknown language) falls through to the effect below.
   const syncHtml = useMemo(() => tryHighlightSync(displayCode, language), [displayCode, language])
   const [html, setHtml] = useState<string | null>(syncHtml)
 

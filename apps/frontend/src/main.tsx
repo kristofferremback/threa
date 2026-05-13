@@ -61,14 +61,9 @@ if ("serviceWorker" in navigator) {
 const HYDRATION_CAP_MS = 500
 
 async function bootstrap() {
-  // Run collapse-cache hydration and shiki highlighter init in parallel: both
-  // need to be ready for the timeline's first paint to render code blocks
-  // already highlighted and with persisted collapse state, but they're
-  // independent of each other and of the React tree. We race the combined
-  // work against the same 500ms deadline — whichever fits inside the budget
-  // gets to apply its result on first render; whichever overshoots heals
-  // post-mount (collapse cache via `notify()`, highlighter via the
-  // per-CodeBlock `ensureHighlight` effect).
+  // Hydrate collapse cache and warm the shiki highlighter in parallel so
+  // first paint has both. Whichever overshoots the deadline heals post-mount
+  // (collapse cache via `notify()`, highlighter via per-CodeBlock effect).
   try {
     await Promise.race([
       Promise.all([hydrateCollapseCache(), initHighlighter().catch(() => null)]),
