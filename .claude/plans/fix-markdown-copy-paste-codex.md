@@ -8,11 +8,12 @@ Fix a composer paste failure where otherwise valid markdown could be consumed by
 
 ### Editor schema support for horizontal rules
 
-Added a minimal TipTap node extension for the shared parser's `horizontalRule` JSON node and registered it in the composer/editor extension list. This keeps the frontend editor schema aligned with the shared markdown parser/serializer contract.
+Added TipTap's official horizontal rule extension for the shared parser's `horizontalRule` JSON node and registered it in the composer/editor extension list. This keeps the frontend editor schema aligned with the shared markdown parser/serializer contract while reusing TipTap's maintained implementation.
 
 **Files:**
-- `apps/frontend/src/components/editor/horizontal-rule-extension.ts` — defines the `horizontalRule` block node and renders it as `<hr>`.
-- `apps/frontend/src/components/editor/editor-extensions.ts` — registers `HorizontalRuleExtension` with the existing editor schema.
+- `apps/frontend/package.json` — adds the direct `@tiptap/extension-horizontal-rule` dependency.
+- `bun.lock` — records the dependency in the workspace lockfile.
+- `apps/frontend/src/components/editor/editor-extensions.ts` — registers `HorizontalRule` with the existing editor schema.
 
 ### Regression coverage for the paste repro
 
@@ -29,11 +30,11 @@ Added a test that pastes the full problematic markdown shape: TypeScript generic
 **Why:** `horizontalRule` is already part of the shared markdown JSON contract (`parseMarkdown` emits it and `serializeToMarkdown` serializes it). Supporting the node in the editor preserves user-authored separators instead of silently dropping or rewriting them.
 **Alternatives considered:** Strip `horizontalRule` nodes in the paste path, but that would create parser/editor drift and lose pasted content.
 
-### Keep the node extension minimal
+### Reuse TipTap's official extension
 
-**Chose:** Implement only schema registration and HTML rendering/parsing.
-**Why:** The bug only requires the editor to accept and render parser-produced horizontal rules. Toolbar commands or input rules for authoring horizontal rules interactively are out of scope.
-**Alternatives considered:** Add full command support mirroring TipTap's official HorizontalRule extension; deferred because no UI path needs it for this fix.
+**Chose:** Use `@tiptap/extension-horizontal-rule` instead of carrying a local custom node extension.
+**Why:** The official extension is already version-aligned with the editor stack and avoids duplicating maintained TipTap behavior. This follows the project preference to reuse existing abstractions when available.
+**Alternatives considered:** A local minimal extension would be narrower for paste acceptance, but duplicates an upstream extension and is less future-proof.
 
 ## Design Evolution
 

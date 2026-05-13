@@ -24,7 +24,7 @@ import { ChannelExtension, type ChannelOptions } from "./triggers/channel-extens
 import { CommandExtension, type CommandOptions } from "./triggers/command-extension"
 import { EmojiExtension, type EmojiExtensionOptions } from "./triggers/emoji-extension"
 import { AttachmentReferenceExtension } from "./attachment-reference-extension"
-import { HorizontalRuleExtension } from "./horizontal-rule-extension"
+import HorizontalRule from "@tiptap/extension-horizontal-rule"
 import { QuoteReplyExtension } from "./quote-reply-extension"
 import { SharedMessageExtension } from "./shared-message-extension"
 
@@ -82,7 +82,7 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
     OrderedList,
     ListItem,
     Blockquote,
-    HorizontalRuleExtension,
+    HorizontalRule,
     CodeBlockLowlight.configure({
       lowlight,
       defaultLanguage: "plaintext",
