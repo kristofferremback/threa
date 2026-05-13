@@ -3,33 +3,41 @@ import { db } from "@/db"
 import type { MarkdownBlockKind } from "./markdown-block-context"
 
 /**
- * Synchronous in-memory mirror of the `markdownBlockCollapse` and
- * `linkPreviewCollapse` IDB tables. Loaded once on app boot via
- * `hydrateCollapseCache()` and consumed by `useBlockCollapse` /
- * `useLinkPreviewCollapse` through `useSyncExternalStore`.
+ * Synchronous in-memory mirror of the markdown-block + link-preview collapse
+ * state. Persisted to localStorage (synchronous, populated at module load
+ * before React mounts) and to IndexedDB (legacy + cross-device backup).
  *
- * Why: those hooks previously read via `useLiveQuery`, which returns
- * `undefined` synchronously and resolves the persisted value on a later
- * microtask. Inside a Virtuoso list that causes every persistently-toggled
- * code block, blockquote, or link-preview card to flip size *after* the
- * timeline has already painted, which Virtuoso compensates for by shifting
- * sibling rows — the visible "jumping" on stream load. Bulk-loading once
- * before the timeline mounts lets the first paint reflect the user's
- * persisted choices, so no resize cascade occurs.
+ * Why localStorage is the primary persistence layer:
+ * IDB reads are async, so on cold boot the in-memory cache was empty until
+ * `hydrateCollapseCache()` resolved. `main.tsx` capped the wait at 500ms; on
+ * users with large collapse tables or slow `db.open()` paths, React mounted
+ * with an empty cache. Long code blocks render `defaultCollapsed=true`
+ * (3-line preview) until the persisted override (`false` for an expanded
+ * block) lands, then flip to expanded post-mount — Virtuoso compensates by
+ * shifting sibling rows, which the user sees as a "down jump then back" in
+ * mega threads where many tall items are above the viewport.
  *
- * Cross-tab note: this cache does not subscribe to Dexie's change feed, so
- * toggling collapse state in tab A no longer propagates to tab B without a
- * reload. That's an intentional trade — collapse state is a per-tab UX
- * preference, and the live-query subscription is what made the first paint
- * unstable in the first place.
+ * Reading localStorage at module-import time eliminates the race entirely:
+ * the in-memory cache is populated before any React component can mount, so
+ * `useBlockCollapseStore`'s very first snapshot already reflects the user's
+ * choices. IDB hydration still runs as a one-time migration for existing
+ * users whose state predates localStorage persistence; after the first boot
+ * of this code, localStorage is the only path that matters.
+ *
+ * Cross-tab note: this cache does not subscribe to a change feed, so toggling
+ * collapse state in tab A does not propagate to tab B without a reload. Same
+ * trade-off as before — collapse state is a per-tab UX preference, and the
+ * live-query subscription that previously enabled cross-tab sync was itself
+ * the original cause of the first-paint instability.
  *
  * INV-9 exception: module-level singletons are intentional here. The cache
  * is a synchronous source of truth that must be readable from any component
  * without context plumbing, and `useSyncExternalStore` consumers detach
- * listeners on unmount so there's no leak risk. A context-based alternative
- * would force every collapsible block to thread the store through the
- * provider, which adds coupling without solving the first-paint problem.
+ * listeners on unmount so there's no leak risk.
  */
+
+const BLOCK_COLLAPSE_LS_KEY = "threa:blockCollapse:v1"
+const LINK_PREVIEW_LS_KEY = "threa:linkPreviewExpand:v1"
 
 const blockCollapse = new Map<string, boolean>()
 const linkPreviewExpand = new Map<string, boolean>()
@@ -44,11 +52,73 @@ function notify(set: Set<() => void>) {
   for (const listener of set) listener()
 }
 
+function readPersistedMap(key: string): Record<string, boolean> | null {
+  if (typeof localStorage === "undefined") return null
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null
+    return parsed as Record<string, boolean>
+  } catch {
+    return null
+  }
+}
+
+function writePersistedMap(key: string, map: Map<string, boolean>): void {
+  if (typeof localStorage === "undefined") return
+  try {
+    localStorage.setItem(key, JSON.stringify(Object.fromEntries(map)))
+  } catch {
+    // Quota exceeded, private mode, etc. The in-memory cache still reflects
+    // the user's choice for this tab; losing the persisted copy degrades
+    // next-reload behavior but is not actionable here.
+  }
+}
+
 /**
- * Kicks off the one-time IDB read that populates the in-memory cache.
- * Idempotent — repeated callers receive the same in-flight promise.
- * Failures fall through to an empty cache (defaults take effect); we don't
- * want a transient IDB error to block the entire timeline.
+ * Synchronously populates the in-memory cache from localStorage. Runs at
+ * module import time so the very first React render sees the persisted
+ * state — see the module banner for why this matters.
+ *
+ * Returns whether any entries were loaded so the IDB migration path can be
+ * skipped for users who already have localStorage state.
+ */
+function hydrateFromLocalStorageSync(): boolean {
+  const blocks = readPersistedMap(BLOCK_COLLAPSE_LS_KEY)
+  const previews = readPersistedMap(LINK_PREVIEW_LS_KEY)
+  let any = false
+  if (blocks) {
+    for (const [k, v] of Object.entries(blocks)) {
+      if (typeof v === "boolean") {
+        blockCollapse.set(k, v)
+        any = true
+      }
+    }
+  }
+  if (previews) {
+    for (const [k, v] of Object.entries(previews)) {
+      if (typeof v === "boolean") {
+        linkPreviewExpand.set(k, v)
+        any = true
+      }
+    }
+  }
+  return any
+}
+
+if (hydrateFromLocalStorageSync()) {
+  hydrated = true
+}
+
+/**
+ * One-time migration from the legacy IDB tables for users whose state
+ * predates the localStorage mirror. After the first boot of this code,
+ * localStorage carries everything and this is a no-op.
+ *
+ * Idempotent — repeated callers receive the same in-flight promise. Failures
+ * fall through to whatever the cache already holds; we don't want a transient
+ * IDB error to block the entire timeline.
  */
 export function hydrateCollapseCache(): Promise<void> {
   if (hydrated) return Promise.resolve()
@@ -60,14 +130,25 @@ export function hydrateCollapseCache(): Promise<void> {
         db.linkPreviewCollapse.toArray(),
       ])
       // Skip keys already in the cache so a user toggle that races with
-      // hydration (e.g. a slow Dexie migration delays this read past first
-      // interaction) doesn't get clobbered by the stale persisted value.
+      // hydration doesn't get clobbered by the stale persisted value.
+      let blockChanged = false
       for (const row of blocks) {
-        if (!blockCollapse.has(row.id)) blockCollapse.set(row.id, row.collapsed)
+        if (!blockCollapse.has(row.id)) {
+          blockCollapse.set(row.id, row.collapsed)
+          blockChanged = true
+        }
       }
+      let previewChanged = false
       for (const row of previews) {
-        if (!linkPreviewExpand.has(row.id)) linkPreviewExpand.set(row.id, row.expanded)
+        if (!linkPreviewExpand.has(row.id)) {
+          linkPreviewExpand.set(row.id, row.expanded)
+          previewChanged = true
+        }
       }
+      // Mirror the migrated rows into localStorage so subsequent boots are
+      // synchronous and skip this IDB read entirely.
+      if (blockChanged) writePersistedMap(BLOCK_COLLAPSE_LS_KEY, blockCollapse)
+      if (previewChanged) writePersistedMap(LINK_PREVIEW_LS_KEY, linkPreviewExpand)
     } catch {
       // Empty cache → consumers fall back to their `defaultCollapsed` / `false`.
     } finally {
@@ -82,9 +163,9 @@ export function hydrateCollapseCache(): Promise<void> {
 export function setBlockCollapse(key: string, messageId: string, kind: MarkdownBlockKind, collapsed: boolean): void {
   blockCollapse.set(key, collapsed)
   notify(blockListeners)
-  // Swallow IDB rejection (quota, private-mode, transaction failure). The
-  // in-memory cache already carries the user's choice for this tab; losing
-  // the persisted copy degrades next-reload behavior but is not actionable.
+  writePersistedMap(BLOCK_COLLAPSE_LS_KEY, blockCollapse)
+  // Keep IDB writes as a backup persistence layer alongside localStorage —
+  // matters for users who clear localStorage but keep IDB intact.
   db.markdownBlockCollapse
     .put({
       id: key,
@@ -99,6 +180,7 @@ export function setBlockCollapse(key: string, messageId: string, kind: MarkdownB
 export function setLinkPreviewExpand(key: string, messageId: string, previewId: string, expanded: boolean): void {
   linkPreviewExpand.set(key, expanded)
   notify(linkPreviewListeners)
+  writePersistedMap(LINK_PREVIEW_LS_KEY, linkPreviewExpand)
   db.linkPreviewCollapse
     .put({
       id: key,
@@ -156,4 +238,12 @@ export function __resetCollapseCacheForTests(): void {
   linkPreviewListeners.clear()
   hydrated = false
   hydrationPromise = null
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.removeItem(BLOCK_COLLAPSE_LS_KEY)
+      localStorage.removeItem(LINK_PREVIEW_LS_KEY)
+    } catch {
+      // ignore
+    }
+  }
 }
