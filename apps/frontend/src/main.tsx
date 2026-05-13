@@ -59,13 +59,10 @@ if ("serviceWorker" in navigator) {
 // even if the deadline fired.
 const HYDRATION_CAP_MS = 500
 
+const waitMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 async function bootstrap() {
-  try {
-    await Promise.race([hydrateCollapseCache(), new Promise((resolve) => setTimeout(resolve, HYDRATION_CAP_MS))])
-  } catch {
-    // Hydration already swallows IDB errors internally; the catch here is a
-    // belt-and-braces guard so a thrown rejection never blocks the mount.
-  }
+  await Promise.race([hydrateCollapseCache(), waitMs(HYDRATION_CAP_MS)])
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />

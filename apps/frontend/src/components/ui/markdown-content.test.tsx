@@ -1,10 +1,8 @@
-import { beforeEach, describe, it, expect, vi } from "vitest"
-import { spyOnExport } from "@/test/spy"
+import { describe, it, expect } from "vitest"
 import { render as rtlRender, screen } from "@testing-library/react"
 import type { ReactElement } from "react"
 import { MemoryRouter } from "react-router-dom"
 import { MarkdownContent } from "./markdown-content"
-import * as codeBlockModule from "@/lib/markdown/code-block"
 
 // MarkdownLink intercepts same-origin links through useNavigate, which requires
 // a Router context. Wrap every render with MemoryRouter so existing tests
@@ -19,18 +17,6 @@ const render = (ui: ReactElement) => {
 }
 
 describe("MarkdownContent", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-    // Replace the lazy-loaded CodeBlock default export with a simple mock
-    // to avoid shiki syntax highlighting in tests.
-    const MockCodeBlock = ({ language, children }: { language: string; children: string }) => (
-      <pre data-testid="code-block" data-language={language}>
-        <code>{children}</code>
-      </pre>
-    )
-    spyOnExport(codeBlockModule, "default").mockReturnValue(MockCodeBlock as unknown as typeof codeBlockModule.default)
-  })
-
   describe("basic text formatting", () => {
     it("should render plain text", () => {
       render(<MarkdownContent content="Hello world" />)

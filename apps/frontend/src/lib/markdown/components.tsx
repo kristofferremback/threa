@@ -1,5 +1,5 @@
 import type { Components } from "react-markdown"
-import { Suspense, lazy, Component, Children, isValidElement, type ReactNode, type MouseEvent } from "react"
+import { Children, isValidElement, type ReactNode, type MouseEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import { parseQuoteHref, parseSharedMessageHref } from "@threa/prosemirror"
 import { cn } from "@/lib/utils"
@@ -11,6 +11,7 @@ import { useLinkPreviewContext } from "./link-preview-context"
 import { QuoteReplyBlock } from "./quote-reply-block"
 import { BlockquoteBlock } from "./blockquote-block"
 import { SharedMessagePointerBlock } from "./shared-message-block"
+import CodeBlock from "./code-block"
 
 /**
  * Treat any link to our own origin as in-app navigation. Without this, a
@@ -27,8 +28,6 @@ function resolveInternalAppPath(href: string): string | null {
     return null
   }
 }
-
-const CodeBlock = lazy(() => import("./code-block"))
 
 // The serializer emits these prefixes verbatim, no marks or extra text. Match
 // the shape exactly so a mixed paragraph like "FYI Shared a message from
@@ -216,27 +215,6 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
   )
 }
 
-/**
- * Error boundary for lazy-loaded CodeBlock - falls back to plain code on load failure
- */
-class CodeBlockErrorBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { hasError: boolean }> {
-  constructor(props: { children: ReactNode; fallback: ReactNode }) {
-    super(props)
-    this.state = { hasError: false }
-  }
-
-  static getDerivedStateFromError() {
-    return { hasError: true }
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return this.props.fallback
-    }
-    return this.props.children
-  }
-}
-
 export const markdownComponents: Components = {
   // Headers - scaled for message context, process @mentions, #channels, and :emoji:
   h1: ({ children }) => (
@@ -302,18 +280,7 @@ export const markdownComponents: Components = {
 
     if (isCodeBlock) {
       const language = className?.replace("language-", "") || "text"
-      const fallback = (
-        <pre className="bg-muted rounded-md p-4 overflow-x-auto my-2">
-          <code className="text-sm font-mono">{children}</code>
-        </pre>
-      )
-      return (
-        <CodeBlockErrorBoundary fallback={fallback}>
-          <Suspense fallback={fallback}>
-            <CodeBlock language={language}>{String(children)}</CodeBlock>
-          </Suspense>
-        </CodeBlockErrorBoundary>
-      )
+      return <CodeBlock language={language}>{String(children)}</CodeBlock>
     }
 
     // Inline code — break-all so long identifiers, paths, or tokens inside

@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { codeToHtml } from "shiki"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Copy, Check, ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD } from "@threa/types"
 import { usePreferencesOptional } from "@/contexts/preferences-context"
 import { useBlockCollapse } from "./use-block-collapse"
+import { ensureHighlight, tryHighlightSync } from "./highlighter"
 
 interface CodeBlockProps {
   language: string
@@ -57,7 +57,6 @@ function countLines(text: string): number {
 const PREVIEW_LINE_COUNT = 3
 
 export default function CodeBlock({ language, children }: CodeBlockProps) {
-  const [html, setHtml] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   // Preferences context may not exist in all rendering contexts (e.g. tests).
@@ -99,33 +98,46 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
     [trimmedCode]
   )
 
-  useEffect(() => {
-    let cancelled = false
+  // Sync-first: warmed highlighter returns HTML on first render, skipping the
+  // placeholder → highlighted swap that caused row remeasure jumps. Cold path
+  // (still booting or unknown language) falls through to the effect below.
+  const syncHtml = useMemo(() => tryHighlightSync(displayCode, language), [displayCode, language])
+  const [html, setHtml] = useState<string | null>(syncHtml)
+  // Captured once on mount: did we hit the cold path? If yes, we'll fade the
+  // highlighted output in when it eventually arrives. Hot path renders chrome
+  // and code together with no animation.
+  const renderedColdRef = useRef(syncHtml === null)
 
-    codeToHtml(displayCode, {
-      lang: language,
-      themes: {
-        light: "github-light",
-        dark: "github-dark",
-      },
-      defaultColor: false,
+  useEffect(() => {
+    if (syncHtml !== null) {
+      setHtml(syncHtml)
+      return
+    }
+
+    // Re-entering the cold path (e.g. collapse toggle before shiki finishes
+    // warming) keeps showing the previous highlighted HTML until the new
+    // promise resolves; clear it so the chrome paints empty rather than stale.
+    setHtml(null)
+
+    let cancelled = false
+    ensureHighlight(displayCode, language).then((result) => {
+      if (cancelled) return
+      if (result !== null) {
+        setHtml(result)
+        return
+      }
+      // ensureHighlight returns null only when shiki itself can't render —
+      // singleton init failed and even the plaintext fallback threw. Render
+      // escaped raw text inside the chrome so the block stays readable and
+      // accessible instead of collapsing to the invisible placeholder.
+      const escaped = displayCode.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+      setHtml(`<pre><code>${escaped}</code></pre>`)
     })
-      .then((result) => {
-        if (!cancelled) {
-          setHtml(result)
-        }
-      })
-      .catch(() => {
-        // Fallback to plain code on error (unknown language, etc.)
-        if (!cancelled) {
-          setHtml(null)
-        }
-      })
 
     return () => {
       cancelled = true
     }
-  }, [displayCode, language])
+  }, [syncHtml, displayCode, language])
 
   const toggleLabel = collapsed ? `Expand ${lineCount} line${lineCount === 1 ? "" : "s"}` : "Collapse code block"
 
@@ -189,15 +201,18 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
         data-native-context="true"
       >
         {header}
-        {/* Match the exact font sizing/line-height shiki applies to its <pre> (via
-         * [&>pre]:* below) so swapping placeholder → highlighted HTML doesn't
-         * shift row height — that shift was the small post-load jump. */}
+        {/* Pre matches the font sizing/line-height shiki applies to its own <pre>
+         * so the row keeps the right height while we're waiting for highlight.
+         * Text is `invisible` (kept in layout, hidden visually) so the user
+         * doesn't see unstyled raw code flash before the highlighted version
+         * fades in. */}
         <pre
           className={cn(
-            "px-2.5 py-2 overflow-x-auto text-xs font-mono leading-snug",
+            "px-2.5 py-2 overflow-x-auto text-xs font-mono leading-snug invisible",
             bodyTogglesExpand && "cursor-pointer"
           )}
           onClick={bodyClickHandler}
+          aria-hidden="true"
         >
           <code>{displayCode}</code>
         </pre>
@@ -214,7 +229,11 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
       <div
         className={cn(
           "[&>pre]:px-2.5 [&>pre]:py-2 [&>pre]:text-xs [&>pre]:leading-snug [&>pre]:overflow-x-auto [&>pre]:bg-transparent [&>pre]:m-0",
-          bodyTogglesExpand && "cursor-pointer"
+          bodyTogglesExpand && "cursor-pointer",
+          // Fade in only when we previously rendered the invisible placeholder
+          // (cold path). Hot-path first render skips animation so chrome and
+          // code appear together.
+          renderedColdRef.current && "animate-in fade-in duration-200"
         )}
         onClick={bodyClickHandler}
         // Safe: Shiki generates this HTML internally from the code string - no user HTML passthrough
