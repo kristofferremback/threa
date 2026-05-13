@@ -171,4 +171,33 @@ describe("createWorkspaceMemberManagementHandlers", () => {
     ).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" })
     expect(controlPlaneClient.removeWorkspaceMember).not.toHaveBeenCalled()
   })
+
+  test("returns 503 when control plane is not configured", async () => {
+    const handlers = createWorkspaceMemberManagementHandlers({ pool: {} as Pool, controlPlaneClient: null })
+    const res = createResponse()
+
+    await expect(
+      handlers.changeRole(
+        {
+          workspaceId: "ws_1",
+          user: { workosUserId: "workos_caller" },
+          params: { userId: "usr_target" },
+          body: { roleSlug: WORKSPACE_USER_ROLES[1] },
+        } as never,
+        res as never
+      )
+    ).rejects.toMatchObject({ status: 503, code: "CONTROL_PLANE_UNAVAILABLE" })
+
+    await expect(
+      handlers.removeMember(
+        {
+          workspaceId: "ws_1",
+          user: { workosUserId: "workos_caller" },
+          params: { userId: "usr_target" },
+          body: {},
+        } as never,
+        res as never
+      )
+    ).rejects.toMatchObject({ status: 503, code: "CONTROL_PLANE_UNAVAILABLE" })
+  })
 })

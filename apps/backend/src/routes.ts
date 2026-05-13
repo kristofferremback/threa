@@ -316,21 +316,19 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Invitations and member management — gated on members:write
   const requireMembersWrite = requireWorkspacePermission(WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
 
-  if (controlPlaneClient) {
-    const memberManagement = createWorkspaceMemberManagementHandlers({ pool, controlPlaneClient })
-    app.post(
-      "/api/workspaces/:workspaceId/users/:userId/role",
-      ...authed,
-      requireMembersWrite,
-      memberManagement.changeRole
-    )
-    app.delete(
-      "/api/workspaces/:workspaceId/users/:userId",
-      ...authed,
-      requireMembersWrite,
-      memberManagement.removeMember
-    )
-  }
+  const memberManagement = createWorkspaceMemberManagementHandlers({ pool, controlPlaneClient })
+  app.post(
+    "/api/workspaces/:workspaceId/users/:userId/role",
+    ...authed,
+    requireMembersWrite,
+    memberManagement.changeRole
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/users/:userId",
+    ...authed,
+    requireMembersWrite,
+    memberManagement.removeMember
+  )
 
   app.get("/api/workspaces/:workspaceId/invitations", ...authed, requireMembersWrite, invitation.list)
   app.post("/api/workspaces/:workspaceId/invitations", ...authed, requireMembersWrite, invitation.send)

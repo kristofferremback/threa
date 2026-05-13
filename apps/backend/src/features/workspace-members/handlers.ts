@@ -8,7 +8,7 @@ import { UserRepository } from "../workspaces"
 
 interface Dependencies {
   pool: Pool
-  controlPlaneClient: ControlPlaneClient
+  controlPlaneClient: ControlPlaneClient | null
 }
 
 const changeRoleBody = z.object({
@@ -21,6 +21,16 @@ async function resolveTargetWorkosUserId(pool: Pool, workspaceId: string, userId
     throw new HttpError("User not found in workspace", { status: 404, code: "NOT_FOUND" })
   }
   return user.workosUserId
+}
+
+function requireControlPlane(client: ControlPlaneClient | null): ControlPlaneClient {
+  if (!client) {
+    throw new HttpError("Control plane is not configured for this regional backend", {
+      status: 503,
+      code: "CONTROL_PLANE_UNAVAILABLE",
+    })
+  }
+  return client
 }
 
 // Pass-through to the control plane: WorkOS is the source of truth and the
@@ -43,8 +53,9 @@ export function createWorkspaceMemberManagementHandlers({ pool, controlPlaneClie
         throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
       }
 
+      const cp = requireControlPlane(controlPlaneClient)
       const targetWorkosUserId = await resolveTargetWorkosUserId(pool, workspaceId, targetUserRowId)
-      await controlPlaneClient.changeWorkspaceMemberRole({
+      await cp.changeWorkspaceMemberRole({
         workspaceId,
         targetUserId: targetWorkosUserId,
         actorWorkosUserId,
@@ -65,8 +76,9 @@ export function createWorkspaceMemberManagementHandlers({ pool, controlPlaneClie
         throw new HttpError("Missing userId", { status: 400, code: "VALIDATION_ERROR" })
       }
 
+      const cp = requireControlPlane(controlPlaneClient)
       const targetWorkosUserId = await resolveTargetWorkosUserId(pool, workspaceId, targetUserRowId)
-      await controlPlaneClient.removeWorkspaceMember({
+      await cp.removeWorkspaceMember({
         workspaceId,
         targetUserId: targetWorkosUserId,
         actorWorkosUserId,
