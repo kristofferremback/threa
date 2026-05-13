@@ -25,6 +25,8 @@ Read this before asking the user anything.
 
 **Search before you ask.** If a question has a factual answer in the repo ("is there a sync path from control-plane to backend?", "which model does persona X use?", "how does auth flow through the workspace-router?"), it is your job to find it. Use Grep, Glob, and the Agent tool. Start from `docs/system-overview.md`, `docs/architecture.md`, `docs/core-concepts.md`, then `apps/*/src/` and the relevant feature folder under `apps/backend/src/features/`. Escalate to the user only when (a) the search genuinely came back empty, (b) the decision is a preference the code cannot reveal, or (c) the action is destructive or irreversible.
 
+**Sweep before concluding absent.** Before claiming a UI or feature is missing, sweep `apps/*/src/{components,pages,features,stores,lib}/` with contains-match globs (`*settings*`, not `settings*` — the latter misses `workspace-settings`). A wrong negative compounded by confidence is worse than asking.
+
 **Prove you looked.** When you do ask, name what you already searched — file paths, grep patterns, docs read — so the user can redirect you instead of repeating the search. An unjustified clarifying question is worse than silence.
 
 **Follow instructions verbatim.** When CLAUDE.md, a skill, or the user says "always use X", "never do Y", or "use the /foo skill for Z", that is a binding constraint, not a suggestion. Re-read the relevant rule before acting in its domain — especially invariants (INV-*), the Greptile rule, and skill invocation rules.
