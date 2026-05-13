@@ -16,6 +16,12 @@ import type { MarkdownBlockKind } from "./markdown-block-context"
  * sibling rows — the visible "jumping" on stream load. Bulk-loading once
  * before the timeline mounts lets the first paint reflect the user's
  * persisted choices, so no resize cascade occurs.
+ *
+ * Cross-tab note: this cache does not subscribe to Dexie's change feed, so
+ * toggling collapse state in tab A no longer propagates to tab B without a
+ * reload. That's an intentional trade — collapse state is a per-tab UX
+ * preference, and the live-query subscription is what made the first paint
+ * unstable in the first place.
  */
 
 const blockCollapse = new Map<string, boolean>()
@@ -23,17 +29,12 @@ const linkPreviewExpand = new Map<string, boolean>()
 
 const blockListeners = new Set<() => void>()
 const linkPreviewListeners = new Set<() => void>()
-const readyListeners = new Set<() => void>()
 
 let hydrated = false
 let hydrationPromise: Promise<void> | null = null
 
 function notify(set: Set<() => void>) {
   for (const listener of set) listener()
-}
-
-export function isCollapseCacheReady(): boolean {
-  return hydrated
 }
 
 /**
@@ -51,26 +52,24 @@ export function hydrateCollapseCache(): Promise<void> {
         db.markdownBlockCollapse.toArray(),
         db.linkPreviewCollapse.toArray(),
       ])
-      for (const row of blocks) blockCollapse.set(row.id, row.collapsed)
-      for (const row of previews) linkPreviewExpand.set(row.id, row.expanded)
+      // Skip keys already in the cache so a user toggle that races with
+      // hydration (e.g. a slow Dexie migration delays this read past first
+      // interaction) doesn't get clobbered by the stale persisted value.
+      for (const row of blocks) {
+        if (!blockCollapse.has(row.id)) blockCollapse.set(row.id, row.collapsed)
+      }
+      for (const row of previews) {
+        if (!linkPreviewExpand.has(row.id)) linkPreviewExpand.set(row.id, row.expanded)
+      }
     } catch {
       // Empty cache → consumers fall back to their `defaultCollapsed` / `false`.
     } finally {
       hydrated = true
-      notify(readyListeners)
       notify(blockListeners)
       notify(linkPreviewListeners)
     }
   })()
   return hydrationPromise
-}
-
-export function getBlockCollapse(key: string): boolean | undefined {
-  return blockCollapse.get(key)
-}
-
-export function getLinkPreviewExpand(key: string): boolean | undefined {
-  return linkPreviewExpand.get(key)
 }
 
 export function setBlockCollapse(key: string, messageId: string, kind: MarkdownBlockKind, collapsed: boolean): void {
@@ -111,13 +110,6 @@ function subscribeLinkPreview(callback: () => void): () => void {
   }
 }
 
-function subscribeReady(callback: () => void): () => void {
-  readyListeners.add(callback)
-  return () => {
-    readyListeners.delete(callback)
-  }
-}
-
 /**
  * Subscribes a component to a single block-collapse key. Returns `undefined`
  * when no row has been persisted for the key so consumers can fall back to
@@ -139,10 +131,6 @@ export function useLinkPreviewExpandStore(key: string | null): boolean | undefin
   )
 }
 
-export function useCollapseCacheReady(): boolean {
-  return useSyncExternalStore(subscribeReady, isCollapseCacheReady, () => false)
-}
-
 /**
  * Test-only helper to reset state between cases. Production code shouldn't
  * call this — the cache lives for the lifetime of the app.
@@ -152,7 +140,6 @@ export function __resetCollapseCacheForTests(): void {
   linkPreviewExpand.clear()
   blockListeners.clear()
   linkPreviewListeners.clear()
-  readyListeners.clear()
   hydrated = false
   hydrationPromise = null
 }
