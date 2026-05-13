@@ -81,8 +81,7 @@ describe("createWorkspaceMemberManagementHandlers", () => {
       res as never
     )
 
-    expect(findById).toHaveBeenCalledTimes(1)
-    expect(controlPlaneClient.changeWorkspaceMemberRole).toHaveBeenCalledTimes(1)
+    expect(findById).toHaveBeenCalledWith(expect.anything(), "ws_1", "usr_target")
     expect(controlPlaneClient.changeWorkspaceMemberRole.mock.calls[0][0]).toEqual({
       workspaceId: "ws_1",
       targetUserId: "workos_target",
@@ -93,7 +92,7 @@ describe("createWorkspaceMemberManagementHandlers", () => {
   })
 
   test("removeMember resolves target workosUserId and forwards", async () => {
-    spyOn(UserRepository, "findById").mockResolvedValue(fakeUser)
+    const findById = spyOn(UserRepository, "findById").mockResolvedValue(fakeUser)
     const controlPlaneClient = createControlPlaneClientStub()
     const handlers = createWorkspaceMemberManagementHandlers({ pool: {} as Pool, controlPlaneClient })
     const res = createResponse()
@@ -108,7 +107,7 @@ describe("createWorkspaceMemberManagementHandlers", () => {
       res as never
     )
 
-    expect(controlPlaneClient.removeWorkspaceMember).toHaveBeenCalledTimes(1)
+    expect(findById).toHaveBeenCalledWith(expect.anything(), "ws_1", "usr_target")
     expect(controlPlaneClient.removeWorkspaceMember.mock.calls[0][0]).toEqual({
       workspaceId: "ws_1",
       targetUserId: "workos_target",

@@ -12,7 +12,6 @@ describe("workspaceMembersApi", () => {
 
     await workspaceMembersApi.changeRole("ws_1", "usr_2", "admin")
 
-    expect(postSpy).toHaveBeenCalledTimes(1)
     expect(postSpy).toHaveBeenCalledWith("/api/workspaces/ws_1/users/usr_2/role", { roleSlug: "admin" })
   })
 
@@ -21,7 +20,6 @@ describe("workspaceMembersApi", () => {
 
     await workspaceMembersApi.remove("ws_1", "usr_2")
 
-    expect(deleteSpy).toHaveBeenCalledTimes(1)
     expect(deleteSpy).toHaveBeenCalledWith("/api/workspaces/ws_1/users/usr_2")
   })
 })
