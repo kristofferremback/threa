@@ -22,6 +22,13 @@ import type { MarkdownBlockKind } from "./markdown-block-context"
  * reload. That's an intentional trade — collapse state is a per-tab UX
  * preference, and the live-query subscription is what made the first paint
  * unstable in the first place.
+ *
+ * INV-9 exception: module-level singletons are intentional here. The cache
+ * is a synchronous source of truth that must be readable from any component
+ * without context plumbing, and `useSyncExternalStore` consumers detach
+ * listeners on unmount so there's no leak risk. A context-based alternative
+ * would force every collapsible block to thread the store through the
+ * provider, which adds coupling without solving the first-paint problem.
  */
 
 const blockCollapse = new Map<string, boolean>()
@@ -75,25 +82,32 @@ export function hydrateCollapseCache(): Promise<void> {
 export function setBlockCollapse(key: string, messageId: string, kind: MarkdownBlockKind, collapsed: boolean): void {
   blockCollapse.set(key, collapsed)
   notify(blockListeners)
-  void db.markdownBlockCollapse.put({
-    id: key,
-    messageId,
-    kind,
-    collapsed,
-    updatedAt: Date.now(),
-  })
+  // Swallow IDB rejection (quota, private-mode, transaction failure). The
+  // in-memory cache already carries the user's choice for this tab; losing
+  // the persisted copy degrades next-reload behavior but is not actionable.
+  db.markdownBlockCollapse
+    .put({
+      id: key,
+      messageId,
+      kind,
+      collapsed,
+      updatedAt: Date.now(),
+    })
+    .catch(() => {})
 }
 
 export function setLinkPreviewExpand(key: string, messageId: string, previewId: string, expanded: boolean): void {
   linkPreviewExpand.set(key, expanded)
   notify(linkPreviewListeners)
-  void db.linkPreviewCollapse.put({
-    id: key,
-    messageId,
-    previewId,
-    expanded,
-    updatedAt: Date.now(),
-  })
+  db.linkPreviewCollapse
+    .put({
+      id: key,
+      messageId,
+      previewId,
+      expanded,
+      updatedAt: Date.now(),
+    })
+    .catch(() => {})
 }
 
 function subscribeBlock(callback: () => void): () => void {

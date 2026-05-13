@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { renderHook, act, waitFor } from "@testing-library/react"
 import { useLinkPreviewCollapse } from "./use-link-preview-collapse"
+import { hydrateCollapseCache, __resetCollapseCacheForTests } from "@/lib/markdown/collapse-cache"
 import { db } from "@/db"
 
 describe("useLinkPreviewCollapse", () => {
@@ -32,6 +33,11 @@ describe("useLinkPreviewCollapse", () => {
     expect(stored?.previewId).toBe("preview_1")
 
     unmount()
+
+    // Drop the in-memory cache and rehydrate from IDB so the remount exercises
+    // the actual persisted-state restore path, not just the still-warm Map.
+    __resetCollapseCacheForTests()
+    await hydrateCollapseCache()
 
     const { result: remounted } = renderHook(() => useLinkPreviewCollapse("msg_1", "preview_1"))
     await waitFor(() => {
