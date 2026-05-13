@@ -111,9 +111,9 @@ export class ControlPlaneClient {
     targetUserId: string
     actorWorkosUserId: string
   }): Promise<void> {
-    const url = `${this.baseUrl}/internal/workspaces/${params.workspaceId}/members/${params.targetUserId}/remove`
+    const url = `${this.baseUrl}/internal/workspaces/${params.workspaceId}/members/${params.targetUserId}`
     const res = await fetch(url, {
-      method: "POST",
+      method: "DELETE",
       headers: {
         "Content-Type": "application/json",
         [INTERNAL_API_KEY_HEADER]: this.internalApiKey,

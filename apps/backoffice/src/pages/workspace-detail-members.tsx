@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
-import { RefreshCw, MoreHorizontal, Ban } from "lucide-react"
+import { RefreshCw, MoreHorizontal, Ban, UserPlus } from "lucide-react"
 import { pickPrimaryRoleSlug, roleDisplayName, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
 import { Section } from "@/components/layout/section"
 import { InlineBanner } from "@/components/inline-banner"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +26,7 @@ import {
   ResponsiveAlertDialogTitle,
 } from "@/components/ui/responsive-alert-dialog"
 import {
+  assignWorkspaceMember,
   backofficeKeys,
   changeWorkspaceMemberRole,
   getOutboxEventsStatus,
@@ -238,8 +241,19 @@ export function WorkspaceDetailMembersPage() {
     },
   })
 
+  const assignMutation = useMutation({
+    mutationFn: (vars: { workosUserId: string; roleSlug: WorkspaceRoleSlug }) => {
+      if (!id) throw new Error("Missing workspace id")
+      return assignWorkspaceMember(id, vars.workosUserId, vars.roleSlug)
+    },
+    onSuccess: () => {
+      if (id) queryClient.invalidateQueries({ queryKey: backofficeKeys.workspaceMembers(id) })
+    },
+  })
+
   const changeRoleError = readApiError(changeRoleMutation.error)
   const removeError = readApiError(removeMutation.error)
+  const assignError = readApiError(assignMutation.error)
 
   let busyMemberId: string | null = null
   if (changeRoleMutation.isPending) busyMemberId = changeRoleMutation.variables?.workosUserId ?? null
@@ -268,6 +282,10 @@ export function WorkspaceDetailMembersPage() {
           </Button>
         }
       >
+        <AssignMemberForm
+          disabled={notLinked || assignMutation.isPending}
+          onSubmit={(vars) => assignMutation.mutate(vars)}
+        />
         {resyncMutation.isSuccess ? (
           <ResyncBanner
             result={resyncMutation.data}
@@ -281,6 +299,7 @@ export function WorkspaceDetailMembersPage() {
           <InlineBanner tone="error">Couldn't change role: {changeRoleError}</InlineBanner>
         ) : null}
         {removeError ? <InlineBanner tone="error">Couldn't remove member: {removeError}</InlineBanner> : null}
+        {assignError ? <InlineBanner tone="error">Couldn't add member: {assignError}</InlineBanner> : null}
         <MembersBody
           loading={query.isLoading}
           error={query.error}
@@ -333,6 +352,65 @@ export function WorkspaceDetailMembersPage() {
         </ResponsiveAlertDialogContent>
       </ResponsiveAlertDialog>
     </div>
+  )
+}
+
+function AssignMemberForm({
+  disabled,
+  onSubmit,
+}: {
+  disabled: boolean
+  onSubmit: (vars: { workosUserId: string; roleSlug: WorkspaceRoleSlug }) => void
+}) {
+  const [workosUserId, setWorkosUserId] = useState("")
+  const [roleSlug, setRoleSlug] = useState<WorkspaceRoleSlug>("member")
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    const trimmed = workosUserId.trim()
+    if (!trimmed) return
+    onSubmit({ workosUserId: trimmed, roleSlug })
+    setWorkosUserId("")
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mb-4 flex flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-3">
+      <div className="flex min-w-[260px] flex-1 flex-col gap-1">
+        <Label htmlFor="assign-workos-user-id" className="text-xs uppercase tracking-wider text-muted-foreground">
+          WorkOS user ID
+        </Label>
+        <Input
+          id="assign-workos-user-id"
+          value={workosUserId}
+          onChange={(e) => setWorkosUserId(e.target.value)}
+          placeholder="user_01H…"
+          autoComplete="off"
+          disabled={disabled}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <Label htmlFor="assign-role" className="text-xs uppercase tracking-wider text-muted-foreground">
+          Role
+        </Label>
+        <select
+          id="assign-role"
+          value={roleSlug}
+          onChange={(e) => setRoleSlug(e.target.value as WorkspaceRoleSlug)}
+          disabled={disabled}
+          className="h-10 rounded-input border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {WORKSPACE_USER_ROLES.map((slug) => (
+            <option key={slug} value={slug}>
+              {roleDisplayName(slug)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <Button type="submit" disabled={disabled || workosUserId.trim().length === 0} className="gap-1.5">
+        <UserPlus className="size-4" />
+        Add member
+      </Button>
+    </form>
   )
 }
 

@@ -28,6 +28,11 @@ const backofficeChangeRoleBody = z.object({
   roleSlug: roleSlugSchema,
 })
 
+const backofficeAssignBody = z.object({
+  workosUserId: z.string().min(1),
+  roleSlug: roleSlugSchema,
+})
+
 async function resolveOrganizationId(pool: Pool, workspaceId: string): Promise<string> {
   const orgId = await WorkspaceRegistryRepository.getWorkosOrganizationId(pool, workspaceId)
   if (!orgId) {
@@ -93,6 +98,26 @@ export function createInternalAuthzAdminHandlers({ pool, adminService }: Depende
 // workspace.
 export function createBackofficeAuthzAdminHandlers({ pool, adminService }: Dependencies) {
   return {
+    async assignMember(req: Request, res: Response): Promise<void> {
+      if (!req.authUser) {
+        throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
+      }
+      const workspaceId = requireParam(req.params.id, "workspaceId")
+      const parsed = backofficeAssignBody.safeParse(req.body)
+      if (!parsed.success) {
+        throw new HttpError("Invalid request body", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      const organizationId = await resolveOrganizationId(pool, workspaceId)
+      const actor: AdminActor = { workosUserId: req.authUser.id, isPlatformAdmin: true }
+      await adminService.assignRole({
+        actor,
+        organizationId,
+        targetUserId: parsed.data.workosUserId,
+        roleSlug: parsed.data.roleSlug,
+      })
+      res.status(204).end()
+    },
+
     async changeRole(req: Request, res: Response): Promise<void> {
       if (!req.authUser) {
         throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })

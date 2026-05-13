@@ -8,11 +8,8 @@ import { createOpsAccessMiddleware } from "./middleware/ops-access"
 import { createRequireWorkspacePermission } from "./middleware/workspace-permission"
 import { createWorkspaceAuthzHandlers, WorkspaceAuthzService } from "./features/workspace-authz"
 import { createAuthHandlers } from "./auth/handlers"
-import {
-  createWorkspaceHandlers,
-  createWorkspaceMemberManagementHandlers,
-  WorkspaceRepository,
-} from "./features/workspaces"
+import { createWorkspaceHandlers, WorkspaceRepository } from "./features/workspaces"
+import { createWorkspaceMemberManagementHandlers } from "./features/workspace-members"
 import type { ControlPlaneClient } from "./lib/control-plane-client"
 import { createStreamHandlers } from "./features/streams"
 import { createMessageHandlers } from "./features/messaging"

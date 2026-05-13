@@ -2,8 +2,8 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { WORKSPACE_USER_ROLES } from "@threa/types"
 import type { Pool } from "pg"
 import type { ControlPlaneClient } from "../../lib/control-plane-client"
-import { createWorkspaceMemberManagementHandlers } from "./member-management-handlers"
-import { UserRepository } from "./user-repository"
+import { createWorkspaceMemberManagementHandlers } from "./handlers"
+import { UserRepository } from "../workspaces"
 
 function createResponse() {
   const res: {

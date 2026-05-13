@@ -182,6 +182,17 @@ export function listWorkspaceInvitations(id: string): Promise<WorkspaceInvitatio
     .then((r) => r.invitations)
 }
 
+export function assignWorkspaceMember(
+  workspaceId: string,
+  workosUserId: string,
+  roleSlug: WorkspaceRoleSlug
+): Promise<void> {
+  return api.post<void>(`/api/backoffice/workspaces/${encodeURIComponent(workspaceId)}/members`, {
+    workosUserId,
+    roleSlug,
+  })
+}
+
 export function changeWorkspaceMemberRole(
   workspaceId: string,
   workosUserId: string,
@@ -194,7 +205,7 @@ export function changeWorkspaceMemberRole(
 }
 
 export function removeWorkspaceMember(workspaceId: string, workosUserId: string): Promise<void> {
-  return api.post<void>(
-    `/api/backoffice/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(workosUserId)}/remove`
+  return api.delete<void>(
+    `/api/backoffice/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(workosUserId)}`
   )
 }

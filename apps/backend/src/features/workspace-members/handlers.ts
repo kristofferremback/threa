@@ -4,7 +4,7 @@ import type { Pool } from "pg"
 import { WORKSPACE_USER_ROLES } from "@threa/types"
 import { HttpError } from "../../lib/errors"
 import type { ControlPlaneClient } from "../../lib/control-plane-client"
-import { UserRepository } from "./user-repository"
+import { UserRepository } from "../workspaces"
 
 interface Dependencies {
   pool: Pool

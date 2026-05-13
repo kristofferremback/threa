@@ -1,8 +1,14 @@
 import { useMemo, useRef, useState } from "react"
-import { useQuery, useMutation } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Check, ChevronDown, Copy, KeyRound, Link as LinkIcon, Mail, MoreHorizontal } from "lucide-react"
 import { toast } from "sonner"
-import { roleDisplayName, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
+import {
+  roleDisplayName,
+  WORKSPACE_PERMISSION_SCOPES,
+  WORKSPACE_USER_ROLES,
+  type WorkspaceBootstrap,
+  type WorkspaceRoleSlug,
+} from "@threa/types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -19,9 +25,12 @@ import {
 } from "@/components/ui/alert-dialog"
 import { ActorAvatar } from "@/components/actor-avatar"
 import { invitationsApi } from "@/api/invitations"
+import { ApiError } from "@/api/client"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { useFormattedDate } from "@/hooks"
+import { workspaceKeys } from "@/hooks/use-workspaces"
 import { useChangeWorkspaceMemberRole, useRemoveWorkspaceMember } from "@/hooks/use-workspace-member-management"
+import { hasPermission } from "@/lib/permissions"
 import { useUser } from "@/auth"
 
 type WorkspaceUserRow = ReturnType<typeof useWorkspaceUsers>[number]
@@ -62,6 +71,22 @@ function buildJoinUrl(token: string): string {
   return `${window.location.origin}/join/${token}`
 }
 
+function memberErrorMessage(err: unknown, fallback: string): string {
+  if (!ApiError.isApiError(err)) return fallback
+  switch (err.code) {
+    case "OWNER_ACTION":
+      return "Only workspace owners can change ownership."
+    case "LAST_OWNER":
+      return "Workspaces must keep at least one owner. Transfer ownership first."
+    case "SELF_DEMOTE":
+      return "You can't demote or remove yourself as the last owner. Transfer ownership first."
+    case "FORBIDDEN":
+      return "You don't have permission to manage members."
+    default:
+      return fallback
+  }
+}
+
 export function UsersTab({ workspaceId }: UsersTabProps) {
   const [emailInviteOpen, setEmailInviteOpen] = useState(false)
   const [linkInviteOpen, setLinkInviteOpen] = useState(false)
@@ -76,17 +101,20 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
   const { formatDate } = useFormattedDate()
 
   const authUser = useUser()
+  const queryClient = useQueryClient()
   const workspaceUsers = useWorkspaceUsers(workspaceId)
   const users = useMemo(
     () => workspaceUsers.slice().sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug)),
     [workspaceUsers]
   )
 
-  const viewer = useMemo(
-    () => workspaceUsers.find((u) => u.workosUserId === authUser?.id) ?? null,
-    [workspaceUsers, authUser?.id]
-  )
-  const canManageMembers = viewer != null && (viewer.role === "owner" || viewer.role === "admin")
+  const { data: bootstrap } = useQuery({
+    queryKey: workspaceKeys.bootstrap(workspaceId),
+    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    enabled: false,
+    staleTime: Infinity,
+  })
+  const canManageMembers = hasPermission(bootstrap?.viewerPermissions, WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
 
   const changeRoleMutation = useChangeWorkspaceMemberRole(workspaceId)
   const removeMutation = useRemoveWorkspaceMember(workspaceId)
@@ -180,7 +208,7 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
                         { userId: user.id, roleSlug: value as WorkspaceRoleSlug },
                         {
                           onSuccess: () => toast.success("Role updated"),
-                          onError: () => toast.error("Failed to update role"),
+                          onError: (err) => toast.error(memberErrorMessage(err, "Failed to update role")),
                         }
                       )
                     }
@@ -360,7 +388,7 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
                   { userId: memberToRemove.id },
                   {
                     onSuccess: () => toast.success("Member removed"),
-                    onError: () => toast.error("Failed to remove member"),
+                    onError: (err) => toast.error(memberErrorMessage(err, "Failed to remove member")),
                     onSettled: () => setMemberToRemove(null),
                   }
                 )

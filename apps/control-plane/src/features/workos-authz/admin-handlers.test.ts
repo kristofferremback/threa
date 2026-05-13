@@ -45,6 +45,7 @@ function createAdminServiceStub() {
   } as unknown as WorkosAuthzAdminService & {
     changeRole: ReturnType<typeof mock>
     removeMember: ReturnType<typeof mock>
+    assignRole: ReturnType<typeof mock>
   }
 }
 
@@ -242,5 +243,49 @@ describe("createBackofficeAuthzAdminHandlers", () => {
       )
     ).rejects.toMatchObject({ status: 404, code: "NOT_LINKED" })
     expect(adminService.removeMember).not.toHaveBeenCalled()
+  })
+
+  test("assignMember forwards platform-admin actor with target workosUserId and roleSlug", async () => {
+    const pool = createPoolWithOrg("org_workos_123")
+    const adminService = createAdminServiceStub()
+    const handlers = createBackofficeAuthzAdminHandlers({ pool, adminService })
+    const res = createResponse()
+
+    await handlers.assignMember(
+      {
+        authUser: { id: "user_platform_admin", email: "p@a", permissions: null },
+        params: { id: "ws_1" },
+        body: { workosUserId: "user_target", roleSlug: WORKSPACE_ROLE_SLUGS.MEMBER },
+      } as any,
+      res as any
+    )
+
+    expect(adminService.assignRole).toHaveBeenCalledTimes(1)
+    expect(adminService.assignRole.mock.calls[0][0]).toEqual({
+      actor: { workosUserId: "user_platform_admin", isPlatformAdmin: true },
+      organizationId: "org_workos_123",
+      targetUserId: "user_target",
+      roleSlug: WORKSPACE_ROLE_SLUGS.MEMBER,
+    })
+    expect(res.statusCode).toBe(204)
+  })
+
+  test("assignMember rejects missing workosUserId", async () => {
+    const pool = createPoolWithOrg("org_workos_123")
+    const adminService = createAdminServiceStub()
+    const handlers = createBackofficeAuthzAdminHandlers({ pool, adminService })
+    const res = createResponse()
+
+    await expect(
+      handlers.assignMember(
+        {
+          authUser: { id: "user_platform_admin", email: "p@a", permissions: null },
+          params: { id: "ws_1" },
+          body: { roleSlug: WORKSPACE_ROLE_SLUGS.MEMBER },
+        } as any,
+        res as any
+      )
+    ).rejects.toMatchObject({ status: 400, code: "VALIDATION_ERROR" })
+    expect(adminService.assignRole).not.toHaveBeenCalled()
   })
 })

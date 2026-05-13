@@ -165,18 +165,14 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   )
 
   // Backoffice member management — actor is the authenticated platform admin.
+  app.post("/api/backoffice/workspaces/:id/members", auth, requirePlatformAdmin, backofficeAuthz.assignMember)
   app.post(
     "/api/backoffice/workspaces/:id/members/:userId/role",
     auth,
     requirePlatformAdmin,
     backofficeAuthz.changeRole
   )
-  app.post(
-    "/api/backoffice/workspaces/:id/members/:userId/remove",
-    auth,
-    requirePlatformAdmin,
-    backofficeAuthz.removeMember
-  )
+  app.delete("/api/backoffice/workspaces/:id/members/:userId", auth, requirePlatformAdmin, backofficeAuthz.removeMember)
 
   // Internal API (inter-service)
   app.get("/internal/workspaces/:workspaceId/region", internalAuth, workspace.getRegion)
@@ -184,7 +180,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.patch("/internal/invitation-shadows/:id", internalAuth, shadow.update)
   app.post("/internal/invitation-shadows/:id/claim", internalAuth, shadow.notifyClaim)
   app.post("/internal/workspaces/:workspaceId/members/:userId/role", internalAuth, internalAuthz.changeRole)
-  app.post("/internal/workspaces/:workspaceId/members/:userId/remove", internalAuth, internalAuthz.removeMember)
+  app.delete("/internal/workspaces/:workspaceId/members/:userId", internalAuth, internalAuthz.removeMember)
 
   app.use(errorHandler)
 }
