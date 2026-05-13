@@ -114,14 +114,25 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
       return
     }
 
+    // Re-entering the cold path (e.g. collapse toggle before shiki finishes
+    // warming) keeps showing the previous highlighted HTML until the new
+    // promise resolves; clear it so the chrome paints empty rather than stale.
+    setHtml(null)
+
     let cancelled = false
-    ensureHighlight(displayCode, language)
-      .then((result) => {
-        if (!cancelled) setHtml(result)
-      })
-      .catch(() => {
-        if (!cancelled) setHtml(null)
-      })
+    ensureHighlight(displayCode, language).then((result) => {
+      if (cancelled) return
+      if (result !== null) {
+        setHtml(result)
+        return
+      }
+      // ensureHighlight returns null only when shiki itself can't render —
+      // singleton init failed and even the plaintext fallback threw. Render
+      // escaped raw text inside the chrome so the block stays readable and
+      // accessible instead of collapsing to the invisible placeholder.
+      const escaped = displayCode.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+      setHtml(`<pre><code>${escaped}</code></pre>`)
+    })
 
     return () => {
       cancelled = true
