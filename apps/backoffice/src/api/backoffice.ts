@@ -64,6 +64,11 @@ export interface WorkspaceMember {
   lastEventAt: string
 }
 
+export interface ResyncWorkspaceMembersResult {
+  membershipsUpserted: number
+  membershipsRemoved: number
+}
+
 export interface WorkspaceInvitation {
   id: string
   kind: "email" | "link"
@@ -131,6 +136,14 @@ export function listWorkspaceMembers(id: string): Promise<WorkspaceMember[]> {
   return api
     .get<{ members: WorkspaceMember[] }>(`/api/backoffice/workspaces/${encodeURIComponent(id)}/members`)
     .then((r) => r.members)
+}
+
+export function resyncWorkspaceMembers(id: string): Promise<ResyncWorkspaceMembersResult> {
+  return api
+    .post<{
+      result: ResyncWorkspaceMembersResult
+    }>(`/api/backoffice/workspaces/${encodeURIComponent(id)}/members/resync`)
+    .then((r) => r.result)
 }
 
 export function listWorkspaceInvitations(id: string): Promise<WorkspaceInvitation[]> {

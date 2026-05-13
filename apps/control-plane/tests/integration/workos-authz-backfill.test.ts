@@ -132,3 +132,95 @@ describe("WorkosAuthzBackfill.run", () => {
     expect(await fetchAuthzOutbox(pool, ORG_ID)).toEqual([])
   })
 })
+
+describe("WorkosAuthzBackfill.runForOrganization", () => {
+  let pool: Pool
+
+  beforeAll(async () => {
+    pool = await setupTestDatabase()
+  })
+
+  afterAll(async () => {
+    await pool.end()
+  })
+
+  beforeEach(async () => {
+    await pool.query("TRUNCATE workspace_registry, workos_organization_memberships CASCADE")
+    await cleanupAuthzOutbox(pool, ORG_ID)
+  })
+
+  test("upserts memberships and emits one fan-out event per row for the targeted org only", async () => {
+    const otherOrgId = "org_other_unrelated"
+    // Seed a stale mirror row for an unrelated org — it must NOT be touched.
+    await WorkosAuthzRepository.upsertMembershipFromBackfill(pool, {
+      organizationMembershipId: "om_unrelated",
+      workosOrganizationId: otherOrgId,
+      workosUserId: "user_unrelated",
+      status: "active",
+      roleSlugs: ["member"],
+      observedAt: new Date("2026-01-01T00:00:00Z"),
+    })
+
+    const stub = new StubWorkosOrgService()
+    stub.setOrganizationMemberships(ORG_ID, [
+      {
+        id: "om_a",
+        organizationId: ORG_ID,
+        userId: USER_A,
+        status: "active",
+        roleSlugs: ["admin"],
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ])
+
+    const backfill = new WorkosAuthzBackfill({ pool, workosOrgService: stub })
+    const result = await backfill.runForOrganization(ORG_ID)
+
+    expect(result.membershipsUpserted).toBe(1)
+    expect(result.membershipsRemoved).toBe(0)
+
+    const persisted = await WorkosAuthzRepository.listByOrganization(pool, ORG_ID)
+    expect(persisted.map((r) => r.workos_user_id)).toEqual([USER_A])
+
+    const unrelated = await WorkosAuthzRepository.listByOrganization(pool, otherOrgId)
+    expect(unrelated.map((r) => r.workos_user_id)).toEqual(["user_unrelated"])
+
+    const events = await fetchAuthzOutbox(pool, ORG_ID)
+    expect(events).toHaveLength(1)
+    expect(events[0]!.event_type).toBe(OUTBOX_AUTHZ_MEMBERSHIP_CHANGED)
+  })
+
+  test("reconciles memberships absent from the snapshot for the targeted org", async () => {
+    await WorkosAuthzRepository.upsertMembershipFromBackfill(pool, {
+      organizationMembershipId: "om_stale",
+      workosOrganizationId: ORG_ID,
+      workosUserId: USER_B,
+      status: "active",
+      roleSlugs: ["member"],
+      observedAt: new Date("2026-01-01T00:00:00Z"),
+    })
+
+    const stub = new StubWorkosOrgService()
+    stub.setOrganizationMemberships(ORG_ID, [
+      {
+        id: "om_a",
+        organizationId: ORG_ID,
+        userId: USER_A,
+        status: "active",
+        roleSlugs: ["admin"],
+        updatedAt: new Date("2026-02-01T00:00:00Z"),
+      },
+    ])
+
+    const backfill = new WorkosAuthzBackfill({ pool, workosOrgService: stub })
+    const result = await backfill.runForOrganization(ORG_ID)
+
+    expect(result.membershipsUpserted).toBe(1)
+    expect(result.membershipsRemoved).toBe(1)
+
+    const events = await fetchAuthzOutbox(pool, ORG_ID)
+    const removed = events.filter((e) => e.event_type === OUTBOX_AUTHZ_MEMBERSHIP_REMOVED)
+    expect(removed).toHaveLength(1)
+    expect((removed[0]!.payload as unknown as AuthzMembershipRemovedPayload).workosUserId).toBe(USER_B)
+  })
+})

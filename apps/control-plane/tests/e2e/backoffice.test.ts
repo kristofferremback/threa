@@ -289,6 +289,48 @@ describe("Backoffice", () => {
     })
   })
 
+  describe("POST /api/backoffice/workspaces/:id/members/resync", () => {
+    test("returns 401 without session", async () => {
+      const client = new TestClient()
+      const res = await client.post("/api/backoffice/workspaces/ws_anything/members/resync")
+      expect(res.status).toBe(401)
+    })
+
+    test("returns 403 when authenticated but not a platform admin", async () => {
+      const client = new TestClient()
+      await loginAs(client, "resync-nonadmin@example.com", "Resync Non Admin")
+
+      const res = await client.post<{ code: string }>("/api/backoffice/workspaces/ws_anything/members/resync")
+      expect(res.status).toBe(403)
+      expect(res.data.code).toBe("NOT_PLATFORM_ADMIN")
+    })
+
+    test("returns 404 when workspace does not exist", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "resync-admin-404@example.com", "Resync Admin 404")
+      await grantAdmin(user.id)
+
+      const res = await client.post<{ code: string }>("/api/backoffice/workspaces/ws_does_not_exist/members/resync")
+      expect(res.status).toBe(404)
+      expect(res.data.code).toBe("NOT_FOUND")
+    })
+
+    test("returns result shape for a linked workspace (zero changes when stub has no memberships)", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, "resync-admin@example.com", "Resync Admin")
+      await grantAdmin(user.id)
+
+      const ws = await createWorkspace(client, "Resync Test")
+      const res = await client.post<{
+        result: { membershipsUpserted: number; membershipsRemoved: number }
+      }>(`/api/backoffice/workspaces/${ws.id}/members/resync`)
+
+      expect(res.status).toBe(200)
+      expect(typeof res.data.result.membershipsUpserted).toBe("number")
+      expect(typeof res.data.result.membershipsRemoved).toBe("number")
+    })
+  })
+
   describe("Idempotency", () => {
     test("granting admin twice leaves the user as admin", async () => {
       const client = new TestClient()

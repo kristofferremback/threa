@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { AlertTriangle, Ban, CheckCircle2 } from "lucide-react"
+import { Ban } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,9 +16,10 @@ import {
   ResponsiveAlertDialogHeader,
   ResponsiveAlertDialogTitle,
 } from "@/components/ui/responsive-alert-dialog"
+import { InlineBanner } from "@/components/inline-banner"
 import { PageHeader } from "@/components/layout/page-header"
 import { Section } from "@/components/layout/section"
-import { ApiError } from "@/api/client"
+import { readApiError } from "@/api/client"
 import {
   backofficeKeys,
   createWorkspaceOwnerInvitation,
@@ -49,12 +50,6 @@ function timestampLabel(invitation: WorkspaceOwnerInvitation): string {
     return `Expires ${formatDateTime(invitation.expiresAt)}`
   }
   return `Expired ${formatDateTime(invitation.expiresAt)}`
-}
-
-function readApiError(error: unknown): string | null {
-  if (!error) return null
-  if (ApiError.isApiError(error)) return error.message
-  return "Something went wrong"
 }
 
 export function InviteWorkspaceOwnerPage() {
@@ -228,20 +223,6 @@ export function InviteWorkspaceOwnerPage() {
           </ResponsiveAlertDialogFooter>
         </ResponsiveAlertDialogContent>
       </ResponsiveAlertDialog>
-    </div>
-  )
-}
-
-function InlineBanner({ tone, children }: { tone: "success" | "error"; children: React.ReactNode }) {
-  const Icon = tone === "success" ? CheckCircle2 : AlertTriangle
-  const toneClasses =
-    tone === "success"
-      ? "border-primary/30 bg-accent/40 text-accent-foreground"
-      : "border-destructive/40 bg-destructive/5 text-destructive"
-  return (
-    <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${toneClasses}`}>
-      <Icon className="mt-0.5 size-4 shrink-0" />
-      <span>{children}</span>
     </div>
   )
 }

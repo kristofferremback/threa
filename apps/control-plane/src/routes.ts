@@ -112,6 +112,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/backoffice/workspaces", auth, requirePlatformAdmin, backoffice.listWorkspaces)
   app.get("/api/backoffice/workspaces/:id", auth, requirePlatformAdmin, backoffice.getWorkspace)
   app.get("/api/backoffice/workspaces/:id/members", auth, requirePlatformAdmin, backoffice.listWorkspaceMembers)
+  app.post(
+    "/api/backoffice/workspaces/:id/members/resync",
+    auth,
+    requirePlatformAdmin,
+    backoffice.resyncWorkspaceMembers
+  )
   app.get("/api/backoffice/workspaces/:id/invitations", auth, requirePlatformAdmin, backoffice.listWorkspaceInvitations)
   app.get(
     "/api/backoffice/workspace-owner-invitations",

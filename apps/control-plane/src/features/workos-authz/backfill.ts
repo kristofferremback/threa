@@ -23,6 +23,11 @@ export interface WorkosAuthzBackfillResult {
   membershipsRemoved: number
 }
 
+export interface WorkosAuthzOrganizationBackfillResult {
+  membershipsUpserted: number
+  membershipsRemoved: number
+}
+
 /**
  * Read every workspace with a non-null `workos_organization_id`, ask WorkOS
  * for its full membership list, and upsert each row via the backfill path.
@@ -50,63 +55,9 @@ export class WorkosAuthzBackfill {
     let hadErrors = false
     for (const orgId of orgIds) {
       try {
-        // Stamp once per org before reading, so any membership event WorkOS
-        // observes after this snapshot wins the timestamp guard on upsert and
-        // survives the reconcile delete below.
-        const observedAt = new Date()
-        const memberships = await this.workosOrgService.listOrganizationMemberships(orgId)
-        const reconciled = await withTransaction(this.pool, async (client) => {
-          for (const m of memberships) {
-            await WorkosAuthzRepository.upsertMembershipFromBackfill(client, {
-              organizationMembershipId: m.id,
-              workosOrganizationId: m.organizationId,
-              workosUserId: m.userId,
-              status: m.status,
-              roleSlugs: m.roleSlugs,
-              observedAt,
-            })
-          }
-          // Reconcile inside the same tx so the regional fan-out for missing
-          // members is committed atomically with the upsert events above.
-          const removedRows = await WorkosAuthzRepository.reconcileOrganizationSnapshotReturning(client, {
-            workosOrganizationId: orgId,
-            snapshotMembershipIds: memberships.map((m) => m.id),
-            observedAt,
-          })
-
-          const observedAtIso = observedAt.toISOString()
-          type AuthzOutboxEntry =
-            | { eventType: typeof OUTBOX_AUTHZ_MEMBERSHIP_CHANGED; payload: AuthzMembershipChangedPayload }
-            | { eventType: typeof OUTBOX_AUTHZ_MEMBERSHIP_REMOVED; payload: AuthzMembershipRemovedPayload }
-          const outboxEntries: AuthzOutboxEntry[] = [
-            ...memberships.map(
-              (m): AuthzOutboxEntry => ({
-                eventType: OUTBOX_AUTHZ_MEMBERSHIP_CHANGED,
-                payload: {
-                  workosOrganizationId: m.organizationId,
-                  workosUserId: m.userId,
-                  roleSlugs: m.roleSlugs,
-                  status: m.status,
-                  lastEventAt: observedAtIso,
-                },
-              })
-            ),
-            ...removedRows.map(
-              (removed): AuthzOutboxEntry => ({
-                eventType: OUTBOX_AUTHZ_MEMBERSHIP_REMOVED,
-                payload: {
-                  workosOrganizationId: removed.workos_organization_id,
-                  workosUserId: removed.workos_user_id,
-                  eventCreatedAt: observedAtIso,
-                },
-              })
-            ),
-          ]
-          await OutboxRepository.insertMany(client, outboxEntries)
-          return removedRows.length
-        })
-        membershipsUpserted += memberships.length
-        membershipsRemoved += reconciled
+        const result = await this.runForOrganizationInternal(orgId)
+        membershipsUpserted += result.membershipsUpserted
+        membershipsRemoved += result.membershipsRemoved
       } catch (err) {
         hadErrors = true
         logger.error({ err, organizationId: orgId }, "Failed to backfill WorkOS memberships for organization")
@@ -124,5 +75,86 @@ export class WorkosAuthzBackfill {
       "WorkOS authz backfill complete"
     )
     return { orgsScanned: orgIds.length, membershipsUpserted, membershipsRemoved }
+  }
+
+  /**
+   * Re-run the backfill for a single WorkOS organization. Exposed for operator
+   * triggers (backoffice "Re-sync members" button) where waiting for the next
+   * event-poller tick isn't acceptable — e.g. when the regional mirror has
+   * drifted and a PAT is failing with `OWNER_INACTIVE`.
+   *
+   * Does NOT stamp `last_backfill_at`: a per-org refresh isn't equivalent to a
+   * full backfill and should not unblock the first-boot guard for other orgs.
+   */
+  async runForOrganization(workosOrganizationId: string): Promise<WorkosAuthzOrganizationBackfillResult> {
+    const result = await this.runForOrganizationInternal(workosOrganizationId)
+    logger.info(
+      {
+        organizationId: workosOrganizationId,
+        membershipsUpserted: result.membershipsUpserted,
+        membershipsRemoved: result.membershipsRemoved,
+      },
+      "WorkOS authz per-organization backfill complete"
+    )
+    return result
+  }
+
+  private async runForOrganizationInternal(orgId: string): Promise<WorkosAuthzOrganizationBackfillResult> {
+    // Stamp once per org before reading, so any membership event WorkOS
+    // observes after this snapshot wins the timestamp guard on upsert and
+    // survives the reconcile delete below.
+    const observedAt = new Date()
+    const memberships = await this.workosOrgService.listOrganizationMemberships(orgId)
+    const reconciled = await withTransaction(this.pool, async (client) => {
+      for (const m of memberships) {
+        await WorkosAuthzRepository.upsertMembershipFromBackfill(client, {
+          organizationMembershipId: m.id,
+          workosOrganizationId: m.organizationId,
+          workosUserId: m.userId,
+          status: m.status,
+          roleSlugs: m.roleSlugs,
+          observedAt,
+        })
+      }
+      // Reconcile inside the same tx so the regional fan-out for missing
+      // members is committed atomically with the upsert events above.
+      const removedRows = await WorkosAuthzRepository.reconcileOrganizationSnapshotReturning(client, {
+        workosOrganizationId: orgId,
+        snapshotMembershipIds: memberships.map((m) => m.id),
+        observedAt,
+      })
+
+      const observedAtIso = observedAt.toISOString()
+      type AuthzOutboxEntry =
+        | { eventType: typeof OUTBOX_AUTHZ_MEMBERSHIP_CHANGED; payload: AuthzMembershipChangedPayload }
+        | { eventType: typeof OUTBOX_AUTHZ_MEMBERSHIP_REMOVED; payload: AuthzMembershipRemovedPayload }
+      const outboxEntries: AuthzOutboxEntry[] = [
+        ...memberships.map(
+          (m): AuthzOutboxEntry => ({
+            eventType: OUTBOX_AUTHZ_MEMBERSHIP_CHANGED,
+            payload: {
+              workosOrganizationId: m.organizationId,
+              workosUserId: m.userId,
+              roleSlugs: m.roleSlugs,
+              status: m.status,
+              lastEventAt: observedAtIso,
+            },
+          })
+        ),
+        ...removedRows.map(
+          (removed): AuthzOutboxEntry => ({
+            eventType: OUTBOX_AUTHZ_MEMBERSHIP_REMOVED,
+            payload: {
+              workosOrganizationId: removed.workos_organization_id,
+              workosUserId: removed.workos_user_id,
+              eventCreatedAt: observedAtIso,
+            },
+          })
+        ),
+      ]
+      await OutboxRepository.insertMany(client, outboxEntries)
+      return removedRows.length
+    })
+    return { membershipsUpserted: memberships.length, membershipsRemoved: reconciled }
   }
 }

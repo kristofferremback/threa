@@ -10,7 +10,8 @@ import {
 import type { WorkspaceInvitableRole } from "@threa/types"
 import { PlatformRoleRepository } from "./repository"
 import { WorkspaceRegistryRepository } from "../workspaces"
-import { WorkosAuthzRepository } from "../workos-authz"
+import { WorkosAuthzBackfill, WorkosAuthzRepository } from "../workos-authz"
+import type { WorkosAuthzOrganizationBackfillResult } from "../workos-authz"
 import { InvitationShadowRepository } from "../invitation-shadows"
 
 /** Platform roles recognised by the backoffice gate. */
@@ -151,6 +152,7 @@ export interface BackofficeConfig {
 interface Dependencies {
   pool: Pool
   workosOrgService: WorkosOrgService
+  authzBackfill: WorkosAuthzBackfill
   workspaceAppBaseUrl: string
   workosEnvironmentId: string | null
 }
@@ -166,12 +168,14 @@ interface Dependencies {
 export class BackofficeService {
   private pool: Pool
   private workosOrgService: WorkosOrgService
+  private authzBackfill: WorkosAuthzBackfill
   private workspaceAppBaseUrl: string
   private workosEnvironmentId: string | null
 
-  constructor({ pool, workosOrgService, workspaceAppBaseUrl, workosEnvironmentId }: Dependencies) {
+  constructor({ pool, workosOrgService, authzBackfill, workspaceAppBaseUrl, workosEnvironmentId }: Dependencies) {
     this.pool = pool
     this.workosOrgService = workosOrgService
+    this.authzBackfill = authzBackfill
     this.workspaceAppBaseUrl = workspaceAppBaseUrl
     this.workosEnvironmentId = workosEnvironmentId
   }
@@ -349,6 +353,30 @@ export class BackofficeService {
         lastEventAt: row.last_event_at.toISOString(),
       }
     })
+  }
+
+  /**
+   * Operator-triggered re-sync of one workspace's membership mirror. Re-reads
+   * the full membership list from WorkOS, upserts the CP mirror, and emits
+   * outbox events that fan out to the regional `workspace_user_permissions`.
+   * Idempotent; useful when the event poller has drifted or fan-out has
+   * stalled and PATs are 401-ing with `OWNER_INACTIVE`.
+   *
+   * Returns counts so the UI can show what changed. 400 (`NOT_LINKED`) when
+   * the workspace has no WorkOS organization attached.
+   */
+  async resyncWorkspaceMembers(workspaceId: string): Promise<WorkosAuthzOrganizationBackfillResult> {
+    const workspace = await WorkspaceRegistryRepository.findById(this.pool, workspaceId)
+    if (!workspace) {
+      throw new HttpError("Workspace not found", { status: 404, code: "NOT_FOUND" })
+    }
+    if (!workspace.workos_organization_id) {
+      throw new HttpError("Workspace not linked to a WorkOS organization", {
+        status: 400,
+        code: "NOT_LINKED",
+      })
+    }
+    return this.authzBackfill.runForOrganization(workspace.workos_organization_id)
   }
 
   /**
