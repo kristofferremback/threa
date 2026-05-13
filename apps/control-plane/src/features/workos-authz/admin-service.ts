@@ -9,11 +9,13 @@ interface Dependencies {
 }
 
 /**
- * The user performing an admin action. `isPlatformAdmin` lets the backoffice
- * surface bypass the owner-action gate while still respecting data-integrity
- * guards (last-owner, self-demote). Regional surfaces pass
- * `isPlatformAdmin: false`; their `requireWorkspacePermission('workspace:owner')`
- * middleware is the first gate and this service is the second.
+ * The user performing an admin action. `isPlatformAdmin` is set by the
+ * backoffice surface (gated on `requirePlatformAdmin`) and bypasses the
+ * workspace-role check, while data-integrity guards (last-owner, self-demote)
+ * still apply. Regional surfaces pass `isPlatformAdmin: false`; the regional
+ * `requireWorkspacePermission('members:write')` middleware is the first gate
+ * and `assertActorMayManage` here is the second. Ownership-touching ops add
+ * a third gate that requires the actor to hold the `owner` role itself.
  */
 export interface AdminActor {
   workosUserId: string
@@ -103,6 +105,10 @@ export class WorkosAuthzAdminService {
       const wasOwner = target.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)
       const willBeOwner = params.roleSlug === WORKSPACE_ROLE_SLUGS.OWNER
 
+      if (wasOwner || willBeOwner) {
+        this.assertActorMayTouchOwnership(params.actor, memberships)
+      }
+
       if (wasOwner && !willBeOwner) {
         this.assertNotSelfDemote(params.actor, params.targetUserId)
         this.assertNotLastOwner(memberships, params.targetUserId)
@@ -133,6 +139,7 @@ export class WorkosAuthzAdminService {
       const target = requireTargetMembership(memberships, params.targetUserId)
       this.assertNotSelfDemote(params.actor, params.targetUserId)
       if (target.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)) {
+        this.assertActorMayTouchOwnership(params.actor, memberships)
         this.assertNotLastOwner(memberships, params.targetUserId)
       }
 
@@ -154,10 +161,24 @@ export class WorkosAuthzAdminService {
   private assertActorMayManage(actor: AdminActor, memberships: WorkosOrganizationMembership[]): void {
     if (actor.isPlatformAdmin) return
     const actorMembership = memberships.find((m) => m.userId === actor.workosUserId)
-    if (!actorMembership || !actorMembership.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)) {
-      throw new HttpError("Only workspace owners may manage members", {
+    const canManage =
+      actorMembership?.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER) ||
+      actorMembership?.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.ADMIN)
+    if (!canManage) {
+      throw new HttpError("Only workspace owners and admins may manage members", {
         status: 403,
         code: "FORBIDDEN",
+      })
+    }
+  }
+
+  private assertActorMayTouchOwnership(actor: AdminActor, memberships: WorkosOrganizationMembership[]): void {
+    if (actor.isPlatformAdmin) return
+    const actorMembership = memberships.find((m) => m.userId === actor.workosUserId)
+    if (!actorMembership?.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)) {
+      throw new HttpError("Only workspace owners may change ownership", {
+        status: 403,
+        code: "OWNER_ACTION",
       })
     }
   }
