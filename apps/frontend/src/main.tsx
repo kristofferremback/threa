@@ -4,6 +4,7 @@ import { App } from "./App"
 import { router } from "./routes"
 import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED } from "./lib/sw-messages"
 import { hydrateCollapseCache } from "./lib/markdown/collapse-cache"
+import { initHighlighter } from "./lib/markdown/highlighter"
 import { applyPersistedComposerHeight } from "./lib/composer-height-storage"
 import "./index.css"
 
@@ -60,8 +61,19 @@ if ("serviceWorker" in navigator) {
 const HYDRATION_CAP_MS = 500
 
 async function bootstrap() {
+  // Run collapse-cache hydration and shiki highlighter init in parallel: both
+  // need to be ready for the timeline's first paint to render code blocks
+  // already highlighted and with persisted collapse state, but they're
+  // independent of each other and of the React tree. We race the combined
+  // work against the same 500ms deadline — whichever fits inside the budget
+  // gets to apply its result on first render; whichever overshoots heals
+  // post-mount (collapse cache via `notify()`, highlighter via the
+  // per-CodeBlock `ensureHighlight` effect).
   try {
-    await Promise.race([hydrateCollapseCache(), new Promise((resolve) => setTimeout(resolve, HYDRATION_CAP_MS))])
+    await Promise.race([
+      Promise.all([hydrateCollapseCache(), initHighlighter().catch(() => null)]),
+      new Promise((resolve) => setTimeout(resolve, HYDRATION_CAP_MS)),
+    ])
   } catch {
     // Hydration already swallows IDB errors internally; the catch here is a
     // belt-and-braces guard so a thrown rejection never blocks the mount.

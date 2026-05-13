@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { codeToHtml } from "shiki"
 import { Copy, Check, ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DEFAULT_CODE_BLOCK_COLLAPSE_THRESHOLD } from "@threa/types"
 import { usePreferencesOptional } from "@/contexts/preferences-context"
 import { useBlockCollapse } from "./use-block-collapse"
+import { ensureHighlight, tryHighlightSync } from "./highlighter"
 
 interface CodeBlockProps {
   language: string
@@ -57,7 +57,6 @@ function countLines(text: string): number {
 const PREVIEW_LINE_COUNT = 3
 
 export default function CodeBlock({ language, children }: CodeBlockProps) {
-  const [html, setHtml] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   // Preferences context may not exist in all rendering contexts (e.g. tests).
@@ -99,33 +98,32 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
     [trimmedCode]
   )
 
-  useEffect(() => {
-    let cancelled = false
+  // Sync-first: if the singleton highlighter was warmed during bootstrap, we
+  // get highlighted HTML on the very first render — no placeholder swap, no
+  // row remeasure jump. Cold path (highlighter still booting, or a language
+  // not in the pre-load list) falls back to `ensureHighlight` in the effect.
+  const syncHtml = useMemo(() => tryHighlightSync(displayCode, language), [displayCode, language])
+  const [html, setHtml] = useState<string | null>(syncHtml)
 
-    codeToHtml(displayCode, {
-      lang: language,
-      themes: {
-        light: "github-light",
-        dark: "github-dark",
-      },
-      defaultColor: false,
-    })
+  useEffect(() => {
+    if (syncHtml !== null) {
+      setHtml(syncHtml)
+      return
+    }
+
+    let cancelled = false
+    ensureHighlight(displayCode, language)
       .then((result) => {
-        if (!cancelled) {
-          setHtml(result)
-        }
+        if (!cancelled) setHtml(result)
       })
       .catch(() => {
-        // Fallback to plain code on error (unknown language, etc.)
-        if (!cancelled) {
-          setHtml(null)
-        }
+        if (!cancelled) setHtml(null)
       })
 
     return () => {
       cancelled = true
     }
-  }, [displayCode, language])
+  }, [syncHtml, displayCode, language])
 
   const toggleLabel = collapsed ? `Expand ${lineCount} line${lineCount === 1 ? "" : "s"}` : "Collapse code block"
 
