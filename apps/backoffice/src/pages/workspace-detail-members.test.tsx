@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, screen, waitFor, cleanup } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { WorkspaceDetailMembersPage } from "./workspace-detail-members"
-import { backofficeKeys, type WorkspaceDetail } from "@/api/backoffice"
+import { backofficeKeys, type WorkspaceDetail, type WorkspaceInvitation, type WorkspaceMember } from "@/api/backoffice"
 
 function renderAt(path: string, opts: { workspace?: WorkspaceDetail } = {}) {
   const queryClient = new QueryClient({
@@ -39,24 +39,52 @@ function makeWorkspace(overrides: Partial<WorkspaceDetail> = {}): WorkspaceDetai
   }
 }
 
-describe("WorkspaceDetailMembersPage", () => {
-  const fetchMock = vi.fn()
-  beforeEach(() => {
-    fetchMock.mockReset()
-    vi.stubGlobal("fetch", fetchMock)
+type RouteOverrides = {
+  members?: { status?: number; body?: { members?: WorkspaceMember[]; error?: string; code?: string } }
+  invitations?: { status?: number; body?: { invitations?: WorkspaceInvitation[]; error?: string; code?: string } }
+}
+
+/**
+ * Backoffice members tab fires two queries in parallel (members + invitations).
+ * Route by URL so tests don't depend on fetch order.
+ */
+function installBackofficeFetch(routes: RouteOverrides): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString()
+    if (url.includes("/invitations")) {
+      const { status = 200, body = { invitations: [] } } = routes.invitations ?? {}
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+    if (url.includes("/members")) {
+      const { status = 200, body = { members: [] } } = routes.members ?? {}
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+    throw new Error(`unexpected fetch: ${url}`)
   })
+  vi.stubGlobal("fetch", fetchMock)
+  return fetchMock
+}
+
+describe("WorkspaceDetailMembersPage", () => {
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
   })
 
-  it("renders the empty state when there are no members", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ members: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
-    )
+  function daysFromNow(days: number): string {
+    // Half-day padding so floor() doesn't drift to N-1 due to ms between
+    // `Date.now()` here and `Date.now()` inside the formatter.
+    return new Date(Date.now() + (days + 0.5) * 86_400_000).toISOString()
+  }
+
+  it("renders the members empty state when there are no members", async () => {
+    const fetchMock = installBackofficeFetch({})
     renderAt("/workspaces/ws_abc/members")
 
     await screen.findByText(/No members yet/)
@@ -67,9 +95,9 @@ describe("WorkspaceDetailMembersPage", () => {
   })
 
   it("renders one row per member with role chips, status, and email", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
+    installBackofficeFetch({
+      members: {
+        body: {
           members: [
             {
               workosUserId: "user_01",
@@ -90,10 +118,9 @@ describe("WorkspaceDetailMembersPage", () => {
               lastEventAt: new Date().toISOString(),
             },
           ],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
-    )
+        },
+      },
+    })
 
     renderAt("/workspaces/ws_abc/members")
 
@@ -110,12 +137,7 @@ describe("WorkspaceDetailMembersPage", () => {
   })
 
   it("shows the not-linked empty state when the workspace has no WorkOS organization", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ members: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
-    )
+    installBackofficeFetch({})
 
     renderAt("/workspaces/ws_abc/members", {
       workspace: makeWorkspace({ workosOrganizationId: null }),
@@ -124,16 +146,88 @@ describe("WorkspaceDetailMembersPage", () => {
     await screen.findByText(/isn't linked to a WorkOS organization/)
   })
 
-  it("shows an error state when the request fails", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: "boom", code: "INTERNAL" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      })
-    )
+  it("shows an error state when the members request fails", async () => {
+    installBackofficeFetch({
+      members: { status: 500, body: { error: "boom", code: "INTERNAL" } },
+    })
 
     renderAt("/workspaces/ws_abc/members")
 
     await screen.findByText(/Couldn't load members/)
+  })
+
+  it("renders pending invitations with kind, role, inviter, and expiry", async () => {
+    installBackofficeFetch({
+      invitations: {
+        body: {
+          invitations: [
+            {
+              id: "inv_email_admin",
+              kind: "email",
+              email: "bob@example.com",
+              roleSlug: "admin",
+              expiresAt: daysFromNow(3),
+              createdAt: new Date().toISOString(),
+              inviter: { workosUserId: "user_01", email: "alice@example.com", name: "Alice Anderson" },
+            },
+            {
+              id: "inv_link_member",
+              kind: "link",
+              email: null,
+              roleSlug: "member",
+              expiresAt: daysFromNow(7),
+              createdAt: new Date().toISOString(),
+              inviter: null,
+            },
+          ],
+        },
+      },
+    })
+
+    renderAt("/workspaces/ws_abc/members")
+
+    await waitFor(() => {
+      expect(screen.getByText("bob@example.com")).toBeInTheDocument()
+    })
+    expect(screen.getByText("Unclaimed link")).toBeInTheDocument()
+    expect(screen.getByText("email")).toBeInTheDocument()
+    expect(screen.getByText("link")).toBeInTheDocument()
+    expect(screen.getByText("admin")).toBeInTheDocument()
+    expect(screen.getByText("member")).toBeInTheDocument()
+    expect(screen.getByText(/Invited by Alice Anderson/)).toBeInTheDocument()
+    // 3 days out from the fake-now clock
+    expect(screen.getByText("Expires in 3d")).toBeInTheDocument()
+    // 7 days out
+    expect(screen.getByText("Expires in 7d")).toBeInTheDocument()
+  })
+
+  it("shows the pending-invitations empty state when there are none", async () => {
+    installBackofficeFetch({})
+    renderAt("/workspaces/ws_abc/members")
+    await screen.findByText("No pending invitations.")
+  })
+
+  it("renders 'Invited by Unknown' when the inviter lookup misses", async () => {
+    installBackofficeFetch({
+      invitations: {
+        body: {
+          invitations: [
+            {
+              id: "inv_unknown_inviter",
+              kind: "email",
+              email: "anon@example.com",
+              roleSlug: "member",
+              expiresAt: daysFromNow(2),
+              createdAt: new Date().toISOString(),
+              inviter: { workosUserId: "user_missing", email: null, name: null },
+            },
+          ],
+        },
+      },
+    })
+
+    renderAt("/workspaces/ws_abc/members")
+
+    await screen.findByText(/Invited by Unknown/)
   })
 })

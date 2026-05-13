@@ -1,5 +1,6 @@
 import { logger } from "./logger"
 import { INTERNAL_API_KEY_HEADER } from "@threa/backend-common"
+import type { WorkspaceInvitableRole } from "@threa/types"
 
 const REQUEST_TIMEOUT_MS = 10_000
 
@@ -20,6 +21,7 @@ export class ControlPlaneClient {
     email: string | null
     /** Required for kind="link", null for kind="email". */
     tokenHash: string | null
+    roleSlug: WorkspaceInvitableRole
     inviterWorkosUserId?: string
   }): Promise<void> {
     const url = `${this.baseUrl}/internal/invitation-shadows`

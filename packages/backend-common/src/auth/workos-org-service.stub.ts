@@ -23,6 +23,14 @@ export class StubWorkosOrgService implements WorkosOrgService {
    * it via `setOrganizationMemberships`.
    */
   private membershipsByOrg = new Map<string, WorkosOrganizationMembership[]>()
+  /**
+   * Test helper: records every `sendInvitation` call by the returned id so
+   * tests can assert the exact role/org/email that landed at WorkOS.
+   */
+  public sentInvitations = new Map<
+    string,
+    { organizationId?: string; email: string; inviterUserId: string; roleSlug?: string }
+  >()
 
   async createOrganization(params: { name: string; externalId: string }): Promise<{ id: string }> {
     const id = `org_stub_${ulid()}`
@@ -44,6 +52,7 @@ export class StubWorkosOrgService implements WorkosOrgService {
     organizationId?: string
     email: string
     inviterUserId: string
+    roleSlug?: string
   }): Promise<{ id: string; expiresAt: Date }> {
     const id = `inv_stub_${ulid()}`
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
@@ -61,7 +70,16 @@ export class StubWorkosOrgService implements WorkosOrgService {
         acceptedUserId: null,
       })
     }
-    logger.info({ invitationId: id, email: params.email }, "Stub: Sent invitation (no email)")
+    this.sentInvitations.set(id, {
+      ...(params.organizationId ? { organizationId: params.organizationId } : {}),
+      email: params.email,
+      inviterUserId: params.inviterUserId,
+      ...(params.roleSlug ? { roleSlug: params.roleSlug } : {}),
+    })
+    logger.info(
+      { invitationId: id, email: params.email, roleSlug: params.roleSlug },
+      "Stub: Sent invitation (no email)"
+    )
     return { id, expiresAt }
   }
 
@@ -170,9 +188,7 @@ export class StubWorkosOrgService implements WorkosOrgService {
     logger.info({ organizationMembershipId }, "Stub: Removed organization membership")
   }
 
-  private findMembershipById(
-    organizationMembershipId: string
-  ): {
+  private findMembershipById(organizationMembershipId: string): {
     orgId: string
     memberships: WorkosOrganizationMembership[]
     index: number

@@ -7,9 +7,11 @@ import {
   type WorkosOrgService,
   type WorkosUserSummary,
 } from "@threa/backend-common"
+import type { WorkspaceInvitableRole } from "@threa/types"
 import { PlatformRoleRepository } from "./repository"
 import { WorkspaceRegistryRepository } from "../workspaces"
 import { WorkosAuthzRepository } from "../workos-authz"
+import { InvitationShadowRepository } from "../invitation-shadows"
 
 /** Platform roles recognised by the backoffice gate. */
 export const PLATFORM_ROLES = ["admin"] as const
@@ -103,6 +105,26 @@ export interface WorkspaceMemberSummary {
   status: string
   roleSlugs: string[]
   lastEventAt: string
+}
+
+/**
+ * Pending invitation_shadows row decorated with inviter metadata. Email is
+ * null for link invitations until someone claims the token. `inviter` is null
+ * when the shadow predates the inviter column or the user lookup fails — the
+ * UI falls back to "Unknown".
+ */
+export interface WorkspaceInvitationSummary {
+  id: string
+  kind: "email" | "link"
+  email: string | null
+  roleSlug: WorkspaceInvitableRole
+  expiresAt: string
+  createdAt: string
+  inviter: {
+    workosUserId: string
+    email: string | null
+    name: string | null
+  } | null
 }
 
 /**
@@ -329,6 +351,53 @@ export class BackofficeService {
     })
   }
 
+  /**
+   * Pending invitations for a workspace, surfaced separately from the WorkOS
+   * mirror so admins can see link invitations (never reach WorkOS until
+   * claimed) and the role each invite was sent at. Inviter user is looked up
+   * in parallel; failures degrade to `inviter: null` rather than failing the
+   * whole list.
+   */
+  async listWorkspaceInvitations(workspaceId: string): Promise<WorkspaceInvitationSummary[]> {
+    const workspace = await WorkspaceRegistryRepository.findById(this.pool, workspaceId)
+    if (!workspace) {
+      throw new HttpError("Workspace not found", { status: 404, code: "NOT_FOUND" })
+    }
+
+    const rows = await InvitationShadowRepository.listPendingByWorkspace(this.pool, workspaceId)
+    if (rows.length === 0) return []
+
+    const uniqueInviterIds = Array.from(
+      new Set(rows.map((r) => r.inviter_workos_user_id).filter((id): id is string => id != null))
+    )
+    const inviterById = new Map<string, WorkosUserSummary>()
+    if (uniqueInviterIds.length > 0) {
+      const lookups = await Promise.all(
+        uniqueInviterIds.map(async (id) => {
+          try {
+            return await this.workosOrgService.getUser(id)
+          } catch (err) {
+            logger.warn({ err, workosUserId: id, workspaceId }, "Backoffice: failed to resolve inviter user")
+            return null
+          }
+        })
+      )
+      for (const user of lookups) {
+        if (user) inviterById.set(user.id, user)
+      }
+    }
+
+    return rows.map((row) => ({
+      id: row.id,
+      kind: row.kind === "link" ? "link" : "email",
+      email: row.email,
+      roleSlug: row.role_slug,
+      expiresAt: row.expires_at.toISOString(),
+      createdAt: row.created_at.toISOString(),
+      inviter: summarizeInviter(row.inviter_workos_user_id, inviterById),
+    }))
+  }
+
   // --- private helpers -----------------------------------------------------
 
   private rethrowWorkosInvitationError(error: unknown): never {
@@ -411,6 +480,20 @@ function summarizeOwner(workosUserId: string, user: WorkosUserSummary | null): W
   if (!user) {
     return { workosUserId, email: null, name: null }
   }
+  return {
+    workosUserId,
+    email: user.email,
+    name: displayNameFromWorkos({ email: user.email, firstName: user.firstName, lastName: user.lastName }),
+  }
+}
+
+function summarizeInviter(
+  workosUserId: string | null,
+  inviterById: Map<string, WorkosUserSummary>
+): WorkspaceInvitationSummary["inviter"] {
+  if (!workosUserId) return null
+  const user = inviterById.get(workosUserId)
+  if (!user) return { workosUserId, email: null, name: null }
   return {
     workosUserId,
     email: user.email,

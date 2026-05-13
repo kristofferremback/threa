@@ -11,7 +11,7 @@ import {
 import { InvitationShadowRepository } from "./repository"
 import { WorkspaceRegistryRepository } from "../workspaces"
 import { RegionalClaimError, type RegionalClient } from "../../lib/regional-client"
-import type { InvitationLinkLookupResponse, PendingInvitation } from "@threa/types"
+import type { InvitationLinkLookupResponse, PendingInvitation, WorkspaceInvitableRole } from "@threa/types"
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex")
@@ -118,7 +118,7 @@ export class InvitationShadowService {
         await this.workosOrgService.ensureOrganizationMembership({
           organizationId: orgId,
           userId: user.id,
-          roleSlug: "member",
+          roleSlug: shadow.role_slug,
         })
       } catch (error) {
         logger.warn({ err: error, workspaceId: shadow.workspace_id }, "Failed to sync WorkOS org membership on accept")
@@ -141,6 +141,7 @@ export class InvitationShadowService {
     kind: "email" | "link"
     email: string | null
     tokenHash: string | null
+    roleSlug: WorkspaceInvitableRole
     expiresAt: Date
     inviterWorkosUserId?: string
   }) {
@@ -162,6 +163,7 @@ export class InvitationShadowService {
         email: params.email,
         organizationId: orgId,
         inviterWorkosUserId: params.inviterWorkosUserId,
+        roleSlug: shadow.role_slug,
       })
     }
 
@@ -261,6 +263,7 @@ export class InvitationShadowService {
       email: params.email,
       organizationId: orgId,
       inviterWorkosUserId: params.inviterWorkosUserId,
+      roleSlug: updated.role_slug,
     })
   }
 
@@ -269,12 +272,14 @@ export class InvitationShadowService {
     email: string
     organizationId: string
     inviterWorkosUserId: string
+    roleSlug: WorkspaceInvitableRole
   }): Promise<void> {
     try {
       const workosInvitation = await this.workosOrgService.sendInvitation({
         organizationId: params.organizationId,
         email: params.email,
         inviterUserId: params.inviterWorkosUserId,
+        roleSlug: params.roleSlug,
       })
       await InvitationShadowRepository.setWorkosInvitationId(this.pool, params.shadowId, workosInvitation.id)
     } catch (error) {

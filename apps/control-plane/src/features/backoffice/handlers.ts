@@ -98,6 +98,15 @@ export function createBackofficeHandlers({ backofficeService }: Dependencies) {
       res.json({ members })
     },
 
+    async listWorkspaceInvitations(req: Request, res: Response) {
+      const id = req.params.id
+      if (!id) {
+        throw new HttpError("Missing workspace id", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      const invitations = await backofficeService.listWorkspaceInvitations(id)
+      res.json({ invitations })
+    },
+
     async getConfig(_req: Request, res: Response) {
       res.json({ config: backofficeService.getConfig() })
     },

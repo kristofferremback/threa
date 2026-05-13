@@ -1,4 +1,5 @@
 import type { Querier } from "@threa/backend-common"
+import type { WorkspaceInvitableRole } from "@threa/types"
 
 export interface InvitationShadowRow {
   id: string
@@ -10,6 +11,7 @@ export interface InvitationShadowRow {
   workos_invitation_id: string | null
   inviter_workos_user_id: string | null
   token_hash: string | null
+  role_slug: WorkspaceInvitableRole
   created_at: Date
   expires_at: Date
 }
@@ -29,7 +31,7 @@ export interface LinkLookupRow {
   expires_at: Date
 }
 
-const SELECT_FIELDS = `id, workspace_id, kind, email, region, status, workos_invitation_id, inviter_workos_user_id, token_hash, created_at, expires_at`
+const SELECT_FIELDS = `id, workspace_id, kind, email, region, status, workos_invitation_id, inviter_workos_user_id, token_hash, role_slug, created_at, expires_at`
 
 export const InvitationShadowRepository = {
   async findById(db: Querier, id: string): Promise<InvitationShadowRow | null> {
@@ -38,6 +40,16 @@ export const InvitationShadowRepository = {
       [id]
     )
     return result.rows[0] ?? null
+  },
+
+  async listPendingByWorkspace(db: Querier, workspaceId: string): Promise<InvitationShadowRow[]> {
+    const result = await db.query<InvitationShadowRow>(
+      `SELECT ${SELECT_FIELDS} FROM invitation_shadows
+       WHERE workspace_id = $1 AND status = 'pending' AND expires_at > NOW()
+       ORDER BY created_at DESC`,
+      [workspaceId]
+    )
+    return result.rows
   },
 
   async findPendingByEmailWithWorkspace(db: Querier, email: string): Promise<PendingInvitationRow[]> {
@@ -61,13 +73,14 @@ export const InvitationShadowRepository = {
       kind: "email" | "link"
       email: string | null
       tokenHash: string | null
+      roleSlug: WorkspaceInvitableRole
       expiresAt: Date
       inviterWorkosUserId?: string
     }
   ): Promise<InvitationShadowRow> {
     const result = await db.query<InvitationShadowRow>(
-      `INSERT INTO invitation_shadows (id, workspace_id, kind, email, region, expires_at, inviter_workos_user_id, token_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO invitation_shadows (id, workspace_id, kind, email, region, expires_at, inviter_workos_user_id, token_hash, role_slug)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (id) DO UPDATE SET
          expires_at = EXCLUDED.expires_at,
          inviter_workos_user_id = COALESCE(EXCLUDED.inviter_workos_user_id, invitation_shadows.inviter_workos_user_id)
@@ -81,6 +94,7 @@ export const InvitationShadowRepository = {
         shadow.expiresAt,
         shadow.inviterWorkosUserId ?? null,
         shadow.tokenHash,
+        shadow.roleSlug,
       ]
     )
     return result.rows[0]
