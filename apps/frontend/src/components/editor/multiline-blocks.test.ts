@@ -428,6 +428,91 @@ describe("multiline block paste handling", () => {
     editor.destroy()
   })
 
+  it("pastes multiline markdown with TypeScript generics, blockquotes, and attachment references", () => {
+    const editor = createTestEditor("")
+    editor.commands.setTextSelection(editor.state.doc.content.size)
+
+    const handled = insertPastedText(
+      editor,
+      `Sure, here's the content for your infinite scroller test! :tada:
+
+---
+
+**React component (~25 lines):**
+
+\`\`\`tsx
+import { useState, useEffect } from "react"
+
+type User = { id: number; name: string; email: string }
+
+export function UserList() {
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchUsers() {
+      try {
+        const res = await fetch("https://jsonplaceholder.typicode.com/users")
+        if (!res.ok) throw new Error("Failed to fetch")
+        const data: User[] = await res.json()
+        setUsers(data)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error")
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchUsers()
+  }, [])
+
+  if (loading) return <p>Loading...</p>
+  if (error) return <p>Error: {error}</p>
+
+  return (
+    <ul>
+      {users.map((user) => (
+        <li key={user.id}>
+          <strong>{user.name}</strong> — {user.email}
+        </li>
+      ))}
+    </ul>
+  )
+}
+\`\`\`
+
+---
+
+**Block quote — excerpt from the Wikipedia article on** **[Infinite scroll](https://en.wikipedia.org/wiki/Infinite_scrolling)****:**
+
+> Infinite scrolling is a web-design technique that loads content continuously as the user scrolls down the page, eliminating the need for pagination.
+> 
+> The technique was popularized by social media platforms such as Facebook and Twitter, where new content is constantly being generated and users benefit from a seamless browsing experience.
+> 
+> Critics of infinite scroll argue that it removes the user's sense of progress and location within a site, making it difficult to return to a previously viewed item. It can also contribute to excessive time-on-site and compulsive browsing behaviors.
+> 
+> From an accessibility standpoint, infinite scroll can be problematic for keyboard-only users and screen reader users, as dynamically loaded content may not be announced or reachable without additional ARIA live region support.
+> 
+> Some designers advocate for a "load more" button as a hybrid approach — preserving the convenience of on-demand loading while giving users explicit control over when new content appears.
+
+---
+
+And here's the image you attached:
+
+[Image #1](attachment:attach_01KRGE6JQYT12J75NXNNNBKXNX "threa-attachment:mimeType=image%2Funknown")
+
+And the repo link you shared: [threahq/threa](https://github.com/threahq/threa) — looks like a TypeScript-heavy monorepo, AI-powered chat with GAM memory. Neat! 
+
+Hope this gives the scroller a good workout. Let me know if you need more variety (e.g. a longer nested list, table, etc.).`,
+      () => "user",
+      () => null
+    )
+
+    expect(handled).toBe(true)
+    expect(serializeToMarkdown(editor.getJSON())).toContain("attachment:attach_01KRGE6JQYT12J75NXNNNBKXNX")
+    editor.destroy()
+  })
+
   it("keeps multi-line plain-text pastes as separate paragraphs", () => {
     const editor = createTestEditor("prefix ")
 
