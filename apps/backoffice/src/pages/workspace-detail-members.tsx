@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { RefreshCw } from "lucide-react"
@@ -7,9 +7,11 @@ import { InlineBanner } from "@/components/inline-banner"
 import { Button } from "@/components/ui/button"
 import {
   backofficeKeys,
+  getOutboxEventsStatus,
   listWorkspaceInvitations,
   listWorkspaceMembers,
   resyncWorkspaceMembers,
+  type OutboxEventStatus,
   type ResyncWorkspaceMembersResult,
   type WorkspaceDetail,
   type WorkspaceInvitation,
@@ -18,6 +20,16 @@ import {
 import { ApiError, readApiError } from "@/api/client"
 import { cn } from "@/lib/utils"
 import { formatDateTime } from "@/lib/format"
+
+/**
+ * How long the re-sync banner keeps polling outbox-event status before it
+ * gives up and shows "still pending". Picked to comfortably cover the
+ * outbox dispatcher's healthy drain latency (NOTIFY debounce ≤ 200ms +
+ * regional round-trip) while bounding the worst case so an operator sees a
+ * clear "still pending" outcome instead of a banner that polls forever.
+ */
+const RESYNC_POLL_TIMEOUT_MS = 15_000
+const RESYNC_POLL_INTERVAL_MS = 1_500
 
 function formatRelativeTimestamp(iso: string): string {
   const then = new Date(iso).getTime()
@@ -95,25 +107,83 @@ export function WorkspaceDetailMembersPage() {
 
   const notLinked = workspaceQ.data ? workspaceQ.data.workosOrganizationId === null : false
 
+  // `pollStartedAt` is the wall-clock anchor for the timeout — TanStack's
+  // refetchInterval can't read a ref synchronously without re-renders, so
+  // state is the right shape here. Reset alongside the mutation so the next
+  // re-sync starts a fresh polling window.
+  const [pollStartedAt, setPollStartedAt] = useState<number | null>(null)
+  const [didTimeout, setDidTimeout] = useState(false)
+
   const resyncMutation = useMutation({
     mutationFn: () => {
       if (!id) throw new Error("Missing workspace id")
       return resyncWorkspaceMembers(id)
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       if (!id) return
       queryClient.invalidateQueries({ queryKey: backofficeKeys.workspaceMembers(id) })
+      setDidTimeout(false)
+      // No events means "already up to date"; skip polling entirely so the
+      // banner doesn't flash "0 of 0" before settling.
+      setPollStartedAt(data.outboxEventIds.length > 0 ? Date.now() : null)
     },
   })
+
+  const eventIds = resyncMutation.data?.outboxEventIds ?? []
+
+  const statusQ = useQuery({
+    queryKey: ["backoffice", "outbox-events", "status", eventIds],
+    queryFn: () => getOutboxEventsStatus(eventIds),
+    enabled: eventIds.length > 0 && pollStartedAt !== null,
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (data && data.every((s) => s.status !== "pending")) return false
+      if (pollStartedAt !== null && Date.now() - pollStartedAt > RESYNC_POLL_TIMEOUT_MS) return false
+      return RESYNC_POLL_INTERVAL_MS
+    },
+    refetchIntervalInBackground: false,
+    // Background timeline: the data describes a specific moment in fan-out,
+    // not a cacheable resource. Always re-fetch when we mount or focus.
+    staleTime: 0,
+    gcTime: 0,
+  })
+
+  // Stop polling once we've crossed the timeout with anything still pending,
+  // so the banner can render the "still pending" terminal state instead of
+  // looping forever. Recorded in state because refetchInterval returning
+  // `false` doesn't trigger a re-render on its own.
+  useEffect(() => {
+    if (pollStartedAt === null) return
+    const data = statusQ.data
+    if (data && data.every((s) => s.status !== "pending")) {
+      // All terminal — let the banner settle and stop the timer.
+      setPollStartedAt(null)
+      return
+    }
+    const remaining = RESYNC_POLL_TIMEOUT_MS - (Date.now() - pollStartedAt)
+    if (remaining <= 0) {
+      setDidTimeout(true)
+      setPollStartedAt(null)
+      return
+    }
+    const t = window.setTimeout(() => {
+      setDidTimeout(true)
+      setPollStartedAt(null)
+    }, remaining)
+    return () => window.clearTimeout(t)
+  }, [pollStartedAt, statusQ.data])
 
   // Clear the resync banner when navigating to a different workspace —
   // otherwise a success/error from workspace A briefly leaks onto workspace B.
   const { reset: resetResync } = resyncMutation
   useEffect(() => {
     resetResync()
+    setPollStartedAt(null)
+    setDidTimeout(false)
   }, [id, resetResync])
 
   const resyncError = readApiError(resyncMutation.error)
+  const isPolling = pollStartedAt !== null
 
   return (
     <div className="flex flex-col gap-10">
@@ -131,14 +201,21 @@ export function WorkspaceDetailMembersPage() {
             size="sm"
             variant="outline"
             onClick={() => resyncMutation.mutate()}
-            disabled={notLinked || resyncMutation.isPending || !id}
+            disabled={notLinked || resyncMutation.isPending || isPolling || !id}
           >
-            <RefreshCw className={cn("size-3.5", resyncMutation.isPending && "animate-spin")} />
-            {resyncMutation.isPending ? "Re-syncing…" : "Re-sync members"}
+            <RefreshCw className={cn("size-3.5", (resyncMutation.isPending || isPolling) && "animate-spin")} />
+            {resyncButtonLabel(resyncMutation.isPending, isPolling)}
           </Button>
         }
       >
-        {resyncMutation.isSuccess ? <ResyncBanner result={resyncMutation.data} /> : null}
+        {resyncMutation.isSuccess ? (
+          <ResyncBanner
+            result={resyncMutation.data}
+            statuses={statusQ.data}
+            isPolling={isPolling}
+            didTimeout={didTimeout}
+          />
+        ) : null}
         {resyncError ? <InlineBanner tone="error">Couldn't re-sync members: {resyncError}</InlineBanner> : null}
         <MembersBody loading={query.isLoading} error={query.error} members={query.data} notLinked={notLinked} />
       </Section>
@@ -146,16 +223,87 @@ export function WorkspaceDetailMembersPage() {
   )
 }
 
-function ResyncBanner({ result }: { result: ResyncWorkspaceMembersResult }) {
-  const { membershipsUpserted, membershipsRemoved } = result
-  const total = membershipsUpserted + membershipsRemoved
-  if (total === 0) {
+function ResyncBanner({
+  result,
+  statuses,
+  isPolling,
+  didTimeout,
+}: {
+  result: ResyncWorkspaceMembersResult
+  statuses: OutboxEventStatus[] | undefined
+  isPolling: boolean
+  didTimeout: boolean
+}) {
+  const { membershipsUpserted, membershipsRemoved, outboxEventIds } = result
+  const totalChanges = membershipsUpserted + membershipsRemoved
+
+  if (totalChanges === 0) {
     return <InlineBanner tone="success">Already up to date — no changes.</InlineBanner>
   }
+
+  const summary = describeChanges(membershipsUpserted, membershipsRemoved)
+
+  // No events to track — fan-out path was empty. We shouldn't hit this when
+  // `totalChanges > 0`, but the early return keeps the rest of the function
+  // working with a non-empty event set.
+  if (outboxEventIds.length === 0) {
+    return <InlineBanner tone="success">Re-sync complete — {summary}.</InlineBanner>
+  }
+
+  const total = outboxEventIds.length
+  // `statuses` lags the mutation by one network round-trip; treat the
+  // pre-first-poll window as "all pending" rather than rendering "0 of N
+  // processed" momentarily as a deceptive success state.
+  const known = statuses ?? outboxEventIds.map((id) => ({ id, status: "pending" as const }))
+  const processed = known.filter((s) => s.status === "processed").length
+  const deadLettered = known.filter((s) => s.status === "dead_lettered").length
+  const pending = total - processed - deadLettered
+
+  if (deadLettered > 0) {
+    const eventsWord = `event${total === 1 ? "" : "s"}`
+    return (
+      <InlineBanner tone="error">
+        Re-sync committed ({summary}) but fan-out failed for {deadLettered} of {total} {eventsWord}
+        {isPolling ? " so far — still checking the rest." : " — check control-plane logs for the dead-letter queue."}
+      </InlineBanner>
+    )
+  }
+
+  if (isPolling) {
+    return (
+      <InlineBanner tone="success">
+        Re-sync committed ({summary}) — {processed} of {total} propagated to regional permissions.
+      </InlineBanner>
+    )
+  }
+
+  if (didTimeout && pending > 0) {
+    return (
+      <InlineBanner tone="error">
+        Re-sync committed ({summary}) but {pending} of {total} event{total === 1 ? "" : "s"}{" "}
+        {pending === 1 ? "is" : "are"} still pending fan-out. Reload in a few seconds to check progress.
+      </InlineBanner>
+    )
+  }
+
+  return (
+    <InlineBanner tone="success">
+      Re-sync complete — {summary}, all {total} event{total === 1 ? "" : "s"} propagated.
+    </InlineBanner>
+  )
+}
+
+function resyncButtonLabel(isMutating: boolean, isPolling: boolean): string {
+  if (isMutating) return "Re-syncing…"
+  if (isPolling) return "Propagating…"
+  return "Re-sync members"
+}
+
+function describeChanges(upserted: number, removed: number): string {
   const parts: string[] = []
-  if (membershipsUpserted > 0) parts.push(`${membershipsUpserted} upserted`)
-  if (membershipsRemoved > 0) parts.push(`${membershipsRemoved} removed`)
-  return <InlineBanner tone="success">Re-sync complete — {parts.join(", ")}.</InlineBanner>
+  if (upserted > 0) parts.push(`${upserted} upserted`)
+  if (removed > 0) parts.push(`${removed} removed`)
+  return parts.join(", ")
 }
 
 function MembersBody({

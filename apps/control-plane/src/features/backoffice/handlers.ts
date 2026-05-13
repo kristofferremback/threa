@@ -11,6 +11,32 @@ const createInvitationSchema = z.object({
   email: z.string().email(),
 })
 
+/**
+ * Comma-separated list of decimal outbox event ids, e.g. `?ids=12,13,14`.
+ * Pipeline: 1) split + trim + drop empties, 2) cap at `MAX_STATUS_IDS`,
+ * 3) reject anything that isn't a positive decimal integer. We don't parse
+ * to bigint here — the service layer owns the BigInt parse and surfaces a
+ * clean 400 if the value overflows.
+ */
+const MAX_STATUS_IDS = 200
+const outboxStatusQuerySchema = z.object({
+  ids: z
+    .string()
+    .optional()
+    .transform((raw) => {
+      if (!raw) return [] as string[]
+      return raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+    })
+    .pipe(
+      z
+        .array(z.string().regex(/^[1-9]\d*$/, "Outbox event id must be a positive integer"))
+        .max(MAX_STATUS_IDS, `Too many ids (max ${MAX_STATUS_IDS})`)
+    ),
+})
+
 export function createBackofficeHandlers({ backofficeService }: Dependencies) {
   return {
     /**
@@ -105,6 +131,15 @@ export function createBackofficeHandlers({ backofficeService }: Dependencies) {
       }
       const result = await backofficeService.resyncWorkspaceMembers(id)
       res.json({ result })
+    },
+
+    async getOutboxEventsStatus(req: Request, res: Response) {
+      const parsed = outboxStatusQuerySchema.safeParse(req.query)
+      if (!parsed.success) {
+        throw new HttpError("Invalid request query", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      const statuses = await backofficeService.getOutboxEventStatuses(parsed.data.ids)
+      res.json({ statuses })
     },
 
     async listWorkspaceInvitations(req: Request, res: Response) {

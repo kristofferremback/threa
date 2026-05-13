@@ -188,6 +188,11 @@ describe("WorkosAuthzBackfill.runForOrganization", () => {
     const events = await fetchAuthzOutbox(pool, ORG_ID)
     expect(events).toHaveLength(1)
     expect(events[0]!.event_type).toBe(OUTBOX_AUTHZ_MEMBERSHIP_CHANGED)
+
+    // outboxEventIds mirrors the inserted row count and serialises as
+    // decimal strings so BigInt ids round-trip safely over JSON.
+    expect(result.outboxEventIds).toHaveLength(1)
+    expect(result.outboxEventIds[0]).toMatch(/^\d+$/)
   })
 
   test("reconciles memberships absent from the snapshot for the targeted org", async () => {

@@ -127,6 +127,8 @@ export type {
   OutboxDispatcherConfig,
   OutboxRetentionWorkerConfig,
   OutboxEvent,
+  OutboxEventStatus,
+  OutboxEventProcessingStatus,
   DeleteRetainedOutboxEventsParams,
   CursorLockConfig,
   ProcessResult,
