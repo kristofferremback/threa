@@ -3,9 +3,14 @@
   "short_name": "Threa",
   "description": "AI-powered knowledge chat — where critical information comes to thrive",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#C8A055",
+  "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
   "share_target": {
     "action": "/share",
     "method": "POST",
