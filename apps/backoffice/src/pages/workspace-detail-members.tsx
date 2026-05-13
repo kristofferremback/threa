@@ -260,10 +260,11 @@ function ResyncBanner({
   const pending = total - processed - deadLettered
 
   if (deadLettered > 0) {
+    const eventsWord = `event${total === 1 ? "" : "s"}`
     return (
       <InlineBanner tone="error">
-        Re-sync committed ({summary}) but fan-out failed for {deadLettered} of {total} event
-        {total === 1 ? "" : "s"} — check control-plane logs for the dead-letter queue.
+        Re-sync committed ({summary}) but fan-out failed for {deadLettered} of {total} {eventsWord}
+        {isPolling ? " so far — still checking the rest." : " — check control-plane logs for the dead-letter queue."}
       </InlineBanner>
     )
   }
