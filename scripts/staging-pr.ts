@@ -486,8 +486,7 @@ async function registerStagingRegion(): Promise<void> {
   const services = await listServices()
   const mainBackend = services.find((s) => s.name === "backend")
   if (!mainBackend) {
-    console.warn("Main staging 'backend' service not found — skipping 'staging' region registration")
-    return
+    throw new Error("Main staging 'backend' service not found; cannot register 'staging' region")
   }
 
   const environmentId = await getEnvironmentId()
@@ -499,8 +498,9 @@ async function registerStagingRegion(): Promise<void> {
 
   const domain = domainData.serviceInstance.domains.serviceDomains[0]?.domain
   if (!domain) {
-    console.warn("Main staging 'backend' has no service domain — skipping 'staging' region registration")
-    return
+    throw new Error(
+      `Main staging 'backend' (service ${mainBackend.id}, env ${environmentId}) has no service domain; cannot register 'staging' region`
+    )
   }
   const backendUrl = `https://${domain}`
 
