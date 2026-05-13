@@ -178,8 +178,13 @@ export function useScrollBehavior({
     }
   })
 
-  // Auto-scroll to bottom when the container shrinks (e.g. mobile keyboard opens).
-  // This keeps the latest messages visible instead of being pushed off-screen.
+  // Re-anchor scroll position when the container resizes (e.g. mobile keyboard
+  // opens/closes). Goal: the bottom-most visible row stays glued to the bottom
+  // of the new viewport, so the message the user was reading doesn't drift
+  // behind the keyboard. When the container shrinks the browser preserves
+  // scrollTop, so the visible-area bottom moves UP relative to content by
+  // exactly the height delta — compensate by shifting scrollTop by that delta.
+  // Mirrors on grow so behavior is symmetric when the keyboard closes.
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
@@ -188,10 +193,15 @@ export function useScrollBehavior({
 
     const observer = new ResizeObserver(() => {
       const newHeight = el.clientHeight
-      if (newHeight < prevHeight && shouldAutoScroll.current) {
-        el.scrollTop = el.scrollHeight
-      }
+      if (newHeight === prevHeight) return
+      const delta = prevHeight - newHeight
       prevHeight = newHeight
+
+      if (shouldAutoScroll.current) {
+        el.scrollTop = el.scrollHeight
+      } else if (delta !== 0) {
+        el.scrollTop += delta
+      }
     })
 
     observer.observe(el)

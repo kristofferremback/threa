@@ -45,13 +45,19 @@ if ("serviceWorker" in navigator) {
 // their first render, eliminating the post-mount resize cascade that Virtuoso
 // otherwise compensates for by shifting sibling rows.
 //
-// We race hydration against a short timeout: when IDB is healthy (the common
-// case, ~5–20ms) the await guarantees a populated cache on first paint; when
-// IDB is pathologically slow (busy disk, locked database, etc.) we mount
-// anyway and accept the original flip rather than block boot indefinitely.
-// `hydrateCollapseCache()` continues running and `notify()` wakes subscribers
-// once it finishes, so even after the timeout the cache eventually heals.
-const HYDRATION_CAP_MS = 100
+// We race hydration against a deadline: when IDB is healthy (the common case,
+// ~5–20ms) the await returns almost immediately; the deadline only fires when
+// `db.open()` itself is slow — cold-boot schema migrations, a contended IDB
+// connection, or a multi-thousand-row collapse table. 500ms is the headroom
+// we need to clear those cases without bailing too early; the previous 100ms
+// cap was tight enough that returning users with large collapse tables would
+// mount with an empty cache and then flip a previously-expanded long code
+// block from `defaultCollapsed=true` (small preview) to `persistedOverride=
+// false` (full block) on the next render — the "mega jump" reported in prod.
+// At the deadline we mount with whatever the cache holds; `hydrateCollapseCache`
+// keeps running and `notify()` still wakes subscribers, so the cache heals
+// even if the deadline fired.
+const HYDRATION_CAP_MS = 500
 
 async function bootstrap() {
   try {
