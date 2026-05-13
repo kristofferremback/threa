@@ -11,6 +11,7 @@ import Placeholder from "@tiptap/extension-placeholder"
 import { AtomAwareBold, AtomAwareItalic, AtomAwareStrike, AtomAwareCode, BoundaryAwareLink } from "./atom-aware-marks"
 
 // Block extensions
+import HorizontalRule from "@tiptap/extension-horizontal-rule"
 import Blockquote from "@tiptap/extension-blockquote"
 import BulletList from "@tiptap/extension-bullet-list"
 import OrderedList from "@tiptap/extension-ordered-list"
@@ -81,6 +82,7 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
     OrderedList,
     ListItem,
     Blockquote,
+    HorizontalRule,
     CodeBlockLowlight.configure({
       lowlight,
       defaultLanguage: "plaintext",
