@@ -150,9 +150,10 @@ const ADMIN_ADDITIONS: readonly WorkspacePermissionSlug[] = Object.freeze([
   WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN,
 ])
 
-// Order is the canonical role hierarchy: index = privilege rank
-// (member < admin < owner). `roleRank()` and `WORKSPACE_USER_ROLES` derive
-// from this order so adding a role only requires editing this array.
+// Role definitions are the only place where role → permission mapping lives.
+// All authorization decisions derive from `permissions`, never from the role
+// slug itself. Roles are a packaging artifact for display and assignment;
+// permission checks are the actual gate.
 export const WORKSPACE_ROLE_DEFINITIONS: readonly WorkspaceRoleDefinition[] = Object.freeze([
   {
     slug: WORKSPACE_ROLE_SLUGS.MEMBER,
@@ -194,19 +195,6 @@ export const WORKSPACE_INVITABLE_ROLES: readonly [WorkspaceInvitableRole, ...Wor
   WORKSPACE_ROLE_SLUGS.ADMIN,
 ]
 
-const ROLE_RANK: Record<WorkspaceRoleSlug, number> = Object.fromEntries(
-  WORKSPACE_ROLE_DEFINITIONS.map((r, idx) => [r.slug, idx])
-) as Record<WorkspaceRoleSlug, number>
-
-/** Privilege rank for hierarchical comparisons (`member < admin < owner`). */
-export function roleRank(slug: WorkspaceRoleSlug): number {
-  const rank = ROLE_RANK[slug]
-  if (rank === undefined) {
-    throw new Error(`Unknown workspace role: ${slug}`)
-  }
-  return rank
-}
-
 export function permissionsForRole(slug: WorkspaceRoleSlug): WorkspacePermissionSlug[] {
   const definition = WORKSPACE_ROLE_DEFINITIONS.find((r) => r.slug === slug)
   if (!definition) {
@@ -225,20 +213,18 @@ export function roleDisplayName(slug: WorkspaceRoleSlug): string {
 }
 
 /**
- * From a list of raw role slugs the user holds, pick the highest-privilege
- * one according to `WORKSPACE_ROLE_DEFINITIONS` order. Returns `null` if none
- * match a known role.
+ * True if any of the given role slugs grants `permission`. Unknown role slugs
+ * are ignored so historical WorkOS roles we don't model can't accidentally
+ * grant access. Use this anywhere a check would otherwise be phrased as
+ * `roleSlugs.includes("owner")` or similar — the gate is the permission, not
+ * the role name.
  */
-export function pickPrimaryRoleSlug(roles: readonly string[]): WorkspaceRoleSlug | null {
-  let best: WorkspaceRoleSlug | null = null
-  for (const slug of roles) {
-    if (!(slug in ROLE_RANK)) continue
-    const typed = slug as WorkspaceRoleSlug
-    if (best === null || roleRank(typed) > roleRank(best)) {
-      best = typed
-    }
+export function rolesGrant(roleSlugs: readonly string[], permission: WorkspacePermissionSlug): boolean {
+  for (const slug of roleSlugs) {
+    const def = WORKSPACE_ROLE_DEFINITIONS.find((r) => r.slug === slug)
+    if (def?.permissions.includes(permission)) return true
   }
-  return best
+  return false
 }
 
 const PERMISSION_SLUG_SET = new Set<string>(Object.values(WORKSPACE_PERMISSION_SCOPES))

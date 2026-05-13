@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { RefreshCw, MoreHorizontal, Ban, UserPlus } from "lucide-react"
-import { pickPrimaryRoleSlug, roleDisplayName, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
+import { roleDisplayName, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
 import { Section } from "@/components/layout/section"
 import { InlineBanner } from "@/components/inline-banner"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -53,7 +53,6 @@ import { formatDateTime } from "@/lib/format"
  */
 const RESYNC_POLL_TIMEOUT_MS = 15_000
 const RESYNC_POLL_INTERVAL_MS = 1_500
-
 
 function formatRelativeTimestamp(iso: string): string {
   const then = new Date(iso).getTime()
@@ -295,9 +294,7 @@ export function WorkspaceDetailMembersPage() {
           />
         ) : null}
         {resyncError ? <InlineBanner tone="error">Couldn't re-sync members: {resyncError}</InlineBanner> : null}
-        {changeRoleError ? (
-          <InlineBanner tone="error">Couldn't change role: {changeRoleError}</InlineBanner>
-        ) : null}
+        {changeRoleError ? <InlineBanner tone="error">Couldn't change role: {changeRoleError}</InlineBanner> : null}
         {removeError ? <InlineBanner tone="error">Couldn't remove member: {removeError}</InlineBanner> : null}
         {assignError ? <InlineBanner tone="error">Couldn't add member: {assignError}</InlineBanner> : null}
         <MembersBody
@@ -565,9 +562,7 @@ function MemberRow({
 }) {
   const name = memberDisplayName(member)
   const fallback = member.email ?? member.workosUserId
-  const currentRole = pickPrimaryRoleSlug(member.roleSlugs)
-  // Owner role transfer is its own flow — surface only admin/member here.
-  const isOwner = currentRole === "owner"
+  const memberRoleSet = new Set(member.roleSlugs)
   return (
     <li className="flex items-center justify-between gap-4 py-4 pl-1 pr-3">
       <div className="flex min-w-0 flex-col gap-1">
@@ -590,42 +585,39 @@ function MemberRow({
         >
           {formatRelativeTimestamp(member.lastEventAt)}
         </span>
-        {!isOwner ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="size-8"
-                disabled={busy}
-                aria-label={`Manage ${name ?? fallback}`}
-              >
-                <MoreHorizontal className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Change role</div>
-              {WORKSPACE_USER_ROLES.filter((slug) => slug !== "owner").map((slug) => (
-                <DropdownMenuItem
-                  key={slug}
-                  disabled={busy || slug === currentRole}
-                  onSelect={() => onChangeRole(slug)}
-                >
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8"
+              disabled={busy}
+              aria-label={`Manage ${name ?? fallback}`}
+            >
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Change role</div>
+            {WORKSPACE_USER_ROLES.map((slug) => {
+              const memberHasRole = memberRoleSet.has(slug)
+              return (
+                <DropdownMenuItem key={slug} disabled={busy || memberHasRole} onSelect={() => onChangeRole(slug)}>
                   {roleDisplayName(slug)}
-                  {slug === currentRole ? <span className="ml-2 text-xs text-muted-foreground">current</span> : null}
+                  {memberHasRole ? <span className="ml-2 text-xs text-muted-foreground">current</span> : null}
                 </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                disabled={busy}
-                onSelect={onRequestRemove}
-              >
-                Remove from workspace
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+              )
+            })}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              disabled={busy}
+              onSelect={onRequestRemove}
+            >
+              Remove from workspace
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </li>
   )

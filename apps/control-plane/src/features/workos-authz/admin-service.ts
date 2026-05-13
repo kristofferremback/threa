@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import { HttpError, logger, type WorkosOrganizationMembership, type WorkosOrgService } from "@threa/backend-common"
-import { WORKSPACE_ROLE_SLUGS, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
+import { rolesGrant, WORKSPACE_PERMISSION_SCOPES, WORKSPACE_USER_ROLES, type WorkspaceRoleSlug } from "@threa/types"
 import { withOrganizationAdminLock } from "./org-admin-lock"
 
 interface Dependencies {
@@ -11,11 +11,12 @@ interface Dependencies {
 /**
  * The user performing an admin action. `isPlatformAdmin` is set by the
  * backoffice surface (gated on `requirePlatformAdmin`) and bypasses the
- * workspace-role check, while data-integrity guards (last-owner, self-demote)
+ * permission check, while data-integrity guards (last-owner, self-demote)
  * still apply. Regional surfaces pass `isPlatformAdmin: false`; the regional
  * `requireWorkspacePermission('members:write')` middleware is the first gate
  * and `assertActorMayManage` here is the second. Ownership-touching ops add
- * a third gate that requires the actor to hold the `owner` role itself.
+ * a third gate that requires the actor to hold the `workspace:owner`
+ * permission. Both gates derive from permissions, never from role slug.
  */
 export interface AdminActor {
   workosUserId: string
@@ -102,14 +103,14 @@ export class WorkosAuthzAdminService {
       this.assertActorMayManage(params.actor, memberships)
 
       const target = requireTargetMembership(memberships, params.targetUserId)
-      const wasOwner = target.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)
-      const willBeOwner = params.roleSlug === WORKSPACE_ROLE_SLUGS.OWNER
+      const targetIsOwner = rolesGrant(target.roleSlugs, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER)
+      const newRoleIsOwner = rolesGrant([params.roleSlug], WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER)
 
-      if (wasOwner || willBeOwner) {
+      if (targetIsOwner || newRoleIsOwner) {
         this.assertActorMayTouchOwnership(params.actor, memberships)
       }
 
-      if (wasOwner && !willBeOwner) {
+      if (targetIsOwner && !newRoleIsOwner) {
         this.assertNotSelfDemote(params.actor, params.targetUserId)
         this.assertNotLastOwner(memberships, params.targetUserId)
       }
@@ -138,7 +139,7 @@ export class WorkosAuthzAdminService {
 
       const target = requireTargetMembership(memberships, params.targetUserId)
       this.assertNotSelfDemote(params.actor, params.targetUserId)
-      if (target.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)) {
+      if (rolesGrant(target.roleSlugs, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER)) {
         this.assertActorMayTouchOwnership(params.actor, memberships)
         this.assertNotLastOwner(memberships, params.targetUserId)
       }
@@ -161,11 +162,8 @@ export class WorkosAuthzAdminService {
   private assertActorMayManage(actor: AdminActor, memberships: WorkosOrganizationMembership[]): void {
     if (actor.isPlatformAdmin) return
     const actorMembership = memberships.find((m) => m.userId === actor.workosUserId)
-    const canManage =
-      actorMembership?.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER) ||
-      actorMembership?.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.ADMIN)
-    if (!canManage) {
-      throw new HttpError("Only workspace owners and admins may manage members", {
+    if (!actorMembership || !rolesGrant(actorMembership.roleSlugs, WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)) {
+      throw new HttpError("Actor lacks members:write permission", {
         status: 403,
         code: "FORBIDDEN",
       })
@@ -175,8 +173,8 @@ export class WorkosAuthzAdminService {
   private assertActorMayTouchOwnership(actor: AdminActor, memberships: WorkosOrganizationMembership[]): void {
     if (actor.isPlatformAdmin) return
     const actorMembership = memberships.find((m) => m.userId === actor.workosUserId)
-    if (!actorMembership?.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)) {
-      throw new HttpError("Only workspace owners may change ownership", {
+    if (!actorMembership || !rolesGrant(actorMembership.roleSlugs, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER)) {
+      throw new HttpError("Actor lacks workspace:owner permission", {
         status: 403,
         code: "OWNER_ACTION",
       })
@@ -194,7 +192,7 @@ export class WorkosAuthzAdminService {
 
   private assertNotLastOwner(memberships: WorkosOrganizationMembership[], targetUserId: string): void {
     const remainingOwners = memberships.filter(
-      (m) => m.userId !== targetUserId && m.roleSlugs.includes(WORKSPACE_ROLE_SLUGS.OWNER)
+      (m) => m.userId !== targetUserId && rolesGrant(m.roleSlugs, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER)
     ).length
     if (remainingOwners === 0) {
       throw new HttpError("Cannot leave the workspace without an owner", {

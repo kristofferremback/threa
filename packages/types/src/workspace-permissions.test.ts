@@ -6,6 +6,7 @@ import {
   WORKSPACE_ROLE_SLUGS,
   parseJwtPermissions,
   permissionsForRole,
+  rolesGrant,
 } from "./workspace-permissions"
 
 const SCOPE_VALUES = new Set<string>(Object.values(WORKSPACE_PERMISSION_SCOPES))
@@ -41,9 +42,11 @@ describe("WORKSPACE_PERMISSIONS catalog", () => {
 })
 
 describe("WORKSPACE_ROLE_DEFINITIONS", () => {
-  test("declared in privilege order: member, admin, owner (ROLE_RANK depends on this)", () => {
-    const slugs = WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug)
-    expect(slugs).toEqual([WORKSPACE_ROLE_SLUGS.MEMBER, WORKSPACE_ROLE_SLUGS.ADMIN, WORKSPACE_ROLE_SLUGS.OWNER])
+  test("contains exactly member, admin, owner", () => {
+    const slugs = new Set(WORKSPACE_ROLE_DEFINITIONS.map((r) => r.slug))
+    expect(slugs).toEqual(
+      new Set([WORKSPACE_ROLE_SLUGS.MEMBER, WORKSPACE_ROLE_SLUGS.ADMIN, WORKSPACE_ROLE_SLUGS.OWNER])
+    )
   })
 
   test("owner ⊇ admin ⊇ member", () => {
@@ -106,6 +109,29 @@ describe("permissionsForRole", () => {
 
   test("throws on unknown slug", () => {
     expect(() => permissionsForRole("ghost" as never)).toThrow(/Unknown workspace role/)
+  })
+})
+
+describe("rolesGrant", () => {
+  test("true when any role in the list grants the permission", () => {
+    expect(rolesGrant([WORKSPACE_ROLE_SLUGS.ADMIN], WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)).toBe(true)
+    expect(rolesGrant([WORKSPACE_ROLE_SLUGS.OWNER], WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER)).toBe(true)
+    expect(
+      rolesGrant([WORKSPACE_ROLE_SLUGS.MEMBER, WORKSPACE_ROLE_SLUGS.ADMIN], WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
+    ).toBe(true)
+  })
+
+  test("false when no listed role grants the permission", () => {
+    expect(rolesGrant([WORKSPACE_ROLE_SLUGS.MEMBER], WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)).toBe(false)
+    expect(rolesGrant([WORKSPACE_ROLE_SLUGS.ADMIN], WORKSPACE_PERMISSION_SCOPES.WORKSPACE_OWNER)).toBe(false)
+    expect(rolesGrant([], WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)).toBe(false)
+  })
+
+  test("ignores unknown role slugs (forward-compat with WorkOS roles we don't model)", () => {
+    expect(rolesGrant(["unknown:role"], WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)).toBe(false)
+    expect(rolesGrant(["unknown:role", WORKSPACE_ROLE_SLUGS.ADMIN], WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)).toBe(
+      true
+    )
   })
 })
 
