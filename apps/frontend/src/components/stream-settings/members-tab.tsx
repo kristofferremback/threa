@@ -19,10 +19,12 @@ import {
 } from "@/components/ui/responsive-alert-dialog"
 import { X, UserPlus, BotIcon } from "lucide-react"
 import { useAddStreamMember, useRemoveStreamMember, streamKeys } from "@/hooks"
+import { useCachedWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useStreamService } from "@/contexts"
 import { botsApi } from "@/api/bots"
 import { useWorkspaceUsers, useWorkspaceBots } from "@/stores/workspace-store"
-import { StreamTypes, type StreamMember } from "@threa/types"
+import { hasPermission } from "@/lib/permissions"
+import { StreamTypes, WORKSPACE_PERMISSION_SCOPES, type StreamMember } from "@threa/types"
 import { toast } from "sonner"
 
 interface MembersTabProps {
@@ -46,13 +48,16 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
     queryFn: () => streamService.bootstrap(workspaceId, streamId),
     staleTime: Infinity,
   })
+  const workspaceBootstrap = useCachedWorkspaceBootstrap(workspaceId)
   const workspaceUsers = useWorkspaceUsers(workspaceId)
 
   const streamType = bootstrap?.stream?.type
-  const canAddUserMembers = streamType === StreamTypes.CHANNEL
   const streamMembers = bootstrap?.members ?? []
-  const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentUserId)
-  const canManageMembers = currentWorkspaceUser?.role === "owner" || currentWorkspaceUser?.role === "admin"
+  const canManageMembers = hasPermission(
+    workspaceBootstrap?.viewerPermissions,
+    WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE
+  )
+  const canAddUserMembers = canManageMembers && streamType === StreamTypes.CHANNEL
 
   // Bots can be managed on all stream types that have a members tab.
   // Threads inherit bot access from their root, so the UI is read-only.
@@ -87,12 +92,13 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
 
   const handleAdd = useCallback(
     (user: (typeof workspaceUsers)[number]) => {
+      if (!canManageMembers) return
       addMutation.mutate(user.id, {
         onSuccess: () => toast.success("Member added"),
         onError: () => toast.error("Failed to add member"),
       })
     },
-    [addMutation]
+    [addMutation, canManageMembers]
   )
 
   const [removeMemberId, setRemoveMemberId] = useState<string | null>(null)

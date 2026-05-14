@@ -1,12 +1,12 @@
-import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Github, ExternalLink, RefreshCw } from "lucide-react"
-import { useAuth } from "@/auth/hooks"
+import { WORKSPACE_PERMISSION_SCOPES } from "@threa/types"
 import { integrationsApi } from "@/api/integrations"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useWorkspaceUsers } from "@/stores/workspace-store"
+import { useCachedWorkspaceBootstrap } from "@/hooks/use-workspaces"
+import { hasPermission } from "@/lib/permissions"
 
 interface IntegrationsTabProps {
   workspaceId: string
@@ -22,15 +22,10 @@ function LinearIcon({ className }: { className?: string }) {
 }
 
 export function IntegrationsTab({ workspaceId }: IntegrationsTabProps) {
-  const { user } = useAuth()
   const queryClient = useQueryClient()
-  const workspaceUsers = useWorkspaceUsers(workspaceId)
 
-  const currentWorkspaceUser = useMemo(
-    () => workspaceUsers.find((workspaceUser) => workspaceUser.workosUserId === user?.id) ?? null,
-    [user?.id, workspaceUsers]
-  )
-  const canManage = currentWorkspaceUser?.role === "admin" || currentWorkspaceUser?.role === "owner"
+  const bootstrap = useCachedWorkspaceBootstrap(workspaceId)
+  const canManage = hasPermission(bootstrap?.viewerPermissions, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN)
 
   const query = useQuery({
     queryKey: ["workspace-integrations", workspaceId, "github"],
@@ -68,7 +63,7 @@ export function IntegrationsTab({ workspaceId }: IntegrationsTabProps) {
   if (!canManage) {
     return (
       <div className="space-y-4 p-1">
-        <p className="text-sm text-muted-foreground">Only workspace admins and owners can manage integrations.</p>
+        <p className="text-sm text-muted-foreground">You need the Workspace Admin permission to manage integrations.</p>
       </div>
     )
   }
