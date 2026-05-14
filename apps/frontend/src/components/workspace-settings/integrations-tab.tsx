@@ -1,12 +1,12 @@
-import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Github, ExternalLink, RefreshCw } from "lucide-react"
-import { useAuth } from "@/auth/hooks"
+import { WORKSPACE_PERMISSION_SCOPES, type WorkspaceBootstrap } from "@threa/types"
 import { integrationsApi } from "@/api/integrations"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useWorkspaceUsers } from "@/stores/workspace-store"
+import { workspaceKeys } from "@/hooks/use-workspaces"
+import { hasPermission } from "@/lib/permissions"
 
 interface IntegrationsTabProps {
   workspaceId: string
@@ -22,15 +22,15 @@ function LinearIcon({ className }: { className?: string }) {
 }
 
 export function IntegrationsTab({ workspaceId }: IntegrationsTabProps) {
-  const { user } = useAuth()
   const queryClient = useQueryClient()
-  const workspaceUsers = useWorkspaceUsers(workspaceId)
 
-  const currentWorkspaceUser = useMemo(
-    () => workspaceUsers.find((workspaceUser) => workspaceUser.workosUserId === user?.id) ?? null,
-    [user?.id, workspaceUsers]
-  )
-  const canManage = currentWorkspaceUser?.role === "admin" || currentWorkspaceUser?.role === "owner"
+  const { data: bootstrap } = useQuery({
+    queryKey: workspaceKeys.bootstrap(workspaceId),
+    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    enabled: false,
+    staleTime: Infinity,
+  })
+  const canManage = hasPermission(bootstrap?.viewerPermissions, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN)
 
   const query = useQuery({
     queryKey: ["workspace-integrations", workspaceId, "github"],

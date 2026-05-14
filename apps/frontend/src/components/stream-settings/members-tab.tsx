@@ -19,10 +19,12 @@ import {
 } from "@/components/ui/responsive-alert-dialog"
 import { X, UserPlus, BotIcon } from "lucide-react"
 import { useAddStreamMember, useRemoveStreamMember, streamKeys } from "@/hooks"
+import { workspaceKeys } from "@/hooks/use-workspaces"
 import { useStreamService } from "@/contexts"
 import { botsApi } from "@/api/bots"
 import { useWorkspaceUsers, useWorkspaceBots } from "@/stores/workspace-store"
-import { StreamTypes, type StreamMember } from "@threa/types"
+import { hasPermission } from "@/lib/permissions"
+import { StreamTypes, WORKSPACE_PERMISSION_SCOPES, type StreamMember, type WorkspaceBootstrap } from "@threa/types"
 import { toast } from "sonner"
 
 interface MembersTabProps {
@@ -33,6 +35,7 @@ interface MembersTabProps {
 
 export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabProps) {
   const streamService = useStreamService()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState("")
   const addMutation = useAddStreamMember(workspaceId, streamId)
   const removeMutation = useRemoveStreamMember(workspaceId, streamId)
@@ -46,13 +49,21 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
     queryFn: () => streamService.bootstrap(workspaceId, streamId),
     staleTime: Infinity,
   })
+  const { data: workspaceBootstrap } = useQuery({
+    queryKey: workspaceKeys.bootstrap(workspaceId),
+    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    enabled: false,
+    staleTime: Infinity,
+  })
   const workspaceUsers = useWorkspaceUsers(workspaceId)
 
   const streamType = bootstrap?.stream?.type
   const canAddUserMembers = streamType === StreamTypes.CHANNEL
   const streamMembers = bootstrap?.members ?? []
-  const currentWorkspaceUser = workspaceUsers.find((u) => u.id === currentUserId)
-  const canManageMembers = currentWorkspaceUser?.role === "owner" || currentWorkspaceUser?.role === "admin"
+  const canManageMembers = hasPermission(
+    workspaceBootstrap?.viewerPermissions,
+    WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE
+  )
 
   // Bots can be managed on all stream types that have a members tab.
   // Threads inherit bot access from their root, so the UI is read-only.
