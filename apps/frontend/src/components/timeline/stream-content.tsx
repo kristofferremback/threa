@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useCallback, useRef, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useLocation, useSearchParams } from "react-router-dom"
 import { Virtuoso } from "react-virtuoso"
 import { MessageSquare, ArrowDown, X, Move, Loader2, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -98,9 +98,14 @@ export function StreamContent({
   autoFocus,
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
+  const location = useLocation()
   const socket = useSocket()
   const messageService = useMessageService()
-  const jumpTriggeredRef = useRef<string | null>(null)
+  // Tracks the location key we've already handled for a highlight jump. Using
+  // the key (not the message id) lets re-clicking the same message link
+  // re-trigger the scroll — react-router generates a fresh key on every
+  // navigation even when the URL is identical, which it auto-replaces.
+  const jumpTriggeredKeyRef = useRef<string | null>(null)
   const user = useUser()
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [batchMode, setBatchMode] = useState(false)
@@ -848,10 +853,14 @@ export function StreamContent({
     }
   }, [events, isLoading, scrollToMessage])
 
-  // Jump to highlighted message if it's not in the current event window
+  // Jump to highlighted message if it's not in the current event window.
+  // The guard uses location.key so repeat clicks on the same message link
+  // (which produce identical URLs and would otherwise not change any state)
+  // still re-trigger — react-router stamps each navigation with a fresh key.
   useEffect(() => {
     if (!highlightMessageId || isLoading || isDraft) return
-    if (jumpTriggeredRef.current === highlightMessageId) return
+    if (jumpTriggeredKeyRef.current === location.key) return
+    jumpTriggeredKeyRef.current = location.key
 
     // Disable auto-scroll so highlight scroll-into-view isn't overridden
     disableAutoScroll()
@@ -868,28 +877,25 @@ export function StreamContent({
     }
 
     if (events.length > 0) {
-      jumpTriggeredRef.current = highlightMessageId
       pendingScrollTarget.current = highlightMessageId
       jumpToEvent(highlightMessageId)
         .then((success) => {
           if (!success) {
-            jumpTriggeredRef.current = null
             pendingScrollTarget.current = null
           }
         })
         .catch(() => {
-          jumpTriggeredRef.current = null
           pendingScrollTarget.current = null
         })
     }
-  }, [highlightMessageId, isLoading, isDraft, events, jumpToEvent, disableAutoScroll, scrollToMessage])
+  }, [highlightMessageId, location.key, isLoading, isDraft, events, jumpToEvent, disableAutoScroll, scrollToMessage])
 
   // Reset jump and search state when switching streams (component stays mounted).
   // Also abort any in-flight scrollToMessage retry loop so its stale closure
   // (holding an index from the previous stream) doesn't scroll the new stream
   // to the wrong position.
   useEffect(() => {
-    jumpTriggeredRef.current = null
+    jumpTriggeredKeyRef.current = null
     scrollAbortRef.current?.()
     pendingScrollTarget.current = null
     exitJumpMode()
