@@ -97,6 +97,14 @@ function hasPermission(req: Request, slug: WorkspacePermissionSlug): boolean {
   return false
 }
 
+function resolveWorkspaceUserActorId(req: Request): string | null {
+  return req.user?.id ?? req.userApiKey?.userId ?? null
+}
+
+function resolveGrantActorId(req: Request): string | null {
+  return resolveWorkspaceUserActorId(req) ?? req.botApiKey?.botId ?? null
+}
+
 /**
  * Authorize an actor to manage a bot.
  *
@@ -109,12 +117,9 @@ async function authorizeBotManagement(pool: Pool, workspaceId: string, id: strin
     throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
   }
   if (bot.type === BotTypes.PERSONAL) {
-    // Use the workspace user ID for ownership checks — req.user.id is the local
-    // DB user (usr_xxx), while req.authUser.id is the WorkOS user ID which may
-    // differ. Bot API keys (req.botApiKey.botId) can only match personal bots
-    // that belong to them, which is correct.
-    const actorId =
-      req.user?.id ?? req.authUser?.id ?? req.userApiKey?.userId ?? req.botApiKey?.botId ?? null
+    // Use the workspace user ID for ownership checks — req.authUser.id is the
+    // WorkOS user ID and must not be compared against bots.owner_user_id.
+    const actorId = resolveWorkspaceUserActorId(req)
     if (actorId !== bot.ownerUserId) {
       throw new HttpError("Forbidden", { status: 403, code: "FORBIDDEN" })
     }
@@ -161,8 +166,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       // from the request body — so callers can't spoof ownership.
       // Use req.user.id (workspace user ID) in preference to req.authUser.id
       // (WorkOS user ID) — bot.ownerUserId stores the local DB user ID.
-      const actorId =
-        req.user?.id ?? req.authUser?.id ?? req.userApiKey?.userId ?? null
+      const actorId = resolveWorkspaceUserActorId(req)
       if (type === BotTypes.PERSONAL && !actorId) {
         throw new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" })
       }
@@ -286,12 +290,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       if (!bot) {
         throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
       }
-      if (
-        bot.type === BotTypes.PERSONAL &&
-        bot.ownerUserId !== req.user?.id &&
-        bot.ownerUserId !== req.authUser?.id &&
-        bot.ownerUserId !== req.userApiKey?.userId
-      ) {
+      if (bot.type === BotTypes.PERSONAL && bot.ownerUserId !== resolveWorkspaceUserActorId(req)) {
         throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
       }
       res.json({ data: serializeBot(bot) })
@@ -592,12 +591,11 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
 
         // Personal bot owners must be members of the target stream
         if (bot.type === BotTypes.PERSONAL) {
-          const ownerId =
-            req.user?.id ?? req.authUser?.id ?? req.userApiKey?.userId ?? null
+          const ownerId = resolveWorkspaceUserActorId(req)
           if (!ownerId) {
             throw new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" })
           }
-          const ownerIsMember = await streamService.isMemberOn(client, streamId, ownerId)
+          const ownerIsMember = await streamService.isMemberOnForUpdate(client, streamId, ownerId)
           if (!ownerIsMember) {
             throw new HttpError("Forbidden", { status: 403, code: "FORBIDDEN" })
           }
@@ -606,8 +604,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
         // Resolve the actor that performs the grant. authorizeBotManagement has
         // already checked auth, so this is defensive — reject with 401 rather
         // than silently passing a bogus id.
-        const grantActorId =
-          req.user?.id ?? req.authUser?.id ?? req.userApiKey?.userId ?? req.botApiKey?.botId
+        const grantActorId = resolveGrantActorId(req)
         if (!grantActorId) {
           throw new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" })
         }

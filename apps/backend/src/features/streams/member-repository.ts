@@ -259,6 +259,15 @@ export const StreamMemberRepository = {
     return result.rows.length > 0
   },
 
+  async isMemberForUpdate(db: Querier, streamId: string, memberId: string): Promise<boolean> {
+    const result = await db.query(sql`
+      SELECT 1 FROM stream_members
+      WHERE stream_id = ${streamId} AND member_id = ${memberId}
+      FOR UPDATE
+    `)
+    return result.rows.length > 0
+  },
+
   /**
    * Count members of `streamId` who are NOT members of `otherStreamId`.
    * Used by the sharing privacy boundary check: given a source and target

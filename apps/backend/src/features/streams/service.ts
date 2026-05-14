@@ -996,11 +996,27 @@ export class StreamService {
 
   /**
    * Variant of {@link isMember} that runs on a caller-provided querier so the
-   * check can compose into an outer transaction. Used when the membership read
-   * must be consistent with row locks taken in the same transaction.
+   * check can compose into an outer transaction.
    */
   async isMemberOn(db: Querier, streamId: string, memberId: string): Promise<boolean> {
-    const directMember = await StreamMemberRepository.isMember(db, streamId, memberId)
+    return this.isMemberOnWith(db, streamId, memberId, StreamMemberRepository.isMember)
+  }
+
+  /**
+   * Transaction-only membership check that locks the matching stream_members row.
+   * Use when a caller must keep membership stable until its surrounding write commits.
+   */
+  async isMemberOnForUpdate(db: Querier, streamId: string, memberId: string): Promise<boolean> {
+    return this.isMemberOnWith(db, streamId, memberId, StreamMemberRepository.isMemberForUpdate)
+  }
+
+  private async isMemberOnWith(
+    db: Querier,
+    streamId: string,
+    memberId: string,
+    checkMembership: (db: Querier, streamId: string, memberId: string) => Promise<boolean>
+  ): Promise<boolean> {
+    const directMember = await checkMembership(db, streamId, memberId)
     if (directMember) {
       return true
     }
@@ -1008,7 +1024,7 @@ export class StreamService {
     // Threads inherit participation rights from root stream
     const stream = await StreamRepository.findById(db, streamId)
     if (stream?.rootStreamId) {
-      return StreamMemberRepository.isMember(db, stream.rootStreamId, memberId)
+      return checkMembership(db, stream.rootStreamId, memberId)
     }
 
     return false

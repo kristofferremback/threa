@@ -1692,7 +1692,7 @@
         "operationId": "getMe",
         "summary": "Get the authenticated principal",
         "tags": ["Identity"],
-        "description": "Returns a discriminated union describing the authenticated principal — either the API-key owner ('kind: user') or the bot whose key is in use ('kind: bot'). Used by clients (e.g. the OpenClaw channel plugin) to verify their key and discover their identity after pairing.",
+        "description": "Returns a discriminated union describing the authenticated principal — either the API-key owner (`kind: \"user\"`) or the bot whose key is in use (`kind: \"bot\"`). Used by clients (e.g. the OpenClaw channel plugin) to verify their key and discover their identity after pairing.",
         "security": [{ "apiKey": [] }],
         "parameters": [
           {
@@ -1901,7 +1901,6 @@
     { "name": "Messages", "description": "Read, send, update, and delete messages" },
     { "name": "Memos", "description": "Search preserved workspace knowledge and inspect memo provenance" },
     { "name": "Attachments", "description": "Search attachments, inspect extracted content, and fetch download URLs" },
-    { "name": "Users", "description": "List workspace users" },
-    { "name": "Identity", "description": "Identify the authenticated API key owner and enumerate personal bots" }
+    { "name": "Users", "description": "List workspace users" }
   ]
 }
