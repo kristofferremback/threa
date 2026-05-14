@@ -56,13 +56,14 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
   // Personal bots come from the bootstrap-synced IDB cache filtered by type.
   const personalBots = allCachedBots.filter((b) => b.type === "personal" && !b.archivedAt)
 
-  const [showCreateSharedForm, setShowCreateSharedForm] = useState(false)
-  const [showCreatePersonalForm, setShowCreatePersonalForm] = useState(false)
+  // Single discriminant prevents both forms from being open simultaneously,
+  // which would produce duplicate element IDs in the DOM.
+  const [activeCreateForm, setActiveCreateForm] = useState<"shared" | "personal" | null>(null)
 
   const sharedCreateMutation = useMutation({
     mutationFn: (data: CreateBotInput) => botsApi.create(workspaceId, { ...data, type: "shared" }),
     onSuccess: (bot) => {
-      setShowCreateSharedForm(false)
+      setActiveCreateForm(null)
       queryClient.invalidateQueries({ queryKey: sharedBotsQueryKey })
       onSelectBot(bot.id)
     },
@@ -71,7 +72,7 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
   const personalCreateMutation = useMutation({
     mutationFn: (data: CreateBotInput) => botsApi.create(workspaceId, { ...data, type: "personal" }),
     onSuccess: (bot) => {
-      setShowCreatePersonalForm(false)
+      setActiveCreateForm(null)
       queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
       onSelectBot(bot.id)
     },
@@ -101,8 +102,8 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
                 {sharedBots.length}
               </Badge>
             </div>
-            {!showCreateSharedForm && canCreateShared && (
-              <Button size="sm" className="shrink-0" onClick={() => setShowCreateSharedForm(true)}>
+            {activeCreateForm !== "shared" && canCreateShared && (
+              <Button size="sm" className="shrink-0" onClick={() => setActiveCreateForm("shared")}>
                 <Plus className="h-3.5 w-3.5 mr-1" />
                 New bot
               </Button>
@@ -112,12 +113,12 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
             Shared integration identities managed by workspace admins.
           </p>
 
-          {showCreateSharedForm && (
+          {activeCreateForm === "shared" && (
             <CreateBotForm
               placeholder="e.g. GitHub Bot, Deploy Notifier"
               isPending={sharedCreateMutation.isPending}
               error={sharedCreateMutation.error}
-              onCancel={() => setShowCreateSharedForm(false)}
+              onCancel={() => setActiveCreateForm(null)}
               onCreate={(data) => sharedCreateMutation.mutate(data)}
             />
           )}
@@ -125,13 +126,13 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
           {sharedBots.length > 0 ? (
             <BotListItems bots={sharedBots} workspaceId={workspaceId} onSelectBot={onSelectBot} />
           ) : (
-            !showCreateSharedForm && (
+            activeCreateForm !== "shared" && (
               <EmptyBotsState
                 label="No workspace bots yet"
                 description="Create a shared bot to post messages via the API."
                 action={
                   canCreateShared
-                    ? { label: "Create workspace bot", onClick: () => setShowCreateSharedForm(true) }
+                    ? { label: "Create workspace bot", onClick: () => setActiveCreateForm("shared") }
                     : undefined
                 }
               />
@@ -152,8 +153,8 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
                 {personalBots.length}
               </Badge>
             </div>
-            {!showCreatePersonalForm && (
-              <Button size="sm" variant="outline" className="shrink-0" onClick={() => setShowCreatePersonalForm(true)}>
+            {activeCreateForm !== "personal" && (
+              <Button size="sm" variant="outline" className="shrink-0" onClick={() => setActiveCreateForm("personal")}>
                 <Plus className="h-3.5 w-3.5 mr-1" />
                 New bot
               </Button>
@@ -161,12 +162,12 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
           </div>
           <p className="text-xs text-muted-foreground -mt-1">Personal bots you own and manage independently.</p>
 
-          {showCreatePersonalForm && (
+          {activeCreateForm === "personal" && (
             <CreateBotForm
               placeholder="e.g. OpenClaw, Hermes"
               isPending={personalCreateMutation.isPending}
               error={personalCreateMutation.error}
-              onCancel={() => setShowCreatePersonalForm(false)}
+              onCancel={() => setActiveCreateForm(null)}
               onCreate={(data) => personalCreateMutation.mutate(data)}
             />
           )}
@@ -174,11 +175,11 @@ function BotList({ workspaceId, onSelectBot }: { workspaceId: string; onSelectBo
           {personalBots.length > 0 ? (
             <BotListItems bots={personalBots} workspaceId={workspaceId} onSelectBot={onSelectBot} />
           ) : (
-            !showCreatePersonalForm && (
+            activeCreateForm !== "personal" && (
               <EmptyBotsState
                 label="No personal bots yet"
                 description="Create a personal bot to use with your own API keys and scratchpads."
-                action={{ label: "Create personal bot", onClick: () => setShowCreatePersonalForm(true) }}
+                action={{ label: "Create personal bot", onClick: () => setActiveCreateForm("personal") }}
               />
             )
           )}
