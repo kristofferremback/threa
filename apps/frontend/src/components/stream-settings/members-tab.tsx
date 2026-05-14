@@ -19,12 +19,12 @@ import {
 } from "@/components/ui/responsive-alert-dialog"
 import { X, UserPlus, BotIcon } from "lucide-react"
 import { useAddStreamMember, useRemoveStreamMember, streamKeys } from "@/hooks"
-import { workspaceKeys } from "@/hooks/use-workspaces"
+import { useCachedWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useStreamService } from "@/contexts"
 import { botsApi } from "@/api/bots"
 import { useWorkspaceUsers, useWorkspaceBots } from "@/stores/workspace-store"
 import { hasPermission } from "@/lib/permissions"
-import { StreamTypes, WORKSPACE_PERMISSION_SCOPES, type StreamMember, type WorkspaceBootstrap } from "@threa/types"
+import { StreamTypes, WORKSPACE_PERMISSION_SCOPES, type StreamMember } from "@threa/types"
 import { toast } from "sonner"
 
 interface MembersTabProps {
@@ -35,7 +35,6 @@ interface MembersTabProps {
 
 export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabProps) {
   const streamService = useStreamService()
-  const queryClient = useQueryClient()
   const [search, setSearch] = useState("")
   const addMutation = useAddStreamMember(workspaceId, streamId)
   const removeMutation = useRemoveStreamMember(workspaceId, streamId)
@@ -49,12 +48,7 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
     queryFn: () => streamService.bootstrap(workspaceId, streamId),
     staleTime: Infinity,
   })
-  const { data: workspaceBootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
+  const workspaceBootstrap = useCachedWorkspaceBootstrap(workspaceId)
   const workspaceUsers = useWorkspaceUsers(workspaceId)
 
   const streamType = bootstrap?.stream?.type

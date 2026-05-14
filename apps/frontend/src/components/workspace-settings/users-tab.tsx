@@ -1,12 +1,11 @@
 import { useMemo, useRef, useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useMutation } from "@tanstack/react-query"
 import { Check, ChevronDown, Copy, KeyRound, Link as LinkIcon, Mail, MoreHorizontal } from "lucide-react"
 import { toast } from "sonner"
 import {
   roleDisplayName,
   WORKSPACE_PERMISSION_SCOPES,
   WORKSPACE_USER_ROLES,
-  type WorkspaceBootstrap,
   type WorkspaceRoleSlug,
 } from "@threa/types"
 import { Button } from "@/components/ui/button"
@@ -28,7 +27,7 @@ import { invitationsApi } from "@/api/invitations"
 import { ApiError } from "@/api/client"
 import { useWorkspaceUsers } from "@/stores/workspace-store"
 import { useFormattedDate } from "@/hooks"
-import { workspaceKeys } from "@/hooks/use-workspaces"
+import { useCachedWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useChangeWorkspaceMemberRole, useRemoveWorkspaceMember } from "@/hooks/use-workspace-member-management"
 import { hasPermission } from "@/lib/permissions"
 import { useUser } from "@/auth"
@@ -101,19 +100,13 @@ export function UsersTab({ workspaceId }: UsersTabProps) {
   const { formatDate } = useFormattedDate()
 
   const authUser = useUser()
-  const queryClient = useQueryClient()
   const workspaceUsers = useWorkspaceUsers(workspaceId)
   const users = useMemo(
     () => workspaceUsers.slice().sort((a, b) => (a.name || a.slug).localeCompare(b.name || b.slug)),
     [workspaceUsers]
   )
 
-  const { data: bootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
+  const bootstrap = useCachedWorkspaceBootstrap(workspaceId)
   const canManageMembers = hasPermission(bootstrap?.viewerPermissions, WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE)
 
   const changeRoleMutation = useChangeWorkspaceMemberRole(workspaceId)

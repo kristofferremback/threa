@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Github, ExternalLink, RefreshCw } from "lucide-react"
-import { WORKSPACE_PERMISSION_SCOPES, type WorkspaceBootstrap } from "@threa/types"
+import { WORKSPACE_PERMISSION_SCOPES } from "@threa/types"
 import { integrationsApi } from "@/api/integrations"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { workspaceKeys } from "@/hooks/use-workspaces"
+import { useCachedWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { hasPermission } from "@/lib/permissions"
 
 interface IntegrationsTabProps {
@@ -24,12 +24,7 @@ function LinearIcon({ className }: { className?: string }) {
 export function IntegrationsTab({ workspaceId }: IntegrationsTabProps) {
   const queryClient = useQueryClient()
 
-  const { data: bootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
+  const bootstrap = useCachedWorkspaceBootstrap(workspaceId)
   const canManage = hasPermission(bootstrap?.viewerPermissions, WORKSPACE_PERMISSION_SCOPES.WORKSPACE_ADMIN)
 
   const query = useQuery({

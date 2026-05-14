@@ -143,6 +143,23 @@ export function useWorkspaceBootstrap(workspaceId: string) {
   return { ...query, loadState, retryBootstrap }
 }
 
+/**
+ * Cache-only observer for the workspace bootstrap. Returns the cached value
+ * (or `null`) without ever fetching — pair with `useWorkspaceBootstrap` higher
+ * in the tree to populate the cache. Use this in surfaces that only need to
+ * read bootstrap-derived state (e.g. `viewerPermissions`, `streams`).
+ */
+export function useCachedWorkspaceBootstrap(workspaceId: string): WorkspaceBootstrap | null {
+  const queryClient = useQueryClient()
+  const { data } = useQuery({
+    queryKey: workspaceKeys.bootstrap(workspaceId),
+    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    enabled: false,
+    staleTime: Infinity,
+  })
+  return data ?? null
+}
+
 export function useRegions() {
   const workspaceService = useWorkspaceService()
 

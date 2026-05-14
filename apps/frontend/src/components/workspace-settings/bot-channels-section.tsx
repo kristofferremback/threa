@@ -1,8 +1,8 @@
 import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { botsApi } from "@/api/bots"
-import { StreamTypes, type WorkspaceBootstrap } from "@threa/types"
-import { workspaceKeys } from "@/hooks/use-workspaces"
+import { StreamTypes } from "@threa/types"
+import { useCachedWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchableSelect } from "@/components/ui/searchable-select"
@@ -23,12 +23,7 @@ export function BotChannelsSection({ workspaceId, botId, isArchived }: BotChanne
     queryFn: () => botsApi.listStreamGrants(workspaceId, botId),
   })
 
-  const { data: wsBootstrap } = useQuery({
-    queryKey: workspaceKeys.bootstrap(workspaceId),
-    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
-    enabled: false,
-    staleTime: Infinity,
-  })
+  const wsBootstrap = useCachedWorkspaceBootstrap(workspaceId)
 
   const grantStreamMutation = useMutation({
     mutationFn: (streamId: string) => botsApi.grantStreamAccess(workspaceId, botId, streamId),
