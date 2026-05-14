@@ -30,7 +30,7 @@ import {
 const ALL_BOT_TRAITS = BOT_TRAITS as readonly BotTrait[]
 
 const createBotSchema = z.object({
-  type: z.enum(BOT_TYPES),
+  type: z.enum(BOT_TYPES).optional().default("shared"),
   name: z.string().min(1).max(100),
   slug: z.string().min(1).max(50),
   description: z.string().max(500).nullable().optional(),
