@@ -2,6 +2,7 @@ import { api, API_BASE, parseApiError } from "./client"
 import type { Bot, BotApiKey, CreateBotApiKeyResponse } from "@threa/types"
 
 export interface CreateBotInput {
+  type?: "shared" | "personal"
   name: string
   slug: string
   description?: string | null

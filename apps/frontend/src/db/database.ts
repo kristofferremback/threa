@@ -142,6 +142,9 @@ export function sequenceToNum(sequence: string): number {
 export interface CachedBot {
   id: string
   workspaceId: string
+  type: "shared" | "personal"
+  ownerUserId: string | null
+  traits: string[]
   slug: string | null
   name: string
   description: string | null
