@@ -5,6 +5,7 @@ import { createWorkspaceUserMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware, createAvatarUploadMiddleware } from "./middleware/upload"
 import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-limit"
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
+import { createRequireBotManagement } from "./middleware/bot-management"
 import { createRequireWorkspacePermission } from "./middleware/workspace-permission"
 import { createWorkspaceAuthzHandlers, WorkspaceAuthzService } from "./features/workspace-authz"
 import { createAuthHandlers } from "./auth/handlers"
@@ -475,39 +476,43 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/user-api-keys", ...authed, userApiKeys.create)
   app.post("/api/workspaces/:workspaceId/user-api-keys/:keyId/revoke", ...authed, userApiKeys.revoke)
 
-  // Bot management. Per-bot authorization (shared vs personal ownership) is
-  // handled at the handler level by `authorizeBotManagement` — route-level
-  // middleware gates are removed because the URL shape is shared between shared
-  // and personal bots and the enforcement point must be inside the handler.
+  // Bot management. Management routes (update, archive, keys, avatar, grants)
+  // are gated by `requireBotManagement()` middleware that resolves the bot,
+  // authorizes the actor (ownership for personal bots, BOTS_MANAGE for shared),
+  // and attaches the bot to req.bot so handlers don't re-fetch it.
   const botHandlers = createBotHandlers({ botApiKeyService, avatarService, streamService, pool })
+  const requireBotManagement = createRequireBotManagement(pool)
   app.get("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.list)
   app.post("/api/workspaces/:workspaceId/bots", ...authed, botHandlers.create)
   app.get("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.get)
-  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, botHandlers.update)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, botHandlers.archive)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, botHandlers.restore)
-  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, botHandlers.listKeys)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, botHandlers.createKey)
+  app.patch("/api/workspaces/:workspaceId/bots/:botId", ...authed, requireBotManagement(), botHandlers.update)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/archive", ...authed, requireBotManagement(), botHandlers.archive)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/restore", ...authed, requireBotManagement(), botHandlers.restore)
+  app.get("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireBotManagement(), botHandlers.listKeys)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/keys", ...authed, requireBotManagement(), botHandlers.createKey)
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/keys/:keyId/revoke",
     ...authed,
+    requireBotManagement(),
     botHandlers.revokeKey
   )
   app.post(
     "/api/workspaces/:workspaceId/bots/:botId/avatar",
     ...authed,
+    requireBotManagement(),
     avatarUpload,
     botHandlers.uploadAvatar
   )
-  app.delete("/api/workspaces/:workspaceId/bots/:botId/avatar", ...authed, botHandlers.removeAvatar)
+  app.delete("/api/workspaces/:workspaceId/bots/:botId/avatar", ...authed, requireBotManagement(), botHandlers.removeAvatar)
   // Bot avatar serving (unauthenticated — S3 keys contain unguessable ULIDs)
   app.get("/api/workspaces/:workspaceId/bots/:botId/avatar/:file", botHandlers.serveAvatarFile)
   // Bot channel access grants
-  app.get("/api/workspaces/:workspaceId/bots/:botId/streams", ...authed, botHandlers.listStreamGrants)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant", ...authed, botHandlers.grantStreamAccess)
+  app.get("/api/workspaces/:workspaceId/bots/:botId/streams", ...authed, requireBotManagement(), botHandlers.listStreamGrants)
+  app.post("/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant", ...authed, requireBotManagement(), botHandlers.grantStreamAccess)
   app.delete(
     "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
     ...authed,
+    requireBotManagement(),
     botHandlers.revokeStreamAccess
   )
   // Stream → bots reverse lookup (admin-only — only admins manage stream bot inventories)

@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
 import type { Pool } from "pg"
-import { BotRepository, type Bot } from "./bot-repository"
+import { BotRepository } from "./bot-repository"
 import { BotApiKeyRepository, type BotApiKeyRow } from "./bot-api-key-repository"
 import { BotChannelAccessRepository } from "../api-keys"
 import { StreamRepository } from "../streams"
@@ -80,42 +80,14 @@ interface BotHandlerDeps {
   pool: Pool
 }
 
+/** Resolve the workspace-scoped user id from the request context. */
 function resolveWorkspaceUserActorId(req: Request): string | null {
   return req.user?.id ?? req.userApiKey?.userId ?? null
 }
 
+/** Like resolveWorkspaceUserActorId but also considers bot API key identity. */
 function resolveGrantActorId(req: Request): string | null {
   return resolveWorkspaceUserActorId(req) ?? req.botApiKey?.botId ?? null
-}
-
-/**
- * Authorize an actor to manage a bot.
- *
- * - Personal bots: actor must own the bot (ownership-based, not permission-based).
- * - Shared bots:   actor must hold the `bots:manage` permission.
- */
-async function authorizeBotManagement(pool: Pool, workspaceId: string, id: string, req: Request): Promise<Bot> {
-  const bot = await BotRepository.findById(pool, workspaceId, id)
-  if (!bot) {
-    throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
-  }
-  if (bot.type === BotTypes.PERSONAL) {
-    // Use the workspace user ID for ownership checks — req.authUser.id is the
-    // WorkOS user ID and must not be compared against bots.owner_user_id.
-    const actorId = resolveWorkspaceUserActorId(req)
-    if (actorId !== bot.ownerUserId) {
-      throw new HttpError("Forbidden", { status: 403, code: "FORBIDDEN" })
-    }
-  } else if (
-    // Shared bots use the standard permission-gate pattern (mirrors the session
-    // path of `requireWorkspacePermission` middleware). Inlined because the gate
-    // depends on the bot type, which isn't known at route registration time.
-    !req.authUser?.permissions?.includes(WORKSPACE_PERMISSION_SCOPES.BOTS_MANAGE) &&
-    !(req.user && (permissionsForRole(req.user.role) as readonly string[]).includes(WORKSPACE_PERMISSION_SCOPES.BOTS_MANAGE))
-  ) {
-    throw new HttpError("Insufficient permissions", { status: 403, code: "FORBIDDEN" })
-  }
-  return bot
 }
 
 export function createBotHandlers({ botApiKeyService, avatarService, streamService, pool }: BotHandlerDeps) {
@@ -134,9 +106,8 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
 
       const { type, name, description, avatarEmoji, traits } = result.data
 
-      // Authorization branches by bot type. Permission checks are inlined
-      // because the required slug depends on the `type` field in the request
-      // body, which isn't known at route registration time.
+      // Gate depends on the `type` field in the request body, which isn't
+      // known at route registration time, so the check lives in the handler.
       const hasCreatePerm = (slug: WorkspacePermissionSlug): boolean =>
         req.authUser?.permissions?.includes(slug) ??
         (req.user != null && (permissionsForRole(req.user.role) as readonly string[]).includes(slug)) ??
@@ -157,8 +128,6 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
 
       // Owner is server-derived from the authenticated actor — never read
       // from the request body — so callers can't spoof ownership.
-      // Use req.user.id (workspace user ID) in preference to req.authUser.id
-      // (WorkOS user ID) — bot.ownerUserId stores the local DB user ID.
       const actorId = resolveWorkspaceUserActorId(req)
       if (type === BotTypes.PERSONAL && !actorId) {
         throw new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" })
@@ -209,8 +178,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
     async update(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
-
-      await authorizeBotManagement(pool, workspaceId, id, req)
+      // req.bot set by requireBotManagement middleware
 
       const result = updateBotSchema.safeParse(req.body)
       if (!result.success) {
@@ -294,8 +262,6 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
 
-      await authorizeBotManagement(pool, workspaceId, id, req)
-
       const bot = await withTransaction(pool, async (client) => {
         const archived = await BotRepository.archive(client, id, workspaceId)
         if (!archived) {
@@ -321,8 +287,6 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
     async restore(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
-
-      await authorizeBotManagement(pool, workspaceId, id, req)
 
       let bot
       try {
@@ -358,9 +322,6 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
     async listKeys(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
-
-      await authorizeBotManagement(pool, workspaceId, id, req)
-
       const keys = await botApiKeyService.listKeys(workspaceId, id)
       res.json({ data: keys.map(serializeBotKey) })
     },
@@ -370,8 +331,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
 
-      const bot = await authorizeBotManagement(pool, workspaceId, id, req)
-      if (bot.archivedAt) {
+      if (req.bot!.archivedAt) {
         throw new HttpError("Bot is archived", { status: 409, code: "BOT_ARCHIVED" })
       }
 
@@ -398,9 +358,6 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
     async revokeKey(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const { botId: id, keyId } = req.params
-
-      await authorizeBotManagement(pool, workspaceId, id, req)
-
       await botApiKeyService.revokeKey(workspaceId, id, keyId)
       res.status(204).send()
     },
@@ -416,8 +373,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
         return res.status(400).json({ error: "No file uploaded" })
       }
 
-      const bot = await authorizeBotManagement(pool, workspaceId, id, req)
-      if (bot.archivedAt) {
+      if (req.bot!.archivedAt) {
         throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
       }
 
@@ -435,7 +391,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       // Clean up raw file (don't need it after inline processing)
       avatarService.deleteRawFile(rawS3Key)
 
-      const oldAvatarUrl = bot.avatarUrl
+      const oldAvatarUrl = req.bot!.avatarUrl
 
       // Update bot with new avatar URL. If the transaction fails (e.g. bot
       // was archived concurrently), clean up the orphaned processed images.
@@ -472,16 +428,15 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
 
-      const bot = await authorizeBotManagement(pool, workspaceId, id, req)
-      if (bot.archivedAt) {
+      if (req.bot!.archivedAt) {
         throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
       }
 
-      if (!bot.avatarUrl) {
-        return res.json({ data: serializeBot(bot) })
+      if (!req.bot!.avatarUrl) {
+        return res.json({ data: serializeBot(req.bot!) })
       }
 
-      const oldAvatarUrl = bot.avatarUrl
+      const oldAvatarUrl = req.bot!.avatarUrl
 
       const updated = await withTransaction(pool, async (client) => {
         const result = await BotRepository.updateAvatarUrl(client, id, workspaceId, null)
@@ -535,9 +490,6 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
     async listStreamGrants(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
-
-      await authorizeBotManagement(pool, workspaceId, id, req)
-
       const grants = await BotChannelAccessRepository.listGrants(pool, workspaceId, id)
       res.json({ data: grants })
     },
@@ -545,22 +497,13 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
     /**
      * POST /api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant
      *
-     * Authorization:
-     *   - Shared bot:   actor must have `bots:manage` permission.
-     *   - Personal bot: actor must be the owner AND a member of the target stream.
-     *
-     * The membership requirement on personal bots prevents a user from granting
-     * their bot access to a stream they themselves can't reach.
-     *
-     * Delegates to `streamService.addBotToStreamOn` so the `member_added` event
-     * and `stream:member_added` outbox message fire correctly — real-time
-     * clients subscribe to these to see bot grants appear.
+     * Authorization is enforced by the requireBotManagement middleware (sets
+     * req.bot). Personal-bot owners additionally must be members of the target
+     * stream — checked inside the transaction below.
      */
     async grantStreamAccess(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const { botId: id, streamId } = req.params
-
-      const bot = await authorizeBotManagement(pool, workspaceId, id, req)
 
       await withTransaction(pool, async (client) => {
         // Lock bot and stream rows to prevent race conditions
@@ -583,20 +526,17 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
         }
 
         // Personal bot owners must be members of the target stream
-        if (bot.type === BotTypes.PERSONAL) {
+        if (req.bot!.type === BotTypes.PERSONAL) {
           const ownerId = resolveWorkspaceUserActorId(req)
           if (!ownerId) {
             throw new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" })
           }
-          const ownerIsMember = await streamService.isMemberOnForUpdate(client, streamId, ownerId)
+          const ownerIsMember = await streamService.isMemberOn(client, streamId, ownerId)
           if (!ownerIsMember) {
             throw new HttpError("Forbidden", { status: 403, code: "FORBIDDEN" })
           }
         }
 
-        // Resolve the actor that performs the grant. authorizeBotManagement has
-        // already checked auth, so this is defensive — reject with 401 rather
-        // than silently passing a bogus id.
         const grantActorId = resolveGrantActorId(req)
         if (!grantActorId) {
           throw new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" })
@@ -611,8 +551,6 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
     async revokeStreamAccess(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const { botId: id, streamId } = req.params
-
-      await authorizeBotManagement(pool, workspaceId, id, req)
 
       await streamService.removeBotFromStream(streamId, id, workspaceId)
       res.status(204).send()
