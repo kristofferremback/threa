@@ -434,7 +434,7 @@ export class ActivityService {
         return user?.name ?? null
       }
       case AuthorTypes.BOT: {
-        const bot = await BotRepository.findById(client, actorId)
+        const bot = await BotRepository.findById(client, workspaceId, actorId)
         return bot?.name ?? null
       }
       case AuthorTypes.PERSONA: {

@@ -10,6 +10,7 @@
  */
 
 import type {
+  BotTrait,
   StreamType,
   Visibility,
   CompanionMode,
@@ -282,9 +283,11 @@ export interface Persona {
   updatedAt: string
 }
 
-export interface Bot {
+interface BotBase {
   id: string
   workspaceId: string
+  /** Capability tags (e.g. `["interactive"]`). See BOT_TRAITS for the vocabulary. */
+  traits: BotTrait[]
   slug: string | null
   name: string
   description: string | null
@@ -294,6 +297,16 @@ export interface Bot {
   createdAt: string
   updatedAt: string
 }
+
+/**
+ * Discriminated on `type`:
+ * - `shared` bots are admin-managed and workspace-wide; `ownerUserId` is `null`.
+ * - `personal` bots are owned by one user, who alone can manage them and grant
+ *   them stream access; `ownerUserId` is non-null.
+ */
+export type Bot =
+  | (BotBase & { type: "shared"; ownerUserId: null })
+  | (BotBase & { type: "personal"; ownerUserId: string })
 
 export interface Attachment {
   id: string

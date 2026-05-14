@@ -32,6 +32,7 @@ async function setupTestWorkspace(): Promise<TestContext> {
 
   // Create a bot with a key that has messages:search scope
   const botRes = await client.post(`/api/workspaces/${workspace.id}/bots`, {
+    type: "shared",
     name: `Search Bot ${testRunId}`,
     slug: `search-bot-${testRunId}`,
   })

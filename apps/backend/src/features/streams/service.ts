@@ -805,42 +805,57 @@ export class StreamService {
    * to the root channel (see `resolveBotGrantStream`).
    */
   async addBotToStream(targetStreamId: string, botId: string, workspaceId: string, actorId: string): Promise<void> {
-    return withTransaction(this.pool, async (client) => {
-      const target = await StreamRepository.findById(client, targetStreamId)
-      if (!target) throw new StreamNotFoundError()
-      if (target.workspaceId !== workspaceId) {
-        throw new HttpError("Stream does not belong to this workspace", { status: 403, code: "WRONG_WORKSPACE" })
-      }
-      if (target.type === StreamTypes.DM) {
-        throw new HttpError("Cannot add bots to direct messages", { status: 400, code: "DM_MEMBERS_IMMUTABLE" })
-      }
+    return withTransaction(this.pool, (client) =>
+      this.addBotToStreamOn(client, targetStreamId, botId, workspaceId, actorId)
+    )
+  }
 
-      const grantStream = await this.resolveBotGrantStream(client, target)
-      const inserted = await BotChannelAccessRepository.grantAccess(client, {
-        id: streamId(),
-        workspaceId,
-        botId,
-        streamId: grantStream.id,
-        grantedBy: actorId,
-      })
-      if (!inserted) return
+  /**
+   * Same as {@link addBotToStream} but runs inside a caller-owned transaction.
+   * Use when the caller needs additional locks or checks (e.g. owner-membership
+   * verification for personal bots) atomic with the grant.
+   */
+  async addBotToStreamOn(
+    client: Querier,
+    targetStreamId: string,
+    botId: string,
+    workspaceId: string,
+    actorId: string
+  ): Promise<void> {
+    const target = await StreamRepository.findById(client, targetStreamId)
+    if (!target) throw new StreamNotFoundError()
+    if (target.workspaceId !== workspaceId) {
+      throw new HttpError("Stream does not belong to this workspace", { status: 403, code: "WRONG_WORKSPACE" })
+    }
+    if (target.type === StreamTypes.DM) {
+      throw new HttpError("Cannot add bots to direct messages", { status: 400, code: "DM_MEMBERS_IMMUTABLE" })
+    }
 
-      const event = await StreamEventRepository.insert(client, {
-        id: eventId(),
-        streamId: grantStream.id,
-        eventType: "member_added",
-        payload: { addedBy: actorId },
-        actorId: botId,
-        actorType: "bot",
-      })
+    const grantStream = await this.resolveBotGrantStream(client, target)
+    const inserted = await BotChannelAccessRepository.grantAccess(client, {
+      id: streamId(),
+      workspaceId,
+      botId,
+      streamId: grantStream.id,
+      grantedBy: actorId,
+    })
+    if (!inserted) return
 
-      await OutboxRepository.insert(client, "stream:member_added", {
-        workspaceId: grantStream.workspaceId,
-        streamId: grantStream.id,
-        memberId: botId,
-        stream: grantStream,
-        event,
-      })
+    const event = await StreamEventRepository.insert(client, {
+      id: eventId(),
+      streamId: grantStream.id,
+      eventType: "member_added",
+      payload: { addedBy: actorId },
+      actorId: botId,
+      actorType: "bot",
+    })
+
+    await OutboxRepository.insert(client, "stream:member_added", {
+      workspaceId: grantStream.workspaceId,
+      streamId: grantStream.id,
+      memberId: botId,
+      stream: grantStream,
+      event,
     })
   }
 
@@ -976,20 +991,27 @@ export class StreamService {
   // membership. Should be broken out into a proper authz module (e.g., canParticipate,
   // canRead, canWrite) that encapsulates the permission model cleanly.
   async isMember(streamId: string, memberId: string): Promise<boolean> {
-    return withClient(this.pool, async (client) => {
-      const directMember = await StreamMemberRepository.isMember(client, streamId, memberId)
-      if (directMember) {
-        return true
-      }
+    return withClient(this.pool, (client) => this.isMemberOn(client, streamId, memberId))
+  }
 
-      // Threads inherit participation rights from root stream
-      const stream = await StreamRepository.findById(client, streamId)
-      if (stream?.rootStreamId) {
-        return StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
-      }
+  /**
+   * Variant of {@link isMember} that runs on a caller-provided querier so the
+   * check can compose into an outer transaction. Used when the membership read
+   * must be consistent with row locks taken in the same transaction.
+   */
+  async isMemberOn(db: Querier, streamId: string, memberId: string): Promise<boolean> {
+    const directMember = await StreamMemberRepository.isMember(db, streamId, memberId)
+    if (directMember) {
+      return true
+    }
 
-      return false
-    })
+    // Threads inherit participation rights from root stream
+    const stream = await StreamRepository.findById(db, streamId)
+    if (stream?.rootStreamId) {
+      return StreamMemberRepository.isMember(db, stream.rootStreamId, memberId)
+    }
+
+    return false
   }
 
   async pinStream(streamId: string, memberId: string, pinned: boolean): Promise<StreamMember | null> {

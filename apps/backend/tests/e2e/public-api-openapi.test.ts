@@ -108,6 +108,7 @@ async function setupTestWorkspace(pool: Pool): Promise<TestContext> {
 
   // Create bot with all scopes
   const botRes = await client.post(`/api/workspaces/${workspace.id}/bots`, {
+    type: "shared",
     name: `OpenAPI Bot ${testRunId}`,
     slug: `oa-bot-${testRunId}`,
   })
