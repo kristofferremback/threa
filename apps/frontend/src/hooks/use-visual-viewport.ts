@@ -57,12 +57,27 @@ export function useVisualViewport(enabled: boolean): boolean {
     const update = () => {
       const vvHeight = vv ? vv.height : window.innerHeight
 
+      // The OS keyboard for this page can only appear when an editable element
+      // in this document has focus. If `vv.height` shrinks without an editable
+      // focus, it is a transient browser quirk — Chrome on Android does this
+      // routinely when a PWA is foregrounded after another app had the system
+      // keyboard up, and on URL-bar / system-bar animations during resume.
+      // Trusting that shrink propagates through `--viewport-height` → AppShell
+      // → scroller ResizeObservers and shows up as the "scroll offset bug":
+      // AppShell briefly shorter than the device viewport, plus a stray
+      // `scrollTop += delta` shift that doesn't unwind cleanly when the
+      // height bounces back. Clamp to `innerHeight` in that case so layout
+      // stays put until the phantom resolves.
+      const editableFocused = isEditableFocused()
+      const looksLikePhantomShrink = !!vv && !editableFocused && vvHeight < window.innerHeight - KEYBOARD_THRESHOLD
+      const effectiveHeight = looksLikePhantomShrink ? window.innerHeight : vvHeight
+
       // Primary: visual viewport smaller than layout viewport (Chrome, Safari)
-      let keyboardOpen = vv ? vv.height < window.innerHeight - KEYBOARD_THRESHOLD : false
+      let keyboardOpen = vv ? effectiveHeight < window.innerHeight - KEYBOARD_THRESHOLD : false
 
       // Fallback: viewport shrank from baseline (Firefox resizes both together)
       if (!keyboardOpen) {
-        keyboardOpen = vvHeight < baseHeight.current - KEYBOARD_THRESHOLD
+        keyboardOpen = effectiveHeight < baseHeight.current - KEYBOARD_THRESHOLD
       }
 
       // Update baseline when keyboard is confirmed closed
@@ -76,9 +91,9 @@ export function useVisualViewport(enabled: boolean): boolean {
       // restores and leaves the app taller than the visible viewport until
       // something (keyboard, URL bar animation, orientation change) forces a
       // re-layout.
-      if (vvHeight !== lastWrittenHeight) {
-        docEl.style.setProperty(VIEWPORT_HEIGHT_VAR, `${vvHeight}px`)
-        lastWrittenHeight = vvHeight
+      if (effectiveHeight !== lastWrittenHeight) {
+        docEl.style.setProperty(VIEWPORT_HEIGHT_VAR, `${effectiveHeight}px`)
+        lastWrittenHeight = effectiveHeight
       }
 
       // Only update React state when the boolean actually changes
@@ -162,4 +177,9 @@ function isEditable(el: HTMLElement): boolean {
   if (tag === "INPUT" || tag === "TEXTAREA") return true
   if (el.isContentEditable) return true
   return false
+}
+
+function isEditableFocused(): boolean {
+  const el = document.activeElement
+  return el instanceof HTMLElement && isEditable(el)
 }
