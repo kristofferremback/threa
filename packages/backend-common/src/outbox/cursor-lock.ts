@@ -357,7 +357,7 @@ export class CursorLock {
     await this.pool.query(sql`
       UPDATE outbox_listeners
       SET
-        last_processed_id = ${state.cursor.toString()},
+        last_processed_id = GREATEST(last_processed_id, ${state.cursor.toString()}),
         processed_ids = ${JSON.stringify(state.processedIds)},
         last_processed_at = ${now},
         retry_count = 0,
@@ -457,7 +457,7 @@ export class CursorLock {
       await client.query(sql`
         UPDATE outbox_listeners
         SET
-          last_processed_id = ${compacted.cursor.toString()},
+          last_processed_id = GREATEST(last_processed_id, ${compacted.cursor.toString()}),
           processed_ids = ${JSON.stringify(compacted.processedIds)},
           last_processed_at = NOW(),
           retry_count = 0,
