@@ -287,20 +287,24 @@ export const UserRepository = {
 
   async insert(db: Querier, params: InsertUserParams): Promise<User> {
     const result = await db.query<UserRow>(sql`
-      INSERT INTO users (id, workspace_id, workos_user_id, email, role, slug, name, timezone, locale, setup_completed)
-      VALUES (
-        ${params.id},
-        ${params.workspaceId},
-        ${params.workosUserId},
-        ${params.email},
-        ${params.role},
-        ${params.slug},
-        ${params.name},
-        ${params.timezone ?? null},
-        ${params.locale ?? null},
-        ${params.setupCompleted ?? true}
+      WITH inserted AS (
+        INSERT INTO users (id, workspace_id, workos_user_id, email, role, slug, name, timezone, locale, setup_completed)
+        VALUES (
+          ${params.id},
+          ${params.workspaceId},
+          ${params.workosUserId},
+          ${params.email},
+          ${params.role},
+          ${params.slug},
+          ${params.name},
+          ${params.timezone ?? null},
+          ${params.locale ?? null},
+          ${params.setupCompleted ?? true}
+        )
+        RETURNING ${sql.raw(SELECT_FIELDS)}
       )
-      RETURNING ${sql.raw(SELECT_FIELDS)}
+      SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
+      FROM inserted u ${sql.raw(JOIN_AUTHZ_MIRROR)}
     `)
     return mapRowToUser(result.rows[0])
   },
