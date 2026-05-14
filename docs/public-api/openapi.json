@@ -3,43 +3,24 @@
   "info": {
     "title": "Threa Public API",
     "version": "1.0.0",
-    "description": "The Threa Public API lets you programmatically read and write messages, list streams, search, and more.\n\n## Authentication\n\nAll requests require a Bearer token in the `Authorization` header:\n\n```\nAuthorization: Bearer thr_your_api_key_here\n```\n\nAPI keys are created by **workspace admins** in the Threa app under **Settings > API Keys**.\nEach key is scoped to a workspace and granted specific permissions (scopes).\n\n## Scopes\n\nAPI keys are granted specific scopes that control access:\n\n- `messages:search` \u2014 Grants access to search messages in public streams in a workspace. Application level stream grants can extend permissions to private streams.\n- `streams:read` \u2014 Grants access to list and search accessible streams in a workspace.\n- `messages:read` \u2014 Grants access to read messages in accessible streams.\n- `messages:write` \u2014 Grants access to send, update, and delete messages in accessible streams.\n- `users:read` \u2014 Grants access to list and search workspace users.\n- `memos:read` \u2014 Grants access to search preserved workspace memos and inspect their provenance.\n- `attachments:read` \u2014 Grants access to search accessible attachments, inspect extracted content, and fetch download URLs.\n\n## Rate Limits\n\nRequests are rate-limited per workspace and per API key. Rate limit headers are included in responses.\n\n## Pagination\n\nList endpoints return paginated results with `hasMore` and `cursor` fields.\nPass the `cursor` value as the `after` query parameter to fetch the next page."
+    "description": "The Threa Public API lets you programmatically read and write messages, list streams, search, and more.\n\n## Authentication\n\nAll requests require a Bearer token in the `Authorization` header:\n\n```\nAuthorization: Bearer thr_your_api_key_here\n```\n\nAPI keys are created by **workspace admins** in the Threa app under **Settings > API Keys**.\nEach key is scoped to a workspace and granted specific permissions (scopes).\n\n## Scopes\n\nAPI keys are granted specific scopes that control access:\n\n- `messages:search` — Grants access to search messages in public streams in a workspace. Application level stream grants can extend permissions to private streams.\n- `streams:read` — Grants access to list and search accessible streams in a workspace.\n- `messages:read` — Grants access to read messages in accessible streams.\n- `messages:write` — Grants access to send, update, and delete messages in accessible streams.\n- `users:read` — Grants access to list and search workspace users.\n- `memos:read` — Grants access to search preserved workspace memos and inspect their provenance.\n- `attachments:read` — Grants access to search accessible attachments, inspect extracted content, and fetch download URLs.\n\n## Rate Limits\n\nRequests are rate-limited per workspace and per API key. Rate limit headers are included in responses.\n\n## Pagination\n\nList endpoints return paginated results with `hasMore` and `cursor` fields.\nPass the `cursor` value as the `after` query parameter to fetch the next page."
   },
-  "servers": [
-    {
-      "url": "https://app.threa.io",
-      "description": "Production"
-    }
-  ],
-  "security": [
-    {
-      "apiKey": []
-    }
-  ],
+  "servers": [{ "url": "https://app.threa.io", "description": "Production" }],
+  "security": [{ "apiKey": [] }],
   "paths": {
     "/api/v1/workspaces/{workspaceId}/messages/search": {
       "post": {
         "operationId": "searchMessages",
         "summary": "Search messages",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Full-text and optional semantic search across accessible streams.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:search"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:search"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           }
         ],
@@ -51,61 +32,20 @@
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
-                  "query": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "semantic": {
-                    "default": false,
-                    "type": "boolean"
-                  },
-                  "exact": {
-                    "default": false,
-                    "type": "boolean"
-                  },
-                  "streams": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "from": {
-                    "type": "string"
-                  },
+                  "query": { "type": "string", "minLength": 1 },
+                  "semantic": { "default": false, "type": "boolean" },
+                  "exact": { "default": false, "type": "boolean" },
+                  "streams": { "type": "array", "items": { "type": "string" } },
+                  "from": { "type": "string" },
                   "type": {
                     "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "scratchpad",
-                        "channel",
-                        "dm",
-                        "thread",
-                        "system"
-                      ]
-                    }
+                    "items": { "type": "string", "enum": ["scratchpad", "channel", "dm", "thread", "system"] }
                   },
-                  "before": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "after": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "limit": {
-                    "default": 20,
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 50
-                  }
+                  "before": { "type": "string", "format": "date-time" },
+                  "after": { "type": "string", "format": "date-time" },
+                  "limit": { "default": 20, "type": "integer", "minimum": 1, "maximum": 50 }
                 },
-                "required": [
-                  "query",
-                  "semantic",
-                  "exact",
-                  "limit"
-                ],
+                "required": ["query", "semantic", "exact", "limit"],
                 "additionalProperties": false
               }
             }
@@ -125,34 +65,13 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "streamId": {
-                            "type": "string"
-                          },
-                          "sequence": {
-                            "type": "string",
-                            "description": "Numeric sequence as string"
-                          },
-                          "content": {
-                            "type": "string"
-                          },
-                          "authorId": {
-                            "type": "string"
-                          },
-                          "authorType": {
-                            "type": "string",
-                            "enum": [
-                              "user",
-                              "persona",
-                              "system",
-                              "bot"
-                            ]
-                          },
-                          "authorDisplayName": {
-                            "type": "string"
-                          },
+                          "id": { "type": "string" },
+                          "streamId": { "type": "string" },
+                          "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                          "content": { "type": "string" },
+                          "authorId": { "type": "string" },
+                          "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                          "authorDisplayName": { "type": "string" },
                           "replyCount": {
                             "type": "integer",
                             "minimum": -9007199254740991,
@@ -160,25 +79,13 @@
                           },
                           "metadata": {
                             "type": "object",
-                            "propertyNames": {
-                              "type": "string"
-                            },
-                            "additionalProperties": {
-                              "type": "string"
-                            },
+                            "propertyNames": { "type": "string" },
+                            "additionalProperties": { "type": "string" },
                             "description": "External references attached by the sender. Always present; empty when unset."
                           },
-                          "editedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "rank": {
-                            "type": "number"
-                          }
+                          "editedAt": { "type": "string", "format": "date-time" },
+                          "createdAt": { "type": "string", "format": "date-time" },
+                          "rank": { "type": "number" }
                         },
                         "required": [
                           "id",
@@ -196,9 +103,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -212,36 +117,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -249,25 +139,15 @@
       "post": {
         "operationId": "searchMemos",
         "summary": "Search memos",
-        "tags": [
-          "Memos"
-        ],
+        "tags": ["Memos"],
         "description": "Search preserved workspace memos with semantic, exact, or recent-first retrieval.",
-        "security": [
-          {
-            "apiKey": [
-              "memos:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["memos:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           }
         ],
@@ -279,67 +159,20 @@
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
-                  "query": {
-                    "default": "",
-                    "type": "string"
-                  },
-                  "exact": {
-                    "type": "boolean"
-                  },
-                  "streams": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "memoType": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "message",
-                        "conversation"
-                      ]
-                    }
-                  },
+                  "query": { "default": "", "type": "string" },
+                  "exact": { "type": "boolean" },
+                  "streams": { "type": "array", "items": { "type": "string" } },
+                  "memoType": { "type": "array", "items": { "type": "string", "enum": ["message", "conversation"] } },
                   "knowledgeType": {
                     "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "decision",
-                        "learning",
-                        "procedure",
-                        "context",
-                        "reference"
-                      ]
-                    }
+                    "items": { "type": "string", "enum": ["decision", "learning", "procedure", "context", "reference"] }
                   },
-                  "tags": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "before": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "after": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "limit": {
-                    "default": 20,
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 100
-                  }
+                  "tags": { "type": "array", "items": { "type": "string" } },
+                  "before": { "type": "string", "format": "date-time" },
+                  "after": { "type": "string", "format": "date-time" },
+                  "limit": { "default": 20, "type": "integer", "minimum": 1, "maximum": 100 }
                 },
-                "required": [
-                  "query",
-                  "limit"
-                ],
+                "required": ["query", "limit"],
                 "additionalProperties": false
               }
             }
@@ -362,125 +195,33 @@
                           "memo": {
                             "type": "object",
                             "properties": {
-                              "id": {
-                                "type": "string"
-                              },
-                              "workspaceId": {
-                                "type": "string"
-                              },
-                              "memoType": {
-                                "type": "string",
-                                "enum": [
-                                  "message",
-                                  "conversation"
-                                ]
-                              },
-                              "sourceMessageId": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "sourceConversationId": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "title": {
-                                "type": "string"
-                              },
-                              "abstract": {
-                                "type": "string"
-                              },
-                              "keyPoints": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              "sourceMessageIds": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              "participantIds": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
+                              "id": { "type": "string" },
+                              "workspaceId": { "type": "string" },
+                              "memoType": { "type": "string", "enum": ["message", "conversation"] },
+                              "sourceMessageId": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                              "sourceConversationId": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                              "title": { "type": "string" },
+                              "abstract": { "type": "string" },
+                              "keyPoints": { "type": "array", "items": { "type": "string" } },
+                              "sourceMessageIds": { "type": "array", "items": { "type": "string" } },
+                              "participantIds": { "type": "array", "items": { "type": "string" } },
                               "knowledgeType": {
                                 "type": "string",
-                                "enum": [
-                                  "decision",
-                                  "learning",
-                                  "procedure",
-                                  "context",
-                                  "reference"
-                                ]
+                                "enum": ["decision", "learning", "procedure", "context", "reference"]
                               },
-                              "tags": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              "parentMemoId": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "status": {
-                                "type": "string"
-                              },
+                              "tags": { "type": "array", "items": { "type": "string" } },
+                              "parentMemoId": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                              "status": { "type": "string" },
                               "version": {
                                 "type": "integer",
                                 "minimum": -9007199254740991,
                                 "maximum": 9007199254740991
                               },
-                              "revisionReason": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "createdAt": {
-                                "type": "string",
-                                "format": "date-time"
-                              },
-                              "updatedAt": {
-                                "type": "string",
-                                "format": "date-time"
-                              },
+                              "revisionReason": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                              "createdAt": { "type": "string", "format": "date-time" },
+                              "updatedAt": { "type": "string", "format": "date-time" },
                               "archivedAt": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "format": "date-time"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
                               }
                             },
                             "required": [
@@ -506,41 +247,20 @@
                             ],
                             "additionalProperties": false
                           },
-                          "distance": {
-                            "type": "number"
-                          },
+                          "distance": { "type": "number" },
                           "sourceStream": {
                             "anyOf": [
                               {
                                 "type": "object",
                                 "properties": {
-                                  "id": {
-                                    "type": "string"
-                                  },
-                                  "type": {
-                                    "type": "string"
-                                  },
-                                  "name": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "null"
-                                      }
-                                    ]
-                                  }
+                                  "id": { "type": "string" },
+                                  "type": { "type": "string" },
+                                  "name": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                                 },
-                                "required": [
-                                  "id",
-                                  "type",
-                                  "name"
-                                ],
+                                "required": ["id", "type", "name"],
                                 "additionalProperties": false
                               },
-                              {
-                                "type": "null"
-                              }
+                              { "type": "null" }
                             ]
                           },
                           "rootStream": {
@@ -548,49 +268,23 @@
                               {
                                 "type": "object",
                                 "properties": {
-                                  "id": {
-                                    "type": "string"
-                                  },
-                                  "type": {
-                                    "type": "string"
-                                  },
-                                  "name": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "null"
-                                      }
-                                    ]
-                                  }
+                                  "id": { "type": "string" },
+                                  "type": { "type": "string" },
+                                  "name": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                                 },
-                                "required": [
-                                  "id",
-                                  "type",
-                                  "name"
-                                ],
+                                "required": ["id", "type", "name"],
                                 "additionalProperties": false
                               },
-                              {
-                                "type": "null"
-                              }
+                              { "type": "null" }
                             ]
                           }
                         },
-                        "required": [
-                          "memo",
-                          "distance",
-                          "sourceStream",
-                          "rootStream"
-                        ],
+                        "required": ["memo", "distance", "sourceStream", "rootStream"],
                         "additionalProperties": false
                       }
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -604,36 +298,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -641,34 +320,22 @@
       "get": {
         "operationId": "getMemo",
         "summary": "Get a memo",
-        "tags": [
-          "Memos"
-        ],
+        "tags": ["Memos"],
         "description": "Retrieve a memo together with source stream and source message provenance.",
-        "security": [
-          {
-            "apiKey": [
-              "memos:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["memos:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "memoId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Memo ID (prefixed ULID)"
           }
         ],
@@ -687,126 +354,28 @@
                         "memo": {
                           "type": "object",
                           "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "workspaceId": {
-                              "type": "string"
-                            },
-                            "memoType": {
-                              "type": "string",
-                              "enum": [
-                                "message",
-                                "conversation"
-                              ]
-                            },
-                            "sourceMessageId": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "sourceConversationId": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "title": {
-                              "type": "string"
-                            },
-                            "abstract": {
-                              "type": "string"
-                            },
-                            "keyPoints": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "sourceMessageIds": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "participantIds": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
+                            "id": { "type": "string" },
+                            "workspaceId": { "type": "string" },
+                            "memoType": { "type": "string", "enum": ["message", "conversation"] },
+                            "sourceMessageId": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                            "sourceConversationId": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                            "title": { "type": "string" },
+                            "abstract": { "type": "string" },
+                            "keyPoints": { "type": "array", "items": { "type": "string" } },
+                            "sourceMessageIds": { "type": "array", "items": { "type": "string" } },
+                            "participantIds": { "type": "array", "items": { "type": "string" } },
                             "knowledgeType": {
                               "type": "string",
-                              "enum": [
-                                "decision",
-                                "learning",
-                                "procedure",
-                                "context",
-                                "reference"
-                              ]
+                              "enum": ["decision", "learning", "procedure", "context", "reference"]
                             },
-                            "tags": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "parentMemoId": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "status": {
-                              "type": "string"
-                            },
-                            "version": {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991
-                            },
-                            "revisionReason": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "createdAt": {
-                              "type": "string",
-                              "format": "date-time"
-                            },
-                            "updatedAt": {
-                              "type": "string",
-                              "format": "date-time"
-                            },
-                            "archivedAt": {
-                              "anyOf": [
-                                {
-                                  "type": "string",
-                                  "format": "date-time"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            }
+                            "tags": { "type": "array", "items": { "type": "string" } },
+                            "parentMemoId": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                            "status": { "type": "string" },
+                            "version": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+                            "revisionReason": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                            "createdAt": { "type": "string", "format": "date-time" },
+                            "updatedAt": { "type": "string", "format": "date-time" },
+                            "archivedAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] }
                           },
                           "required": [
                             "id",
@@ -831,41 +400,20 @@
                           ],
                           "additionalProperties": false
                         },
-                        "distance": {
-                          "type": "number"
-                        },
+                        "distance": { "type": "number" },
                         "sourceStream": {
                           "anyOf": [
                             {
                               "type": "object",
                               "properties": {
-                                "id": {
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "type": "string"
-                                },
-                                "name": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                }
+                                "id": { "type": "string" },
+                                "type": { "type": "string" },
+                                "name": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                               },
-                              "required": [
-                                "id",
-                                "type",
-                                "name"
-                              ],
+                              "required": ["id", "type", "name"],
                               "additionalProperties": false
                             },
-                            {
-                              "type": "null"
-                            }
+                            { "type": "null" }
                           ]
                         },
                         "rootStream": {
@@ -873,33 +421,14 @@
                             {
                               "type": "object",
                               "properties": {
-                                "id": {
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "type": "string"
-                                },
-                                "name": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                }
+                                "id": { "type": "string" },
+                                "type": { "type": "string" },
+                                "name": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                               },
-                              "required": [
-                                "id",
-                                "type",
-                                "name"
-                              ],
+                              "required": ["id", "type", "name"],
                               "additionalProperties": false
                             },
-                            {
-                              "type": "null"
-                            }
+                            { "type": "null" }
                           ]
                         },
                         "sourceMessages": {
@@ -907,37 +436,14 @@
                           "items": {
                             "type": "object",
                             "properties": {
-                              "id": {
-                                "type": "string"
-                              },
-                              "streamId": {
-                                "type": "string"
-                              },
-                              "streamName": {
-                                "type": "string"
-                              },
-                              "authorId": {
-                                "type": "string"
-                              },
-                              "authorType": {
-                                "type": "string",
-                                "enum": [
-                                  "user",
-                                  "persona",
-                                  "system",
-                                  "bot"
-                                ]
-                              },
-                              "authorName": {
-                                "type": "string"
-                              },
-                              "content": {
-                                "type": "string"
-                              },
-                              "createdAt": {
-                                "type": "string",
-                                "format": "date-time"
-                              }
+                              "id": { "type": "string" },
+                              "streamId": { "type": "string" },
+                              "streamName": { "type": "string" },
+                              "authorId": { "type": "string" },
+                              "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                              "authorName": { "type": "string" },
+                              "content": { "type": "string" },
+                              "createdAt": { "type": "string", "format": "date-time" }
                             },
                             "required": [
                               "id",
@@ -953,19 +459,11 @@
                           }
                         }
                       },
-                      "required": [
-                        "memo",
-                        "distance",
-                        "sourceStream",
-                        "rootStream",
-                        "sourceMessages"
-                      ],
+                      "required": ["memo", "distance", "sourceStream", "rootStream", "sourceMessages"],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -979,39 +477,22 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          },
-          "404": {
-            "description": "Resource not found"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" },
+          "404": { "description": "Resource not found" }
         }
       }
     },
@@ -1019,25 +500,15 @@
       "post": {
         "operationId": "searchAttachments",
         "summary": "Search attachments",
-        "tags": [
-          "Attachments"
-        ],
+        "tags": ["Attachments"],
         "description": "Search accessible attachments by filename or extracted content.",
-        "security": [
-          {
-            "apiKey": [
-              "attachments:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["attachments:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           }
         ],
@@ -1049,42 +520,18 @@
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
-                  "query": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "streams": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
+                  "query": { "type": "string", "minLength": 1 },
+                  "streams": { "type": "array", "items": { "type": "string" } },
                   "contentTypes": {
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": [
-                        "chart",
-                        "table",
-                        "diagram",
-                        "screenshot",
-                        "photo",
-                        "document",
-                        "other"
-                      ]
+                      "enum": ["chart", "table", "diagram", "screenshot", "photo", "document", "other"]
                     }
                   },
-                  "limit": {
-                    "default": 20,
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 50
-                  }
+                  "limit": { "default": 20, "type": "integer", "minimum": 1, "maximum": 50 }
                 },
-                "required": [
-                  "query",
-                  "limit"
-                ],
+                "required": ["query", "limit"],
                 "additionalProperties": false
               }
             }
@@ -1104,70 +551,29 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "filename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
+                          "id": { "type": "string" },
+                          "filename": { "type": "string" },
+                          "mimeType": { "type": "string" },
                           "contentType": {
                             "anyOf": [
                               {
                                 "type": "string",
-                                "enum": [
-                                  "chart",
-                                  "table",
-                                  "diagram",
-                                  "screenshot",
-                                  "photo",
-                                  "document",
-                                  "other"
-                                ]
+                                "enum": ["chart", "table", "diagram", "screenshot", "photo", "document", "other"]
                               },
-                              {
-                                "type": "null"
-                              }
+                              { "type": "null" }
                             ]
                           },
-                          "summary": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "streamId": {
-                            "type": "string"
-                          },
-                          "messageId": {
-                            "type": "string"
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          }
+                          "summary": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "streamId": { "type": "string" },
+                          "messageId": { "type": "string" },
+                          "createdAt": { "type": "string", "format": "date-time" }
                         },
-                        "required": [
-                          "id",
-                          "filename",
-                          "mimeType",
-                          "contentType",
-                          "summary",
-                          "createdAt"
-                        ],
+                        "required": ["id", "filename", "mimeType", "contentType", "summary", "createdAt"],
                         "additionalProperties": false
                       }
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -1181,36 +587,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -1218,34 +609,22 @@
       "get": {
         "operationId": "getAttachment",
         "summary": "Get an attachment",
-        "tags": [
-          "Attachments"
-        ],
+        "tags": ["Attachments"],
         "description": "Retrieve attachment metadata and extracted content for an accessible attachment.",
-        "security": [
-          {
-            "apiKey": [
-              "attachments:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["attachments:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "attachmentId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Attachment ID (prefixed ULID)"
           }
         ],
@@ -1261,34 +640,15 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "id": {
-                          "type": "string"
-                        },
-                        "filename": {
-                          "type": "string"
-                        },
-                        "mimeType": {
-                          "type": "string"
-                        },
-                        "sizeBytes": {
-                          "type": "integer",
-                          "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
-                        },
+                        "id": { "type": "string" },
+                        "filename": { "type": "string" },
+                        "mimeType": { "type": "string" },
+                        "sizeBytes": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
                         "processingStatus": {
                           "type": "string",
-                          "enum": [
-                            "pending",
-                            "processing",
-                            "completed",
-                            "failed",
-                            "skipped"
-                          ]
+                          "enum": ["pending", "processing", "completed", "failed", "skipped"]
                         },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
+                        "createdAt": { "type": "string", "format": "date-time" },
                         "extraction": {
                           "anyOf": [
                             {
@@ -1296,81 +656,20 @@
                               "properties": {
                                 "contentType": {
                                   "type": "string",
-                                  "enum": [
-                                    "chart",
-                                    "table",
-                                    "diagram",
-                                    "screenshot",
-                                    "photo",
-                                    "document",
-                                    "other"
-                                  ]
+                                  "enum": ["chart", "table", "diagram", "screenshot", "photo", "document", "other"]
                                 },
-                                "summary": {
-                                  "type": "string"
-                                },
-                                "fullText": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "structuredData": {
-                                  "anyOf": [
-                                    {},
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "pdfMetadata": {
-                                  "anyOf": [
-                                    {},
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "textMetadata": {
-                                  "anyOf": [
-                                    {},
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "wordMetadata": {
-                                  "anyOf": [
-                                    {},
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "excelMetadata": {
-                                  "anyOf": [
-                                    {},
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                }
+                                "summary": { "type": "string" },
+                                "fullText": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                                "structuredData": { "anyOf": [{}, { "type": "null" }] },
+                                "pdfMetadata": { "anyOf": [{}, { "type": "null" }] },
+                                "textMetadata": { "anyOf": [{}, { "type": "null" }] },
+                                "wordMetadata": { "anyOf": [{}, { "type": "null" }] },
+                                "excelMetadata": { "anyOf": [{}, { "type": "null" }] }
                               },
-                              "required": [
-                                "contentType",
-                                "summary",
-                                "fullText",
-                                "structuredData"
-                              ],
+                              "required": ["contentType", "summary", "fullText", "structuredData"],
                               "additionalProperties": false
                             },
-                            {
-                              "type": "null"
-                            }
+                            { "type": "null" }
                           ]
                         }
                       },
@@ -1386,9 +685,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -1402,39 +699,22 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          },
-          "404": {
-            "description": "Resource not found"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" },
+          "404": { "description": "Resource not found" }
         }
       }
     },
@@ -1442,34 +722,22 @@
       "get": {
         "operationId": "getAttachmentDownloadUrl",
         "summary": "Get an attachment download URL",
-        "tags": [
-          "Attachments"
-        ],
+        "tags": ["Attachments"],
         "description": "Create a short-lived signed URL for an accessible attachment.",
-        "security": [
-          {
-            "apiKey": [
-              "attachments:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["attachments:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "attachmentId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Attachment ID (prefixed ULID)"
           }
         ],
@@ -1485,26 +753,14 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "url": {
-                          "type": "string",
-                          "format": "uri"
-                        },
-                        "expiresIn": {
-                          "type": "integer",
-                          "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
-                        }
+                        "url": { "type": "string", "format": "uri" },
+                        "expiresIn": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 }
                       },
-                      "required": [
-                        "url",
-                        "expiresIn"
-                      ],
+                      "required": ["url", "expiresIn"],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -1518,39 +774,22 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          },
-          "404": {
-            "description": "Resource not found"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" },
+          "404": { "description": "Resource not found" }
         }
       }
     },
@@ -1558,59 +797,25 @@
       "get": {
         "operationId": "listStreams",
         "summary": "List streams",
-        "tags": [
-          "Streams"
-        ],
+        "tags": ["Streams"],
         "description": "List streams accessible to this API key, with optional type and text filters.",
-        "security": [
-          {
-            "apiKey": [
-              "streams:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["streams:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
-          {
-            "name": "type",
-            "in": "query",
-            "required": true,
-            "schema": {}
-          },
-          {
-            "name": "query",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
+          { "name": "type", "in": "query", "required": true, "schema": {} },
+          { "name": "query", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "after", "in": "query", "required": false, "schema": { "type": "string" } },
           {
             "name": "limit",
             "in": "query",
             "required": true,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200
-            }
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 200 }
           }
         ],
         "responses": {
@@ -1627,78 +832,26 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "scratchpad",
-                              "channel",
-                              "dm",
-                              "thread",
-                              "system"
-                            ]
-                          },
-                          "displayName": {
-                            "type": "string"
-                          },
-                          "slug": {
-                            "type": "string"
-                          },
-                          "description": {
-                            "type": "string"
-                          },
-                          "visibility": {
-                            "type": "string"
-                          },
-                          "parentStreamId": {
-                            "type": "string"
-                          },
-                          "rootStreamId": {
-                            "type": "string"
-                          },
-                          "parentMessageId": {
-                            "type": "string"
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "archivedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          }
+                          "id": { "type": "string" },
+                          "type": { "type": "string", "enum": ["scratchpad", "channel", "dm", "thread", "system"] },
+                          "displayName": { "type": "string" },
+                          "slug": { "type": "string" },
+                          "description": { "type": "string" },
+                          "visibility": { "type": "string" },
+                          "parentStreamId": { "type": "string" },
+                          "rootStreamId": { "type": "string" },
+                          "parentMessageId": { "type": "string" },
+                          "createdAt": { "type": "string", "format": "date-time" },
+                          "archivedAt": { "type": "string", "format": "date-time" }
                         },
-                        "required": [
-                          "id",
-                          "type",
-                          "displayName",
-                          "visibility",
-                          "createdAt"
-                        ],
+                        "required": ["id", "type", "displayName", "visibility", "createdAt"],
                         "additionalProperties": false
                       }
                     },
-                    "hasMore": {
-                      "type": "boolean"
-                    },
-                    "cursor": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
+                    "hasMore": { "type": "boolean" },
+                    "cursor": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                   },
-                  "required": [
-                    "data",
-                    "hasMore",
-                    "cursor"
-                  ],
+                  "required": ["data", "hasMore", "cursor"],
                   "additionalProperties": false
                 }
               }
@@ -1712,36 +865,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -1749,33 +887,21 @@
       "get": {
         "operationId": "getStream",
         "summary": "Get a stream",
-        "tags": [
-          "Streams"
-        ],
-        "security": [
-          {
-            "apiKey": [
-              "streams:read"
-            ]
-          }
-        ],
+        "tags": ["Streams"],
+        "security": [{ "apiKey": ["streams:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "streamId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Stream ID (prefixed ULID)"
           }
         ],
@@ -1791,62 +917,23 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "id": {
-                          "type": "string"
-                        },
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "scratchpad",
-                            "channel",
-                            "dm",
-                            "thread",
-                            "system"
-                          ]
-                        },
-                        "displayName": {
-                          "type": "string"
-                        },
-                        "slug": {
-                          "type": "string"
-                        },
-                        "description": {
-                          "type": "string"
-                        },
-                        "visibility": {
-                          "type": "string"
-                        },
-                        "parentStreamId": {
-                          "type": "string"
-                        },
-                        "rootStreamId": {
-                          "type": "string"
-                        },
-                        "parentMessageId": {
-                          "type": "string"
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "archivedAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        }
+                        "id": { "type": "string" },
+                        "type": { "type": "string", "enum": ["scratchpad", "channel", "dm", "thread", "system"] },
+                        "displayName": { "type": "string" },
+                        "slug": { "type": "string" },
+                        "description": { "type": "string" },
+                        "visibility": { "type": "string" },
+                        "parentStreamId": { "type": "string" },
+                        "rootStreamId": { "type": "string" },
+                        "parentMessageId": { "type": "string" },
+                        "createdAt": { "type": "string", "format": "date-time" },
+                        "archivedAt": { "type": "string", "format": "date-time" }
                       },
-                      "required": [
-                        "id",
-                        "type",
-                        "displayName",
-                        "visibility",
-                        "createdAt"
-                      ],
+                      "required": ["id", "type", "displayName", "visibility", "createdAt"],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -1860,39 +947,22 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          },
-          "404": {
-            "description": "Resource not found"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" },
+          "404": { "description": "Resource not found" }
         }
       }
     },
@@ -1900,53 +970,29 @@
       "get": {
         "operationId": "listMembers",
         "summary": "List stream members",
-        "tags": [
-          "Streams"
-        ],
-        "security": [
-          {
-            "apiKey": [
-              "streams:read"
-            ]
-          }
-        ],
+        "tags": ["Streams"],
+        "security": [{ "apiKey": ["streams:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "streamId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Stream ID (prefixed ULID)"
           },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
+          { "name": "after", "in": "query", "required": false, "schema": { "type": "string" } },
           {
             "name": "limit",
             "in": "query",
             "required": true,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200
-            }
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 200 }
           }
         ],
         "responses": {
@@ -1963,51 +1009,20 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "userId": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "slug": {
-                            "type": "string"
-                          },
-                          "avatarUrl": {
-                            "type": "string"
-                          },
-                          "joinedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          }
+                          "userId": { "type": "string" },
+                          "name": { "type": "string" },
+                          "slug": { "type": "string" },
+                          "avatarUrl": { "type": "string" },
+                          "joinedAt": { "type": "string", "format": "date-time" }
                         },
-                        "required": [
-                          "userId",
-                          "name",
-                          "slug",
-                          "joinedAt"
-                        ],
+                        "required": ["userId", "name", "slug", "joinedAt"],
                         "additionalProperties": false
                       }
                     },
-                    "hasMore": {
-                      "type": "boolean"
-                    },
-                    "cursor": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
+                    "hasMore": { "type": "boolean" },
+                    "cursor": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                   },
-                  "required": [
-                    "data",
-                    "hasMore",
-                    "cursor"
-                  ],
+                  "required": ["data", "hasMore", "cursor"],
                   "additionalProperties": false
                 }
               }
@@ -2021,36 +1036,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -2058,64 +1058,31 @@
       "get": {
         "operationId": "listMessages",
         "summary": "List messages in a stream",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Cursor-paginated message list. Use `before` or `after` sequence numbers.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "streamId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Stream ID (prefixed ULID)"
           },
-          {
-            "name": "before",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "pattern": "^\\d+$"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "pattern": "^\\d+$"
-            }
-          },
+          { "name": "before", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^\\d+$" } },
+          { "name": "after", "in": "query", "required": false, "schema": { "type": "string", "pattern": "^\\d+$" } },
           {
             "name": "limit",
             "in": "query",
             "required": true,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            }
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 100 }
           }
         ],
         "responses": {
@@ -2132,67 +1099,32 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "streamId": {
-                            "type": "string"
-                          },
-                          "sequence": {
-                            "type": "string",
-                            "description": "Numeric sequence as string"
-                          },
-                          "authorId": {
-                            "type": "string"
-                          },
-                          "authorType": {
-                            "type": "string",
-                            "enum": [
-                              "user",
-                              "persona",
-                              "system",
-                              "bot"
-                            ]
-                          },
-                          "authorDisplayName": {
-                            "type": "string"
-                          },
-                          "content": {
-                            "type": "string"
-                          },
+                          "id": { "type": "string" },
+                          "streamId": { "type": "string" },
+                          "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                          "authorId": { "type": "string" },
+                          "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                          "authorDisplayName": { "type": "string" },
+                          "content": { "type": "string" },
                           "replyCount": {
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
-                          "threadStreamId": {
-                            "type": "string"
-                          },
-                          "clientMessageId": {
-                            "type": "string"
-                          },
+                          "threadStreamId": { "type": "string" },
+                          "clientMessageId": { "type": "string" },
                           "sentVia": {
                             "description": "Present when message was sent via API on behalf of a user",
                             "type": "string"
                           },
                           "metadata": {
                             "type": "object",
-                            "propertyNames": {
-                              "type": "string"
-                            },
-                            "additionalProperties": {
-                              "type": "string"
-                            },
+                            "propertyNames": { "type": "string" },
+                            "additionalProperties": { "type": "string" },
                             "description": "External references attached by the sender. Always present; empty when unset."
                           },
-                          "editedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          }
+                          "editedAt": { "type": "string", "format": "date-time" },
+                          "createdAt": { "type": "string", "format": "date-time" }
                         },
                         "required": [
                           "id",
@@ -2208,14 +1140,9 @@
                         "additionalProperties": false
                       }
                     },
-                    "hasMore": {
-                      "type": "boolean"
-                    }
+                    "hasMore": { "type": "boolean" }
                   },
-                  "required": [
-                    "data",
-                    "hasMore"
-                  ],
+                  "required": ["data", "hasMore"],
                   "additionalProperties": false
                 }
               }
@@ -2229,69 +1156,42 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       },
       "post": {
         "operationId": "sendMessage",
         "summary": "Send a message",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Send a message. Workspace-scoped keys send as a bot; user-scoped keys send on behalf of the key owner.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:write"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "streamId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Stream ID (prefixed ULID)"
           }
         ],
@@ -2303,14 +1203,8 @@
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
-                  "content": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "clientMessageId": {
-                    "type": "string",
-                    "maxLength": 128
-                  },
+                  "content": { "type": "string", "minLength": 1 },
+                  "clientMessageId": { "type": "string", "maxLength": 128 },
                   "metadata": {
                     "type": "object",
                     "propertyNames": {
@@ -2319,15 +1213,10 @@
                       "maxLength": 64,
                       "pattern": "^[a-zA-Z0-9_.\\-:]+$"
                     },
-                    "additionalProperties": {
-                      "type": "string",
-                      "maxLength": 256
-                    }
+                    "additionalProperties": { "type": "string", "maxLength": 256 }
                   }
                 },
-                "required": [
-                  "content"
-                ],
+                "required": ["content"],
                 "additionalProperties": false
               }
             }
@@ -2345,67 +1234,28 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "id": {
-                          "type": "string"
-                        },
-                        "streamId": {
-                          "type": "string"
-                        },
-                        "sequence": {
-                          "type": "string",
-                          "description": "Numeric sequence as string"
-                        },
-                        "authorId": {
-                          "type": "string"
-                        },
-                        "authorType": {
-                          "type": "string",
-                          "enum": [
-                            "user",
-                            "persona",
-                            "system",
-                            "bot"
-                          ]
-                        },
-                        "authorDisplayName": {
-                          "type": "string"
-                        },
-                        "content": {
-                          "type": "string"
-                        },
-                        "replyCount": {
-                          "type": "integer",
-                          "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
-                        },
-                        "threadStreamId": {
-                          "type": "string"
-                        },
-                        "clientMessageId": {
-                          "type": "string"
-                        },
+                        "id": { "type": "string" },
+                        "streamId": { "type": "string" },
+                        "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                        "authorId": { "type": "string" },
+                        "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                        "authorDisplayName": { "type": "string" },
+                        "content": { "type": "string" },
+                        "replyCount": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+                        "threadStreamId": { "type": "string" },
+                        "clientMessageId": { "type": "string" },
                         "sentVia": {
                           "description": "Present when message was sent via API on behalf of a user",
                           "type": "string"
                         },
                         "metadata": {
                           "type": "object",
-                          "propertyNames": {
-                            "type": "string"
-                          },
-                          "additionalProperties": {
-                            "type": "string"
-                          },
+                          "propertyNames": { "type": "string" },
+                          "additionalProperties": { "type": "string" },
                           "description": "External references attached by the sender. Always present; empty when unset."
                         },
-                        "editedAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        }
+                        "editedAt": { "type": "string", "format": "date-time" },
+                        "createdAt": { "type": "string", "format": "date-time" }
                       },
                       "required": [
                         "id",
@@ -2421,9 +1271,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -2437,36 +1285,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -2474,25 +1307,15 @@
       "post": {
         "operationId": "findMessagesByMetadata",
         "summary": "Find messages by metadata",
-        "tags": [
-          "Messages"
-        ],
-        "description": "Find non-deleted messages whose `metadata` contains all the given key/value pairs (AND-containment). Useful for dedup flows \u2014 e.g. 'has a message already been posted for this GitHub PR event?'.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:read"
-            ]
-          }
-        ],
+        "tags": ["Messages"],
+        "description": "Find non-deleted messages whose `metadata` contains all the given key/value pairs (AND-containment). Useful for dedup flows — e.g. 'has a message already been posted for this GitHub PR event?'.",
+        "security": [{ "apiKey": ["messages:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           }
         ],
@@ -2512,26 +1335,12 @@
                       "maxLength": 64,
                       "pattern": "^[a-zA-Z0-9_.\\-:]+$"
                     },
-                    "additionalProperties": {
-                      "type": "string",
-                      "maxLength": 256
-                    }
+                    "additionalProperties": { "type": "string", "maxLength": 256 }
                   },
-                  "streamId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "limit": {
-                    "default": 20,
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 100
-                  }
+                  "streamId": { "type": "string", "minLength": 1 },
+                  "limit": { "default": 20, "type": "integer", "minimum": 1, "maximum": 100 }
                 },
-                "required": [
-                  "metadata",
-                  "limit"
-                ],
+                "required": ["metadata", "limit"],
                 "additionalProperties": false
               }
             }
@@ -2551,67 +1360,32 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "streamId": {
-                            "type": "string"
-                          },
-                          "sequence": {
-                            "type": "string",
-                            "description": "Numeric sequence as string"
-                          },
-                          "authorId": {
-                            "type": "string"
-                          },
-                          "authorType": {
-                            "type": "string",
-                            "enum": [
-                              "user",
-                              "persona",
-                              "system",
-                              "bot"
-                            ]
-                          },
-                          "authorDisplayName": {
-                            "type": "string"
-                          },
-                          "content": {
-                            "type": "string"
-                          },
+                          "id": { "type": "string" },
+                          "streamId": { "type": "string" },
+                          "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                          "authorId": { "type": "string" },
+                          "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                          "authorDisplayName": { "type": "string" },
+                          "content": { "type": "string" },
                           "replyCount": {
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
-                          "threadStreamId": {
-                            "type": "string"
-                          },
-                          "clientMessageId": {
-                            "type": "string"
-                          },
+                          "threadStreamId": { "type": "string" },
+                          "clientMessageId": { "type": "string" },
                           "sentVia": {
                             "description": "Present when message was sent via API on behalf of a user",
                             "type": "string"
                           },
                           "metadata": {
                             "type": "object",
-                            "propertyNames": {
-                              "type": "string"
-                            },
-                            "additionalProperties": {
-                              "type": "string"
-                            },
+                            "propertyNames": { "type": "string" },
+                            "additionalProperties": { "type": "string" },
                             "description": "External references attached by the sender. Always present; empty when unset."
                           },
-                          "editedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          }
+                          "editedAt": { "type": "string", "format": "date-time" },
+                          "createdAt": { "type": "string", "format": "date-time" }
                         },
                         "required": [
                           "id",
@@ -2628,9 +1402,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -2644,36 +1416,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -2681,34 +1438,22 @@
       "patch": {
         "operationId": "updateMessage",
         "summary": "Update a message",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Update a message you previously sent via API.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:write"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "messageId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Message ID (prefixed ULID)"
           }
         ],
@@ -2719,15 +1464,8 @@
               "schema": {
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
-                "properties": {
-                  "content": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "content"
-                ],
+                "properties": { "content": { "type": "string", "minLength": 1 } },
+                "required": ["content"],
                 "additionalProperties": false
               }
             }
@@ -2745,67 +1483,28 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "id": {
-                          "type": "string"
-                        },
-                        "streamId": {
-                          "type": "string"
-                        },
-                        "sequence": {
-                          "type": "string",
-                          "description": "Numeric sequence as string"
-                        },
-                        "authorId": {
-                          "type": "string"
-                        },
-                        "authorType": {
-                          "type": "string",
-                          "enum": [
-                            "user",
-                            "persona",
-                            "system",
-                            "bot"
-                          ]
-                        },
-                        "authorDisplayName": {
-                          "type": "string"
-                        },
-                        "content": {
-                          "type": "string"
-                        },
-                        "replyCount": {
-                          "type": "integer",
-                          "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
-                        },
-                        "threadStreamId": {
-                          "type": "string"
-                        },
-                        "clientMessageId": {
-                          "type": "string"
-                        },
+                        "id": { "type": "string" },
+                        "streamId": { "type": "string" },
+                        "sequence": { "type": "string", "description": "Numeric sequence as string" },
+                        "authorId": { "type": "string" },
+                        "authorType": { "type": "string", "enum": ["user", "persona", "system", "bot"] },
+                        "authorDisplayName": { "type": "string" },
+                        "content": { "type": "string" },
+                        "replyCount": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+                        "threadStreamId": { "type": "string" },
+                        "clientMessageId": { "type": "string" },
                         "sentVia": {
                           "description": "Present when message was sent via API on behalf of a user",
                           "type": "string"
                         },
                         "metadata": {
                           "type": "object",
-                          "propertyNames": {
-                            "type": "string"
-                          },
-                          "additionalProperties": {
-                            "type": "string"
-                          },
+                          "propertyNames": { "type": "string" },
+                          "additionalProperties": { "type": "string" },
                           "description": "External references attached by the sender. Always present; empty when unset."
                         },
-                        "editedAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        }
+                        "editedAt": { "type": "string", "format": "date-time" },
+                        "createdAt": { "type": "string", "format": "date-time" }
                       },
                       "required": [
                         "id",
@@ -2821,9 +1520,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -2837,79 +1534,48 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          },
-          "404": {
-            "description": "Resource not found"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" },
+          "404": { "description": "Resource not found" }
         }
       },
       "delete": {
         "operationId": "deleteMessage",
         "summary": "Delete a message",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "description": "Delete a message you previously sent via API.",
-        "security": [
-          {
-            "apiKey": [
-              "messages:write"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["messages:write"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "messageId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Message ID (prefixed ULID)"
           }
         ],
         "responses": {
-          "204": {
-            "description": "No content"
-          },
+          "204": { "description": "No content" },
           "400": {
             "description": "Validation error",
             "content": {
@@ -2918,39 +1584,22 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          },
-          "404": {
-            "description": "Resource not found"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" },
+          "404": { "description": "Resource not found" }
         }
       }
     },
@@ -2958,53 +1607,24 @@
       "get": {
         "operationId": "listUsers",
         "summary": "List workspace users",
-        "tags": [
-          "Users"
-        ],
+        "tags": ["Users"],
         "description": "List users in the workspace with optional text search and cursor pagination.",
-        "security": [
-          {
-            "apiKey": [
-              "users:read"
-            ]
-          }
-        ],
+        "security": [{ "apiKey": ["users:read"] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
-          {
-            "name": "query",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
+          { "name": "query", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "after", "in": "query", "required": false, "schema": { "type": "string" } },
           {
             "name": "limit",
             "in": "query",
             "required": true,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200
-            }
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 200 }
           }
         ],
         "responses": {
@@ -3021,54 +1641,21 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "slug": {
-                            "type": "string"
-                          },
-                          "email": {
-                            "type": "string"
-                          },
-                          "avatarUrl": {
-                            "type": "string"
-                          },
-                          "role": {
-                            "type": "string"
-                          }
+                          "id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "slug": { "type": "string" },
+                          "email": { "type": "string" },
+                          "avatarUrl": { "type": "string" },
+                          "role": { "type": "string" }
                         },
-                        "required": [
-                          "id",
-                          "name",
-                          "slug",
-                          "email",
-                          "role"
-                        ],
+                        "required": ["id", "name", "slug", "email", "role"],
                         "additionalProperties": false
                       }
                     },
-                    "hasMore": {
-                      "type": "boolean"
-                    },
-                    "cursor": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
+                    "hasMore": { "type": "boolean" },
+                    "cursor": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
                   },
-                  "required": [
-                    "data",
-                    "hasMore",
-                    "cursor"
-                  ],
+                  "required": ["data", "hasMore", "cursor"],
                   "additionalProperties": false
                 }
               }
@@ -3082,36 +1669,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -3119,23 +1691,15 @@
       "get": {
         "operationId": "getMe",
         "summary": "Get the authenticated principal",
-        "tags": [
-          "Identity"
-        ],
-        "description": "Returns a discriminated union describing the authenticated principal \u2014 either the API-key owner (`kind: \"user\"`) or the bot whose key is in use (`kind: \"bot\"`). Used by clients (e.g. the OpenClaw channel plugin) to verify their key and discover their identity after pairing.",
-        "security": [
-          {
-            "apiKey": []
-          }
-        ],
+        "tags": ["Identity"],
+        "description": "Returns a discriminated union describing the authenticated principal — either the API-key owner ('kind: user') or the bot whose key is in use ('kind: bot'). Used by clients (e.g. the OpenClaw channel plugin) to verify their key and discover their identity after pairing.",
+        "security": [{ "apiKey": [] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           }
         ],
@@ -3153,110 +1717,43 @@
                         {
                           "type": "object",
                           "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "user"
-                            },
-                            "workspaceId": {
-                              "type": "string"
-                            },
-                            "userId": {
-                              "type": "string"
-                            }
+                            "kind": { "type": "string", "const": "user" },
+                            "workspaceId": { "type": "string" },
+                            "userId": { "type": "string" }
                           },
-                          "required": [
-                            "kind",
-                            "workspaceId",
-                            "userId"
-                          ],
+                          "required": ["kind", "workspaceId", "userId"],
                           "additionalProperties": false
                         },
                         {
                           "type": "object",
                           "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "bot"
-                            },
-                            "workspaceId": {
-                              "type": "string"
-                            },
-                            "botId": {
-                              "type": "string"
-                            },
-                            "botType": {
-                              "type": "string",
-                              "const": "shared"
-                            },
-                            "traits": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "interactive"
-                                ]
-                              }
-                            },
-                            "ownerUserId": {
-                              "type": "null"
-                            }
+                            "kind": { "type": "string", "const": "bot" },
+                            "workspaceId": { "type": "string" },
+                            "botId": { "type": "string" },
+                            "botType": { "type": "string", "const": "shared" },
+                            "traits": { "type": "array", "items": { "type": "string", "enum": ["interactive"] } },
+                            "ownerUserId": { "type": "null" }
                           },
-                          "required": [
-                            "kind",
-                            "workspaceId",
-                            "botId",
-                            "botType",
-                            "traits",
-                            "ownerUserId"
-                          ],
+                          "required": ["kind", "workspaceId", "botId", "botType", "traits", "ownerUserId"],
                           "additionalProperties": false
                         },
                         {
                           "type": "object",
                           "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "bot"
-                            },
-                            "workspaceId": {
-                              "type": "string"
-                            },
-                            "botId": {
-                              "type": "string"
-                            },
-                            "botType": {
-                              "type": "string",
-                              "const": "personal"
-                            },
-                            "traits": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "interactive"
-                                ]
-                              }
-                            },
-                            "ownerUserId": {
-                              "type": "string"
-                            }
+                            "kind": { "type": "string", "const": "bot" },
+                            "workspaceId": { "type": "string" },
+                            "botId": { "type": "string" },
+                            "botType": { "type": "string", "const": "personal" },
+                            "traits": { "type": "array", "items": { "type": "string", "enum": ["interactive"] } },
+                            "ownerUserId": { "type": "string" }
                           },
-                          "required": [
-                            "kind",
-                            "workspaceId",
-                            "botId",
-                            "botType",
-                            "traits",
-                            "ownerUserId"
-                          ],
+                          "required": ["kind", "workspaceId", "botId", "botType", "traits", "ownerUserId"],
                           "additionalProperties": false
                         }
                       ]
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -3270,36 +1767,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     },
@@ -3307,35 +1789,22 @@
       "get": {
         "operationId": "listMyBots",
         "summary": "List my personal bots",
-        "tags": [
-          "Identity"
-        ],
+        "tags": ["Identity"],
         "description": "For user-scoped keys: lists the authenticated user's personal bots, optionally filtered by trait. Used by the frontend to enumerate quick-switcher commands. Bot-scoped keys receive 403.",
-        "security": [
-          {
-            "apiKey": []
-          }
-        ],
+        "security": [{ "apiKey": [] }],
         "parameters": [
           {
             "name": "workspaceId",
             "in": "path",
             "required": true,
-            "schema": {
-              "type": "string"
-            },
+            "schema": { "type": "string" },
             "description": "Workspace ID (prefixed ULID)"
           },
           {
             "name": "traits",
             "in": "query",
             "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "interactive"
-              ]
-            }
+            "schema": { "type": "string", "enum": ["interactive"] }
           }
         ],
         "responses": {
@@ -3352,90 +1821,19 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "workspaceId": {
-                            "type": "string"
-                          },
-                          "traits": {
-                            "type": "array",
-                            "items": {
-                              "type": "string",
-                              "enum": [
-                                "interactive"
-                              ]
-                            }
-                          },
-                          "slug": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "description": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "avatarEmoji": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "avatarUrl": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "archivedAt": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "format": "date-time"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "updatedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "type": {
-                            "type": "string",
-                            "const": "personal"
-                          },
-                          "ownerUserId": {
-                            "type": "string"
-                          }
+                          "id": { "type": "string" },
+                          "workspaceId": { "type": "string" },
+                          "traits": { "type": "array", "items": { "type": "string", "enum": ["interactive"] } },
+                          "slug": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "name": { "type": "string" },
+                          "description": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "avatarEmoji": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "avatarUrl": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+                          "archivedAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+                          "createdAt": { "type": "string", "format": "date-time" },
+                          "updatedAt": { "type": "string", "format": "date-time" },
+                          "type": { "type": "string", "const": "personal" },
+                          "ownerUserId": { "type": "string" }
                         },
                         "required": [
                           "id",
@@ -3456,9 +1854,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -3472,36 +1868,21 @@
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": { "type": "string" },
                     "details": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
+                      "propertyNames": { "type": "string" },
+                      "additionalProperties": { "type": "array", "items": { "type": "string" } }
                     }
                   },
-                  "required": [
-                    "error"
-                  ],
+                  "required": ["error"],
                   "additionalProperties": false
                 }
               }
             }
           },
-          "401": {
-            "description": "Missing or invalid API key"
-          },
-          "403": {
-            "description": "Insufficient permissions or stream not accessible"
-          }
+          "401": { "description": "Missing or invalid API key" },
+          "403": { "description": "Insufficient permissions or stream not accessible" }
         }
       }
     }
@@ -3516,25 +1897,11 @@
     }
   },
   "tags": [
-    {
-      "name": "Streams",
-      "description": "List and inspect streams (channels, scratchpads, threads)"
-    },
-    {
-      "name": "Messages",
-      "description": "Read, send, update, and delete messages"
-    },
-    {
-      "name": "Memos",
-      "description": "Search preserved workspace knowledge and inspect memo provenance"
-    },
-    {
-      "name": "Attachments",
-      "description": "Search attachments, inspect extracted content, and fetch download URLs"
-    },
-    {
-      "name": "Users",
-      "description": "List workspace users"
-    }
+    { "name": "Streams", "description": "List and inspect streams (channels, scratchpads, threads)" },
+    { "name": "Messages", "description": "Read, send, update, and delete messages" },
+    { "name": "Memos", "description": "Search preserved workspace knowledge and inspect memo provenance" },
+    { "name": "Attachments", "description": "Search attachments, inspect extracted content, and fetch download URLs" },
+    { "name": "Users", "description": "List workspace users" },
+    { "name": "Identity", "description": "Identify the authenticated API key owner and enumerate personal bots" }
   ]
 }
