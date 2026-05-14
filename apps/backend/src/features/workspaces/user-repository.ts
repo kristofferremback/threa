@@ -14,6 +14,18 @@ function assertWorkspaceRoleSlug(value: string, userId: string): asserts value i
   }
 }
 
+// WorkOS membership carries one role per organization in practice
+// (see `extractRoleSlugs` in workos-org-service.ts), so we pick the first
+// recognized slug. Empty/unknown arrays fall back to `users.role` to keep
+// the display value defined while the mirror catches up.
+function pickMirroredRole(slugs: readonly string[] | null, fallback: string): string {
+  if (!slugs) return fallback
+  for (const slug of slugs) {
+    if (KNOWN_ROLE_SLUGS.has(slug)) return slug
+  }
+  return fallback
+}
+
 interface UserRow {
   id: string
   workspace_id: string
@@ -31,6 +43,7 @@ interface UserRow {
   github_username: string | null
   setup_completed: boolean
   joined_at: Date
+  mirror_role_slugs: string[] | null
 }
 
 interface UserAccessRow extends Partial<UserRow> {
@@ -88,20 +101,40 @@ const SELECT_FIELDS = `
   pronouns, phone, github_username, setup_completed, joined_at
 `
 
+// Read paths derive `role` from the WorkOS authz mirror so role changes
+// fanned out from the control plane reflect on next request without a
+// dedicated regional write to `users.role`. `users.role` is the fallback
+// for rows whose mirror entry hasn't landed yet (e.g. between invite
+// acceptance and the next WorkOS event poll) or whose membership is no
+// longer active. Mutation paths still write `users.role` so this fallback
+// stays meaningful. `'active'` mirrors the gate in
+// `WorkspaceAuthzService.resolveActivePermissions`.
+const JOIN_AUTHZ_MIRROR = `
+  LEFT JOIN workspace_user_permissions wup
+    ON wup.workspace_id = u.workspace_id
+   AND wup.workos_user_id = u.workos_user_id
+   AND wup.status = 'active'
+`
+
+const USERS_WITH_PERMISSIONS_FROM = `users u ${JOIN_AUTHZ_MIRROR}`
+
 const SELECT_FIELDS_WITH_ALIAS = `
-  u.id, u.workspace_id, u.workos_user_id, u.email, u.role, u.slug,
+  u.id, u.workspace_id, u.workos_user_id, u.email,
+  u.role, u.slug,
   u.name, u.description, u.avatar_url, u.timezone, u.locale,
-  u.pronouns, u.phone, u.github_username, u.setup_completed, u.joined_at
+  u.pronouns, u.phone, u.github_username, u.setup_completed, u.joined_at,
+  wup.role_slugs AS mirror_role_slugs
 `
 
 function mapRowToUser(row: UserRow): User {
-  assertWorkspaceRoleSlug(row.role, row.id)
+  const role = pickMirroredRole(row.mirror_role_slugs, row.role)
+  assertWorkspaceRoleSlug(role, row.id)
   return {
     id: row.id,
     workspaceId: row.workspace_id,
     workosUserId: row.workos_user_id,
     email: row.email,
-    role: row.role,
+    role,
     slug: row.slug,
     name: row.name,
     description: row.description,
@@ -120,7 +153,7 @@ export const UserRepository = {
   async findById(db: Querier, workspaceId: string, id: string): Promise<User | null> {
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-      FROM users u
+      FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
       WHERE u.workspace_id = ${workspaceId} AND u.id = ${id}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
@@ -129,7 +162,7 @@ export const UserRepository = {
   async findByWorkosUserIdInWorkspace(db: Querier, workspaceId: string, workosUserId: string): Promise<User | null> {
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-      FROM users u
+      FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
       WHERE u.workspace_id = ${workspaceId} AND u.workos_user_id = ${workosUserId}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
@@ -143,7 +176,7 @@ export const UserRepository = {
     const result = await db.query<UserAccessRow>(sql`
       WITH user_match AS (
         SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-        FROM users u
+        FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
         WHERE u.workspace_id = ${workspaceId} AND u.workos_user_id = ${workosUserId}
         LIMIT 1
       )
@@ -164,7 +197,8 @@ export const UserRepository = {
         um.phone,
         um.github_username,
         um.setup_completed,
-        um.joined_at
+        um.joined_at,
+        um.mirror_role_slugs
       FROM (SELECT 1) AS one
       LEFT JOIN user_match um ON true
     `)
@@ -181,7 +215,7 @@ export const UserRepository = {
   async findBySlug(db: Querier, workspaceId: string, slug: string): Promise<User | null> {
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-      FROM users u
+      FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
       WHERE u.workspace_id = ${workspaceId} AND u.slug = ${slug}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
@@ -192,7 +226,7 @@ export const UserRepository = {
 
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-      FROM users u
+      FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
       WHERE u.workspace_id = ${workspaceId} AND u.slug = ANY(${slugs})
     `)
     return result.rows.map(mapRowToUser)
@@ -203,7 +237,7 @@ export const UserRepository = {
 
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-      FROM users u
+      FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
       WHERE u.workspace_id = ${workspaceId} AND u.id = ANY(${ids})
     `)
     return result.rows.map(mapRowToUser)
@@ -220,7 +254,7 @@ export const UserRepository = {
       const pattern = `%${filters.query}%`
       const result = await db.query<UserRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-        FROM users u
+        FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
         WHERE u.workspace_id = ${workspaceId}
           AND (u.name ILIKE ${pattern} OR u.email ILIKE ${pattern})
         ORDER BY u.joined_at, u.id
@@ -232,7 +266,7 @@ export const UserRepository = {
     if (filters?.cursorJoinedAt && filters?.cursorId) {
       const result = await db.query<UserRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-        FROM users u
+        FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
         WHERE u.workspace_id = ${workspaceId}
           AND (u.joined_at, u.id) > (${filters.cursorJoinedAt}, ${filters.cursorId})
         ORDER BY u.joined_at, u.id
@@ -243,7 +277,7 @@ export const UserRepository = {
 
     const result = await db.query<UserRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
-      FROM users u
+      FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
       WHERE u.workspace_id = ${workspaceId}
       ORDER BY u.joined_at, u.id
       LIMIT ${limit}
@@ -253,20 +287,24 @@ export const UserRepository = {
 
   async insert(db: Querier, params: InsertUserParams): Promise<User> {
     const result = await db.query<UserRow>(sql`
-      INSERT INTO users (id, workspace_id, workos_user_id, email, role, slug, name, timezone, locale, setup_completed)
-      VALUES (
-        ${params.id},
-        ${params.workspaceId},
-        ${params.workosUserId},
-        ${params.email},
-        ${params.role},
-        ${params.slug},
-        ${params.name},
-        ${params.timezone ?? null},
-        ${params.locale ?? null},
-        ${params.setupCompleted ?? true}
+      WITH inserted AS (
+        INSERT INTO users (id, workspace_id, workos_user_id, email, role, slug, name, timezone, locale, setup_completed)
+        VALUES (
+          ${params.id},
+          ${params.workspaceId},
+          ${params.workosUserId},
+          ${params.email},
+          ${params.role},
+          ${params.slug},
+          ${params.name},
+          ${params.timezone ?? null},
+          ${params.locale ?? null},
+          ${params.setupCompleted ?? true}
+        )
+        RETURNING ${sql.raw(SELECT_FIELDS)}
       )
-      RETURNING ${sql.raw(SELECT_FIELDS)}
+      SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
+      FROM inserted u ${sql.raw(JOIN_AUTHZ_MIRROR)}
     `)
     return mapRowToUser(result.rows[0])
   },
@@ -359,9 +397,13 @@ export const UserRepository = {
     }
 
     const query = `
-      UPDATE users SET ${sets.join(", ")}
-      ${whereClause}
-      RETURNING ${SELECT_FIELDS}
+      WITH updated AS (
+        UPDATE users SET ${sets.join(", ")}
+        ${whereClause}
+        RETURNING ${SELECT_FIELDS}
+      )
+      SELECT ${SELECT_FIELDS_WITH_ALIAS}
+      FROM updated u ${JOIN_AUTHZ_MIRROR}
     `
     const result = await db.query<UserRow>(query, values)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
@@ -375,15 +417,19 @@ export const UserRepository = {
     avatarUrl: string
   ): Promise<User | null> {
     const result = await db.query<UserRow>(sql`
-      UPDATE users SET avatar_url = ${avatarUrl}
-      WHERE workspace_id = ${workspaceId} AND id = ${userId}
-        AND ${avatarUploadId} = (
-          SELECT id FROM avatar_uploads
-          WHERE user_id = ${userId}
-          ORDER BY created_at DESC, id DESC
-          LIMIT 1
-        )
-      RETURNING ${sql.raw(SELECT_FIELDS)}
+      WITH updated AS (
+        UPDATE users SET avatar_url = ${avatarUrl}
+        WHERE workspace_id = ${workspaceId} AND id = ${userId}
+          AND ${avatarUploadId} = (
+            SELECT id FROM avatar_uploads
+            WHERE user_id = ${userId}
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+          )
+        RETURNING ${sql.raw(SELECT_FIELDS)}
+      )
+      SELECT ${sql.raw(SELECT_FIELDS_WITH_ALIAS)}
+      FROM updated u ${sql.raw(JOIN_AUTHZ_MIRROR)}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
@@ -410,7 +456,7 @@ export const UserRepository = {
           similarity(u.email, ${query}),
           similarity(u.slug, ${query})
         ) AS sim_score
-      FROM users u
+      FROM ${sql.raw(USERS_WITH_PERMISSIONS_FROM)}
       WHERE u.workspace_id = ${workspaceId}
         AND (
           u.name % ${query}
