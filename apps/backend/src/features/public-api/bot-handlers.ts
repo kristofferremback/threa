@@ -80,23 +80,6 @@ interface BotHandlerDeps {
   pool: Pool
 }
 
-/**
- * Check whether the request principal holds a given workspace permission slug.
- * Mirrors the logic in `requireWorkspacePermission` middleware but usable
- * inside handlers where the permission gate depends on request shape.
- */
-function hasPermission(req: Request, slug: WorkspacePermissionSlug): boolean {
-  if (req.authUser) {
-    const claim = req.authUser.permissions
-    if (claim != null) return claim.includes(slug)
-    if (req.user) return (permissionsForRole(req.user.role) as readonly string[]).includes(slug)
-    return false
-  }
-  if (req.userApiKey) return req.userApiKey.scopes.has(slug)
-  if (req.botApiKey) return req.botApiKey.scopes.has(slug)
-  return false
-}
-
 function resolveWorkspaceUserActorId(req: Request): string | null {
   return req.user?.id ?? req.userApiKey?.userId ?? null
 }
@@ -123,7 +106,13 @@ async function authorizeBotManagement(pool: Pool, workspaceId: string, id: strin
     if (actorId !== bot.ownerUserId) {
       throw new HttpError("Forbidden", { status: 403, code: "FORBIDDEN" })
     }
-  } else if (!hasPermission(req, WORKSPACE_PERMISSION_SCOPES.BOTS_MANAGE)) {
+  } else if (
+    // Shared bots use the standard permission-gate pattern (mirrors the session
+    // path of `requireWorkspacePermission` middleware). Inlined because the gate
+    // depends on the bot type, which isn't known at route registration time.
+    !req.authUser?.permissions?.includes(WORKSPACE_PERMISSION_SCOPES.BOTS_MANAGE) &&
+    !(req.user && (permissionsForRole(req.user.role) as readonly string[]).includes(WORKSPACE_PERMISSION_SCOPES.BOTS_MANAGE))
+  ) {
     throw new HttpError("Insufficient permissions", { status: 403, code: "FORBIDDEN" })
   }
   return bot
@@ -145,21 +134,25 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
 
       const { type, name, description, avatarEmoji, traits } = result.data
 
-      // Authorization branches by bot type
+      // Authorization branches by bot type. Permission checks are inlined
+      // because the required slug depends on the `type` field in the request
+      // body, which isn't known at route registration time.
+      const hasCreatePerm = (slug: WorkspacePermissionSlug): boolean =>
+        req.authUser?.permissions?.includes(slug) ??
+        (req.user != null && (permissionsForRole(req.user.role) as readonly string[]).includes(slug)) ??
+        false
       if (type === BotTypes.PERSONAL) {
-        if (!hasPermission(req, WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_PERSONAL)) {
+        if (!hasCreatePerm(WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_PERSONAL)) {
           throw new HttpError("Insufficient permissions to create personal bots", {
             status: 403,
             code: "FORBIDDEN",
           })
         }
-      } else {
-        if (!hasPermission(req, WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_SHARED)) {
-          throw new HttpError("Insufficient permissions to create shared bots", {
-            status: 403,
-            code: "FORBIDDEN",
-          })
-        }
+      } else if (!hasCreatePerm(WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_SHARED)) {
+        throw new HttpError("Insufficient permissions to create shared bots", {
+          status: 403,
+          code: "FORBIDDEN",
+        })
       }
 
       // Owner is server-derived from the authenticated actor — never read
