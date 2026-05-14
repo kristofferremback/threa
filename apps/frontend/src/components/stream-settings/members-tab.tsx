@@ -52,12 +52,12 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
   const workspaceUsers = useWorkspaceUsers(workspaceId)
 
   const streamType = bootstrap?.stream?.type
-  const canAddUserMembers = streamType === StreamTypes.CHANNEL
   const streamMembers = bootstrap?.members ?? []
   const canManageMembers = hasPermission(
     workspaceBootstrap?.viewerPermissions,
     WORKSPACE_PERMISSION_SCOPES.MEMBERS_WRITE
   )
+  const canAddUserMembers = canManageMembers && streamType === StreamTypes.CHANNEL
 
   // Bots can be managed on all stream types that have a members tab.
   // Threads inherit bot access from their root, so the UI is read-only.
@@ -92,12 +92,13 @@ export function MembersTab({ workspaceId, streamId, currentUserId }: MembersTabP
 
   const handleAdd = useCallback(
     (user: (typeof workspaceUsers)[number]) => {
+      if (!canManageMembers) return
       addMutation.mutate(user.id, {
         onSuccess: () => toast.success("Member added"),
         onError: () => toast.error("Failed to add member"),
       })
     },
-    [addMutation]
+    [addMutation, canManageMembers]
   )
 
   const [removeMemberId, setRemoveMemberId] = useState<string | null>(null)

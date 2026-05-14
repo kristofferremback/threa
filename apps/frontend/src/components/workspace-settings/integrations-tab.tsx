@@ -63,7 +63,7 @@ export function IntegrationsTab({ workspaceId }: IntegrationsTabProps) {
   if (!canManage) {
     return (
       <div className="space-y-4 p-1">
-        <p className="text-sm text-muted-foreground">Only workspace admins and owners can manage integrations.</p>
+        <p className="text-sm text-muted-foreground">You need the Workspace Admin permission to manage integrations.</p>
       </div>
     )
   }
