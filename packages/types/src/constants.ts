@@ -600,3 +600,24 @@ export const INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
  * cannot drift.
  */
 export const HEARTBEAT_INTERACTION_THROTTLE_MS = 15_000
+
+// Bot kind: shared (admin-managed, workspace-wide) vs personal (owned by one user)
+export const BOT_TYPES = ["shared", "personal"] as const
+export type BotType = (typeof BOT_TYPES)[number]
+
+export const BotTypes = {
+  SHARED: "shared",
+  PERSONAL: "personal",
+} as const satisfies Record<string, BotType>
+
+// Bot capability tags. Stored as a TEXT[] column on `bots` and validated
+// against this vocabulary on read/write. New traits are added here only.
+//
+// - `interactive`: the bot is suitable for use as a conversational partner in a
+//   scratchpad-with-bot session (surfaces in the quick-switcher).
+export const BOT_TRAITS = ["interactive"] as const
+export type BotTrait = (typeof BOT_TRAITS)[number]
+
+export const BotTraits = {
+  INTERACTIVE: "interactive",
+} as const satisfies Record<string, BotTrait>

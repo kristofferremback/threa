@@ -15,6 +15,7 @@ const mockFindById = spyOn(StreamRepository, "findById")
 const mockInsertOrFindByUniquenessKey = spyOn(StreamRepository, "insertOrFindByUniquenessKey")
 const mockInsertMember = spyOn(StreamMemberRepository, "insert")
 const mockInsertManyMembers = spyOn(StreamMemberRepository, "insertMany")
+const mockIsMemberForUpdate = spyOn(StreamMemberRepository, "isMemberForUpdate")
 const mockInsertEvent = spyOn(StreamEventRepository, "insert")
 const mockInsertOutbox = spyOn(OutboxRepository, "insert")
 const mockFindMembersByIds = spyOn(UserRepository, "findByIds")
@@ -30,6 +31,39 @@ spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn({} as PoolClie
 // returns the existing spy when a method is already patched, the next file
 // inherits the call history and breaks `expect(...).not.toHaveBeenCalled()`.
 afterAll(() => mock.restore())
+
+describe("StreamService.isMemberOnForUpdate", () => {
+  let service: StreamService
+
+  beforeEach(() => {
+    service = new StreamService({} as never)
+    mockFindById.mockReset()
+    mockIsMemberForUpdate.mockReset()
+  })
+
+  test("locks and returns true for direct stream membership", async () => {
+    const dbClient = {} as never
+    mockIsMemberForUpdate.mockResolvedValue(true)
+
+    await expect(service.isMemberOnForUpdate(dbClient, "stream_1", "usr_1")).resolves.toBe(true)
+
+    expect(mockIsMemberForUpdate).toHaveBeenCalledWith(dbClient, "stream_1", "usr_1")
+    expect(mockFindById).not.toHaveBeenCalled()
+  })
+
+  test("locks root membership when checking a thread", async () => {
+    const dbClient = {} as never
+    mockIsMemberForUpdate.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    mockFindById.mockResolvedValue({ id: "stream_thread", rootStreamId: "stream_root" } as never)
+
+    await expect(service.isMemberOnForUpdate(dbClient, "stream_thread", "usr_1")).resolves.toBe(true)
+
+    expect(mockIsMemberForUpdate.mock.calls).toEqual([
+      [dbClient, "stream_thread", "usr_1"],
+      [dbClient, "stream_root", "usr_1"],
+    ])
+  })
+})
 
 describe("StreamService.joinPublicChannel", () => {
   let service: StreamService

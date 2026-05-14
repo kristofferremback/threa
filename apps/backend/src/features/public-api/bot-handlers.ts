@@ -11,17 +11,31 @@ import type { BotApiKeyService } from "./bot-api-key-service"
 import { serializeBot } from "./handlers"
 import { botId, botChannelAccessId } from "../../lib/id"
 import { generateSlug } from "@threa/backend-common"
-import { withTransaction } from "../../db"
+import { sql, withTransaction } from "../../db"
 import { OutboxRepository } from "../../lib/outbox"
 import { HttpError } from "@threa/backend-common"
 import { isUniqueViolation } from "../../lib/errors"
-import { API_KEY_ELIGIBLE_SCOPES, type WorkspacePermissionSlug, type BotApiKey } from "@threa/types"
+import {
+  API_KEY_ELIGIBLE_SCOPES,
+  BOT_TRAITS,
+  BOT_TYPES,
+  BotTypes,
+  permissionsForRole,
+  WORKSPACE_PERMISSION_SCOPES,
+  type BotApiKey,
+  type BotTrait,
+  type WorkspacePermissionSlug,
+} from "@threa/types"
+
+const ALL_BOT_TRAITS = BOT_TRAITS as readonly BotTrait[]
 
 const createBotSchema = z.object({
+  type: z.enum(BOT_TYPES).optional().default("shared"),
   name: z.string().min(1).max(100),
   slug: z.string().min(1).max(50),
   description: z.string().max(500).nullable().optional(),
   avatarEmoji: z.string().nullable().optional(),
+  traits: z.array(z.enum(ALL_BOT_TRAITS)).optional(),
 })
 
 const updateBotSchema = z.object({
@@ -29,6 +43,7 @@ const updateBotSchema = z.object({
   slug: z.string().min(1).max(50).optional(),
   description: z.string().max(500).nullable().optional(),
   avatarEmoji: z.string().nullable().optional(),
+  traits: z.array(z.enum(ALL_BOT_TRAITS)).optional(),
 })
 
 const createBotKeySchema = z.object({
@@ -65,6 +80,16 @@ interface BotHandlerDeps {
   pool: Pool
 }
 
+/** Resolve the workspace-scoped user id from the request context. */
+function resolveWorkspaceUserActorId(req: Request): string | null {
+  return req.user?.id ?? req.userApiKey?.userId ?? null
+}
+
+/** Like resolveWorkspaceUserActorId but also considers bot API key identity. */
+function resolveGrantActorId(req: Request): string | null {
+  return resolveWorkspaceUserActorId(req) ?? req.botApiKey?.botId ?? null
+}
+
 export function createBotHandlers({ botApiKeyService, avatarService, streamService, pool }: BotHandlerDeps) {
   return {
     /** POST /api/workspaces/:workspaceId/bots */
@@ -79,7 +104,36 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
         })
       }
 
-      const { name, description, avatarEmoji } = result.data
+      const { type, name, description, avatarEmoji, traits } = result.data
+
+      // Gate depends on the `type` field in the request body, which isn't
+      // known at route registration time, so the check lives in the handler.
+      const hasCreatePerm = (slug: WorkspacePermissionSlug): boolean =>
+        req.authUser?.permissions?.includes(slug) ??
+        (req.user != null && (permissionsForRole(req.user.role) as readonly string[]).includes(slug)) ??
+        false
+      if (type === BotTypes.PERSONAL) {
+        if (!hasCreatePerm(WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_PERSONAL)) {
+          throw new HttpError("Insufficient permissions to create personal bots", {
+            status: 403,
+            code: "FORBIDDEN",
+          })
+        }
+      } else if (!hasCreatePerm(WORKSPACE_PERMISSION_SCOPES.BOTS_CREATE_SHARED)) {
+        throw new HttpError("Insufficient permissions to create shared bots", {
+          status: 403,
+          code: "FORBIDDEN",
+        })
+      }
+
+      // Owner is server-derived from the authenticated actor — never read
+      // from the request body — so callers can't spoof ownership.
+      const actorId = resolveWorkspaceUserActorId(req)
+      if (type === BotTypes.PERSONAL && !actorId) {
+        throw new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" })
+      }
+      const ownerUserId = type === BotTypes.PERSONAL ? actorId : null
+
       const slug = generateSlug(result.data.slug)
       if (!slug) {
         return res.status(400).json({
@@ -94,6 +148,9 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
           const created = await BotRepository.create(client, {
             id: botId(),
             workspaceId,
+            type,
+            ownerUserId,
+            traits: traits ?? [],
             slug,
             name,
             description: description ?? null,
@@ -121,6 +178,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
     async update(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
+      // req.bot set by requireBotManagement middleware
 
       const result = updateBotSchema.safeParse(req.body)
       if (!result.success) {
@@ -169,18 +227,31 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       res.json({ data: serializeBot(bot) })
     },
 
-    /** GET /api/workspaces/:workspaceId/bots */
+    /**
+     * GET /api/workspaces/:workspaceId/bots
+     *
+     * Lists shared (workspace-wide) bots only. Personal bots are private to
+     * their owner and listed via `/api/v1/workspaces/:wid/me/bots`.
+     */
     async list(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
-      const bots = await BotRepository.listByWorkspace(pool, workspaceId)
+      const bots = await BotRepository.listByWorkspace(pool, workspaceId, { type: BotTypes.SHARED })
       res.json({ data: bots.map(serializeBot) })
     },
 
-    /** GET /api/workspaces/:workspaceId/bots/:botId */
+    /**
+     * GET /api/workspaces/:workspaceId/bots/:botId
+     *
+     * Visibility rules mirror `list()`: shared bots are visible to any
+     * workspace member; personal bots are visible only to their owner.
+     */
     async get(req: Request, res: Response) {
       const { botId: id } = req.params
-      const bot = await BotRepository.findById(pool, id)
-      if (!bot || bot.workspaceId !== req.workspaceId!) {
+      const bot = await BotRepository.findById(pool, req.workspaceId!, id)
+      if (!bot) {
+        throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
+      }
+      if (bot.type === BotTypes.PERSONAL && bot.ownerUserId !== resolveWorkspaceUserActorId(req)) {
         throw new HttpError("Bot not found", { status: 404, code: "NOT_FOUND" })
       }
       res.json({ data: serializeBot(bot) })
@@ -260,6 +331,10 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
 
+      if (req.bot!.archivedAt) {
+        throw new HttpError("Bot is archived", { status: 409, code: "BOT_ARCHIVED" })
+      }
+
       const result = createBotKeySchema.safeParse(req.body)
       if (!result.success) {
         return res.status(400).json({
@@ -298,8 +373,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
         return res.status(400).json({ error: "No file uploaded" })
       }
 
-      const bot = await BotRepository.findById(pool, id)
-      if (!bot || bot.workspaceId !== workspaceId || bot.archivedAt) {
+      if (req.bot!.archivedAt) {
         throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
       }
 
@@ -317,7 +391,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       // Clean up raw file (don't need it after inline processing)
       avatarService.deleteRawFile(rawS3Key)
 
-      const oldAvatarUrl = bot.avatarUrl
+      const oldAvatarUrl = req.bot!.avatarUrl
 
       // Update bot with new avatar URL. If the transaction fails (e.g. bot
       // was archived concurrently), clean up the orphaned processed images.
@@ -341,7 +415,7 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
         throw error
       }
 
-      // Clean up old avatar files after transaction succeeds
+      // Clean up old S3 files after transaction succeeds
       if (oldAvatarUrl) {
         avatarService.deleteAvatarFiles(oldAvatarUrl)
       }
@@ -354,16 +428,15 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       const workspaceId = req.workspaceId!
       const { botId: id } = req.params
 
-      const bot = await BotRepository.findById(pool, id)
-      if (!bot || bot.workspaceId !== workspaceId || bot.archivedAt) {
+      if (req.bot!.archivedAt) {
         throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
       }
 
-      if (!bot.avatarUrl) {
-        return res.json({ data: serializeBot(bot) })
+      if (!req.bot!.avatarUrl) {
+        return res.json({ data: serializeBot(req.bot!) })
       }
 
-      const oldAvatarUrl = bot.avatarUrl
+      const oldAvatarUrl = req.bot!.avatarUrl
 
       const updated = await withTransaction(pool, async (client) => {
         const result = await BotRepository.updateAvatarUrl(client, id, workspaceId, null)
@@ -421,27 +494,54 @@ export function createBotHandlers({ botApiKeyService, avatarService, streamServi
       res.json({ data: grants })
     },
 
-    /** POST /api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant */
+    /**
+     * POST /api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant
+     *
+     * Authorization is enforced by the requireBotManagement middleware (sets
+     * req.bot). Personal-bot owners additionally must be members of the target
+     * stream — checked inside the transaction below.
+     */
     async grantStreamAccess(req: Request, res: Response) {
       const workspaceId = req.workspaceId!
       const { botId: id, streamId } = req.params
 
-      const bot = await BotRepository.findById(pool, id)
-      if (!bot || bot.workspaceId !== workspaceId || bot.archivedAt) {
-        throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
-      }
+      await withTransaction(pool, async (client) => {
+        // Lock bot and stream rows to prevent race conditions
+        const { rows: botRows } = await client.query<{ archived_at: Date | null }>(sql`
+          SELECT archived_at FROM bots
+          WHERE id = ${id} AND workspace_id = ${workspaceId}
+          FOR UPDATE
+        `)
+        if (botRows.length === 0 || botRows[0].archived_at !== null) {
+          throw new HttpError("Bot not found or archived", { status: 404, code: "NOT_FOUND" })
+        }
 
-      const stream = await StreamRepository.findById(pool, streamId)
-      if (!stream || stream.workspaceId !== workspaceId || stream.archivedAt) {
-        throw new HttpError("Stream not found", { status: 404, code: "NOT_FOUND" })
-      }
+        const { rows: streamRows } = await client.query<{ archived_at: Date | null }>(sql`
+          SELECT archived_at FROM streams
+          WHERE id = ${streamId} AND workspace_id = ${workspaceId}
+          FOR UPDATE
+        `)
+        if (streamRows.length === 0 || streamRows[0].archived_at !== null) {
+          throw new HttpError("Stream not found", { status: 404, code: "NOT_FOUND" })
+        }
 
-      await BotChannelAccessRepository.grantAccess(pool, {
-        id: botChannelAccessId(),
-        workspaceId,
-        botId: id,
-        streamId,
-        grantedBy: req.user!.id,
+        // Personal bot owners must be members of the target stream
+        if (req.bot!.type === BotTypes.PERSONAL) {
+          const ownerId = resolveWorkspaceUserActorId(req)
+          if (!ownerId) {
+            throw new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" })
+          }
+          const ownerIsMember = await streamService.isMemberOn(client, streamId, ownerId)
+          if (!ownerIsMember) {
+            throw new HttpError("Forbidden", { status: 403, code: "FORBIDDEN" })
+          }
+        }
+
+        const grantActorId = resolveGrantActorId(req)
+        if (!grantActorId) {
+          throw new HttpError("Not authenticated", { status: 401, code: "UNAUTHORIZED" })
+        }
+        await streamService.addBotToStreamOn(client, streamId, id, workspaceId, grantActorId)
       })
 
       res.status(204).send()

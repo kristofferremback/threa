@@ -7,6 +7,7 @@
  */
 import { z } from "zod"
 import {
+  BOT_TRAITS,
   WORKSPACE_PERMISSION_SCOPES,
   STREAM_TYPES,
   AUTHOR_TYPES,
@@ -18,6 +19,7 @@ import {
 import type { WorkspacePermissionSlug } from "@threa/types"
 import {
   publicSearchSchema,
+  listMyBotsSchema,
   listStreamsSchema,
   listMessagesSchema,
   sendMessageSchema,
@@ -101,6 +103,65 @@ const userSchema = z.object({
   avatarUrl: z.string().optional(),
   role: z.string(),
 })
+
+// Bot wire schema is a discriminated union so the type/ownerUserId invariant
+// (personal ⇒ ownerUserId non-null; shared ⇒ ownerUserId null) is enforced at
+// the schema layer and reflected in the generated OpenAPI/client types.
+const botCommonFields = {
+  id: z.string(),
+  workspaceId: z.string(),
+  traits: z.array(z.enum(BOT_TRAITS)),
+  slug: z.string().nullable(),
+  name: z.string(),
+  description: z.string().nullable(),
+  avatarEmoji: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  archivedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}
+
+const sharedBotSchema = z.object({
+  ...botCommonFields,
+  type: z.literal("shared"),
+  ownerUserId: z.null(),
+})
+
+const personalBotSchema = z.object({
+  ...botCommonFields,
+  type: z.literal("personal"),
+  ownerUserId: z.string(),
+})
+
+const botSchema = z.discriminatedUnion("type", [sharedBotSchema, personalBotSchema])
+
+// Principal can't use a single-discriminator union because the bot variants
+// share `kind: "bot"` but split on `botType`. z.union handles the three-way
+// shape correctly; the generated OpenAPI uses `oneOf`, which clients narrow
+// on `kind` first and then `botType` for the bot branch.
+const principalSchema = z.union([
+  z.object({
+    kind: z.literal("user"),
+    workspaceId: z.string(),
+    userId: z.string(),
+  }),
+  z.object({
+    kind: z.literal("bot"),
+    workspaceId: z.string(),
+    botId: z.string(),
+    botType: z.literal("shared"),
+    traits: z.array(z.enum(BOT_TRAITS)),
+    ownerUserId: z.null(),
+  }),
+  z.object({
+    kind: z.literal("bot"),
+    workspaceId: z.string(),
+    botId: z.string(),
+    botType: z.literal("personal"),
+    traits: z.array(z.enum(BOT_TRAITS)),
+    ownerUserId: z.string(),
+  }),
+])
 
 const streamRefSchema = z.object({
   id: z.string(),
@@ -490,6 +551,37 @@ export const PUBLIC_API_ROUTES: PublicApiRoute[] = [
     requestIn: "query",
     responseSchema: paginated(userSchema),
   },
+
+  // --- Identity ---
+  {
+    method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/me",
+    operationId: "getMe",
+    summary: "Get the authenticated principal",
+    description:
+      "Returns a discriminated union describing the authenticated principal — either the API-key owner " +
+      '(`kind: "user"`) or the bot whose key is in use (`kind: "bot"`). Used by clients (e.g. the ' +
+      "OpenClaw channel plugin) to verify their key and discover their identity after pairing.",
+    tags: ["Identity"],
+    scopes: [],
+    parameters: [workspaceIdParam],
+    responseSchema: dataEnvelope(principalSchema),
+  },
+  {
+    method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/me/bots",
+    operationId: "listMyBots",
+    summary: "List my personal bots",
+    description:
+      "For user-scoped keys: lists the authenticated user's personal bots, optionally filtered by trait. " +
+      "Used by the frontend to enumerate quick-switcher commands. Bot-scoped keys receive 403.",
+    tags: ["Identity"],
+    scopes: [],
+    parameters: [workspaceIdParam],
+    requestSchema: listMyBotsSchema,
+    requestIn: "query",
+    responseSchema: dataArrayEnvelope(personalBotSchema),
+  },
 ]
 
 // Export response schemas for tests and derived wire types for serializers
@@ -499,6 +591,8 @@ export {
   searchResultSchema,
   memberSchema,
   userSchema,
+  botSchema,
+  principalSchema,
   memoSearchResultSchema,
   memoDetailSchema,
   attachmentSearchResultSchema,
@@ -513,6 +607,8 @@ export type WireMessage = z.infer<typeof messageSchema>
 export type WireSearchResult = z.infer<typeof searchResultSchema>
 export type WireMember = z.infer<typeof memberSchema>
 export type WireUser = z.infer<typeof userSchema>
+export type WireBot = z.infer<typeof botSchema>
+export type WirePrincipal = z.infer<typeof principalSchema>
 export type WireMemoSearchResult = z.infer<typeof memoSearchResultSchema>
 export type WireMemoDetail = z.infer<typeof memoDetailSchema>
 export type WireAttachmentSearchResult = z.infer<typeof attachmentSearchResultSchema>
