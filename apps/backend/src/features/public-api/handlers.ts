@@ -26,7 +26,6 @@ import {
 } from "../attachments"
 import { BotRepository, type Bot } from "./bot-repository"
 import { AttachmentSafetyStatuses, AuthorTypes, sentViaApiKey, type AuthorType } from "@threa/types"
-import type { Bot as WireBot } from "@threa/types"
 import { HttpError } from "@threa/backend-common"
 import { normalizeMessage, toEmoji } from "../emoji"
 import { collectAttachmentReferenceIds, parseMarkdown } from "@threa/prosemirror"
@@ -41,6 +40,8 @@ import type {
   WireSearchResult,
   WireUser,
   WireMember,
+  WireBot,
+  WirePrincipal,
   WireMemoSearchResult,
   WireMemoDetail,
   WireAttachmentSearchResult,
@@ -1081,7 +1082,10 @@ export function createPublicApiHandlers({
 
       const result = listMyBotsSchema.safeParse(req.query)
       if (!result.success) {
-        throw new HttpError("Invalid query parameters", { status: 400, code: "VALIDATION_FAILED" })
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
       }
       const traits = result.data.traits ? [result.data.traits] : []
 
