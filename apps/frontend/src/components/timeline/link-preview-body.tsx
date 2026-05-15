@@ -81,29 +81,37 @@ export function LinkPreviewBody({ children, messageId, previewId }: LinkPreviewB
           />
         )}
       </div>
-      {showToggle && (
-        <button
-          type="button"
-          onClick={handleToggle}
-          className={cn(
-            "flex w-full items-center justify-center gap-1 border-t bg-muted/20 px-3 py-1",
-            "text-[11px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
-          )}
-          aria-expanded={expanded}
-        >
-          {expanded ? (
-            <>
-              <ChevronsUp className="h-3 w-3" aria-hidden="true" />
-              Show less
-            </>
-          ) : (
-            <>
-              <ChevronsDown className="h-3 w-3" aria-hidden="true" />
-              Show more
-            </>
-          )}
-        </button>
-      )}
+      {/* The toggle row is always rendered so the card commits at the same
+          height before and after `useLayoutEffect` measures `scrollHeight`.
+          Otherwise Virtuoso records the no-toggle height, then sees the row
+          pop in (~24px) and emits a deviation correction that shifts every
+          subsequent item — visible as snap-back from the bottom and content
+          painting behind the composer. When the body fits the clamp and the
+          user hasn't expanded, the slot is held open but rendered inert. */}
+      <button
+        type="button"
+        onClick={showToggle ? handleToggle : undefined}
+        aria-hidden={showToggle ? undefined : true}
+        aria-expanded={showToggle ? expanded : undefined}
+        tabIndex={showToggle ? 0 : -1}
+        className={cn(
+          "flex w-full items-center justify-center gap-1 border-t bg-muted/20 px-3 py-1",
+          "text-[11px] font-medium text-muted-foreground transition-colors",
+          showToggle ? "hover:bg-muted/40 hover:text-foreground" : "invisible pointer-events-none"
+        )}
+      >
+        {expanded ? (
+          <>
+            <ChevronsUp className="h-3 w-3" aria-hidden="true" />
+            Show less
+          </>
+        ) : (
+          <>
+            <ChevronsDown className="h-3 w-3" aria-hidden="true" />
+            Show more
+          </>
+        )}
+      </button>
     </>
   )
 }

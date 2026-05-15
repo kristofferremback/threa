@@ -74,4 +74,26 @@ describe("LinkPreviewBody", () => {
 
     expect(await screen.findByRole("button", { name: /show less/i })).toBeInTheDocument()
   })
+
+  // Virtuoso records each item's height the first time its ResizeObserver
+  // fires. If the toggle row materialises a frame later (after the layout
+  // effect measures scrollHeight), the resulting ~24px grow-in is what kicks
+  // the deviation correction that mispositions everything below it. Keeping
+  // the slot rendered both before and after measurement is the contract this
+  // test guards.
+  it("reserves the toggle slot even when content fits the clamp", () => {
+    restoreScrollHeight = stubScrollHeight(LINK_PREVIEW_BODY_HEIGHT_PX - 20)
+
+    const { container } = render(
+      <LinkPreviewBody messageId={undefined} previewId="preview_short">
+        <p>Short preview</p>
+      </LinkPreviewBody>
+    )
+
+    const slot = container.querySelector("button")
+    expect(slot).not.toBeNull()
+    expect(slot).toHaveAttribute("aria-hidden", "true")
+    expect(slot).toHaveAttribute("tabindex", "-1")
+    expect(slot?.className).toMatch(/\binvisible\b/)
+  })
 })
