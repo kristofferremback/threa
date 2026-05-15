@@ -9,6 +9,7 @@ import {
   StubAuthService,
 } from "@threa/backend-common"
 import { createControlPlaneAuthHandlers, createAuthStubHandlers } from "./features/auth"
+import { createAccountsHandlers } from "./features/accounts"
 import { createIntegrationHandlers } from "./features/integrations"
 import { createWorkspaceHandlers, type ControlPlaneWorkspaceService } from "./features/workspaces"
 import { createInvitationShadowHandlers, type InvitationShadowService } from "./features/invitation-shadows"
@@ -79,6 +80,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const backoffice = createBackofficeHandlers({ backofficeService })
   const backofficeAuthz = createBackofficeAuthzAdminHandlers({ pool, adminService: workosAuthzAdminService })
   const internalAuthz = createInternalAuthzAdminHandlers({ pool, adminService: workosAuthzAdminService })
+  const accounts = createAccountsHandlers({ authService })
 
   // Readiness probe
   app.get("/readyz", (_, res) => res.json({ status: "ok" }))
@@ -106,6 +108,14 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   }
 
   app.get("/api/auth/me", auth, authHandlers.me)
+
+  // Multi-account jar: list/switch/remove parked sessions. Active session is
+  // resolved by the standard auth middleware; parked alts live in
+  // `wos_session_alt_<i>` cookies and are inspected directly by these handlers.
+  app.get("/api/accounts", auth, accounts.list)
+  app.post("/api/accounts/switch", authLimit, auth, accounts.switch)
+  app.post("/api/accounts/remove", authLimit, auth, accounts.remove)
+
   app.get("/api/integrations/github/callback", auth, integrations.githubCallback)
   app.get("/api/integrations/linear/callback", auth, integrations.linearCallback)
 

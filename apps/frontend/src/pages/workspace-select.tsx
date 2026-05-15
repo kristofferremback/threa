@@ -21,7 +21,7 @@ function getCreateWorkspaceErrorMessage(error: unknown): string | null {
 }
 
 export function WorkspaceSelectPage() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, accounts } = useAuth()
   const { workspaces, pendingInvitations, isLoading: workspacesLoading, error } = useWorkspaces()
   const { data: regions } = useRegions()
   const createWorkspace = useCreateWorkspace()
@@ -87,8 +87,11 @@ export function WorkspaceSelectPage() {
     )
   }
 
-  // Auto-redirect when there's exactly one workspace and no pending invitations
-  if (workspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId) {
+  // Auto-redirect when there's exactly one workspace and no pending invitations.
+  // Skip the auto-redirect when the user has parked alts — they likely just
+  // added an account and want to see the switcher / pick a workspace explicitly.
+  const hasParkedAlts = accounts.length > 1
+  if (workspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId && !hasParkedAlts) {
     return <Navigate to={`/w/${workspaces[0].id}`} replace />
   }
 
