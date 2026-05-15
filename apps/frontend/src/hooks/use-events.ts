@@ -5,7 +5,7 @@ import { useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
 import { db, sequenceToNum } from "@/db"
 import { EVENT_PAGE_SIZE } from "@/lib/constants"
 import { useStreamEvents } from "@/stores/stream-store"
-import { shouldSuppressBootstrapError } from "@/lib/query-load-state"
+import { isTerminalBootstrapError, shouldSuppressBootstrapError } from "@/lib/query-load-state"
 import type { StreamEvent, EventsAroundResponse, SharedMessageHydration } from "@threa/types"
 
 export const eventKeys = {
@@ -67,8 +67,19 @@ export interface TimelineLoadStateInput {
   idbResolved: boolean
   /** `true` when either IDB or the cached bootstrap snapshot has something to render. */
   hasAnyEvents: boolean
-  /** `true` while the stream bootstrap query is in-flight. */
-  isBootstrapLoading: boolean
+  /**
+   * `true` once the bootstrap query has produced a *definitive* answer for
+   * this stream: it succeeded, hit a terminal 403/404, or the caller disabled
+   * it (drafts). It is `false` while the bootstrap is pending, fetching, or
+   * blocked waiting for the socket to connect.
+   *
+   * Critical: a disabled / socket-gated bootstrap is NOT an empty stream.
+   * Treating "bootstrap not currently loading" as "stream confirmed empty" is
+   * what makes a stream with thousands of messages render "No messages yet"
+   * after a cold push-notification open. Only the bootstrap's own definitive
+   * answer can confirm emptiness; until then an empty IDB stays a skeleton.
+   */
+  bootstrapSettled: boolean
   /**
    * `true` once IDB has been unresolved for `IDB_SKELETON_DELAY_MS`. Callers
    * pass `false` until the timeout fires so fast stream switches don't flash
@@ -94,7 +105,7 @@ export interface TimelineLoadState {
 export function computeTimelineLoadState({
   idbResolved,
   hasAnyEvents,
-  isBootstrapLoading,
+  bootstrapSettled,
   idbResolveTimedOut,
 }: TimelineLoadStateInput): TimelineLoadState {
   if (!idbResolved) {
@@ -103,10 +114,14 @@ export function computeTimelineLoadState({
     // the skeleton so slow devices don't appear frozen.
     return { isLoading: idbResolveTimedOut, isConfirmedEmpty: false }
   }
-  return {
-    isLoading: !hasAnyEvents && isBootstrapLoading,
-    isConfirmedEmpty: !hasAnyEvents && !isBootstrapLoading,
+  if (hasAnyEvents) {
+    return { isLoading: false, isConfirmedEmpty: false }
   }
+  // IDB resolved empty. Keep a skeleton until the bootstrap actually answers —
+  // a pending / socket-gated bootstrap must never be reported as a confirmed
+  // empty stream. Only the bootstrap's definitive answer flips this to the
+  // empty state.
+  return { isLoading: !bootstrapSettled, isConfirmedEmpty: bootstrapSettled }
 }
 
 export function getDisplayFloor(bootstrapFloor: bigint | null, olderFloor: bigint | null): bigint | null {
@@ -130,6 +145,33 @@ export function filterEventsForDisplay<T extends DisplayableEvent>(events: T[], 
     if (event._status === "pending" || event._status === "failed") return true
     return BigInt(event.sequence) >= displayFloor
   })
+}
+
+/**
+ * Offline-first render guarantee: a non-empty local cache must never render as
+ * a blank timeline.
+ *
+ * `displayFloor` exists to trim *pre-session* history so the unread divider
+ * and pagination cursors stay correct — it is an optimisation for narrowing
+ * the window, never a reason to render nothing. But the floor is derived from
+ * the bootstrap's latest page, and a freshly-fetched bootstrap floor can land
+ * entirely above a stale cached window before `useLiveQuery` re-emits the
+ * bootstrap's own writes (Dexie change-propagation lag; on mobile Safari the
+ * change can be missed until the next page-resume). In that gap
+ * `filterEventsForDisplay` would strip every cached event, the rendered array
+ * goes empty while `hasAnyEvents` (computed from the unfiltered set) stays
+ * true, and the timeline commits to a permanent blank scroll area — no
+ * skeleton, no empty state — until a hard refresh.
+ *
+ * The invariant: if IndexedDB has events for this stream, the user sees them.
+ * If applying the floor would hide the entire cached set, show the full
+ * cached set instead and let the background bootstrap refresh widen/correct
+ * the window on its next emit.
+ */
+export function getRenderableEvents<T extends DisplayableEvent>(events: T[], displayFloor: bigint | null): T[] {
+  const filtered = filterEventsForDisplay(events, displayFloor)
+  if (filtered.length === 0 && events.length > 0) return events
+  return filtered
 }
 
 /**
@@ -237,12 +279,19 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // Bootstrap query still drives the fetch lifecycle (loading/error states)
   // and triggers IDB writes via applyStreamBootstrap in its queryFn.
   const {
-    isLoading: isBootstrapLoading,
+    status: bootstrapStatus,
     error,
     data: bootstrap,
   } = useStreamBootstrap(workspaceId, streamId, {
     enabled: shouldFetch,
   })
+
+  // The bootstrap has a *definitive* answer only when it succeeded, hit a
+  // terminal 403/404, or the caller never asked for it (drafts). While it is
+  // pending / fetching / blocked on the socket connecting, it has NOT
+  // confirmed the stream is empty — an empty IDB must stay a skeleton, not
+  // flip to "No messages yet" for a stream that actually has history.
+  const bootstrapSettled = !shouldFetch || bootstrapStatus === "success" || isTerminalBootstrapError(error)
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
@@ -405,8 +454,10 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
     // Before bootstrap resolves, show only a bootstrap-sized cached window so
     // users cannot scroll into extra cached history that later disappears when
     // the bootstrap floor arrives. If bootstrap fails and we fall back to the
-    // local cache, widen back out to the full cached timeline.
-    return filterEventsForDisplay(effectiveEvents, displayFloor) as unknown as StreamEvent[]
+    // local cache, widen back out to the full cached timeline. The floor must
+    // never hide the entire cached set — a non-empty IDB always renders
+    // something (see getRenderableEvents).
+    return getRenderableEvents(effectiveEvents, displayFloor) as unknown as StreamEvent[]
   }, [effectiveEvents, olderData, newerData, jumpState, displayFloor])
 
   // When IDB has been unresolved long enough that a user would notice, flip
@@ -426,7 +477,7 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const { isLoading, isConfirmedEmpty } = computeTimelineLoadState({
     idbResolved,
     hasAnyEvents,
-    isBootstrapLoading,
+    bootstrapSettled,
     idbResolveTimedOut,
   })
 
