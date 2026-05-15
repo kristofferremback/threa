@@ -68,6 +68,9 @@ function createBot(overrides: Partial<Bot> & { _cachedAt?: number } = {}): Cache
   return {
     id: "bot_123",
     workspaceId: "ws_123",
+    type: "shared",
+    ownerUserId: null,
+    traits: [],
     slug: null,
     name: "Test Bot",
     description: null,

@@ -142,6 +142,9 @@ export function sequenceToNum(sequence: string): number {
 export interface CachedBot {
   id: string
   workspaceId: string
+  type: "shared" | "personal"
+  ownerUserId: string | null
+  traits: string[]
   slug: string | null
   name: string
   description: string | null
@@ -732,6 +735,13 @@ class ThreaDatabase extends Dexie {
       scheduledMessages:
         "id, workspaceId, streamId, status, [workspaceId+status+_scheduledForMs], [workspaceId+status+_statusChangedAtMs], [workspaceId+streamId+status+_scheduledForMs], _cachedAt",
     })
+
+    // v28: CachedBot gains required fields type/ownerUserId/traits (personal
+    // bots foundation). Clear stale rows so pre-v28 entries without these
+    // fields are removed; bootstrap rehydrates the table on next load.
+    this.version(28)
+      .stores({})
+      .upgrade((tx) => tx.table("bots").clear())
 
     this.workspaceUsers = this.table(WORKSPACE_USERS_STORE) as EntityTable<CachedWorkspaceUser, "id">
   }
