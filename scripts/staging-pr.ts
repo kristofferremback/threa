@@ -49,8 +49,8 @@ if (!/^\d+$/.test(prNumber)) {
   process.exit(1)
 }
 
-if (action === "deploy" && !branch) {
-  console.error("--branch is required for deploy action")
+if ((action === "deploy" || action === "reset-db") && !branch) {
+  console.error("--branch is required for deploy and reset-db actions")
   process.exit(1)
 }
 
@@ -622,6 +622,26 @@ async function deletePrDnsAndRoute(): Promise<void> {
 // Actions
 // ---------------------------------------------------------------------------
 
+/**
+ * Restart the existing PR Railway service without reconnecting to a branch.
+ * Used after a DB reset so the backend picks up fresh connections and re-runs
+ * migrations against the newly cloned database.
+ */
+async function redeployRailwayService(): Promise<void> {
+  const services = await listServices()
+  const service = services.find((s) => s.name === serviceName)
+  if (!service) {
+    console.log(`Railway service '${serviceName}' not found — skipping restart`)
+    return
+  }
+  const environmentId = await getEnvironmentId()
+  console.log(`Restarting Railway service '${serviceName}'...`)
+  await railwayGql(`mutation {
+    serviceInstanceDeploy(serviceId: "${service.id}", environmentId: "${environmentId}")
+  }`)
+  console.log(`Restart triggered — service will reconnect to the fresh database`)
+}
+
 async function deploy(): Promise<void> {
   console.log(`\n=== Deploying staging environment for PR #${prNumber} (branch: ${branch}) ===\n`)
 
@@ -688,6 +708,33 @@ async function deploy(): Promise<void> {
   console.log(`Database: ${prDbName}`)
 }
 
+async function resetDb(): Promise<void> {
+  console.log(`\n=== Resetting databases for PR #${prNumber} (branch: ${branch}) ===\n`)
+
+  // Drop and re-clone backend database
+  await dropDatabase(prDbName)
+  await runPsqlOnDefault(`CREATE DATABASE "${prDbName}"`)
+  await cloneDatabase("staging_main", prDbName)
+  await updateWorkspaceSlug(prDbName, branch!)
+
+  // Drop and re-clone control-plane database
+  await dropDatabase(prCpDbName)
+  await runPsqlOnDefault(`CREATE DATABASE "${prCpDbName}"`)
+  await cloneDatabase("staging_main_cp", prCpDbName)
+
+  // Re-seed migration tracking so the backend skips already-applied DDL
+  await seedPreExistingMigrations(prDbName, "staging_main", "apps/backend/src/db/migrations")
+  await seedPreExistingMigrations(prCpDbName, "staging_main_cp", "apps/control-plane/src/db/migrations")
+
+  // Restart the Railway service so it starts with fresh DB connections and runs
+  // any new PR-branch migrations against the restored schema
+  await redeployRailwayService()
+
+  console.log(`\n=== Database reset complete ===`)
+  console.log(`Backend DB:       ${prDbName} (cloned from staging_main)`)
+  console.log(`Control-plane DB: ${prCpDbName} (cloned from staging_main_cp)`)
+}
+
 async function teardown(): Promise<void> {
   console.log(`\n=== Tearing down staging environment for PR #${prNumber} ===\n`)
 
@@ -718,6 +765,9 @@ async function main() {
       break
     case "teardown":
       await teardown()
+      break
+    case "reset-db":
+      await resetDb()
       break
     default:
       console.error(`Unknown action: ${action}`)
