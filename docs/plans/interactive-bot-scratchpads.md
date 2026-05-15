@@ -2,12 +2,12 @@
 
 ## Problem
 
-Threa's scratchpad experience currently treats Ariadne as a special active companion: when companion mode is enabled, she responds automatically in the scratchpad and in scratchpad-rooted threads. That works for the built-in assistant, but it does not generalize cleanly to user-owned bots such as a Hermes bot (`@hermit`), an OpenClaw-backed coding agent, or a local Pi bridge.
+Threa's scratchpad experience currently treats Ariadne as a special active companion: when companion mode is enabled, she responds automatically in the scratchpad and in scratchpad-rooted threads. That works for the built-in assistant, but it does not generalize cleanly to user-owned bots such as a user-named Hermes-backed bot (for example `@hermit`), an OpenClaw-backed coding agent, or a local Pi bridge.
 
 Personal bots now have the backend foundation to be user-owned and tagged with traits such as `interactive`, but Threa still needs a product model for:
 
 - mentioning an owned bot anywhere the user is allowed to talk,
-- creating a "Chat with Hermit"-style scratchpad where Hermit responds without being mentioned every time,
+- creating a dedicated chat scratchpad for a user-named bot where that bot responds without being mentioned every time,
 - invoking Ariadne or another bot inside that same scratchpad when explicitly mentioned,
 - keeping the same behavior in threads under the scratchpad,
 - routing those invocations to provider-specific runtimes without making Threa know whether the other side is Hermes, OpenClaw, Claude Code channels, or a custom Pi adapter.
@@ -18,8 +18,8 @@ This note describes the product/runtime contract only. It intentionally contains
 
 Interactive bots should be modeled as actors that can be invoked in two ways:
 
-1. **Active scratchpad participant** — a scratchpad can have one primary interactive actor that responds to normal user messages without requiring an `@mention`. This is the "Chat with Hermit" experience.
-2. **Mention target** — any available interactive actor can be explicitly invoked with `@slug` from a scratchpad, thread, channel, or DM. This is how a user can mention `@ariadne` inside a Hermit scratchpad or mention `@hermit` from an unrelated stream.
+1. **Active scratchpad participant** — a scratchpad can have one primary interactive actor that responds to normal user messages without requiring an `@mention`. This is the "Chat with <bot name>" experience.
+2. **Mention target** — any available interactive actor can be explicitly invoked with `@slug` from a scratchpad, thread, channel, or DM. This is how a user can mention `@ariadne` inside another bot's scratchpad or mention a user-named bot such as `@hermit` from an unrelated stream.
 
 Ariadne becomes one implementation of this model rather than the only special companion path.
 
@@ -55,7 +55,7 @@ For a top-level scratchpad, `rootStreamId` and `activeStreamId` are the same. Fo
 
 ### 1. Mention your own bot anywhere
 
-A user who owns a personal interactive bot should be able to mention it by slug, for example:
+A user who owns a personal interactive bot should be able to mention it by its user-chosen slug. For example, if the user created a bot named Hermit with slug `hermit`:
 
 ```text
 @hermit can you look at this thread and summarize the plan?
@@ -63,44 +63,44 @@ A user who owns a personal interactive bot should be able to mention it by slug,
 
 Expected behavior:
 
-- Threa resolves `@hermit` as the user's personal bot.
+- Threa resolves `@hermit` as that user's personal bot.
 - If the current stream is a top-level channel, the bot response should follow existing Ariadne mention behavior and happen in a thread for that message.
 - If the current stream is a scratchpad, DM, or thread, the bot responds in the current stream.
 - The bot invocation is scoped to the current stream/thread context and must not grant hidden workspace-wide access.
 
-### 2. Create a "Chat with Hermit" scratchpad
+### 2. Create a dedicated bot chat scratchpad
 
 When the user creates a scratchpad with an interactive bot selected, that bot becomes the active actor for the scratchpad.
 
 Expected behavior:
 
 ```text
-User creates "Chat with Hermit"
+User creates "Chat with <bot name>" (for example, "Chat with Hermit")
   ↓
-Hermit is attached as the active actor
+The selected bot is attached as the active actor
   ↓
 User sends "hiya"
   ↓
-Hermit responds without requiring @hermit
+The selected bot responds without requiring @slug
 ```
 
-This is intentionally different from a passive mention-only participant. Requiring `@hermit` on every message in a dedicated Hermit scratchpad would make the scratchpad feel broken.
+This is intentionally different from a passive mention-only participant. Requiring `@slug` on every message in a dedicated bot chat scratchpad would make the scratchpad feel broken.
 
-### 3. Mention Ariadne inside a Hermit scratchpad
+### 3. Mention Ariadne inside another bot's scratchpad
 
 The active actor should not prevent explicit mention invocations of other actors.
 
 Example:
 
 ```text
-User, in Chat with Hermit:
-@ariadne can you sanity-check Hermit's plan?
+User, in a scratchpad whose active actor is their bot:
+@ariadne can you sanity-check this plan?
 ```
 
 Default activation rule:
 
 - Because the message explicitly mentions `@ariadne`, Threa invokes Ariadne.
-- Hermit does **not** also auto-respond unless the message also mentions `@hermit` or a later product setting asks active actors to comment on all mentions.
+- The active bot does **not** also auto-respond unless the message also mentions that bot or a later product setting asks active actors to comment on all mentions.
 - This avoids duplicate/noisy responses while still letting the user deliberately ask multiple actors by mentioning multiple actors.
 
 ### 4. Active scratchpad behavior applies in threads
@@ -110,10 +110,10 @@ If a thread is created under a scratchpad with an active actor, that actor shoul
 Expected behavior:
 
 ```text
-Chat with Hermit scratchpad
+Chat with <bot name> scratchpad
   └─ Thread under a message
        ├─ User sends a normal message
-       └─ Hermit responds in that thread
+       └─ The active bot responds in that thread
 ```
 
 The active actor inherits from the scratchpad root. The reply target is the current thread. This matches the existing Ariadne companion behavior for scratchpad-rooted threads.
@@ -326,7 +326,7 @@ A first implementation should avoid a broad multi-agent orchestration platform. 
 - Should personal bot mention in a shared channel create a persistent bot access grant, or should the first version send an invocation-scoped context snapshot only?
 - Should an active actor ever auto-comment on messages that mention a different actor, or is mention-suppression always the right default?
 - Should multiple active actors in one scratchpad ever be supported, or should multi-actor conversations stay explicit via mentions?
-- What exact UI should show that a scratchpad is "Chat with Hermit" and that Hermit is active in descendant threads?
+- What exact UI should show that a scratchpad is a dedicated bot chat and that its active actor is inherited into descendant threads?
 - Should runtime status/artifacts be modeled as a separate table, message attachments, context refs, or a combination?
 - What is the minimum realtime surface for adapters: polling public API, Socket.io/SSE, or a dedicated invocation stream?
 
