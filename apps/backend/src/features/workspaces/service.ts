@@ -232,6 +232,10 @@ export class WorkspaceService {
           params.workosUserId
         )
         if (raced) return raced
+        throw new Error(
+          `users row vanished after unique-constraint collision for workspace ${params.workspaceId}, workosUser ${params.workosUserId}`,
+          { cause: error }
+        )
       }
       throw error
     }

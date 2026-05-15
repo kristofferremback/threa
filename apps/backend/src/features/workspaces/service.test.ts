@@ -221,4 +221,17 @@ describe("WorkspaceService.ensureUserProvisioned", () => {
 
     await expect(service.ensureUserProvisioned(params)).rejects.toThrow("connection reset")
   })
+
+  test("throws an explicit error when the raced row cannot be found after a unique collision", async () => {
+    const cause = { code: "23505", constraint: "users_workspace_workos_user_key" }
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+    mockWithTransaction.mockRejectedValueOnce(cause)
+    const service = createWorkspaceService(false)
+
+    const err = await service.ensureUserProvisioned(params).catch((e) => e)
+
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toContain("users row vanished after unique-constraint collision")
+    expect(err.cause).toBe(cause)
+  })
 })

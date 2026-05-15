@@ -102,7 +102,7 @@ export class ControlPlaneClient {
    * plane. Throws on any non-2xx / transport failure so callers fail closed.
    */
   async getWorkspaceMembership(params: { workspaceId: string; workosUserId: string }): Promise<{ member: boolean }> {
-    const url = `${this.baseUrl}/internal/workspaces/${params.workspaceId}/members/${params.workosUserId}`
+    const url = `${this.baseUrl}/internal/workspaces/${encodeURIComponent(params.workspaceId)}/members/${encodeURIComponent(params.workosUserId)}`
     const res = await fetch(url, {
       method: "GET",
       headers: {
