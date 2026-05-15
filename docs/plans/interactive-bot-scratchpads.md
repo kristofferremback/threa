@@ -275,6 +275,65 @@ Relevant ideas to borrow:
 
 Claude channels require an active Claude Code session and are currently research-preview functionality, so they should inform the contract rather than define the Threa product surface.
 
+## Presence and availability
+
+Some interactive actors are always available from Threa's perspective, while others depend on an external runtime being online:
+
+- Ariadne can be treated as available when Threa's own agent workers are healthy.
+- Hermes/OpenClaw bots are available when their gateway/adapter is connected.
+- Local Pi and Claude Code channel bots are available only while the relevant local session/extension/channel server is running.
+
+Threa should distinguish the existence of a bot from the availability of a runtime that can currently serve it.
+
+### Presence model
+
+Runtime adapters should be able to publish lightweight presence for the bot identities they can serve:
+
+```ts
+type BotRuntimePresence = {
+  botId: string
+  runtimeKind: "pi-local" | "hermes" | "openclaw" | "claude-code-channel" | "custom"
+  instanceId: string
+  status: "available" | "busy" | "offline" | "error"
+  acceptingInvocations: boolean
+  lastSeenAt: string
+  capabilities?: {
+    supportsStop?: boolean
+    supportsPermissionRelay?: boolean
+    supportsStreaming?: boolean
+  }
+  statusText?: string
+}
+```
+
+Presence should be advisory, not the security boundary. Bot API keys, stream access, and invocation claims remain the source of truth for what a runtime may do.
+
+### Invocation behavior when offline
+
+The simplest product behavior should be:
+
+- If an explicitly mentioned bot has no available runtime, Threa should create a clear failure/notice rather than silently dropping the message.
+- If the active actor for a dedicated bot scratchpad is offline, the scratchpad should show an availability indicator and avoid making the user wonder why no reply arrived.
+- Threa may keep a short pending/unclaimed window for transient reconnects, but it should eventually mark the invocation as unclaimed/offline.
+- Queueing for offline runtimes should be opt-in per adapter. A local Pi or Claude Code session may prefer "fail fast"; a Hermes/OpenClaw gateway may prefer queueing.
+
+### Multiple runtime instances
+
+Presence is also how Threa avoids duplicate local adapters racing:
+
+- More than one runtime instance may advertise that it can serve the same bot.
+- Invocation claiming must still be atomic; presence only tells Threa which runtimes appear eligible.
+- Runtime instances should have stable `instanceId`s so users can distinguish "Kris's MacBook Pi" from "VPS OpenClaw" if needed.
+
+### UI implications
+
+Presence should surface in a few low-noise places:
+
+- bot mention autocomplete can show available/busy/offline,
+- a dedicated bot chat scratchpad can show a small active actor status,
+- failed invocations can render as a system notice or bot-status message,
+- detailed runtime metadata can remain deferred to the future artifacts/status model.
+
 ## Metadata, status, and artifacts
 
 Interactive runtimes will eventually want to expose more than plain chat text:
@@ -312,12 +371,17 @@ A first implementation should avoid a broad multi-agent orchestration platform. 
    - atomic claim/dedupe,
    - response target chosen by Threa.
 
-3. **Support one external adapter path first**
+3. **Add lightweight runtime presence**
+   - adapters heartbeat availability for the bot identities they can serve,
+   - UI can show online/busy/offline,
+   - invocations fail clearly when no runtime claims them.
+
+4. **Support one external adapter path first**
    - likely the local Pi bridge or OpenClaw channel plugin,
    - use polling if needed,
    - keep the runtime session binding adapter-owned.
 
-4. **Defer artifacts/status**
+5. **Defer artifacts/status**
    - use normal bot messages initially,
    - reserve a clean path for typed runtime references later.
 
@@ -327,6 +391,8 @@ A first implementation should avoid a broad multi-agent orchestration platform. 
 - Should an active actor ever auto-comment on messages that mention a different actor, or is mention-suppression always the right default?
 - Should multiple active actors in one scratchpad ever be supported, or should multi-actor conversations stay explicit via mentions?
 - What exact UI should show that a scratchpad is a dedicated bot chat and that its active actor is inherited into descendant threads?
+- What is the right offline behavior per runtime: fail fast, short pending window, or queue until the runtime reconnects?
+- Should runtime presence be per bot, per bot+stream, or per runtime instance with advertised bot ids?
 - Should runtime status/artifacts be modeled as a separate table, message attachments, context refs, or a combination?
 - What is the minimum realtime surface for adapters: polling public API, Socket.io/SSE, or a dedicated invocation stream?
 
