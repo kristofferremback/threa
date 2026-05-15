@@ -232,6 +232,60 @@ describe("useVisualViewport", () => {
     expect(document.documentElement.style.getPropertyValue("--viewport-height")).toBe("712px")
   })
 
+  it("does not let a mid-animation visualViewport scroll freeze a stale height (iOS keyboard close)", async () => {
+    // iOS Safari emits visualViewport `scroll` events while the keyboard-hide
+    // animation un-pans the page. Those must not cancel the in-flight
+    // focus-transition poll: if they did, --viewport-height would freeze at the
+    // still-collapsed mid-animation height and the bottom-anchored composer
+    // would float above a dead keyboard-sized gap (the reported iOS bug).
+    const getVH = () => document.documentElement.style.getPropertyValue("--viewport-height")
+    const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+    fakeVV.height = 800
+    const { result } = renderHook(() => useVisualViewport(true))
+    expect(getVH()).toBe("800px")
+
+    // Composer is a contenteditable. Dismissing the keyboard by scrolling the
+    // message list keeps it focused, so the phantom-shrink clamp (which only
+    // applies when nothing is focused) cannot mask a stale height here.
+    const editable = document.createElement("div")
+    editable.contentEditable = "true"
+    Object.defineProperty(editable, "isContentEditable", { configurable: true, get: () => true })
+    editable.tabIndex = 0
+    document.body.appendChild(editable)
+    editable.focus()
+
+    // Keyboard opens.
+    act(() => {
+      fakeVV.height = 500
+      fakeVV.emitResize()
+    })
+    expect(getVH()).toBe("500px")
+    expect(result.current).toBe(true)
+
+    await act(async () => {
+      // Focus churn around dismissal starts the keyboard-transition poll.
+      editable.dispatchEvent(new FocusEvent("focusout", { bubbles: true }))
+      await nextFrame()
+
+      // visualViewport scroll fires while height is still collapsed. With the
+      // old shared raf handle this cancelled the poll and pinned 500px.
+      fakeVV.dispatchEvent(new Event("scroll"))
+      await nextFrame()
+
+      // Viewport settles to full height but iOS emits no further resize
+      // (page is idle; html/body overflow:hidden blocks scroll recovery).
+      // Only a still-alive poll can pick this up.
+      fakeVV.height = 800
+      for (let i = 0; i < 6; i++) await nextFrame()
+    })
+
+    expect(getVH()).toBe("800px")
+    expect(result.current).toBe(false)
+
+    editable.remove()
+  })
+
   it("cleans up listeners and removes --viewport-height on unmount", () => {
     fakeVV.height = 800
     const { unmount } = renderHook(() => useVisualViewport(true))

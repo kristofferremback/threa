@@ -36,7 +36,14 @@ const VIEWPORT_HEIGHT_VAR = "--viewport-height"
  */
 export function useVisualViewport(enabled: boolean): boolean {
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
-  const rafId = useRef(0)
+  // Separate handles: the focus-transition poll must not share a raf slot with
+  // scroll coalescing. iOS Safari emits visualViewport `scroll` events while
+  // the keyboard hide animation un-pans the page; if that cancelled the poll
+  // it would freeze --viewport-height at the still-collapsed mid-animation
+  // height, leaving the composer floating above a dead keyboard gap.
+  const pollRafId = useRef(0)
+  const scrollRafId = useRef(0)
+  const settleTimeoutId = useRef(0)
   // Baseline height = innerHeight when keyboard is known to be closed.
   // Used as fallback for browsers that resize both viewports together (Firefox).
   const baseHeight = useRef(typeof window !== "undefined" ? window.innerHeight : 0)
@@ -105,23 +112,32 @@ export function useVisualViewport(enabled: boolean): boolean {
       }
     }
 
-    // Poll every frame for a duration to catch keyboard open/close animation
+    // Poll every frame for a duration to catch keyboard open/close animation.
+    // After the rAF window closes, re-measure once more on a timer: iOS Safari
+    // can settle visualViewport.height a few hundred ms after the keyboard
+    // hide animation visually completes, and once the page is idle (no scroll
+    // possible under html/body overflow:hidden) no other event would correct a
+    // stale, too-short --viewport-height.
     const pollForDuration = (ms: number) => {
-      cancelAnimationFrame(rafId.current)
+      cancelAnimationFrame(pollRafId.current)
+      clearTimeout(settleTimeoutId.current)
       const start = performance.now()
       const poll = () => {
         update()
         if (performance.now() - start < ms) {
-          rafId.current = requestAnimationFrame(poll)
+          pollRafId.current = requestAnimationFrame(poll)
         }
       }
-      rafId.current = requestAnimationFrame(poll)
+      pollRafId.current = requestAnimationFrame(poll)
+      settleTimeoutId.current = window.setTimeout(update, ms + 200)
     }
 
-    // Coalesce viewport scroll events via rAF
+    // Coalesce viewport scroll events via rAF. Uses its own handle so it can
+    // never cancel an in-flight focus-transition poll (the poll already calls
+    // update() every frame, so scroll updates during it are redundant anyway).
     const onScroll = () => {
-      cancelAnimationFrame(rafId.current)
-      rafId.current = requestAnimationFrame(update)
+      cancelAnimationFrame(scrollRafId.current)
+      scrollRafId.current = requestAnimationFrame(update)
     }
 
     // Poll across focus transitions on editable elements — covers both keyboard
@@ -156,7 +172,9 @@ export function useVisualViewport(enabled: boolean): boolean {
     window.addEventListener("pageshow", onPageShow)
 
     return () => {
-      cancelAnimationFrame(rafId.current)
+      cancelAnimationFrame(pollRafId.current)
+      cancelAnimationFrame(scrollRafId.current)
+      clearTimeout(settleTimeoutId.current)
       if (vv) {
         vv.removeEventListener("resize", update)
         vv.removeEventListener("scroll", onScroll)
