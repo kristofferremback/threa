@@ -146,7 +146,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   } = deps
 
   const auth = createAuthMiddleware({ authService })
-  const workspaceUser = createWorkspaceUserMiddleware({ pool })
+  const workspaceUser = createWorkspaceUserMiddleware({ pool, workspaceService, controlPlaneClient })
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceUser]
@@ -503,12 +503,27 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     avatarUpload,
     botHandlers.uploadAvatar
   )
-  app.delete("/api/workspaces/:workspaceId/bots/:botId/avatar", ...authed, requireBotManagement(), botHandlers.removeAvatar)
+  app.delete(
+    "/api/workspaces/:workspaceId/bots/:botId/avatar",
+    ...authed,
+    requireBotManagement(),
+    botHandlers.removeAvatar
+  )
   // Bot avatar serving (unauthenticated — S3 keys contain unguessable ULIDs)
   app.get("/api/workspaces/:workspaceId/bots/:botId/avatar/:file", botHandlers.serveAvatarFile)
   // Bot channel access grants
-  app.get("/api/workspaces/:workspaceId/bots/:botId/streams", ...authed, requireBotManagement(), botHandlers.listStreamGrants)
-  app.post("/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant", ...authed, requireBotManagement(), botHandlers.grantStreamAccess)
+  app.get(
+    "/api/workspaces/:workspaceId/bots/:botId/streams",
+    ...authed,
+    requireBotManagement(),
+    botHandlers.listStreamGrants
+  )
+  app.post(
+    "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
+    ...authed,
+    requireBotManagement(),
+    botHandlers.grantStreamAccess
+  )
   app.delete(
     "/api/workspaces/:workspaceId/bots/:botId/streams/:streamId/grant",
     ...authed,

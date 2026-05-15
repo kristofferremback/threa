@@ -211,6 +211,17 @@ export const WorkspaceRegistryRepository = {
     await db.query("DELETE FROM workspace_registry WHERE id = $1", [id])
   },
 
+  async isMember(db: Querier, workspaceId: string, workosUserId: string): Promise<boolean> {
+    const result = await db.query<{ exists: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM workspace_memberships
+         WHERE workspace_id = $1 AND workos_user_id = $2
+       ) AS exists`,
+      [workspaceId, workosUserId]
+    )
+    return result.rows[0]?.exists ?? false
+  },
+
   async insertMembership(db: Querier, workspaceId: string, workosUserId: string): Promise<void> {
     await db.query(
       `INSERT INTO workspace_memberships (workspace_id, workos_user_id)

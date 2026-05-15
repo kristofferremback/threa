@@ -60,6 +60,16 @@ export class ControlPlaneWorkspaceService {
     return WorkspaceRegistryRepository.getRegion(this.pool, workspaceId)
   }
 
+  /**
+   * Confirm whether a WorkOS user holds a membership in this workspace. The
+   * control plane is the source of truth for membership: the regional backend
+   * calls this to self-heal a missing `users` row when its DB has drifted
+   * behind the control plane (failed accept-sync, restored snapshot).
+   */
+  async isMember(workspaceId: string, workosUserId: string): Promise<boolean> {
+    return WorkspaceRegistryRepository.isMember(this.pool, workspaceId, workosUserId)
+  }
+
   async listForUser(workosUserId: string) {
     const rows = await WorkspaceRegistryRepository.listByUser(this.pool, workosUserId)
     return rows.map((row) => ({

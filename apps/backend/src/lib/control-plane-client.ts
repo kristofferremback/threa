@@ -95,6 +95,35 @@ export class ControlPlaneClient {
     }
   }
 
+  /**
+   * Ask the control plane (source of truth for membership) whether a WorkOS
+   * user belongs to a workspace. Used by the regional auth path to self-heal a
+   * missing `users` row when this region's DB has drifted behind the control
+   * plane. Throws on any non-2xx / transport failure so callers fail closed.
+   */
+  async getWorkspaceMembership(params: { workspaceId: string; workosUserId: string }): Promise<{ member: boolean }> {
+    const url = `${this.baseUrl}/internal/workspaces/${encodeURIComponent(params.workspaceId)}/members/${encodeURIComponent(params.workosUserId)}`
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        [INTERNAL_API_KEY_HEADER]: this.internalApiKey,
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      logger.error(
+        { workspaceId: params.workspaceId, workosUserId: params.workosUserId, status: res.status, body },
+        "Failed to confirm workspace membership with control plane"
+      )
+      throw new Error(`Control-plane returned ${res.status}: ${body}`)
+    }
+
+    const data = (await res.json()) as { member?: unknown }
+    return { member: data.member === true }
+  }
+
   async changeWorkspaceMemberRole(params: {
     workspaceId: string
     targetUserId: string
