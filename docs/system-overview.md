@@ -208,6 +208,7 @@ WebSocket connections bypass the router entirely. The frontend fetches `/api/wor
 **Internal endpoints (called by workspace router and regional backend):**
 
 - `GET /internal/workspaces/:id/region` — resolve workspace region (used by router on KV miss)
+- `GET /internal/workspaces/:id/members/:workosUserId` — confirm membership (regional backend self-heals a missing `users` row when its DB drifted behind the control plane)
 - `POST /internal/invitation-shadows` — create invitation shadow (called by backend)
 - `PATCH /internal/invitation-shadows/:id` — update invitation shadow
 

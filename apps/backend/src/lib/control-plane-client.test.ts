@@ -75,3 +75,40 @@ describe("ControlPlaneClient error translation", () => {
     })
   })
 })
+
+describe("ControlPlaneClient.getWorkspaceMembership", () => {
+  let client: ControlPlaneClient
+
+  beforeEach(() => {
+    client = new ControlPlaneClient("https://cp.test", "secret")
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    mock.restore()
+  })
+
+  test("returns the member flag from the control plane", async () => {
+    globalThis.fetch = mock(async () => makeResponse(200, JSON.stringify({ member: true }))) as unknown as typeof fetch
+
+    await expect(
+      client.getWorkspaceMembership({ workspaceId: "ws_1", workosUserId: "workos_user_1" })
+    ).resolves.toEqual({ member: true })
+  })
+
+  test("coerces a missing/non-true member field to false", async () => {
+    globalThis.fetch = mock(async () => makeResponse(200, JSON.stringify({}))) as unknown as typeof fetch
+
+    await expect(
+      client.getWorkspaceMembership({ workspaceId: "ws_1", workosUserId: "workos_user_1" })
+    ).resolves.toEqual({ member: false })
+  })
+
+  test("throws on a non-2xx response so callers fail closed", async () => {
+    globalThis.fetch = mock(async () => makeResponse(503, "unavailable")) as unknown as typeof fetch
+
+    await expect(client.getWorkspaceMembership({ workspaceId: "ws_1", workosUserId: "workos_user_1" })).rejects.toThrow(
+      "Control-plane returned 503"
+    )
+  })
+})

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { WorkspaceService } from "./service"
+import { UserRepository } from "./user-repository"
 import * as db from "../../db"
 
 type MockWorkosOrgService = {
@@ -156,5 +157,68 @@ describe("WorkspaceService.createWorkspace invite gating", () => {
     expect(workspace).toEqual(mockWorkspace)
     expect(workosOrgService.hasAcceptedWorkspaceCreationInvitation).toHaveBeenCalledWith("user@example.com")
     expect(mockWithTransaction).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("WorkspaceService.ensureUserProvisioned", () => {
+  const params = {
+    workspaceId: "ws_1",
+    workosUserId: "workos_user_1",
+    email: "user@example.com",
+    name: "User",
+    role: "member" as const,
+  }
+  const existingUser = { id: "usr_existing", workspaceId: "ws_1" }
+  const createdUser = { id: "usr_created", workspaceId: "ws_1" }
+
+  const mockFindUser = spyOn(UserRepository, "findByWorkosUserIdInWorkspace")
+  const mockWithTransaction = spyOn(db, "withTransaction")
+
+  beforeEach(() => {
+    mockFindUser.mockReset()
+    mockWithTransaction.mockReset()
+  })
+
+  test("returns the existing row without opening a transaction", async () => {
+    mockFindUser.mockResolvedValueOnce(existingUser as never)
+    const service = createWorkspaceService(false)
+
+    const user = await service.ensureUserProvisioned(params)
+
+    expect(user).toEqual(existingUser as never)
+    expect(mockWithTransaction).not.toHaveBeenCalled()
+  })
+
+  test("provisions a new row when none exists", async () => {
+    mockFindUser.mockResolvedValueOnce(null)
+    mockWithTransaction.mockResolvedValueOnce(createdUser as never)
+    const service = createWorkspaceService(false)
+
+    const user = await service.ensureUserProvisioned(params)
+
+    expect(user).toEqual(createdUser as never)
+    expect(mockWithTransaction).toHaveBeenCalledTimes(1)
+  })
+
+  test("re-reads and returns the winner when a concurrent request wins the unique constraint", async () => {
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(createdUser as never)
+    mockWithTransaction.mockRejectedValueOnce({
+      code: "23505",
+      constraint: "users_workspace_workos_user_key",
+    })
+    const service = createWorkspaceService(false)
+
+    const user = await service.ensureUserProvisioned(params)
+
+    expect(user).toEqual(createdUser as never)
+    expect(mockFindUser).toHaveBeenCalledTimes(2)
+  })
+
+  test("propagates non-unique-violation transaction errors", async () => {
+    mockFindUser.mockResolvedValueOnce(null)
+    mockWithTransaction.mockRejectedValueOnce(new Error("connection reset"))
+    const service = createWorkspaceService(false)
+
+    await expect(service.ensureUserProvisioned(params)).rejects.toThrow("connection reset")
   })
 })

@@ -189,6 +189,54 @@ export class WorkspaceService {
     })
   }
 
+  /**
+   * Idempotently ensure a regional `users` row exists for a confirmed member.
+   * Drives the same creation path as invite-accept (system stream + outbox
+   * fan-out) so a self-healed user is indistinguishable from a normally
+   * provisioned one. `setupCompleted: false` routes them through first-run
+   * setup, which fills in the details the failed sync never delivered.
+   *
+   * Concurrent first requests race on the `(workspace_id, workos_user_id)`
+   * unique constraint; the loser re-reads and returns the winner (INV-20).
+   */
+  async ensureUserProvisioned(params: {
+    workspaceId: string
+    workosUserId: string
+    email: string
+    name: string
+    role: User["role"]
+  }): Promise<User> {
+    const existing = await UserRepository.findByWorkosUserIdInWorkspace(
+      this.pool,
+      params.workspaceId,
+      params.workosUserId
+    )
+    if (existing) return existing
+
+    try {
+      return await withTransaction(this.pool, async (client) =>
+        this.createUserInTransaction(client, {
+          workspaceId: params.workspaceId,
+          workosUserId: params.workosUserId,
+          email: params.email,
+          name: params.name,
+          role: params.role,
+          setupCompleted: false,
+        })
+      )
+    } catch (error) {
+      if (isUniqueViolation(error, "users_workspace_workos_user_key")) {
+        const raced = await UserRepository.findByWorkosUserIdInWorkspace(
+          this.pool,
+          params.workspaceId,
+          params.workosUserId
+        )
+        if (raced) return raced
+      }
+      throw error
+    }
+  }
+
   async createUserInTransaction(
     client: Querier,
     params: {

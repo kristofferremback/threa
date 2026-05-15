@@ -59,5 +59,14 @@ export function createWorkspaceHandlers({ workspaceService, shadowService }: Dep
       }
       res.json({ region })
     },
+
+    async confirmMembership(req: Request, res: Response) {
+      const { workspaceId, workosUserId } = req.params
+      if (!workspaceId || !workosUserId) {
+        throw new HttpError("Missing workspaceId or workosUserId", { status: 400, code: "VALIDATION_ERROR" })
+      }
+      const member = await workspaceService.isMember(workspaceId, workosUserId)
+      res.json({ member })
+    },
   }
 }
