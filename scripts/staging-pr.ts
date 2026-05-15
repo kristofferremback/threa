@@ -635,11 +635,19 @@ async function redeployRailwayService(): Promise<void> {
     return
   }
   const environmentId = await getEnvironmentId()
+  // Re-connect to the branch before deploying — mirrors deployRailwayService so
+  // serviceInstanceDeploy has a valid deployment source to build from.
+  await railwayGql(
+    `mutation($id: String!, $input: ServiceConnectInput!) {
+      serviceConnect(id: $id, input: $input) { id }
+    }`,
+    { id: service.id, input: { repo: "threahq/threa", branch } }
+  )
   console.log(`Restarting Railway service '${serviceName}'...`)
   await railwayGql(`mutation {
     serviceInstanceDeploy(serviceId: "${service.id}", environmentId: "${environmentId}")
   }`)
-  console.log(`Restart triggered — service will reconnect to the fresh database`)
+  console.log(`Restart triggered — service will reconnect to the fresh database and run pending migrations`)
 }
 
 async function deploy(): Promise<void> {
