@@ -32,7 +32,11 @@ const LoadExcelSectionSchema = z
       return true
     },
     {
-      message: `Cannot load more than ${EXCEL_MAX_ROWS_PER_REQUEST} rows at once`,
+      // Lazy callback: evaluated at parse time, not schema-construction time.
+      // Reading EXCEL_MAX_ROWS_PER_REQUEST at module init races a circular
+      // import through the attachments barrel and throws a TDZ ReferenceError
+      // depending on module load order.
+      error: () => `Cannot load more than ${EXCEL_MAX_ROWS_PER_REQUEST} rows at once`,
       path: ["endRow"],
     }
   )
