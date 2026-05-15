@@ -8,6 +8,7 @@ import {
   getMinimumSequence,
   getNextBootstrapFloorState,
   getOldestSequence,
+  getRenderableEvents,
 } from "./use-events"
 
 describe("useEvents helpers", () => {
@@ -86,7 +87,7 @@ describe("computeTimelineLoadState", () => {
       computeTimelineLoadState({
         idbResolved: false,
         hasAnyEvents: false,
-        isBootstrapLoading: true,
+        bootstrapSettled: false,
         idbResolveTimedOut: false,
       })
     ).toEqual({ isLoading: false, isConfirmedEmpty: false })
@@ -97,7 +98,7 @@ describe("computeTimelineLoadState", () => {
       computeTimelineLoadState({
         idbResolved: false,
         hasAnyEvents: false,
-        isBootstrapLoading: false,
+        bootstrapSettled: false,
         idbResolveTimedOut: true,
       })
     ).toEqual({ isLoading: true, isConfirmedEmpty: false })
@@ -108,18 +109,35 @@ describe("computeTimelineLoadState", () => {
       computeTimelineLoadState({
         idbResolved: true,
         hasAnyEvents: false,
-        isBootstrapLoading: true,
+        bootstrapSettled: false,
         idbResolveTimedOut: false,
       })
     ).toEqual({ isLoading: true, isConfirmedEmpty: false })
   })
 
-  it("shows confirmed-empty once IDB is resolved and bootstrap has settled", () => {
+  it("keeps a skeleton (never 'No messages yet') when IDB is empty and the socket-gated bootstrap has not answered", () => {
+    // The reported bug: open a stream from a push notification on a cold PWA.
+    // The bootstrap query is `enabled: false` until the socket connects, so it
+    // reports not-loading. The old contract read that as "bootstrap not
+    // loading => stream confirmed empty" and rendered "No messages yet" for a
+    // stream with thousands of messages, stuck until a hard refresh.
+    // bootstrapSettled stays false until the bootstrap actually answers.
     expect(
       computeTimelineLoadState({
         idbResolved: true,
         hasAnyEvents: false,
-        isBootstrapLoading: false,
+        bootstrapSettled: false,
+        idbResolveTimedOut: true,
+      })
+    ).toEqual({ isLoading: true, isConfirmedEmpty: false })
+  })
+
+  it("shows confirmed-empty only once the bootstrap has produced a definitive answer", () => {
+    expect(
+      computeTimelineLoadState({
+        idbResolved: true,
+        hasAnyEvents: false,
+        bootstrapSettled: true,
         idbResolveTimedOut: false,
       })
     ).toEqual({ isLoading: false, isConfirmedEmpty: true })
@@ -130,7 +148,7 @@ describe("computeTimelineLoadState", () => {
       computeTimelineLoadState({
         idbResolved: true,
         hasAnyEvents: true,
-        isBootstrapLoading: true,
+        bootstrapSettled: false,
         idbResolveTimedOut: false,
       })
     ).toEqual({ isLoading: false, isConfirmedEmpty: false })
@@ -141,10 +159,42 @@ describe("computeTimelineLoadState", () => {
       computeTimelineLoadState({
         idbResolved: true,
         hasAnyEvents: true,
-        isBootstrapLoading: false,
+        bootstrapSettled: true,
         idbResolveTimedOut: false,
       })
     ).toEqual({ isLoading: false, isConfirmedEmpty: false })
+  })
+})
+
+describe("getRenderableEvents", () => {
+  it("applies the display floor normally when events remain in-window", () => {
+    const rendered = getRenderableEvents(
+      [{ sequence: "10" }, { sequence: "50" }, { sequence: "100" }, { sequence: "150" }],
+      100n
+    )
+
+    expect(rendered.map((event) => event.sequence)).toEqual(["100", "150"])
+  })
+
+  it("renders the full cached set rather than nothing when the floor would hide every event", () => {
+    // Offline-first invariant: IDB has the stream's events and useLiveQuery
+    // delivered them, but a freshly-fetched bootstrap floor landed above the
+    // entire stale cached window before useLiveQuery re-emitted the bootstrap
+    // writes. filterEventsForDisplay alone strips everything and the timeline
+    // commits to a permanent blank scroll area. getRenderableEvents must keep
+    // the cached events visible until the background refresh widens the window.
+    const cached = [{ sequence: "10" }, { sequence: "20" }, { sequence: "30" }]
+    expect(getRenderableEvents(cached, 100n)).toBe(cached)
+  })
+
+  it("returns empty when there genuinely are no cached events", () => {
+    expect(getRenderableEvents([], 100n)).toEqual([])
+  })
+
+  it("keeps optimistic events visible even when persisted events are all below the floor", () => {
+    const rendered = getRenderableEvents([{ sequence: "10" }, { sequence: "20", _status: "pending" }], 100n)
+
+    expect(rendered.map((event) => [event.sequence, event._status ?? null])).toEqual([["20", "pending"]])
   })
 })
 
