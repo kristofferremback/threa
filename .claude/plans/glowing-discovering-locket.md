@@ -103,13 +103,22 @@ export function clearSessionCookie(res, options = SESSION_COOKIE_CONFIG) {
 Add the constants (INV-33 source of truth, INV-31 derived type):
 
 ```ts
-// derivation documented inline (see Verification → Sizing); mirrors the
-// slug.ts MAX_SLUG_LENGTH source-of-truth precedent
+// Module-private sizing inputs (NOT exported — internal derivation of the
+// cap; mirrors the slug.ts MAX_SLUG_LENGTH source-of-truth precedent).
 const WORST_CASE_SEALED_BYTES = 3072
 const PER_COOKIE_OVERHEAD_BYTES = 32
-const CONSERVATIVE_COOKIE_HEADER_BUDGET = 12288
-export const MAX_ACCOUNTS = 4   // (1 active + 3 alts)·~3.1KB ≈ 12KB ≤ budget
+const CONSERVATIVE_COOKIE_HEADER_BUDGET = 13312 // 13 KB, ~81% of ~16 KB CF per-header limit
+export const MAX_ACCOUNTS = 4   // (1 active + 3 alts)·3104 B = 12416 B ≤ 13312 B
 export const MAX_ALT_SLOTS = MAX_ACCOUNTS - 1   // always derived, never a literal
+
+// Module-load guard = the CI enforcement: throws if the cap would overflow
+// the budget, so a successful `import("./cookies")` is itself the proof the
+// cap fits. The budget constants stay module-private; tests never re-state
+// the literals.
+if ((1 + MAX_ALT_SLOTS) * (WORST_CASE_SEALED_BYTES + PER_COOKIE_OVERHEAD_BYTES)
+    > CONSERVATIVE_COOKIE_HEADER_BUDGET) {
+  throw new Error("MAX_ACCOUNTS exceeds the conservative Cookie-header budget")
+}
 ```
 
 Add the alt helpers, all routed through the env-scoped base:
@@ -179,9 +188,10 @@ style (named `export { … } from "./cookies"`). No `export *`.
 reuse `makeResponseRecorder()` and the `beforeAll` dynamic-import pattern:
 
 - `MAX_ALT_SLOTS === MAX_ACCOUNTS - 1`; `MAX_ACCOUNTS` is a positive integer.
-- Header-budget invariant: `(1 + MAX_ALT_SLOTS) * (WORST_CASE_SEALED_BYTES +
-  PER_COOKIE_OVERHEAD_BYTES) <= CONSERVATIVE_COOKIE_HEADER_BUDGET` (this is the
-  CI guard that fails if anyone bumps `MAX_ACCOUNTS` past the documented size).
+- Header-budget enforcement is the **module-load guard** in `cookies.ts`, not
+  a test assertion: the budget constants stay module-private, so tests never
+  duplicate the literals. A successful `import("./cookies")` in `beforeAll`
+  already proves the guard passed; the test only pins the derivation above.
 - `assertSlot`: accepts `0..MAX_ALT_SLOTS-1`; throws `RangeError` for `-1`,
   `MAX_ALT_SLOTS`, non-integers.
 - `altSessionCookieName` env-scoping: under `SESSION_COOKIE_NAME=wos_session_test`,
@@ -240,22 +250,26 @@ No header-limit constant exists in `apps/workspace-router`.
 To keep PR-1 a risk-free pure addition (no live WorkOS dependency in CI), split
 "measurement-backed" into two parts:
 
-1. **Documented worst-case constants + a static budget test (in PR-1, in CI).**
-   In `cookies.ts`, alongside `MAX_ACCOUNTS`, add documented constants:
-   `WORST_CASE_SEALED_BYTES` (conservative upper bound for a WorkOS sealed
-   session — sealed access-JWT + refresh token + user, Iron base64 expansion;
-   budget ~3 KB), `PER_COOKIE_OVERHEAD_BYTES` (name incl. longest env prefix
-   `wos_session_staging_alt_<n>` + `=` + `; ` ≈ 32 B),
+1. **Documented worst-case constants + a module-load guard (in PR-1, in CI).**
+   In `cookies.ts`, alongside `MAX_ACCOUNTS`, add module-private documented
+   constants: `WORST_CASE_SEALED_BYTES` (conservative upper bound for a WorkOS
+   sealed session — sealed access-JWT + refresh token + user, Iron base64
+   expansion; ~3 KB), `PER_COOKIE_OVERHEAD_BYTES` (name incl. longest env
+   prefix `wos_session_staging_alt_<n>` + `=` + `; ` ≈ 32 B), and
    `CONSERVATIVE_COOKIE_HEADER_BUDGET` (defensive slice of the single `Cookie:`
-   header reserved for session cookies, well under the 16 KB per-header limit
-   with room for non-session cookies — propose 12 KB). A unit test asserts the
-   invariant holds:
+   header reserved for session cookies, well under the ~16 KB per-header limit
+   with room for non-session cookies — **13 KB / 13312 B**). Enforcement is a
+   **module-load guard** that throws when
    `(1 + MAX_ALT_SLOTS) * (WORST_CASE_SEALED_BYTES + PER_COOKIE_OVERHEAD_BYTES)
-   <= CONSERVATIVE_COOKIE_HEADER_BUDGET`. With the proposed numbers this yields
-   a conservative **`MAX_ACCOUNTS = 4`** (1 active + 3 alts ≈ 12 KB). The
-   constant is derived/clamped from these documented inputs (INV-33 source of
-   truth, mirrors the `slug.ts` `MAX_SLUG_LENGTH` precedent), not a bare
-   literal, with an inline comment showing the arithmetic.
+   > CONSERVATIVE_COOKIE_HEADER_BUDGET`; the constants stay private and no test
+   re-states the budget literals — a successful import is the CI proof. With
+   these numbers the cap is a conservative **`MAX_ACCOUNTS = 4`** (1 active + 3
+   alts · 3104 B = 12416 B ≤ 13312 B; the next bump, `MAX_ACCOUNTS = 5` →
+   15520 B, trips the guard). `MAX_ACCOUNTS` is an **intentional literal** whose
+   value is justified by — not computed from — these documented inputs and is
+   bounds-checked by the guard; `MAX_ALT_SLOTS` is the **derived** one
+   (`MAX_ACCOUNTS - 1`, INV-31). INV-33: the documented inputs are the source
+   of truth, mirroring the `slug.ts` `MAX_SLUG_LENGTH` precedent.
 
 2. **One-off empirical confirmation (pre-merge manual step, recorded — NOT in
    CI).** Before merge, run `authenticateWithCode` once against the staging
