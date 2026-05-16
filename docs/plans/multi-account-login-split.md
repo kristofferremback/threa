@@ -45,15 +45,32 @@ and replaces the hard-reload-on-switch approach with a properly scoped
   workspaces — including the cross-tab case.
 - **Push keeps working** with deep-linking and a seamless account-switch on
   notification click, keyed by at least account ID + workspace ID.
+- **Environment isolation is preserved.** Every cookie this feature introduces
+  (active and parked-alt) derives its name from the env-scoped
+  `SESSION_COOKIE_NAME`. A production session and its parked alts coexist in
+  the same browser with a staging session and its parked alts without either
+  reading or clobbering the other. No slice hardcodes a bare `wos_session`
+  literal.
 
 ### Cookie model (used by PR-1 / PR-3)
 
-One **active** session cookie `wos_session` (HttpOnly, read by the unchanged
-auth middleware) plus up to `MAX_ALT_SLOTS` **parked alt** cookies
-(`wos_session_alt_<n>`, HttpOnly, storage-only, read only by the four
-control-plane account endpoints). `MAX_ALT_SLOTS = MAX_ACCOUNTS - 1` — the two
-constants are always coupled. Parking ≡ moving the current sealed session into
-a free alt slot; switching ≡ swapping an alt into the active slot.
+The **active** session cookie keeps the existing env-scoped name
+`SESSION_COOKIE_NAME` (resolved per environment from `process.env`: prod
+`wos_session`, staging `wos_session_staging`), read by the unchanged auth
+middleware. The **parked alt** cookies are derived from that same base —
+`${SESSION_COOKIE_NAME}_alt_<n>` — so they are environment-scoped exactly like
+the active cookie: prod parks into `wos_session_alt_<n>`, staging parks into
+`wos_session_staging_alt_<n>`. Up to `MAX_ALT_SLOTS` of them, HttpOnly,
+storage-only, read only by the four control-plane account endpoints.
+`MAX_ALT_SLOTS = MAX_ACCOUNTS - 1` — the two constants are always coupled.
+Parking ≡ moving the current sealed session into a free alt slot; switching ≡
+swapping an alt into the active slot.
+
+Because every alt name flows from the env-scoped base, a browser at a shared
+parent domain can hold a production session **plus its parked alts**
+_alongside_ a staging session **plus its parked alts** with zero collision —
+no slice ever hardcodes `wos_session`. This is existing behavior the split
+must preserve, not new behavior to invent.
 
 `MAX_ACCOUNTS` ships from the very first slice that introduces the constant
 (PR-1) at a **conservative, measurement-backed default** — the WorkOS
@@ -113,8 +130,14 @@ behavior change. The auth middleware is **not** touched.
     sealed-session-vs-header-limit measurement happens here, not in PR-5);
     `MAX_ALT_SLOTS = MAX_ACCOUNTS - 1`, always derived, never a separate
     literal.
-  - `altSessionCookieName(slot)`, `setAltSessionCookie`, `clearAltSessionCookie`,
-    `readAltSessionCookies`, `assertSlot(slot)` (throws on out-of-range).
+  - `altSessionCookieName(slot)` returns `` `${SESSION_COOKIE_NAME}_alt_${slot}` ``
+    — derived from the **existing env-scoped base** (prod `wos_session`,
+    staging `wos_session_staging`), never a hardcoded `wos_session` literal, so
+    staging and production each get an independent parked-cookie namespace.
+  - `setAltSessionCookie`, `clearAltSessionCookie`, `readAltSessionCookies`,
+    `assertSlot(slot)` (throws on out-of-range) — all routed through
+    `altSessionCookieName` and the shared cookie-options factory (same
+    `COOKIE_DOMAIN` / host-only / clear semantics as the active cookie).
   - Host-only cookie clearing path when `COOKIE_DOMAIN` is set (so alt cookies
     clear on the exact host they were set on).
 - `packages/backend-common/src/index.ts`: re-export the new helpers.
@@ -136,21 +159,29 @@ the new helpers share the same options factory (INV-33, INV-35).
 - Sealed-session size measured against the Cloudflare Workers request-header
   limit; `MAX_ACCOUNTS` recorded with the measured worst-case header budget so
   later slices inherit a provably-safe cap.
+- Env-scoping test: with `SESSION_COOKIE_NAME=wos_session_staging`,
+  `altSessionCookieName(0)` resolves to `wos_session_staging_alt_0`; with the
+  prod value it resolves to `wos_session_alt_0`. A prod and a staging set
+  round-trip in the same jar without collision.
 - No endpoints, no migrations, no middleware change. Risk-free merge.
 
 ---
 
 ### PR-2 — Backoffice session-cookie rename (standalone)
 
-**Scope:** Rename the backoffice app's session cookie to
-`wos_session_backoffice` so a backoffice session never collides with a product
-session on a shared parent domain. Fully independent of every other slice;
-can land any time.
+**Scope:** Rename the backoffice app's session cookie so a backoffice session
+never collides with a product session on a shared parent domain. The rename is
+still env-scoped through the same `SESSION_COOKIE_NAME` env-var mechanism: prod
+backoffice `wos_session_backoffice`, staging backoffice
+`wos_session_backoffice_staging` — no hardcoded literal. Fully independent of
+every other slice; can land any time.
 
 **Changes:**
 
-- Backoffice deploy config: new cookie name in the env/config surface that
-  feeds `SESSION_COOKIE_NAME` for the backoffice service.
+- Backoffice deploy config: set the backoffice service's per-environment
+  `SESSION_COOKIE_NAME` value (`wos_session_backoffice` in prod,
+  `wos_session_backoffice_staging` in staging). Same resolution mechanism as
+  the product service — only the configured value differs.
 - Backoffice auth wiring: read/write/clear the renamed cookie consistently
   (login, logout, middleware).
 - Rollout note in the PR body: this is a one-time forced backoffice
@@ -160,9 +191,11 @@ can land any time.
 
 **Verification:**
 
-- Backoffice login → cookie set as `wos_session_backoffice`; product
-  `wos_session` on the same browser is untouched.
-- Backoffice logout clears only the backoffice cookie.
+- Prod backoffice login → cookie set as `wos_session_backoffice`; product
+  `wos_session` and any `wos_session_alt_<n>` on the same browser are untouched.
+- Staging backoffice login → `wos_session_backoffice_staging`; coexists with
+  prod backoffice and with staging product `wos_session_staging` + its alts.
+- Backoffice logout clears only the backoffice cookie for that environment.
 - Existing backoffice e2e/auth suite green.
 
 ---
