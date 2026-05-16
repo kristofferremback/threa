@@ -97,16 +97,14 @@ Add storage, constants, repositories, and service methods for bot capabilities, 
 
 ### Trait constants
 
-Keep `interactive` temporarily as a legacy alias so existing bots do not break, but move new behavior to explicit traits.
+Replace the coarse `interactive` capability with explicit traits. There is no compatibility alias in the runtime path; any prototype/dev rows that still contain `interactive` should be rewritten by migration.
 
 ```ts
 // packages/types/src/constants.ts
-export const BOT_TRAITS = ["interactive", "mentionable", "active-scratchpad"] as const
+export const BOT_TRAITS = ["mentionable", "active-scratchpad"] as const
 export type BotTrait = (typeof BOT_TRAITS)[number]
 
 export const BotTraits = {
-  /** Legacy alias. Treat as mentionable + active-scratchpad until migrated. */
-  INTERACTIVE: "interactive",
   MENTIONABLE: "mentionable",
   ACTIVE_SCRATCHPAD: "active-scratchpad",
 } as const satisfies Record<string, BotTrait>
@@ -127,13 +125,11 @@ export const BOT_INVOCATION_CAPABILITIES = ["mentionable", "active-scratchpad"] 
 export type BotInvocationCapability = (typeof BOT_INVOCATION_CAPABILITIES)[number]
 ```
 
-Use a helper instead of sprinkling legacy checks:
+Use a helper only for readability at call sites:
 
 ```ts
 export function botHasCapability(bot: { traits: readonly BotTrait[] }, capability: BotInvocationCapability): boolean {
-  if (bot.traits.includes(capability)) return true
-  // Compatibility only. New code should write explicit traits.
-  return bot.traits.includes(BotTraits.INTERACTIVE)
+  return bot.traits.includes(capability)
 }
 ```
 
@@ -235,10 +231,11 @@ CREATE INDEX idx_bot_invocations_claimable
 CREATE INDEX idx_bot_invocations_source_message
   ON bot_invocations (workspace_id, source_message_id);
 
--- Optional compatibility migration. Keep `interactive` too for older clients.
+-- One-way cleanup for any prototype/dev rows created before the split.
+-- Do not keep `interactive` as a runtime alias.
 UPDATE bots
 SET traits = ARRAY(
-  SELECT DISTINCT unnest(traits || ARRAY['mentionable', 'active-scratchpad']::text[])
+  SELECT DISTINCT unnest(array_remove(traits, 'interactive') || ARRAY['mentionable', 'active-scratchpad']::text[])
 )
 WHERE 'interactive' = ANY(traits);
 ```
@@ -312,7 +309,7 @@ Completion must verify both `claimed_by_instance_id` and `claim_token` so a stal
 - Is claiming a single SQL statement with `FOR UPDATE SKIP LOCKED`?
 - Are stale claims reclaimable only after `claim_expires_at`?
 - Can a bot key only claim invocations for its own bot id?
-- Does `interactive` compatibility avoid breaking current bots while explicit traits become canonical?
+- Does the migration remove/replace any prototype `interactive` rows instead of preserving a runtime alias?
 
 ### Validation
 

@@ -4,7 +4,7 @@
 
 Threa's scratchpad experience currently treats Ariadne as a special active companion: when companion mode is enabled, she responds automatically in the scratchpad and in scratchpad-rooted threads. That works for the built-in assistant, but it does not generalize cleanly to user-owned bots such as a user-named Hermes-backed bot (for example `@hermit`), an OpenClaw-backed coding agent, or a local Pi bridge.
 
-Personal bots now have the backend foundation to be user-owned and tagged with traits such as `interactive`, but that trait is too coarse for the product model Threa needs:
+Personal bots now have the backend foundation to be user-owned and tagged with capability traits, but a single coarse `interactive` trait would not be enough for the product model Threa needs:
 
 - mentioning an owned bot anywhere the user is allowed to talk,
 - creating a dedicated chat scratchpad for a user-named bot where that bot responds without being mentioned every time,
@@ -32,7 +32,7 @@ The capability split matters because the integration requirements are different:
 | `mentionable`       | User writes `@bot ...`; bot answers once in this context                                      | Resolve mention, create one invocation, read bounded context, post a reply                                       | Stateless helpers, PR/status bots, local tools that should not become ambient chat partners |
 | `active-scratchpad` | User opens a dedicated bot chat scratchpad; bot responds turn-by-turn without being mentioned | Persistent session binding, runtime presence, concurrency policy, thread inheritance, in-flight message handling | Ariadne-style companions, Hermes/OpenClaw/Pi coding sessions                                |
 
-The exact stored trait names are still provisional. One reasonable direction is to add a `mentionable` trait and reserve/rename `interactive` for active scratchpad participation. Another is to make both explicit (`mentionable`, `active-scratchpad`) so the product does not rely on implicit hierarchy. A fully interactive chat bot would normally have both traits, while a mentionable-only bot would not appear as a dedicated scratchpad companion.
+The exact stored trait names are still provisional, but the recommended direction is to make both explicit (`mentionable`, `active-scratchpad`) so the product does not rely on implicit hierarchy. A fully interactive chat bot would normally have both traits, while a mentionable-only bot would not appear as a dedicated scratchpad companion.
 
 ## Vocabulary
 
@@ -419,7 +419,6 @@ A first implementation should avoid a broad multi-agent orchestration platform. 
 
 ## Open questions
 
-- Should the stored trait names be `mentionable` + `active-scratchpad`, or should the existing `interactive` name be preserved for active scratchpad participation?
 - Should `active-scratchpad` imply `mentionable` at validation time, or should fully interactive bots explicitly carry both traits?
 - Should personal bot mention in a shared channel create a persistent bot access grant, or should the first version send an invocation-scoped context snapshot only?
 - Should an active actor ever auto-comment on messages that mention a different actor, or is mention-suppression always the right default?
