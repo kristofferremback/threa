@@ -96,12 +96,21 @@ describe("AccountScope", () => {
     })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals()
     Object.defineProperty(window, "location", { configurable: true, value: originalLocation })
-    for (const name of ["threa", "threa_workos_A", "threa_workos_B"]) {
-      indexedDB.deleteDatabase(name)
-    }
+    // Await deletion so a not-yet-dropped DB never bleeds into the next test.
+    await Promise.all(
+      ["threa", "threa_workos_A", "threa_workos_B"].map(
+        (name) =>
+          new Promise<void>((resolve) => {
+            const req = indexedDB.deleteDatabase(name)
+            req.onsuccess = () => resolve()
+            req.onerror = () => resolve()
+            req.onblocked = () => resolve()
+          })
+      )
+    )
   })
 
   it("isolates db, query cache, and stores across an in-place switch (no reload)", async () => {

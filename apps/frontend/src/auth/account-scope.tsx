@@ -1,7 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 import type { QueryClient } from "@tanstack/react-query"
 import { API_BASE } from "@/api/client"
-import { ThreaDatabase, setActiveDb } from "@/db"
+import { ThreaDatabase } from "@/db"
+// Imported from the module directly, not the @/db barrel: AccountScope is the
+// sole writer of the active-db pointer, so the mutator is intentionally kept
+// off the shared barrel (INV-9 — single-owner scope bridge).
+import { setActiveDb } from "@/db/database"
 import { makeQueryClient } from "@/contexts/query-client"
 import { resetWorkspaceStoreCache } from "@/stores/workspace-store"
 import { resetStreamStoreCache } from "@/stores/stream-store"
@@ -77,6 +81,22 @@ export function AccountScopeProvider({ children }: AccountScopeProviderProps) {
   // the switch, never blocked on auth re-fetch.
   const [switchedId, setSwitchedId] = useState<string | null>(null)
   const effectiveId = switchedId ?? authUserId
+
+  // Collapse the transient switch override back into the cookie identity. On
+  // logout / session-loss (`authUserId` → null, no navigation — see
+  // auth/context.tsx 401 path) this drops the scope so a parked account's
+  // db/QueryClient is never served while unauthenticated; once /api/auth/me
+  // catches up to a programmatic switch (`switchedId === authUserId`) it
+  // retires the redundant override so a later logout can't strand a stale id.
+  useEffect(() => {
+    if (authUserId === null) {
+      setSwitchedId(null)
+      return
+    }
+    if (switchedId === authUserId) {
+      setSwitchedId(null)
+    }
+  }, [authUserId, switchedId])
 
   const dbRegistry = useRef(new Map<string, ThreaDatabase>())
   const qcRegistry = useRef(new Map<string, QueryClient>())
