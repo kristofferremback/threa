@@ -14,6 +14,7 @@ import {
   type ActivityCreatedOutboxPayload,
   type StreamDisplayNameUpdatedPayload,
   type AttachmentTranscodedOutboxPayload,
+  type AttachmentThumbnailedOutboxPayload,
   type MessagesMovedOutboxPayload,
 } from "./repository"
 import { logger } from "../logger"
@@ -209,6 +210,17 @@ export class BroadcastHandler implements OutboxHandler {
     // attachment:transcoded — stream-scoped when attached to a message, workspace-scoped otherwise
     if (isOutboxEventType(event, "attachment:transcoded")) {
       const payload = event.payload as AttachmentTranscodedOutboxPayload
+      if (payload.streamId) {
+        this.io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
+      } else {
+        this.io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
+      }
+      return
+    }
+
+    // attachment:thumbnailed — same scoping as transcoded
+    if (isOutboxEventType(event, "attachment:thumbnailed")) {
+      const payload = event.payload as AttachmentThumbnailedOutboxPayload
       if (payload.streamId) {
         this.io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
       } else {

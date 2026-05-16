@@ -25,6 +25,9 @@ interface AttachmentRow {
   storage_path: string
   processing_status: string
   safety_status: string
+  thumbnail_storage_path: string | null
+  width: number | null
+  height: number | null
   created_at: Date
 }
 
@@ -42,6 +45,11 @@ export interface Attachment {
   storagePath: string
   processingStatus: ProcessingStatus
   safetyStatus: AttachmentSafetyStatus
+  /** S3 key of the resized WebP thumbnail (images only; null until the worker runs) */
+  thumbnailStoragePath: string | null
+  /** Orientation-corrected intrinsic pixel dimensions (images only; null otherwise) */
+  width: number | null
+  height: number | null
   createdAt: Date
 }
 
@@ -88,6 +96,9 @@ function mapRowToAttachment(row: AttachmentRow): Attachment {
     storagePath: row.storage_path,
     processingStatus: row.processing_status as ProcessingStatus,
     safetyStatus: row.safety_status as AttachmentSafetyStatus,
+    thumbnailStoragePath: row.thumbnail_storage_path ?? null,
+    width: row.width ?? null,
+    height: row.height ?? null,
     createdAt: row.created_at,
   }
 }
@@ -109,6 +120,7 @@ const SELECT_FIELDS = `
   id, workspace_id, stream_id, message_id, uploaded_by,
   filename, mime_type, size_bytes,
   storage_provider, storage_path, processing_status, safety_status,
+  thumbnail_storage_path, width, height,
   created_at
 `
 
@@ -173,6 +185,7 @@ export const AttachmentRepository = {
         a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
         a.filename, a.mime_type, a.size_bytes,
         a.storage_provider, a.storage_path, a.processing_status, a.safety_status,
+        a.thumbnail_storage_path, a.width, a.height,
         a.created_at,
         e.content_type AS extraction_content_type,
         e.summary AS extraction_summary,
@@ -272,6 +285,26 @@ export const AttachmentRepository = {
     const result = await client.query(sql`
       UPDATE attachments
       SET processing_status = ${status}
+      WHERE id = ${id}
+    `)
+    return (result.rowCount ?? 0) > 0
+  },
+
+  /**
+   * Record the generated image thumbnail path and orientation-corrected
+   * intrinsic dimensions. Idempotent — a re-run overwrites in place, so a
+   * retried thumbnail job is safe.
+   */
+  async updateImageVariant(
+    client: Querier,
+    id: string,
+    params: { thumbnailStoragePath: string; width: number; height: number }
+  ): Promise<boolean> {
+    const result = await client.query(sql`
+      UPDATE attachments
+      SET thumbnail_storage_path = ${params.thumbnailStoragePath},
+          width = ${params.width},
+          height = ${params.height}
       WHERE id = ${id}
     `)
     return (result.rowCount ?? 0) > 0
@@ -388,6 +421,7 @@ export const AttachmentRepository = {
         a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
         a.filename, a.mime_type, a.size_bytes,
         a.storage_provider, a.storage_path, a.processing_status, a.safety_status,
+        a.thumbnail_storage_path, a.width, a.height,
         a.created_at,
         e.content_type AS extraction_content_type,
         e.summary AS extraction_summary,
@@ -496,6 +530,7 @@ export const AttachmentRepository = {
         a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
         a.filename, a.mime_type, a.size_bytes,
         a.storage_provider, a.storage_path, a.processing_status, a.safety_status,
+        a.thumbnail_storage_path, a.width, a.height,
         a.created_at,
         e.content_type AS extraction_content_type,
         e.summary AS extraction_summary,

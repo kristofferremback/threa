@@ -106,7 +106,14 @@ export class AttachmentUploadedHandler implements OutboxHandler {
                 mimeType,
                 storagePath,
               })
-              logger.info({ attachmentId, filename, mimeType }, "Image caption job dispatched")
+              await this.jobQueue.send(JobQueues.IMAGE_THUMBNAIL, {
+                attachmentId,
+                workspaceId,
+                filename,
+                mimeType,
+                storagePath,
+              })
+              logger.info({ attachmentId, filename, mimeType }, "Image caption + thumbnail jobs dispatched")
               break
 
             case isPdfAttachment(mimeType, filename):

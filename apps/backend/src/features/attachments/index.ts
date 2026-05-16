@@ -66,6 +66,9 @@ export type {
 export { ImageCaptionService, StubImageCaptionService, isImageAttachment } from "./image-caption"
 export type { ImageCaptionServiceDeps, ImageCaptionServiceLike } from "./image-caption"
 
+export { ImageThumbnailService, StubImageThumbnailService, shouldGenerateThumbnail } from "./image"
+export type { ImageThumbnailServiceDeps, ImageThumbnailServiceLike } from "./image"
+
 export { PdfProcessingService, StubPdfProcessingService, isPdfAttachment } from "./pdf"
 export type { PdfProcessingServiceLike, PdfProcessingServiceDeps } from "./pdf"
 
@@ -94,6 +97,7 @@ export type { VideoTranscodingServiceDeps, VideoTranscodingServiceLike } from ".
 
 // Workers
 export { createImageCaptionWorker } from "./image-caption/worker"
+export { createImageThumbnailWorker } from "./image/worker"
 export { createPdfPrepareWorker } from "./pdf/prepare-worker"
 export { createPdfPageWorker } from "./pdf/page-worker"
 export { createPdfAssembleWorker } from "./pdf/assemble-worker"

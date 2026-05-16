@@ -21,6 +21,7 @@ export {
   type MemoBatchProcessJobData,
   type CommandExecuteJobData,
   type ImageCaptionJobData,
+  type ImageThumbnailJobData,
   type AttachmentEmbeddingJobData,
   type PdfPrepareJobData,
   type PdfProcessPageJobData,

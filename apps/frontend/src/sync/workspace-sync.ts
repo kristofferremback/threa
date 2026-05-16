@@ -1278,6 +1278,63 @@ export function registerWorkspaceSocketHandlers(
     }
   }
 
+  // Image thumbnail ready — patch the attachment's intrinsic dimensions into
+  // cached message events so the inline image box reserves the right size even
+  // when the message was sent before the thumbnail worker finished.
+  const handleAttachmentThumbnailed = async (payload: {
+    workspaceId: string
+    attachmentId: string
+    width: number
+    height: number
+    streamId?: string
+    messageId?: string
+  }) => {
+    if (payload.workspaceId !== workspaceId) return
+    if (!payload.streamId || !payload.messageId) return
+
+    const updatePayload = (p: Record<string, unknown>) => {
+      if (!Array.isArray(p.attachments)) return p
+      const attachments = p.attachments as Array<Record<string, unknown>>
+      const updatedAttachments = attachments.map((a) =>
+        a.id === payload.attachmentId ? { ...a, width: payload.width, height: payload.height } : a
+      )
+      return { ...p, attachments: updatedAttachments }
+    }
+
+    const events = await db.events
+      .where("[streamId+eventType]")
+      .equals([payload.streamId, "message_created"])
+      .filter((e) => (e.payload as { messageId?: string })?.messageId === payload.messageId)
+      .toArray()
+
+    if (events.length > 0) {
+      const event = events[0]
+      await db.events.update(event.id, {
+        payload: updatePayload(event.payload as Record<string, unknown>),
+        _cachedAt: Date.now(),
+      })
+    } else {
+      queryClient.invalidateQueries({
+        queryKey: streamKeys.bootstrap(workspaceId, payload.streamId),
+        type: "active",
+      })
+    }
+
+    queryClient.setQueryData<StreamBootstrap>(streamKeys.bootstrap(workspaceId, payload.streamId), (old) => {
+      if (!old) return old
+      return {
+        ...old,
+        events: old.events.map((event) => {
+          const eventPayload = event.payload as { messageId?: string } & Record<string, unknown>
+          if (event.eventType !== "message_created" || eventPayload.messageId !== payload.messageId) {
+            return event
+          }
+          return { ...event, payload: updatePayload(eventPayload) }
+        }),
+      }
+    })
+  }
+
   // Saved messages — write-through to IDB and invalidate TanStack caches so
   // cross-device saves reflect on every open tab without a refresh.
   const handleSavedUpserted = (payload: SavedUpsertedPayload) => {
@@ -1372,6 +1429,7 @@ export function registerWorkspaceSocketHandlers(
   socket.on("scheduled_message:sent", handleScheduledSent)
   socket.on("scheduled_message:cancelled", handleScheduledCancelled)
   socket.on("attachment:transcoded", handleAttachmentTranscoded)
+  socket.on("attachment:thumbnailed", handleAttachmentThumbnailed)
 
   return () => {
     abortController.abort()
@@ -1401,6 +1459,7 @@ export function registerWorkspaceSocketHandlers(
     socket.off("scheduled_message:sent", handleScheduledSent)
     socket.off("scheduled_message:cancelled", handleScheduledCancelled)
     socket.off("attachment:transcoded", handleAttachmentTranscoded)
+    socket.off("attachment:thumbnailed", handleAttachmentThumbnailed)
   }
 }
 

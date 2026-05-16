@@ -3,6 +3,7 @@ import { Download, FileText, File, Loader2, Copy, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { MediaGallery, type GalleryItem } from "@/components/image-gallery"
+import { Skeleton } from "@/components/ui/skeleton"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
 import { downloadImage, copyImage, triggerDownload } from "@/lib/image-utils"
@@ -24,8 +25,7 @@ interface AttachmentListProps {
 interface AttachmentItemProps {
   attachment: AttachmentSummary
   workspaceId: string
-  onImageClick?: (url: string, filename: string, attachmentId: string) => void
-  onImageLoaded?: (attachmentId: string, url: string) => void
+  onImageClick?: (attachmentId: string) => void
   isHighlighted?: boolean
   deferHydration?: boolean
 }
@@ -39,6 +39,21 @@ interface VideoAttachmentItemProps {
   deferHydration?: boolean
 }
 
+// Inline images render at a fixed height; width is derived from the
+// attachment's intrinsic aspect ratio (when known) so the box is reserved
+// before any bytes load. Falls back to a square when dimensions are absent
+// (legacy attachments / thumbnail worker hasn't run yet).
+const INLINE_IMAGE_HEIGHT = 128 // h-32
+const INLINE_IMAGE_MAX_WIDTH = 320 // max-w-xs
+
+function inlineImageBox(width?: number, height?: number): { width: number; height: number } {
+  if (!width || !height || height <= 0) {
+    return { width: INLINE_IMAGE_HEIGHT, height: INLINE_IMAGE_HEIGHT }
+  }
+  const scaled = Math.round((INLINE_IMAGE_HEIGHT * width) / height)
+  return { width: Math.min(Math.max(scaled, 1), INLINE_IMAGE_MAX_WIDTH), height: INLINE_IMAGE_HEIGHT }
+}
+
 function getFileIcon(mimeType: string) {
   if (mimeType.startsWith("text/") || mimeType === "application/pdf") {
     return FileText
@@ -49,14 +64,12 @@ function getFileIcon(mimeType: string) {
 function ImageActionDrawer({
   open,
   onOpenChange,
-  imageUrl,
   filename,
   workspaceId,
   attachmentId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  imageUrl: string
   filename: string
   workspaceId: string
   attachmentId: string
@@ -66,10 +79,16 @@ function ImageActionDrawer({
     downloadImage(workspaceId, attachmentId, filename)
   }, [workspaceId, attachmentId, filename, onOpenChange])
 
-  const handleCopy = useCallback(() => {
+  // Copy the full-resolution original, not the inline thumbnail.
+  const handleCopy = useCallback(async () => {
     onOpenChange(false)
-    copyImage(imageUrl)
-  }, [imageUrl, onOpenChange])
+    try {
+      const url = await attachmentsApi.getDownloadUrl(workspaceId, attachmentId)
+      await copyImage(url)
+    } catch {
+      // copyImage surfaces its own failure toast; this guards the URL fetch.
+    }
+  }, [workspaceId, attachmentId, onOpenChange])
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -107,15 +126,16 @@ function ImageAttachment({
   attachment,
   workspaceId,
   onImageClick,
-  onImageLoaded,
   isHighlighted,
   deferHydration = false,
 }: AttachmentItemProps) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
+  const [imgDecoded, setImgDecoded] = useState(false)
   const [error, setError] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isMobile = useIsMobile()
+
+  const box = inlineImageBox(attachment.width, attachment.height)
 
   useEffect(() => {
     if (deferHydration) return
@@ -124,18 +144,13 @@ function ImageAttachment({
 
     async function loadImage() {
       try {
-        const url = await attachmentsApi.getDownloadUrl(workspaceId, attachment.id)
+        const url = await attachmentsApi.getDownloadUrl(workspaceId, attachment.id, { variant: "thumbnail" })
         if (mounted) {
-          setImageUrl(url)
-          onImageLoaded?.(attachment.id, url)
+          setThumbnailUrl(url)
         }
       } catch {
         if (mounted) {
           setError(true)
-        }
-      } finally {
-        if (mounted) {
-          setIsLoading(false)
         }
       }
     }
@@ -145,18 +160,19 @@ function ImageAttachment({
     return () => {
       mounted = false
     }
-  }, [workspaceId, attachment.id, onImageLoaded, deferHydration])
+  }, [workspaceId, attachment.id, deferHydration])
 
+  // The box is interactable as soon as it mounts — the gallery fetches the
+  // full-resolution image itself, so opening it never depends on the inline
+  // thumbnail finishing.
   const handleClick = useCallback(() => {
-    if (imageUrl && onImageClick) {
-      onImageClick(imageUrl, attachment.filename, attachment.id)
-    }
-  }, [imageUrl, onImageClick, attachment.filename, attachment.id])
+    onImageClick?.(attachment.id)
+  }, [onImageClick, attachment.id])
 
   const openDrawer = useCallback(() => setDrawerOpen(true), [])
   const longPressRaw = useLongPress({
     onLongPress: openDrawer,
-    enabled: isMobile && !!imageUrl,
+    enabled: isMobile && !!thumbnailUrl,
   })
 
   // Wrap touch handlers to stop propagation — prevents the message-level
@@ -196,33 +212,39 @@ function ImageAttachment({
     <>
       <div
         role="button"
-        tabIndex={isLoading || !imageUrl ? -1 : 0}
+        aria-label={attachment.filename}
+        tabIndex={0}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         data-highlighted={isHighlighted || undefined}
         {...(isMobile ? longPress.handlers : {})}
+        style={{ width: box.width, height: box.height }}
         className={cn(
           "group/image relative overflow-hidden rounded-lg border bg-muted/30 transition-all cursor-pointer",
           "hover:border-primary hover:shadow-sm",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-          (isLoading || !imageUrl) && "cursor-wait",
           isHighlighted && "ring-2 ring-primary border-primary shadow-sm",
           longPress.isPressed && "opacity-70 transition-opacity duration-100"
         )}
       >
-        {isLoading ? (
-          <div className="flex h-32 w-32 items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <img src={imageUrl!} alt={attachment.filename} className="h-32 w-auto max-w-xs object-cover" loading="lazy" />
+        {!imgDecoded && <Skeleton className="absolute inset-0 rounded-none" />}
+        {thumbnailUrl && (
+          <img
+            src={thumbnailUrl}
+            alt={attachment.filename}
+            onLoad={() => setImgDecoded(true)}
+            onError={() => setError(true)}
+            className={cn(
+              "absolute inset-0 h-full w-full object-cover transition-opacity duration-300",
+              imgDecoded ? "opacity-100" : "opacity-0"
+            )}
+          />
         )}
       </div>
-      {isMobile && imageUrl && (
+      {isMobile && thumbnailUrl && (
         <ImageActionDrawer
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
-          imageUrl={imageUrl}
           filename={attachment.filename}
           workspaceId={workspaceId}
           attachmentId={attachment.id}
@@ -431,7 +453,7 @@ function FileAttachment({ attachment, workspaceId, isHighlighted }: AttachmentIt
 }
 
 export function AttachmentList({ attachments, workspaceId, className, deferHydration = false }: AttachmentListProps) {
-  const [loadedUrls, setLoadedUrls] = useState<Map<string, string>>(new Map())
+  const [loadedFullImageUrls, setLoadedFullImageUrls] = useState<Map<string, string>>(new Map())
   const [loadedThumbnails, setLoadedThumbnails] = useState<Map<string, string>>(new Map())
   const [loadedVideoUrls, setLoadedVideoUrls] = useState<Map<string, string>>(new Map())
   const attachmentContext = useAttachmentContext()
@@ -465,15 +487,17 @@ export function AttachmentList({ attachments, workspaceId, className, deferHydra
     [attachments]
   )
 
-  // Build gallery items from loaded URLs — images + completed videos
+  // Build gallery items — images + completed videos. Image items exist for
+  // every image attachment (url empty until the full-resolution variant is
+  // fetched on open) so the gallery can open instantly and show a loader,
+  // mirroring the video lazy-fetch path.
   const galleryItems: GalleryItem[] = useMemo(() => {
-    const imageItems: GalleryItem[] = imageAttachments
-      .map((a) => {
-        const url = loadedUrls.get(a.id)
-        if (!url) return null
-        return { type: "image" as const, url, filename: a.filename, attachmentId: a.id }
-      })
-      .filter((g): g is NonNullable<typeof g> => g !== null)
+    const imageItems: GalleryItem[] = imageAttachments.map((a) => ({
+      type: "image" as const,
+      url: loadedFullImageUrls.get(a.id) ?? "",
+      filename: a.filename,
+      attachmentId: a.id,
+    }))
 
     const videoItems: GalleryItem[] = videoAttachments
       .filter((a) => a.processingStatus === "completed" || a.processingStatus === "skipped")
@@ -490,17 +514,7 @@ export function AttachmentList({ attachments, workspaceId, className, deferHydra
       })
 
     return [...imageItems, ...videoItems]
-  }, [imageAttachments, videoAttachments, loadedUrls, loadedThumbnails, loadedVideoUrls])
-
-  // Called by ImageAttachment children when their URL loads
-  const registerImageUrl = useCallback((attachmentId: string, url: string) => {
-    setLoadedUrls((prev) => {
-      if (prev.get(attachmentId) === url) return prev
-      const next = new Map(prev)
-      next.set(attachmentId, url)
-      return next
-    })
-  }, [])
+  }, [imageAttachments, videoAttachments, loadedFullImageUrls, loadedThumbnails, loadedVideoUrls])
 
   // Called by VideoAttachment children when their thumbnail loads
   const registerThumbnailUrl = useCallback((attachmentId: string, thumbnailUrl: string) => {
@@ -518,7 +532,7 @@ export function AttachmentList({ attachments, workspaceId, className, deferHydra
     : -1
 
   const handleImageClick = useCallback(
-    (_url: string, _filename: string, attachmentId: string) => {
+    (attachmentId: string) => {
       openMedia(attachmentId)
     },
     [openMedia]
@@ -571,6 +585,35 @@ export function AttachmentList({ attachments, workspaceId, className, deferHydra
     }
   }, [selectedAttachmentId, videoAttachments, loadedVideoUrls, workspaceId])
 
+  // Lazily fetch the full-resolution original when an image is opened in the
+  // gallery. The inline view only ever loads the small thumbnail variant, so
+  // the lightbox must fetch the original itself on demand.
+  useEffect(() => {
+    if (!selectedAttachmentId) return
+    const isImage = imageAttachments.some((a) => a.id === selectedAttachmentId)
+    if (!isImage || loadedFullImageUrls.has(selectedAttachmentId)) return
+
+    let mounted = true
+    async function fetchFullImage() {
+      try {
+        const url = await attachmentsApi.getDownloadUrl(workspaceId, selectedAttachmentId!)
+        if (mounted) {
+          setLoadedFullImageUrls((prev) => {
+            const next = new Map(prev)
+            next.set(selectedAttachmentId!, url)
+            return next
+          })
+        }
+      } catch {
+        console.error("Failed to get image URL")
+      }
+    }
+    fetchFullImage()
+    return () => {
+      mounted = false
+    }
+  }, [selectedAttachmentId, imageAttachments, loadedFullImageUrls, workspaceId])
+
   if (!attachments || attachments.length === 0) {
     return null
   }
@@ -588,7 +631,6 @@ export function AttachmentList({ attachments, workspaceId, className, deferHydra
                 attachment={attachment}
                 workspaceId={workspaceId}
                 onImageClick={handleImageClick}
-                onImageLoaded={registerImageUrl}
                 isHighlighted={attachment.id === hoveredAttachmentId}
                 deferHydration={deferHydration}
               />
