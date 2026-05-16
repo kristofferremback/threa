@@ -326,8 +326,8 @@ forms**; PR-4b's frontend uses only the bare-link form.
   a stale notification → `404 WORKSPACE_NOT_RESOLVABLE`.
 - **Bare-workspace form** (`?workspaceId=` only, PR-4b's frontend trigger):
   membership is the only (ambiguous) selector, so resolve **only if exactly
-  one** signed-in account is a member; `0` or `2+` → `404
-WORKSPACE_NOT_RESOLVABLE` (caller keeps today's bounce; PR-5's switcher
+  one** signed-in account is a member; `0` or `2+` →
+  `404 WORKSPACE_NOT_RESOLVABLE` (caller keeps today's bounce; PR-5's switcher
   disambiguates the multi-member case). Never guess an arbitrary account.
 - `AccountsService.resolve` reuses the existing `resolveAlts` and the file's
   parallel-not-serial idiom; membership is the in-process
@@ -349,8 +349,9 @@ PR-4a `useAccountScope().switchAccount` + keyed remount; `api.get`/`ApiError`.
 
 **Verification:** Backend e2e — identity active/parked; never-substitute (a
 workspace-readable but not-signed-in account → 404, not a fallback);
-identity + stale membership → 404; bare-link unique-member → owner; bare-link
-`0`/`2+` members → 404 (no arbitrary pick); handler 400/401. Frontend — the
+identity + stale membership → 404; bare-workspace form unique-member → owner;
+bare-workspace form `0`/`2+` members → 404 (no arbitrary pick); handler
+400/401. Frontend — the
 hook flips on a different owner (no navigate, last-workspace kept), bounces on
 backend 404 / self-owner, and attempts resolve at most once per workspace
 error.
