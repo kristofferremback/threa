@@ -93,11 +93,17 @@ export class ImageThumbnailService implements ImageThumbnailServiceLike {
     await this.storage.putObject(thumbnailPath, thumbnail, "image/webp")
 
     await withTransaction(this.pool, async (client) => {
-      await AttachmentRepository.updateImageVariant(client, attachmentId, {
+      const updated = await AttachmentRepository.updateImageVariant(client, attachmentId, {
         thumbnailStoragePath: thumbnailPath,
         width,
         height,
       })
+      // The attachment may have been deleted between the S3 work and now;
+      // never emit a thumbnailed event for a write that did not land (INV-7).
+      if (!updated) {
+        log.warn("Attachment removed before thumbnail commit, skipping outbox emit")
+        return
+      }
 
       // Re-read for stream/message scoping — the attachment may have been
       // attached to a message between the initial read and now.

@@ -155,4 +155,24 @@ describe("ImageThumbnailService.generateThumbnail", () => {
 
     expect(storage.getObject).not.toHaveBeenCalled()
   })
+
+  it("does not emit a thumbnailed event when the row vanished before commit", async () => {
+    const png = await sharp({
+      create: { width: 800, height: 400, channels: 3, background: { r: 9, g: 9, b: 9 } },
+    })
+      .png()
+      .toBuffer()
+
+    spyOn(AttachmentRepository, "findById").mockResolvedValue(buildAttachment())
+    spyOn(AttachmentRepository, "updateImageVariant").mockResolvedValue(false)
+    const outboxSpy = spyOn(OutboxRepository, "insert").mockResolvedValue(undefined as never)
+    spyOn(db, "withTransaction").mockImplementation((async (_pool: unknown, cb: (c: any) => Promise<any>) =>
+      cb({})) as any)
+
+    const { service } = createService(png)
+
+    await service.generateThumbnail("attach_1")
+
+    expect(outboxSpy).not.toHaveBeenCalled()
+  })
 })
