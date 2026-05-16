@@ -7,6 +7,9 @@ const POLL_INTERVAL = 300_000 // 5 minutes
 const TOAST_ID = "app-update"
 const IS_DEV = import.meta.env.DEV
 
+/** Cap how long the Reload action waits for the new SW before reloading anyway. */
+const UPDATE_RELOAD_FALLBACK_MS = 10_000
+
 /**
  * Tell the browser to check for a new service worker. The SW's install handler
  * calls skipWaiting() unconditionally, so it activates immediately — no need
@@ -19,14 +22,60 @@ async function triggerSwUpdate(): Promise<void> {
 }
 
 /**
- * Reload the page to pick up the new service worker's precached assets.
- * By the time this runs, triggerSwUpdate() has already activated the new SW
- * (which cleans stale caches on activate). A plain reload is enough — the new
- * SW serves fresh assets from its precache. Clearing caches here would break
- * offline refresh, so we intentionally leave them for the SW to manage.
+ * Reload onto the new build.
+ *
+ * The SW serves navigations cache-first from the build-atomic precache, so a
+ * plain reload returns whatever build the *currently controlling* SW precached.
+ * If the new SW hasn't installed and claimed this page yet, that is still the
+ * old build and the version toast just reappears — which is why an
+ * unconditional reload needed "a bunch of refreshes". So force the update now
+ * and reload exactly once when the new SW takes control: it self-activates via
+ * skipWaiting + clients.claim, firing `controllerchange`. Fall back to a plain
+ * reload when there is no registration, no pending worker (the new SW already
+ * claimed in the background), or the update stalls — never worse than a bare
+ * reload, and time-bounded.
  */
-function reloadForUpdate(): void {
-  window.location.reload()
+async function reloadForUpdate(): Promise<void> {
+  const registration = await navigator.serviceWorker?.getRegistration()
+  if (!registration) {
+    window.location.reload()
+    return
+  }
+
+  let reloaded = false
+  const reloadOnce = (): void => {
+    if (reloaded) return
+    reloaded = true
+    window.location.reload()
+  }
+
+  // Subscribe before update() so a fast activate→claim can't fire the event
+  // before we are listening.
+  navigator.serviceWorker.addEventListener("controllerchange", reloadOnce, { once: true })
+
+  try {
+    await registration.update()
+  } catch {
+    reloadOnce()
+    return
+  }
+
+  const pending = registration.installing ?? registration.waiting
+  if (!pending) {
+    // The new SW already installed and took control in the background — a
+    // plain reload now serves its precached shell.
+    reloadOnce()
+    return
+  }
+
+  // Backstop for controllerchange in case it does not fire for this client:
+  // reload as soon as the new SW reaches `activated`.
+  pending.addEventListener("statechange", () => {
+    if (pending.state === "activated") reloadOnce()
+  })
+
+  // Last resort so a stuck install can't strand the toast indefinitely.
+  setTimeout(reloadOnce, UPDATE_RELOAD_FALLBACK_MS)
 }
 
 export function useAppUpdate(): void {
@@ -52,7 +101,7 @@ export function useAppUpdate(): void {
           duration: Infinity,
           action: {
             label: "Reload",
-            onClick: () => reloadForUpdate(),
+            onClick: () => void reloadForUpdate(),
           },
         })
       }
