@@ -1521,7 +1521,11 @@ function VirtuosoMessageList({
       firstItemIndex={firstItemIndex}
       initialTopMostItemIndex={initialTopMostItemIndex}
       data={visibleItems}
-      defaultItemHeight={120}
+      // Intentionally no defaultItemHeight: it makes Virtuoso skip the probe
+      // measure and reveal the list using the estimate, so a tall code block
+      // measured one frame after reveal triggers a "size increased" re-scroll
+      // (the down-then-back jump). Without it, the window is measured while
+      // hidden and reveal waits until scroll-to-LAST settles on real sizes.
       skipAnimationFrameInResizeObserver
       itemContent={itemContent}
       computeItemKey={computeItemKey}
