@@ -74,7 +74,15 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
         autoConnect: true,
       })
 
+      // Only the socket that is still the active instance may drive provider
+      // state. A socket that was superseded (wsUrl moved → start() built a
+      // replacement) or torn down (workspace change) still emits a
+      // close-disconnect; without this guard that stale instance would
+      // backfire status/reconnectCount onto the socket that replaced it.
+      const isStale = () => cancelled || activeSocket !== s
+
       s.on("connect", () => {
+        if (isStale()) return
         const wasReconnecting = hasEverConnectedRef.current
         hasEverConnectedRef.current = true
         setStatus("connected")
@@ -88,6 +96,7 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
       })
 
       s.on("disconnect", (reason) => {
+        if (isStale()) return
         if (hasEverConnectedRef.current) {
           setStatus("reconnecting")
           console.log("[Socket] Disconnected:", reason)
@@ -97,20 +106,24 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
       })
 
       s.on("error", (error: { message: string }) => {
+        if (isStale()) return
         console.error("[Socket] Error:", error.message)
       })
 
       // Socket.io manager events for reconnection tracking
       s.io.on("reconnect_attempt", (socketAttempt) => {
+        if (isStale()) return
         setStatus("reconnecting")
         console.log(`[Socket] Reconnect attempt ${socketAttempt}`)
       })
 
       s.io.on("reconnect_error", (error) => {
+        if (isStale()) return
         console.error("[Socket] Reconnect error:", error.message)
       })
 
       s.io.on("reconnect_failed", () => {
+        if (isStale()) return
         console.error("[Socket] Reconnect failed - giving up")
         setStatus("disconnected")
       })
@@ -119,9 +132,13 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
     }
 
     function start(config: WorkspaceConfig) {
-      activeSocket?.close()
+      // Swap the active ref to the replacement before closing the previous
+      // socket, so the previous socket's synchronous close-disconnect is
+      // rejected by isStale() instead of clobbering the new socket's status.
+      const previous = activeSocket
       activeSocket = buildSocket(config)
       activeWsUrl = config.wsUrl
+      previous?.close()
       setSocket(activeSocket)
     }
 
