@@ -1497,10 +1497,8 @@ function VirtuosoMessageList({
 
   // Only render the empty state when we're *certain* the stream has no events.
   // Without this guard, the mid-switch gap where visibleItems is briefly [] (IDB
-  // re-subscribing after a streamId change) flashes the empty state before the
-  // real data arrives. When visibleItems is empty but !isConfirmedEmpty, we
-  // fall through and render <Virtuoso data={[]} /> — a blank scroll area that
-  // doesn't visually disrupt the transition.
+  // re-subscribing after a streamId change) would flash the empty state before
+  // the real data arrives.
   if (visibleItems.length === 0 && isConfirmedEmpty) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -1512,16 +1510,29 @@ function VirtuosoMessageList({
     )
   }
 
+  // Grace-window gap: !isLoading, !isConfirmedEmpty, but events haven't been
+  // re-subscribed from IDB yet (the "render briefly blank, no skeleton flash"
+  // path in computeTimelineLoadState). Render a blank scroll area rather than
+  // mounting <Virtuoso data={[]} />. Virtuoso's hidden-until-stable reveal gate
+  // arms only at didMount, and only when initialTopMostItemIndex is set — which
+  // it is NOT while itemCount is 0 (the scroll hook returns undefined). A
+  // Virtuoso mounted empty therefore reveals immediately, so the populate +
+  // scroll-to-LAST a frame later is visible (the "loads in too low then jumps"
+  // report). Deferring the mount until data exists makes the keyed instance
+  // mount already-populated, exactly like cold boot, so the gate arms.
+  if (visibleItems.length === 0) {
+    return <div className="h-full" aria-hidden />
+  }
+
   return (
     <Virtuoso
-      // Remount per stream. Virtuoso's hidden-until-stable reveal gate is
-      // mount-only; navigating between streams reuses this instance (only the
-      // streamId prop changes — see the empty-state comment above), so the
-      // gate never re-arms and the new stream's content paints at the wrong
-      // offset then scroll-corrects (the "loads in too low then jumps" report).
-      // A fresh mount re-runs the exact cold-boot path: mounts with an empty
-      // sizeTree (gate closed), measures the window while hidden, reveals only
-      // once scroll-to-LAST settles on real sizes.
+      // Remount per stream so the mount-only reveal gate re-arms. Navigating
+      // between streams otherwise reuses this instance (only the streamId prop
+      // changes), leaving the gate latched-open from the previous stream. A
+      // fresh mount with populated data (guaranteed by the grace-window guard
+      // above) re-runs the exact cold-boot path: didMount sees
+      // initialTopMostItemIndex=LAST so the gate arms, the window is measured
+      // while hidden, and reveal waits until scroll-to-LAST settles.
       key={streamId}
       ref={virtuosoRef}
       scrollerRef={handleVirtuosoScrollerRef}
