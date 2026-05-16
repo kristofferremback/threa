@@ -181,6 +181,15 @@ describe("AccountSwitcherDialog", () => {
     })
   })
 
+  it("shows an error message when the account list fails to load", async () => {
+    vi.spyOn(accountsApi, "list").mockRejectedValue(new Error("network down"))
+
+    renderDialog()
+
+    expect(await screen.findByText(/Couldn't load your accounts/)).toBeInTheDocument()
+    expect(screen.queryByLabelText("Current account")).not.toBeInTheDocument()
+  })
+
   it("renders nothing when the search param is absent", () => {
     mockAccounts([])
     renderDialog(false)

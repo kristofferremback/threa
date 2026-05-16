@@ -7,6 +7,7 @@ import { accountsApi, type AccountSummary } from "@/api"
 import { useAccountScope, useAuth } from "@/auth"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   ResponsiveDialog,
   ResponsiveDialogBody,
@@ -54,7 +55,7 @@ function AccountRow({ account, onSwitch, onRemove, onReauth }: AccountRowProps) 
 
   if (account.state === "active") {
     return (
-      <div className="flex items-center gap-3 rounded-lg bg-muted/50 px-3 py-2.5">
+      <div className="flex items-center gap-3 rounded-lg bg-muted px-3 py-2.5">
         <Avatar className="h-9 w-9">
           <AvatarFallback>{initials}</AvatarFallback>
         </Avatar>
@@ -72,7 +73,7 @@ function AccountRow({ account, onSwitch, onRemove, onReauth }: AccountRowProps) 
       <button
         type="button"
         onClick={() => onSwitch(account.id)}
-        className="flex flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+        className="flex flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
       >
         <Avatar className="h-9 w-9">
           <AvatarFallback>{initials}</AvatarFallback>
@@ -89,6 +90,22 @@ function AccountRow({ account, onSwitch, onRemove, onReauth }: AccountRowProps) 
   )
 }
 
+function AccountListSkeleton() {
+  return (
+    <div className="flex flex-col gap-1" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-3 w-44" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function AccountSwitcherDialog() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [mounted, setMounted] = useState(false)
@@ -98,7 +115,7 @@ export function AccountSwitcherDialog() {
   const scope = useAccountScope()
   const queryClient = useQueryClient()
 
-  const { data } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ACCOUNTS_LIST_KEY,
     queryFn: () => accountsApi.list(),
     enabled: isOpen,
@@ -152,17 +169,25 @@ export function AccountSwitcherDialog() {
         </ResponsiveDialogHeader>
 
         <ResponsiveDialogBody className="py-3">
-          <div className="flex flex-col gap-1">
-            {accounts.map((account) => (
-              <AccountRow
-                key={account.id}
-                account={account}
-                onSwitch={handleSwitch}
-                onRemove={handleRemove}
-                onReauth={addAccount}
-              />
-            ))}
-          </div>
+          {isLoading && <AccountListSkeleton />}
+          {isError && (
+            <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+              Couldn&apos;t load your accounts. Close and try again.
+            </p>
+          )}
+          {!isLoading && !isError && (
+            <div className="flex flex-col gap-1">
+              {accounts.map((account) => (
+                <AccountRow
+                  key={account.id}
+                  account={account}
+                  onSwitch={handleSwitch}
+                  onRemove={handleRemove}
+                  onReauth={addAccount}
+                />
+              ))}
+            </div>
+          )}
         </ResponsiveDialogBody>
 
         <ResponsiveDialogFooter className="border-t px-4 py-3 sm:px-6">
