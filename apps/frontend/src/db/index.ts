@@ -1,4 +1,4 @@
-export { db, clearAllCachedData, clearPendingMessages, sequenceToNum } from "./database"
+export { db, ThreaDatabase, clearAllCachedData, clearPendingMessages, sequenceToNum } from "./database"
 export type {
   CachedWorkspace,
   CachedWorkspaceUser,

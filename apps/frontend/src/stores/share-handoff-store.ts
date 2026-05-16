@@ -88,8 +88,17 @@ export function peekShareHandoff(targetStreamId: string): SharedMessageAttrs | n
   return entry.attrs
 }
 
-/** Clears every queued handoff. Test helper; not used in production code. */
-export function __resetShareHandoffStoreForTesting(): void {
+/**
+ * Clears every queued handoff and subscriber. The cache is module-level so it
+ * survives an account-switch React remount; AccountScope calls this on switch
+ * so a share queued under one account never surfaces in another.
+ */
+export function resetShareHandoffStoreCache(): void {
   cache.clear()
   listeners.clear()
+}
+
+/** Clears every queued handoff. Test helper. */
+export function __resetShareHandoffStoreForTesting(): void {
+  resetShareHandoffStoreCache()
 }

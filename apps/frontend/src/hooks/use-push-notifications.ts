@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { DEVICE_KEY_LENGTH } from "@threa/types"
 import { ApiError, api } from "@/api/client"
+import { useAccountScopeOptional } from "@/auth/account-scope"
 
 type PushPermission = NotificationPermission | "unsupported"
 
@@ -103,8 +104,11 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray
 }
 
-function pushOptOutKey(workspaceId: string): string {
-  return `threa:push-opted-out:${workspaceId}`
+// Account-scoped so a parked account's opt-out never suppresses push for the
+// active one. `accountId` is null pre-auth and in isolated unit tests (no
+// AccountScopeProvider), keeping the prior un-namespaced key there.
+function pushOptOutKey(workspaceId: string, accountId: string | null): string {
+  return accountId ? `threa:push-opted-out:${accountId}:${workspaceId}` : `threa:push-opted-out:${workspaceId}`
 }
 
 type SubscribeOutcome = { kind: "subscribed" } | { kind: "disabled-on-server" }
@@ -196,9 +200,10 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
     if (typeof window === "undefined" || !("Notification" in window)) return "unsupported"
     return Notification.permission
   })
+  const accountId = useAccountScopeOptional()?.activeWorkosUserId ?? null
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [optedOut, setOptedOut] = useState(() =>
-    workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId)) === "1" : false
+    workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId, accountId)) === "1" : false
   )
   const [pushDisabledOnServer, setPushDisabledOnServer] = useState(false)
   const [status, setStatus] = useState<SubscriptionStatus>("idle")
@@ -211,10 +216,10 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
   const subscribeGenRef = useRef(0)
   const currentAbortRef = useRef<AbortController | null>(null)
 
-  // Re-sync opt-out state when workspaceId changes (initializer only runs on mount)
+  // Re-sync opt-out state when workspaceId/account changes (initializer only runs on mount)
   useEffect(() => {
-    setOptedOut(workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId)) === "1" : false)
-  }, [workspaceId])
+    setOptedOut(workspaceId ? localStorage.getItem(pushOptOutKey(workspaceId, accountId)) === "1" : false)
+  }, [workspaceId, accountId])
 
   // Cancel any in-flight subscribe on unmount
   useEffect(() => () => currentAbortRef.current?.abort(), [])
@@ -335,7 +340,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
 
       // Persist opt-out so auto-subscribe doesn't re-register on next mount
       setOptedOut(true)
-      localStorage.setItem(pushOptOutKey(workspaceId), "1")
+      localStorage.setItem(pushOptOutKey(workspaceId, accountId), "1")
     } catch (err) {
       // Failure surfaces only to the console — the "subscribed" UI doesn't
       // render the error field, so setting it would just leak stale state
@@ -343,7 +348,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       // toast (sonner is already wired in).
       console.error("[Push] Failed to unsubscribe:", err)
     }
-  }, [workspaceId])
+  }, [workspaceId, accountId])
 
   // Request permission and subscribe
   const requestPermission = useCallback(async () => {
@@ -356,7 +361,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       // Clear opt-out — user is explicitly re-enabling
       if (workspaceId) {
         setOptedOut(false)
-        localStorage.removeItem(pushOptOutKey(workspaceId))
+        localStorage.removeItem(pushOptOutKey(workspaceId, accountId))
       }
 
       const result = await Notification.requestPermission()
@@ -370,7 +375,7 @@ export function usePushNotifications(workspaceId: string | undefined): UsePushNo
       setError(toSubscriptionError(err))
       setStatus("error")
     }
-  }, [subscribe, workspaceId])
+  }, [subscribe, workspaceId, accountId])
 
   // Manually retry the subscription flow after a failure. Clears the cached VAPID
   // config so a server config change (e.g. push enabled after env vars added) is

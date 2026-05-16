@@ -1,289 +1,276 @@
-# PR-1 — Backend-common multi-account primitives
+# PR-4a — AccountScope foundation (frontend, no UI)
 
 ## Context
 
-This is the first implementation slice of the multi-account login split
-(`docs/plans/multi-account-login-split.md`, PR #535). Multi-account login lets
-one browser/PWA hold several authenticated accounts at once and switch between
-them without logging out. The full feature is split into seven slices; PR-1 is
-the foundational primitive layer.
+Fourth implementation slice of the multi-account login split
+(`docs/plans/multi-account-login-split.md`, lines 264-308). PR-1 (#537,
+backend-common cookie/auth-URL primitives) and PR-3 (#538, `/api/accounts`
+contract + OAuth `intent=add` park/coalesce) are **merged to `origin/main`**
+(HEAD `44362916`). PR-4a is now unblocked.
 
-**Why this slice exists / intended outcome:** ship the cookie + auth-URL
-primitives every later slice depends on, as a *pure addition* with **no
-callers, no behavior change, and the auth middleware untouched** — so it merges
-risk-free and unblocks PR-3 (the `/api/accounts` contract). Concretely:
+**Why this slice exists / intended outcome:** give the frontend a reactive,
+fully account-isolated **AccountScope** so the active account can switch
+*in place with no page reload* and *zero cross-account data bleed* at the
+IndexedDB, TanStack-Query, and store layers — including across browser tabs.
+No switcher UI (that is PR-5); this slice only proves isolation + in-place
+switchability via a headline test.
 
-- "Parked alt" session cookies so a session can be stored without being active.
-- `prompt` plumbing into the WorkOS authorization URL so PR-3 can force an
-  AuthKit re-prompt on "add account" instead of silently reusing the hosted
-  session (`@workos-inc/node@7.82.0` already types `prompt`).
-- A conservative, measurement-backed `MAX_ACCOUNTS` cap so no later slice can
-  create a state that overflows the Cloudflare Workers request-header limit.
+**Two corrections to the spec's stated assumptions (verified against
+`origin/main`):** the spec was written as if the original monolithic PR #487
+had landed. It did not — only the split-plan doc (#535) merged. Therefore:
 
-Two invariants drive the design and are preserved end-to-end:
+- `resolveDbName()`, `ensureDbMatchesUser`, and any account-switch
+  `window.location.reload()` **do not exist** — nothing to delete. PR-4a is a
+  *greenfield* foundation, not a refactor of PR #487.
+- `window.__eagerAuthPromise` is **live and fully wired** (`index.html:106`
+  sets it; `auth/context.tsx:41-51` consumes it) — it is *not* dead code.
 
-- **Environment isolation:** every cookie derives its name from the env-scoped
-  `SESSION_COOKIE_NAME` (prod `wos_session`, staging `wos_session_staging`).
-  Prod sessions + their parked alts coexist in one browser with staging
-  sessions + their parked alts, zero collision. No hardcoded `wos_session`.
-- **Auth middleware unchanged:** `packages/backend-common/src/auth/middleware.ts`
-  still reads exactly `req.cookies[SESSION_COOKIE_NAME]`. Alt cookies are
-  storage-only; PR-1 adds no reader for them.
+**User decisions (this session):**
 
-## Current state (verified)
+1. **Keep `__eagerAuthPromise` untouched.** A sibling PR is open that reworks
+   the offline-first model and may touch this exact area; avoid churn there to
+   prevent merge conflicts. AccountScope derives the active id from
+   `useAuth().user?.id` (which already consumes the eager promise) — no change
+   to `index.html` or `auth/context.tsx`'s auth fetch.
+2. **Scope-proxy + keyed remount** (not the full 34-file importer rewrite).
+   Minimal blast radius, deliberately chosen to stay clear of the in-flight
+   offline-first PR.
 
-- `packages/backend-common/src/cookies.ts` (80 lines):
-  - `SESSION_COOKIE_NAME` = `resolveSessionCookieName()` reads
-    `process.env.SESSION_COOKIE_NAME`, loud INV-11 fallback to `wos_session`
-    (lines 27–37).
-  - `SESSION_COOKIE_CONFIG` (lines 39–49): path/httpOnly/secure/sameSite/maxAge
-    + conditional `domain` from `COOKIE_DOMAIN`.
-  - Private `clearOptions()` (strips `maxAge`, lines 53–56) and
-    `hostOnlyOptions()` (strips `domain`, lines 58–61).
-  - `setSessionCookie(res, session, options?)` (63–72): if `options.domain`,
-    first clears a host-only same-name cookie, then sets. **Name hardcoded to
-    `SESSION_COOKIE_NAME`.**
-  - `clearSessionCookie(res, options?)` (74–79): clears, then host-only clears
-    if domain. **Name hardcoded.**
-  - `parseCookies(cookieHeader)` (5–17): `Record<string,string>`.
-  - Exports: `parseCookies`, `SESSION_COOKIE_NAME`, `SESSION_COOKIE_CONFIG`,
-    `SessionCookieOptions` (type), `setSessionCookie`, `clearSessionCookie`.
-- `packages/backend-common/src/index.ts` (105–111): named re-export of those 6
-  symbols (`export { … } from "./cookies"` + `export type { … }`).
-- `packages/backend-common/src/auth/auth-service.ts`:
-  - `AuthService` interface `getAuthorizationUrl(redirectTo?, redirectUri?): string`
-    (line 43).
-  - `WorkosAuthService.getAuthorizationUrl` (168–175) calls
-    `this.workos.userManagement.getAuthorizationUrl({ provider:"authkit",
-    redirectUri, clientId, state })`.
-  - Constructed from `WorkosConfig` (ctor 64–69).
-- `packages/backend-common/src/auth/auth-service.stub.ts`
-  `getAuthorizationUrl` (128–137): returns `/test-auth-login?…` encoding
-  `state` and optional `redirect_uri` into query params.
-- WorkOS SDK `@workos-inc/node@7.82.0`,
-  `lib/user-management/interfaces/authorization-url-options.interface.d.ts`:
-  `UserManagementAuthorizationURLOptions` includes `prompt?: string`,
-  `loginHint?: string`, `screenHint?: 'sign-up'|'sign-in'`. No cast needed.
-- Only production caller of `getAuthorizationUrl`:
-  `apps/control-plane/src/features/auth/handlers.ts:87` (2 args). **Not changed
-  in PR-1** — `intent=add → prompt:"login"` wiring is PR-3.
-- Test conventions: `packages/backend-common/src/cookies.test.ts` uses
-  `bun:test` (`describe/test/expect`), a `makeResponseRecorder()` faking
-  `res.cookie/clearCookie` into a `calls[]` array, and `beforeAll` that sets
-  `process.env.SESSION_COOKIE_NAME="wos_session_test"` then dynamically
-  `import("./cookies")`. Whole-object `expect(calls).toEqual([...])` assertions
-  (INV-24).
+## Approach (scope-proxy + keyed remount, minimal churn)
 
-## Design
+### 1. `apps/frontend/src/db/database.ts` — name-parameterized class + scope-bound proxy
 
-### 1. `cookies.ts` — extract a name-parameterized core, then add alt helpers
+- `class ThreaDatabase` constructor takes a name:
+  `constructor(name: string) { super(name) … }`. Every `this.version(...)`
+  block (28 of them, `:497-745`) stays **byte-identical** (reuse existing
+  schema — spec requirement).
+- Replace `export const db = new ThreaDatabase()` (`:751`) with a **proxy**
+  that forwards every property access to the AccountScope-active
+  `ThreaDatabase` instance. The ~30 modules doing `import { db } from "@/db"`
+  stay **completely untouched** (this is the whole point of the proxy: zero
+  churn in the offline-first model files the sibling PR touches).
+- The proxy reads through a module-level `activeDb` pointer that is **owned
+  and mutated solely by AccountScope**, set synchronously in the provider
+  body *before* the keyed subtree (and its `useLiveQuery`/sync engine) mounts
+  or remounts. Pre-auth (no account yet) the pointer defaults to a
+  `ThreaDatabase("threa")` handle so the pre-mount `hydrateCollapseCache()`
+  in `main.tsx` keeps working with **no change to `main.tsx` or
+  `collapse-cache.ts`** (another offline-first-area file left alone). Document
+  the INV-9 reasoning inline: this is not hidden state — it is the deliberate,
+  single-owner scope bridge that avoids a 30-file rewrite which would conflict
+  with the in-flight offline-first PR.
+- `clearAllCachedData()` / `clearPendingMessages()` (`:754-792`) keep working
+  against the proxy (i.e. the active account's db) — **no signature change**.
+  Their `finally` block already calls `resetWorkspaceStoreCache` /
+  `resetStreamStoreCache` / `resetDraftStoreCache` — reuse as-is (INV-35).
 
-**Reuse, do not duplicate (INV-35, INV-29):** the host-only dual-clear logic
-must live on one path. Extract internal cores and rebind the existing public
-functions to them so their signatures/behavior are byte-identical (middleware
-and all current consumers untouched):
+### 2. `apps/frontend/src/auth/account-scope.tsx` (NEW) — context + provider
 
-```ts
-function setNamedSessionCookie(res, name, value, options = SESSION_COOKIE_CONFIG) {
-  if (options.domain) res.clearCookie(name, clearOptions(hostOnlyOptions(options)))
-  res.cookie(name, value, options)
-}
-function clearNamedSessionCookie(res, name, options = SESSION_COOKIE_CONFIG) {
-  res.clearCookie(name, clearOptions(options))
-  if (options.domain) res.clearCookie(name, clearOptions(hostOnlyOptions(options)))
-}
-export function setSessionCookie(res, session, options = SESSION_COOKIE_CONFIG) {
-  setNamedSessionCookie(res, SESSION_COOKIE_NAME, session, options)
-}
-export function clearSessionCookie(res, options = SESSION_COOKIE_CONFIG) {
-  clearNamedSessionCookie(res, SESSION_COOKIE_NAME, options)
-}
-```
+API: `{ activeWorkosUserId, getDb(), getQueryClient(), getStores(),
+switchAccount(targetUserId), scopedKey(suffix) }`.
 
-Add the constants (INV-33 source of truth, INV-31 derived type):
+- Reads `useAuth().user` (no eager-auth change). While `user` is
+  null/loading, renders children with a stable `"__no_account__"` key (login
+  /loading routes need no scope). Once `user.id` is known, provides the scope.
+- Per-account registries held as **provider instance state (`useRef` Maps)**,
+  not module-level (INV-9): `dbRegistry`, `qcRegistry`. `getDb(id)` lazily
+  `new ThreaDatabase("threa_" + id)`; `getQueryClient(id)` lazily
+  `makeQueryClient()` (exported from `query-client.tsx`).
+- Synchronously sets the `db` proxy's `activeDb` pointer to
+  `getDb(activeWorkosUserId)` in the provider body (idempotent registry
+  lookup) so it is correct *before* the keyed children render.
+- Renders a `<ScopedRoot key={activeWorkosUserId}>` remount boundary around
+  the per-account subtree. A switch ⇒ React unmounts the old subtree and
+  mounts a fresh one ⇒ atomic swap of db handle, QueryClient, socket,
+  SyncEngine, and all `useState`/`useRef`/`useLiveQuery` — the strongest
+  isolation guarantee (matches the acceptance bar; mirrors the spec's own
+  rejection of in-place key-prefixing).
+- `switchAccount(target)`: `POST ${API_BASE}/api/accounts/switch`
+  `{ targetUserId }` (PR-3 contract) → on `{ activeUserId }`: call
+  `resetWorkspaceStoreCache()` / `resetStreamStoreCache()` /
+  `resetDraftStoreCache()` (+ add a `resetShareHandoffStoreCache()` if
+  `share-handoff-store.ts` lacks one — small, colocated) to flush the
+  **module-level** store caches that survive a React remount, then
+  `setActiveWorkosUserId(activeUserId)` (triggers the keyed remount), then
+  `new BroadcastChannel("threa-auth").postMessage({ type:"switched",
+  activeWorkosUserId })`.
+- Cross-tab receiver (`useEffect`, `BroadcastChannel("threa-auth")`): on a
+  `switched` message for a different id → `qcRegistry.get(currentId)
+  ?.cancelQueries()` (abort in-flight on the now-stale client), reset the
+  module store caches, then `setActiveWorkosUserId(...)` → same keyed-remount
+  path. Storage isolation (distinct DB name + distinct QueryClient instance)
+  means late-resolving queries land in the orphaned client, never B's cache —
+  correctness is independent of flip timing (spec requirement).
 
-```ts
-// Module-private sizing inputs (NOT exported — internal derivation of the
-// cap; mirrors the slug.ts MAX_SLUG_LENGTH source-of-truth precedent).
-const WORST_CASE_SEALED_BYTES = 3072
-const PER_COOKIE_OVERHEAD_BYTES = 32
-const CONSERVATIVE_COOKIE_HEADER_BUDGET = 13312 // 13 KB, ~81% of ~16 KB CF per-header limit
-export const MAX_ACCOUNTS = 4   // (1 active + 3 alts)·3104 B = 12416 B ≤ 13312 B
-export const MAX_ALT_SLOTS = MAX_ACCOUNTS - 1   // always derived, never a literal
+### 3. `apps/frontend/src/contexts/query-client.tsx` — per-account client
 
-// Module-load guard = the CI enforcement: throws if the cap would overflow
-// the budget, so a successful `import("./cookies")` is itself the proof the
-// cap fits. The budget constants stay module-private; tests never re-state
-// the literals.
-if ((1 + MAX_ALT_SLOTS) * (WORST_CASE_SEALED_BYTES + PER_COOKIE_OVERHEAD_BYTES)
-    > CONSERVATIVE_COOKIE_HEADER_BUDGET) {
-  throw new Error("MAX_ACCOUNTS exceeds the conservative Cookie-header budget")
-}
-```
+- Keep + **export** `makeQueryClient()` and `handleGlobalError` (reuse).
+- Delete `queryClientSingleton` / `getQueryClient()` and the singleton
+  `QueryClientProvider`. Add `AccountQueryClientProvider` that takes the
+  client from `useAccountScope().getQueryClient()`. Verified: `getQueryClient`
+  has **no production consumers** beyond the `contexts/index.ts:1` re-export
+  and the provider itself — low churn. Update `contexts/index.ts:1`.
+- 401 redirect + its `sessionStorage` loop-guard keys stay global and
+  unchanged: only the active account's client is mounted at a time (keyed
+  remount), so the existing handler is correct as-is. Multi-client concurrent
+  401 handling is explicitly deferred to PR-5.
 
-Add the alt helpers, all routed through the env-scoped base:
+### 4. `apps/frontend/src/App.tsx` — provider tree
 
-```ts
-export function altSessionCookieName(slot: number): string {
-  assertSlot(slot)
-  return `${SESSION_COOKIE_NAME}_alt_${slot}`
-}
-export function assertSlot(slot: number): void {
-  if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_ALT_SLOTS)
-    throw new RangeError(`alt slot out of range: ${slot} (0..${MAX_ALT_SLOTS - 1})`)
-}
-export function setAltSessionCookie(res, slot, session, options = SESSION_COOKIE_CONFIG) {
-  setNamedSessionCookie(res, altSessionCookieName(slot), session, options)
-}
-export function clearAltSessionCookie(res, slot, options = SESSION_COOKIE_CONFIG) {
-  clearNamedSessionCookie(res, altSessionCookieName(slot), options)
-}
-// Parse occupied alt slots out of already-parsed cookies, env-scoped:
-// ignores the active cookie and the *other* environment's alts.
-export function readAltSessionCookies(
-  cookies: Record<string, string>
-): Array<{ slot: number; sealed: string }>
-```
+Wrap as: `AuthProvider > AccountScopeProvider > ScopedRoot
+key={activeWorkosUserId} > AccountQueryClientProvider > ServicesProvider >
+PendingMessagesProvider > TooltipProvider > RouterProvider`. AuthProvider
+stays **outside** scope (it owns the cookie-session identity that selects the
+account). QC/Services/PendingMessages/Router move **inside** the keyed
+boundary so they are per-account.
 
-`readAltSessionCookies` reuses `parseCookies` upstream (callers pass
-`req.cookies` or `parseCookies(header)`); it matches exactly
-`^${SESSION_COOKIE_NAME}_alt_(\d+)$`, so a staging process (base
-`wos_session_staging`) never reads prod `wos_session_alt_*` and vice versa,
-and the active cookie is never mistaken for slot data. Returns slots sorted
-ascending, only those present and non-empty.
+### 5. Socket reconnect + bootstrap (INV-53) — structural, no socket-layer churn
 
-`MAX_ACCOUNTS` value: ship a conservative integer whose derivation is
-documented inline (worst-case sealed-session byte size × slots + cookie
-overhead must fit the Cloudflare Workers request-header budget). Exact number +
-methodology finalized from the sealed-session sizing investigation (see
-Verification → Sizing). PR-5 may only relax it upward with measured headroom.
+`SocketProvider` + `SyncEngine` live inside `workspace-layout.tsx`, inside the
+keyed subtree. A switch remounts that subtree ⇒ old socket `.close()`, fresh
+cookie-authed socket connects (PR-3 already promoted the new active cookie),
+fresh `SyncEngine` runs its first `onConnect` → `runBootstrap` → no event gap.
+INV-53 (subscribe paired with bootstrap, invalidated on resubscribe) is
+satisfied *structurally* by the remount — no `reconnectCount` plumbing change.
 
-### 2. `index.ts` — barrel re-export
+### 6. Router seam for PR-4b (no behavior change in PR-4a)
 
-Extend the existing named re-export block (lines 105–111) with
-`MAX_ACCOUNTS`, `MAX_ALT_SLOTS`, `altSessionCookieName`, `assertSlot`,
-`setAltSessionCookie`, `clearAltSessionCookie`, `readAltSessionCookies`. Same
-style (named `export { … } from "./cookies"`). No `export *`.
+PR-4a does **not** implement cross-account deep-link resolution, but must not
+preclude it. Two seam guarantees:
 
-### 3. `auth-service.ts` / `.stub.ts` — `prompt` plumbing
+- `switchAccount(targetUserId)` is exposed on the AccountScope context so a
+  future router guard / route loader can `await` an account flip *before* the
+  workspace subtree mounts (the keyed-remount path already supports a
+  programmatic, non-UI trigger — it is identical to the cross-tab receiver
+  path).
+- The current terminal-error dead-end at `workspace-layout.tsx:240-246` (on a
+  workspace `403/404` it `navigate("/workspaces", { replace:true })`) is the
+  exact extension point PR-4b replaces. PR-4a leaves it **unchanged** (still
+  bounces) but documents it inline as the PR-4b seam so the behavior is a
+  known, intentional gap, not a silent regression.
 
-- Interface (line 43):
-  `getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { prompt?: string }): string`
-  + a one-line JSDoc on `options.prompt` ("forces AuthKit re-prompt; used by
-  the add-account flow in PR-3").
-- `WorkosAuthService` impl (168–175): spread
-  `...(options?.prompt ? { prompt: options.prompt } : {})` into the SDK call
-  object. No `as any` — `prompt` is typed by 7.82.0.
-- Stub (128–137): accept the third arg; when `options?.prompt` is set, add
-  `params.set("prompt", options.prompt)` to the returned test URL (mirrors the
-  stub's existing state/redirect_uri encoding so stub-mode tests can assert).
-- `middleware.test.ts:13` `FakeAuthService` — widen its `getAuthorizationUrl`
-  signature to match the interface (compile-only; no behavior).
-- **No production call-site change.** `handlers.ts:87` keeps calling with 2
-  args; passing `prompt:"login"` on `intent=add` is PR-3.
+### 7. localStorage re-keying (separate from the offline-first db model)
 
-### 4. Tests
+| Concern | File | New key |
+|---|---|---|
+| Sidebar state | `contexts/sidebar-context.tsx:48,171,192` | `threa-sidebar-state:${workosUserId}:${workspaceId}` |
+| Push opt-out | `hooks/use-push-notifications.ts` `pushOptOutKey` | `threa:push-opted-out:${workosUserId}:${workspaceId}` |
+| Appearance | `contexts/preferences-context.tsx:16,31` (+ `index.html:82` pre-bundle reader) | authoritative `threa-appearance:${workosUserId}` **plus** retain global `threa-appearance` as a one-frame pre-auth fallback |
 
-`packages/backend-common/src/cookies.test.ts` — add to the existing file,
-reuse `makeResponseRecorder()` and the `beforeAll` dynamic-import pattern:
-
-- `MAX_ALT_SLOTS === MAX_ACCOUNTS - 1`; `MAX_ACCOUNTS` is a positive integer.
-- Header-budget enforcement is the **module-load guard** in `cookies.ts`, not
-  a test assertion: the budget constants stay module-private, so tests never
-  duplicate the literals. A successful `import("./cookies")` in `beforeAll`
-  already proves the guard passed; the test only pins the derivation above.
-- `assertSlot`: accepts `0..MAX_ALT_SLOTS-1`; throws `RangeError` for `-1`,
-  `MAX_ALT_SLOTS`, non-integers.
-- `altSessionCookieName` env-scoping: under `SESSION_COOKIE_NAME=wos_session_test`,
-  slot 0 → `wos_session_test_alt_0`. (A second `describe` with its own
-  `beforeAll` setting `wos_session_staging` asserting `wos_session_staging_alt_0`
-  ≠ the prod-style name — proves no collision.)
-- `setAltSessionCookie`/`clearAltSessionCookie` reproduce the exact host-only
-  dual-clear `calls[]` shape the existing active-cookie tests assert, but under
-  the alt name (whole-object `toEqual`, INV-24).
-- `readAltSessionCookies`: given a jar mixing active cookie, two occupied alt
-  slots, the *other environment's* alt cookie, and noise → returns only this
-  env's occupied slots, sorted, `{slot,sealed}` shape; ignores the active
-  cookie.
-
-`auth-service.stub.test.ts` (new, small, mirrors stub conventions) — or extend
-an existing stub test if the sizing investigation finds one:
-
-- `getAuthorizationUrl(to, uri)` → no `prompt` in URL.
-- `getAuthorizationUrl(to, uri, { prompt: "login" })` → `prompt=login` present.
+Sidebar/push hooks are inside the scoped subtree → take `workosUserId` from
+`useAccountScope()`. Appearance: the render-blocking inline script at
+`index.html:82` runs before any account is known, so it cannot be
+account-keyed; `preferences-context` writes both the scoped (authoritative)
+key and the global fallback, reads the scoped key — the only cross-account
+sharing is a single pre-auth frame of the prior theme, which `preferences-
+context` immediately corrects on mount.
 
 ## Critical files
 
 | File | Change |
 |---|---|
-| `packages/backend-common/src/cookies.ts` | extract `setNamedSessionCookie`/`clearNamedSessionCookie`; add `MAX_ACCOUNTS`, `MAX_ALT_SLOTS`, `altSessionCookieName`, `assertSlot`, `setAltSessionCookie`, `clearAltSessionCookie`, `readAltSessionCookies` |
-| `packages/backend-common/src/index.ts` | re-export the 7 new symbols (lines 105–111 block) |
-| `packages/backend-common/src/auth/auth-service.ts` | `options?: { prompt?: string }` on interface (43) + impl (168–175) |
-| `packages/backend-common/src/auth/auth-service.stub.ts` | mirror signature; encode `prompt` into stub URL (128–137) |
-| `packages/backend-common/src/auth/middleware.test.ts` | widen `FakeAuthService.getAuthorizationUrl` signature (13) |
-| `packages/backend-common/src/cookies.test.ts` | add alt-cookie + env-scoping + constants tests |
-| `packages/backend-common/src/auth/auth-service.stub.test.ts` | new: `prompt` plumbing tests |
+| `apps/frontend/src/db/database.ts` (+ `db/index.ts`) | `ThreaDatabase(name)`; replace `db` singleton with scope-bound proxy + default `"threa"` pre-auth handle; export `ThreaDatabase` |
+| `apps/frontend/src/auth/account-scope.tsx` | **NEW** — context, per-account `getDb/getQueryClient/getStores`, `switchAccount`, keyed `ScopedRoot`, `threa-auth` BroadcastChannel |
+| `apps/frontend/src/contexts/query-client.tsx` (+ `contexts/index.ts`) | export `makeQueryClient`; delete singleton; add `AccountQueryClientProvider` |
+| `apps/frontend/src/App.tsx` | insert `AccountScopeProvider` + keyed `ScopedRoot`; move QC/Services/PendingMessages/Router inside |
+| `apps/frontend/src/pages/workspace-layout.tsx` | pass `workosUserId` into sidebar/push keys; relies on remount for socket+bootstrap |
+| `apps/frontend/src/contexts/sidebar-context.tsx`, `contexts/preferences-context.tsx`, `hooks/use-push-notifications.ts` | localStorage re-keying |
+| `apps/frontend/src/stores/share-handoff-store.ts` | add `resetShareHandoffStoreCache()` if absent (reuse pattern from `workspace-store.ts:98`) |
+| `apps/frontend/src/test/setup.ts` | add in-memory `BroadcastChannel` shim (jsdom lacks it) |
+| `apps/frontend/src/auth/account-scope.test.tsx` | **NEW** — headline isolation + cross-tab test |
+| `apps/frontend/src/db/database.test.ts` | update for `ThreaDatabase(name)` (currently constructs the singleton) |
+
+**Untouched on purpose (sibling offline-first PR safety):** `index.html`
+eager-auth block, `auth/context.tsx` auth fetch, `main.tsx`,
+`lib/markdown/collapse-cache.ts`, and the ~30 `import { db } from "@/db"`
+consumer modules — all keep working unchanged via the proxy.
 
 ## Verification
 
-**Unit:** `bun run test` filtered to `packages/backend-common` (cookies +
-auth-service stub). All new tests green; existing cookies/middleware tests
-still green (proves the core extraction is behavior-preserving).
+**First step:** `git fetch origin && git checkout -b
+claude/review-multi-account-auth-4eC4g origin/main` (branch fresh off updated
+`origin/main`, post-PR-3 #538 — current HEAD `44362916`). Develop and push
+only to `claude/review-multi-account-auth-4eC4g`.
 
-**Typecheck:** `bun run --cwd packages/backend-common typecheck` and the
-control-plane typecheck (confirms the interface change is source-compatible at
-`handlers.ts:87` with no edit there).
+**Headline test** (`apps/frontend/src/auth/account-scope.test.tsx`, real
+components mounted — INV-39; `vi.spyOn`/`spyOnExport`, not `vi.mock` —
+INV-48; `fake-indexeddb/auto` already global via `test/setup.ts:1`):
 
-**No-behavior-change proof:** `git grep` shows zero new imports of the alt
-helpers in `apps/*` (PR-1 has no callers); `middleware.ts` diff is empty.
+1. Stub `fetch`: `/api/auth/me` → account A `{id:"workos_A",…}`;
+   `POST /api/accounts/switch {targetUserId:"workos_B"}` →
+   `{activeUserId:"workos_B"}` and flip `/api/auth/me` to B (mirrors the
+   `auth/context.test.tsx` fetch-stub pattern).
+2. Mount real `App`; seed A's layers: `getDb()` row, `getQueryClient()
+   .setQueryData(...)`, `getStores().seedWorkspaceCache(...)`.
+3. `switchAccount("workos_B")` via a probe; assert `window.location.reload`
+   and `window.location.href` were **never** assigned (no reload).
+4. Assert zero cross-account reads, three layers: B's `getDb()` →
+   `workspaces.count() === 0` while `threa_workos_A` still holds A's row
+   (isolation, not deletion; assert two DB names via
+   `indexedDB.databases()`); B's QueryClient `getQueryData` for A's key →
+   `undefined`; B's `getStores().hasSeededWorkspaceCache(A) === false`.
+5. Cross-tab: with the `BroadcastChannel` shim, mount two
+   `AccountScopeProvider` trees sharing the in-memory channel + the
+   process-shared fake-indexeddb backing; switch in tree 1 → assert tree 2
+   flipped to B, serves zero A data at all three layers, and tree 1's old
+   client had `cancelQueries()` called.
 
-**Sizing (set `MAX_ACCOUNTS`) — resolved approach:**
+**Commands:** `bun run --cwd apps/frontend test` (incl. new + updated tests
+all green) and `bun run --cwd apps/frontend typecheck` (the `ThreaDatabase`
+name param + provider tree must be type-clean).
 
-Facts: a real WorkOS sealed session is produced only by
-`workos.userManagement.authenticateWithCode({ session:{ sealSession:true,
-cookiePassword } })` (Iron-encrypted; needs live WorkOS creds — `auth-service.ts:133`).
-Cloudflare Workers limit ≈ 32 KB total request headers, ≈ 16 KB per single
-header; the browser concatenates **all** cookies for the origin into one
-`Cookie:` request header, so that combined header is the binding constraint.
-No header-limit constant exists in `apps/workspace-router`.
+## Risks / accepted trade-offs
 
-To keep PR-1 a risk-free pure addition (no live WorkOS dependency in CI), split
-"measurement-backed" into two parts:
+- **R1 — Scope-proxy `activeDb` pointer is module-level.** Mitigated:
+  single-owner (AccountScope), set synchronously before the keyed subtree
+  mounts; documented inline. Deliberate trade vs. a 30-file rewrite that
+  would conflict with the in-flight offline-first PR.
+- **R2 — Switch = full keyed-subtree remount**, not a same-socket
+  re-handshake. Strongest isolation; a brief UI flash on switch is acceptable
+  for infra-only PR-4a (PR-5 owns switch UX).
+- **R3 — `threa-appearance` one pre-auth frame** may show the prior account's
+  theme before `preferences-context` corrects it (inline script can't be
+  account-keyed). Authoritative store is fully per-account.
+- **R4 — Cross-account collapse-cache warm-up** lands in the default `"threa"`
+  db pre-auth; reads switch to `threa_<id>` after activation. Message IDs are
+  distinct ULIDs so no meaningful bleed; cache self-heals (already tolerated).
+- **R5 — BroadcastChannel jsdom shim** is a required `test/setup.ts` addition;
+  fake-indexeddb is process-shared so the two-tab test shares one IDB backing
+  — realistic for the cross-tab assertion.
+- **R6 — Logout cache teardown** clears only the active account's db (via the
+  existing `clearAllCachedData` against the proxy). Deleting *all* per-account
+  DBs on logout is deferred to PR-5 (logout-all).
 
-1. **Documented worst-case constants + a module-load guard (in PR-1, in CI).**
-   In `cookies.ts`, alongside `MAX_ACCOUNTS`, add module-private documented
-   constants: `WORST_CASE_SEALED_BYTES` (conservative upper bound for a WorkOS
-   sealed session — sealed access-JWT + refresh token + user, Iron base64
-   expansion; ~3 KB), `PER_COOKIE_OVERHEAD_BYTES` (name incl. longest env
-   prefix `wos_session_staging_alt_<n>` + `=` + `; ` ≈ 32 B), and
-   `CONSERVATIVE_COOKIE_HEADER_BUDGET` (defensive slice of the single `Cookie:`
-   header reserved for session cookies, well under the ~16 KB per-header limit
-   with room for non-session cookies — **13 KB / 13312 B**). Enforcement is a
-   **module-load guard** that throws when
-   `(1 + MAX_ALT_SLOTS) * (WORST_CASE_SEALED_BYTES + PER_COOKIE_OVERHEAD_BYTES)
-   > CONSERVATIVE_COOKIE_HEADER_BUDGET`; the constants stay private and no test
-   re-states the budget literals — a successful import is the CI proof. With
-   these numbers the cap is a conservative **`MAX_ACCOUNTS = 4`** (1 active + 3
-   alts · 3104 B = 12416 B ≤ 13312 B; the next bump, `MAX_ACCOUNTS = 5` →
-   15520 B, trips the guard). `MAX_ACCOUNTS` is an **intentional literal** whose
-   value is justified by — not computed from — these documented inputs and is
-   bounds-checked by the guard; `MAX_ALT_SLOTS` is the **derived** one
-   (`MAX_ACCOUNTS - 1`, INV-31). INV-33: the documented inputs are the source
-   of truth, mirroring the `slug.ts` `MAX_SLUG_LENGTH` precedent.
+## Follow-up: PR-4b — cross-account entry resolver (separate slice)
 
-2. **One-off empirical confirmation (pre-merge manual step, recorded — NOT in
-   CI).** Before merge, run `authenticateWithCode` once against the staging
-   WorkOS environment, log `Buffer.byteLength(sealedSession,"utf8")`, and
-   record the observed size in the PR description and the `cookies.ts` inline
-   comment. If the observed size exceeds `WORST_CASE_SEALED_BYTES`, lower
-   `MAX_ACCOUNTS` (re-run the static test). PR-5 relaxes the cap upward only
-   with a fresh measurement showing headroom.
+A new slice between PR-4a and `{PR-5 ‖ PR-6}`, owning the **cold-entry**
+resolve→flip→route primitive (a shared link / bookmark to a workspace owned by
+a *parked* account must work, not bounce to `/workspaces`). This is the same
+primitive PR-6's notification-click needs, so PR-6 becomes a trivial caller.
 
-This honors the split plan ("PR-1 owns the measurement-backed conservative
-default; PR-5 relaxes upward") while keeping PR-1's test suite hermetic.
+- **Backend (control-plane):** `GET /api/accounts/resolve?workspaceId=…` →
+  `{ ownerUserId }` or `404`. Reuses `AccountsService.resolveAlts` (active +
+  alt sealed sessions, exactly like `/api/accounts` via
+  `readAltSessionCookies`) to enumerate this browser's accounts, then checks
+  workspace membership per account via the existing
+  `workspace.confirmMembership` path (`/internal/workspaces/:id/members/:uid`
+  is already wired). Zod-validated query (INV-55), `HttpError` semantics
+  (INV-32), `auth`+`authLimit` like the other `/api/accounts/*` routes.
+- **Frontend:** a route guard replacing the `workspace-layout.tsx:240-246`
+  bounce — on a workspace `403/404`, call the resolver; if a parked account
+  owns it, `switchAccount(ownerUserId)` (PR-4a) and keep the original deep
+  link (no reload); only fall back to `/workspaces` when no account owns it.
+- **Reuse:** PR-4a `switchAccount` + keyed remount; PR-3 `AccountsService`
+  /`resolveAlts`; existing `confirmMembership`. **Consumed by** PR-5
+  (switcher) and PR-6 (notification-click resolves via the same endpoint).
+- **Verification:** while account A is active, open a link to a workspace
+  owned by parked account B → app flips to B and lands on the deep link, no
+  reload, no A-data flash; a link to a workspace no account owns still
+  bounces to `/workspaces`.
 
 ## Out of scope (later slices)
 
-`/api/accounts` endpoints, park/coalesce/switch logic, `intent=add` callback
-wiring, logout-clears-alts (PR-3); frontend AccountScope (PR-4a); switcher UX
-and the cap *relaxation* (PR-5); push (PR-6); backoffice cookie rename (PR-2).
+Cold-deep-link / notification-click resolver + router guard (**PR-4b**, above);
+switcher UI, `intent=add` "Add account" entry point, account list rendering,
+the `MAX_ACCOUNTS` cap *relaxation* (PR-5); cross-account push +
+notification-click switch (PR-6); backoffice cookie rename (PR-2).

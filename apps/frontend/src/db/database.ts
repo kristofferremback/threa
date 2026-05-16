@@ -468,7 +468,7 @@ export interface CachedWorkspaceMetadata {
 }
 
 // Database class with typed tables
-class ThreaDatabase extends Dexie {
+export class ThreaDatabase extends Dexie {
   workspaces!: EntityTable<CachedWorkspace, "id">
   workspaceUsers!: EntityTable<CachedWorkspaceUser, "id">
   streams!: EntityTable<CachedStream, "id">
@@ -491,8 +491,8 @@ class ThreaDatabase extends Dexie {
   savedMessages!: EntityTable<CachedSavedMessage, "id">
   scheduledMessages!: EntityTable<CachedScheduledMessage, "id">
 
-  constructor() {
-    super("threa")
+  constructor(name: string) {
+    super(name)
 
     this.version(1).stores({
       workspaces: "id, slug, _cachedAt",
@@ -747,8 +747,37 @@ class ThreaDatabase extends Dexie {
   }
 }
 
-// Single database instance
-export const db = new ThreaDatabase()
+// The active account's database. AccountScope owns this pointer and is its
+// only writer (see auth/account-scope.tsx). It is a deliberate, single-owner
+// scope bridge — NOT hidden mutable state (INV-9): every `import { db }`
+// consumer reads through the proxy below, so swapping the active account is a
+// single synchronous pointer move done before the keyed subtree mounts,
+// avoiding a ~30-file importer rewrite. Defaults to the "threa" handle so the
+// pre-React collapse-cache hydration in main.tsx (and login/loading routes,
+// which have no account yet) keep working unchanged.
+let activeDb: ThreaDatabase = new ThreaDatabase("threa")
+
+/** AccountScope-only: point the shared `db` proxy at an account's instance. */
+export function setActiveDb(instance: ThreaDatabase): void {
+  activeDb = instance
+}
+
+// Shared handle every feature imports as `import { db } from "@/db"`. Every
+// access resolves against the *current* active instance, so an account switch
+// (a `setActiveDb` call + keyed remount) atomically redirects all reads/writes
+// with zero churn in consumer modules.
+export const db: ThreaDatabase = new Proxy(Object.create(null) as ThreaDatabase, {
+  get(_t, prop) {
+    const value = Reflect.get(activeDb, prop, activeDb)
+    return typeof value === "function" ? value.bind(activeDb) : value
+  },
+  set(_t, prop, value) {
+    return Reflect.set(activeDb, prop, value, activeDb)
+  },
+  has(_t, prop) {
+    return Reflect.has(activeDb, prop)
+  },
+})
 
 // Helper to clear all cached data (useful for logout)
 export async function clearAllCachedData(): Promise<void> {

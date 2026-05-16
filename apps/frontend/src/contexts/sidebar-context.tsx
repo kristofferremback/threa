@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from "react"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useAccountScopeOptional } from "@/auth/account-scope"
 
 /**
  * Sidebar states:
@@ -166,9 +167,9 @@ function readSectionStates(
   return Object.keys(next).length > 0 ? next : DEFAULT_PERSISTED_STATE.sectionStates
 }
 
-function getStoredState(): SidebarPersistedState {
+function getStoredState(key: string): SidebarPersistedState {
   try {
-    const stored = localStorage.getItem(SIDEBAR_STATE_KEY)
+    const stored = localStorage.getItem(key)
     if (stored) {
       const parsed = JSON.parse(stored) as Partial<SidebarPersistedState> & LegacyPersistedShape
       return {
@@ -187,17 +188,25 @@ function getStoredState(): SidebarPersistedState {
   return DEFAULT_PERSISTED_STATE
 }
 
-function storeState(state: SidebarPersistedState): void {
+function storeState(key: string, state: SidebarPersistedState): void {
   try {
-    localStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify(state))
+    localStorage.setItem(key, JSON.stringify(state))
   } catch {
     // localStorage not available
   }
 }
 
 export function SidebarProvider({ children }: SidebarProviderProps) {
+  // Account-scoped storage key so each logged-in account keeps its own sidebar
+  // layout. Falls back to the un-namespaced key pre-auth and in isolated unit
+  // tests (no AccountScopeProvider), preserving prior behavior there.
+  const accountScope = useAccountScopeOptional()
+  const storageKey = accountScope?.activeWorkosUserId
+    ? `${SIDEBAR_STATE_KEY}:${accountScope.activeWorkosUserId}`
+    : SIDEBAR_STATE_KEY
+
   // Load persisted state on mount
-  const [persistedState, setPersistedState] = useState<SidebarPersistedState>(getStoredState)
+  const [persistedState, setPersistedState] = useState<SidebarPersistedState>(() => getStoredState(storageKey))
 
   // Runtime state (preview is transient, not persisted)
   const isMobile = useIsMobile()
@@ -215,13 +224,16 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   const menuOpenCountRef = useRef(0)
 
   // Persist state changes
-  const updatePersistedState = useCallback((updates: Partial<SidebarPersistedState>) => {
-    setPersistedState((current) => {
-      const next = { ...current, ...updates }
-      storeState(next)
-      return next
-    })
-  }, [])
+  const updatePersistedState = useCallback(
+    (updates: Partial<SidebarPersistedState>) => {
+      setPersistedState((current) => {
+        const next = { ...current, ...updates }
+        storeState(storageKey, next)
+        return next
+      })
+    },
+    [storageKey]
+  )
 
   // Auto-collapse when transitioning to mobile
   useEffect(() => {
@@ -388,32 +400,38 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     [persistedState.sectionStates]
   )
 
-  const toggleSectionState = useCallback((section: string, defaultState: CollapseState = "open") => {
-    setPersistedState((current) => {
-      const fromState = current.sectionStates[section] ?? defaultState
-      const next = {
-        ...current,
-        sectionStates: {
-          ...current.sectionStates,
-          [section]: fromState === "open" ? "collapsed" : "open",
-        } satisfies Record<string, CollapseState>,
-      }
-      storeState(next)
-      return next
-    })
-  }, [])
+  const toggleSectionState = useCallback(
+    (section: string, defaultState: CollapseState = "open") => {
+      setPersistedState((current) => {
+        const fromState = current.sectionStates[section] ?? defaultState
+        const next = {
+          ...current,
+          sectionStates: {
+            ...current.sectionStates,
+            [section]: fromState === "open" ? "collapsed" : "open",
+          } satisfies Record<string, CollapseState>,
+        }
+        storeState(storageKey, next)
+        return next
+      })
+    },
+    [storageKey]
+  )
 
-  const setSectionState = useCallback((section: string, state: CollapseState) => {
-    setPersistedState((current) => {
-      if (current.sectionStates[section] === state) return current
-      const next = {
-        ...current,
-        sectionStates: { ...current.sectionStates, [section]: state },
-      }
-      storeState(next)
-      return next
-    })
-  }, [])
+  const setSectionState = useCallback(
+    (section: string, state: CollapseState) => {
+      setPersistedState((current) => {
+        if (current.sectionStates[section] === state) return current
+        const next = {
+          ...current,
+          sectionStates: { ...current.sectionStates, [section]: state },
+        }
+        storeState(storageKey, next)
+        return next
+      })
+    },
+    [storageKey]
+  )
 
   // Urgency block registration for position-matched strip with fade transitions
   const setUrgencyBlock = useCallback((streamId: string, block: Omit<UrgencyBlock, "opacity"> | null) => {
