@@ -2,18 +2,16 @@ import type { Request, Response } from "express"
 import { z } from "zod/v4"
 import {
   HttpError,
-  MAX_ALT_SLOTS,
   SESSION_COOKIE_NAME,
   clearAltSessionCookie,
   clearSessionCookie,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
   readAltSessionCookies,
-  setAltSessionCookie,
   setSessionCookie,
-  type AuthResult,
   type AuthService,
 } from "@threa/backend-common"
+import type { AccountsService } from "../accounts"
 
 const callbackSchema = z.object({
   code: z.string().min(1),
@@ -40,6 +38,8 @@ function isAllowedForwardedHost(host: string, allowedDomain: string): boolean {
 
 interface Dependencies {
   authService: AuthService
+  /** Owns the park/coalesce cookie-mutation sequence for the add-account flow. */
+  accountsService: AccountsService
   /** Base URL of the frontend app (e.g. "https://threa-staging.pages.dev"). Empty string for same-origin. */
   frontendUrl: string
   /** Allowed staging domain for forwarded-host redirects (e.g. "staging.threa.io") */
@@ -80,86 +80,9 @@ function parseCallbackState(state: string | undefined): { isAdd: boolean; innerS
   return { isAdd: false, innerState: state }
 }
 
-/**
- * Add-account: park the current active session into a free alt slot and make
- * the newly authenticated session active. Idempotently re-resolves the cookie
- * jar each call (no server-side account state) and coalesces duplicates of the
- * same WorkOS user. Returns `MAX_ACCOUNTS_REACHED` instead of throwing when
- * every slot is taken by a distinct account, so the OAuth callback can 302
- * gracefully rather than render an error page mid-flight.
- */
-async function parkActiveAndSetNew(
-  authService: AuthService,
-  req: Request,
-  res: Response,
-  result: AuthResult
-): Promise<{ ok: true } | { ok: false; code: "MAX_ACCOUNTS_REACHED" }> {
-  const newSealed = result.sealedSession as string
-  const newUserId = result.user!.id
-  const prevActiveSealed = req.cookies[SESSION_COOKIE_NAME] as string | undefined
-
-  // No prior session — treat as a normal first login (no slot consumed).
-  if (!prevActiveSealed) {
-    setSessionCookie(res, newSealed)
-    return { ok: true }
-  }
-
-  const prevAuth = await authService.authenticateSession(prevActiveSealed)
-  // Prev cookie no longer valid: nothing worth parking, just replace it.
-  if (!prevAuth.success || !prevAuth.user) {
-    setSessionCookie(res, newSealed)
-    return { ok: true }
-  }
-
-  // Re-auth of the same account: refresh in place, no new slot.
-  if (prevAuth.user.id === newUserId) {
-    setSessionCookie(res, newSealed)
-    return { ok: true }
-  }
-
-  const alts = readAltSessionCookies(req.cookies)
-  const altAuths = await Promise.all(alts.map((a) => authService.authenticateSession(a.sealed)))
-  const validAlts = alts
-    .map((a, i) => ({ slot: a.slot, sealed: a.sealed, auth: altAuths[i] }))
-    .filter((a) => a.auth.success && a.auth.user)
-
-  // The new account is already parked: promote it, park the previous active
-  // into the slot it vacated, and clear any duplicate slots of the new user.
-  const existing = validAlts.find((a) => a.auth.user!.id === newUserId)
-  if (existing) {
-    setSessionCookie(res, newSealed)
-    setAltSessionCookie(res, existing.slot, prevActiveSealed)
-    for (const a of validAlts) {
-      if (a.slot !== existing.slot && a.auth.user!.id === newUserId) {
-        clearAltSessionCookie(res, a.slot)
-      }
-    }
-    return { ok: true }
-  }
-
-  // Lowest free slot. A slot whose cookie failed validation is reclaimable
-  // (not "occupied"), self-healing corrupt/expired alts.
-  const occupied = new Set(validAlts.map((a) => a.slot))
-  let freeSlot = -1
-  for (let s = 0; s < MAX_ALT_SLOTS; s++) {
-    if (!occupied.has(s)) {
-      freeSlot = s
-      break
-    }
-  }
-  if (freeSlot === -1) {
-    // Every slot holds a distinct valid account — adding would exceed
-    // MAX_ACCOUNTS. Refuse gracefully; the prev-active cookie is untouched.
-    return { ok: false, code: "MAX_ACCOUNTS_REACHED" }
-  }
-
-  setAltSessionCookie(res, freeSlot, prevActiveSealed)
-  setSessionCookie(res, newSealed)
-  return { ok: true }
-}
-
 export function createControlPlaneAuthHandlers({
   authService,
+  accountsService,
   frontendUrl,
   allowedRedirectDomain,
   dedicatedRedirectHosts,
@@ -238,7 +161,13 @@ export function createControlPlaneAuthHandlers({
       }
 
       if (isAdd) {
-        const parked = await parkActiveAndSetNew(authService, req, res, result)
+        const parked = await accountsService.addAndParkActive(
+          res,
+          req.cookies,
+          req.cookies[SESSION_COOKIE_NAME] as string | undefined,
+          result.sealedSession,
+          result.user.id
+        )
         if (!parked.ok) {
           // No throw mid-OAuth-callback: the user keeps their existing session
           // and the frontend surfaces the refusal from the query param.

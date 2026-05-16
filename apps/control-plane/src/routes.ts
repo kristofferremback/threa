@@ -68,8 +68,10 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   })
   const authLimit = createRateLimit({ name: "cp-auth", windowMs: 60_000, max: deps.rateLimits.authMax, key: ipKey })
 
+  const accountsService = new AccountsService({ authService })
   const authHandlers = createControlPlaneAuthHandlers({
     authService,
+    accountsService,
     frontendUrl: deps.frontendUrl,
     allowedRedirectDomain: deps.allowedRedirectDomain,
     dedicatedRedirectHosts: deps.workosDedicatedRedirectHosts,
@@ -80,7 +82,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const backoffice = createBackofficeHandlers({ backofficeService })
   const backofficeAuthz = createBackofficeAuthzAdminHandlers({ pool, adminService: workosAuthzAdminService })
   const internalAuthz = createInternalAuthzAdminHandlers({ pool, adminService: workosAuthzAdminService })
-  const accountsService = new AccountsService({ authService })
   const accounts = createAccountsHandlers({ accountsService })
 
   // Readiness probe

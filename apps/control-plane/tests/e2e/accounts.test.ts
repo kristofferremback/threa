@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test"
+import { MAX_ACCOUNTS } from "@threa/backend-common"
 import { TestClient, loginAs } from "../client"
 
 // The shared test server runs one StubAuthService for the whole suite, so its
@@ -56,7 +57,7 @@ describe("Multi-account /api/accounts", () => {
     expect(res.status).toBe(200)
     expect(res.data).toEqual({
       accounts: [{ id: a.id, email, name: "Single A", state: "active" }],
-      maxAccounts: 4,
+      maxAccounts: MAX_ACCOUNTS,
     })
   })
 
@@ -92,7 +93,7 @@ describe("Multi-account /api/accounts", () => {
         { id: b.id, email: bEmail, name: "Park B", state: "active" },
         { id: a.id, email: aEmail, name: "Park A", state: "parked" },
       ],
-      maxAccounts: 4,
+      maxAccounts: MAX_ACCOUNTS,
     })
   })
 
@@ -118,7 +119,7 @@ describe("Multi-account /api/accounts", () => {
         { id: a.id, email: aEmail, name: "Switch A", state: "active" },
         { id: b.id, email: bEmail, name: "Switch B", state: "parked" },
       ],
-      maxAccounts: 4,
+      maxAccounts: MAX_ACCOUNTS,
     })
 
     const already = await client.post("/api/accounts/switch", { targetUserId: a.id })
@@ -145,7 +146,7 @@ describe("Multi-account /api/accounts", () => {
         { id: a.id, email: aEmail, name: "Coalesce A", state: "active" },
         { id: b.id, email: bEmail, name: "Coalesce B", state: "parked" },
       ],
-      maxAccounts: 4,
+      maxAccounts: MAX_ACCOUNTS,
     })
   })
 
@@ -200,7 +201,7 @@ describe("Multi-account /api/accounts", () => {
     const res = await client.get<AccountsResponse>("/api/accounts")
     expect(res.data).toEqual({
       accounts: [{ id: a.id, email: aEmail, name: "Remove A", state: "active" }],
-      maxAccounts: 4,
+      maxAccounts: MAX_ACCOUNTS,
     })
   })
 
@@ -227,7 +228,7 @@ describe("Multi-account /api/accounts", () => {
     const res = await client.get<AccountsResponse>("/api/accounts")
     expect(res.data).toEqual({
       accounts: [{ id: a.id, email: aEmail, name: "RmActive A", state: "active" }],
-      maxAccounts: 4,
+      maxAccounts: MAX_ACCOUNTS,
     })
   })
 
