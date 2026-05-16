@@ -46,7 +46,7 @@ The process/plugin/API bridge that turns a Threa invocation into work performed 
 The adapter-owned mapping from a Threa conversation surface to a runtime session:
 
 ```text
-workspaceId + botId/personaId + rootStreamId + activeStreamId → runtimeSessionId
+workspaceId + rootStreamId + activeStreamId + actor.id → runtimeSessionId
 ```
 
 For a top-level scratchpad, `rootStreamId` and `activeStreamId` are the same. For a thread under that scratchpad, `rootStreamId` stays the scratchpad and `activeStreamId` is the thread. This mirrors Ariadne's current behavior: the scratchpad's companion is inherited into scratchpad-rooted threads, but the response lands in the current thread.
@@ -185,7 +185,7 @@ Adapter responsibilities:
 
 - discover supported bot/runtime identities,
 - claim invocations atomically so multiple local processes do not race,
-- map `rootStreamId + activeStreamId + actor.id` to a runtime session,
+- map `workspaceId + rootStreamId + activeStreamId + actor.id` to a runtime session,
 - fetch/receive the context it is allowed to see,
 - run the provider-specific agent loop,
 - post progress and final messages back to `responseStreamId`,
