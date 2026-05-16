@@ -68,7 +68,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   })
   const authLimit = createRateLimit({ name: "cp-auth", windowMs: 60_000, max: deps.rateLimits.authMax, key: ipKey })
 
-  const accountsService = new AccountsService({ authService })
+  const accountsService = new AccountsService({ authService, membership: workspaceService })
   const authHandlers = createControlPlaneAuthHandlers({
     authService,
     accountsService,
@@ -113,10 +113,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/integrations/github/callback", auth, integrations.githubCallback)
   app.get("/api/integrations/linear/callback", auth, integrations.linearCallback)
 
-  // Multi-account: list/switch/remove run *after* the existing `auth`
+  // Multi-account: list/resolve/switch/remove run *after* the existing `auth`
   // middleware, which validates only the single active session cookie. Parked
   // alt slots are storage-only and read solely by these handlers.
   app.get("/api/accounts", auth, authLimit, accounts.list)
+  app.get("/api/accounts/resolve", auth, authLimit, accounts.resolve)
   app.post("/api/accounts/switch", auth, authLimit, accounts.switch)
   app.post("/api/accounts/remove", auth, authLimit, accounts.remove)
 

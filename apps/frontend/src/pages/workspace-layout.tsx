@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react"
-import { Outlet, useParams, useNavigate, useSearchParams, useMatch, Navigate } from "react-router-dom"
+import { Outlet, useParams, useSearchParams, useMatch, Navigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Toaster } from "@/components/ui/sonner"
@@ -52,12 +52,11 @@ import {
   useBackgroundBootstrapSync,
 } from "@/hooks"
 import { usePageResume } from "@/hooks/use-page-resume"
-import { clearLastWorkspaceId, getLastWorkspaceId, setLastWorkspaceId } from "@/lib/last-workspace"
+import { setLastWorkspaceId } from "@/lib/last-workspace"
 import { useAuth } from "@/auth"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { SyncEngine, SyncEngineContext } from "@/sync/sync-engine"
 import { messagesApi } from "@/api"
-import { useSyncStatus } from "@/sync/sync-status"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
 import { WorkspaceSettingsDialog } from "@/components/workspace-settings/workspace-settings-dialog"
@@ -66,8 +65,8 @@ import { CreateChannelDialog } from "@/components/create-channel"
 import { AttachmentExplorer, useExplorerUrlState } from "@/components/attachment-explorer"
 import { TraceDialog } from "@/components/trace"
 import { useQueryClient } from "@tanstack/react-query"
-import { ApiError } from "@/api/client"
 import { SyncStatusStore, SyncStatusContext } from "@/sync/sync-status"
+import { useResolveOrBounce } from "./use-resolve-or-bounce"
 
 interface WorkspaceKeyboardHandlerProps {
   onOpenSwitcher: (mode: QuickSwitcherMode) => void
@@ -235,23 +234,9 @@ function WorkspaceSyncHandler({
   // engine before the socket connect effect re-runs. The engine is destroyed
   // on workspace change (line above) and on page unload (browser handles it).
 
-  // Redirect on terminal workspace errors (404/403)
-  const navigate = useNavigate()
-  const workspaceSyncStatus = useSyncStatus(`workspace:${workspaceId}`)
-  useEffect(() => {
-    if (workspaceSyncStatus !== "error") return
-    const err = syncEngine.lastWorkspaceError
-    if (err && ApiError.isApiError(err) && (err.status === 404 || err.status === 403)) {
-      // This workspace is terminally inaccessible for this user (removed /
-      // deleted). Stop pinning it as the "last workspace" or the `/` entry
-      // route would bounce back through this failing bootstrap on every cold
-      // launch. Guarded so a concurrently-set id isn't clobbered.
-      if (getLastWorkspaceId() === workspaceId) {
-        clearLastWorkspaceId()
-      }
-      navigate("/workspaces", { replace: true })
-    }
-  }, [workspaceSyncStatus, syncEngine, navigate, workspaceId])
+  // Terminal workspace error (404/403): a different signed-in account may own
+  // this deep link — resolve→flip in place, else bounce to the list.
+  useResolveOrBounce(workspaceId, syncEngine)
 
   return <SyncEngineContext.Provider value={syncEngine}>{children}</SyncEngineContext.Provider>
 }

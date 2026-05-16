@@ -1,6 +1,26 @@
 import { describe, test, expect } from "bun:test"
+import { Pool } from "pg"
 import { MAX_ACCOUNTS } from "@threa/backend-common"
-import { TestClient, loginAs } from "../client"
+import { TestClient, loginAs, createWorkspace } from "../client"
+
+const TEST_DB_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_control_plane_test"
+
+// Add an extra member to a workspace directly. The control plane has no public
+// "add arbitrary member" route (membership is created by workspace creation /
+// invitation accept), so the multi-member resolve cases seed the source-of-
+// truth table the same way the harness itself opens a short-lived pool.
+async function addMembership(workspaceId: string, workosUserId: string): Promise<void> {
+  const pool = new Pool({ connectionString: TEST_DB_URL })
+  try {
+    await pool.query(
+      `INSERT INTO workspace_memberships (workspace_id, workos_user_id)
+       VALUES ($1, $2) ON CONFLICT (workspace_id, workos_user_id) DO NOTHING`,
+      [workspaceId, workosUserId]
+    )
+  } finally {
+    await pool.end()
+  }
+}
 
 // The shared test server runs one StubAuthService for the whole suite, so its
 // user map and revoked-session set persist across tests. Every account uses a
@@ -255,5 +275,125 @@ describe("Multi-account /api/accounts", () => {
     expect((await client.get("/api/accounts")).status).toBe(401)
     expect((await client.post("/api/accounts/switch", { targetUserId: "x" })).status).toBe(401)
     expect((await client.post("/api/accounts/remove", { targetUserId: "x" })).status).toBe(401)
+  })
+})
+
+describe("Cross-account /api/accounts/resolve", () => {
+  test("identity form: userId = active account resolves to itself", async () => {
+    const client = new TestClient()
+    const a = await loginAs(client, uniqueEmail("res-id-active"), "ResIdActive")
+    const ws = await createWorkspace(client, "ResIdActive WS")
+
+    const r = await client.get<{ ownerUserId: string }>(`/api/accounts/resolve?userId=${a.id}&workspaceId=${ws.id}`)
+    expect(r.status).toBe(200)
+    expect(r.data).toEqual({ ownerUserId: a.id })
+  })
+
+  test("identity form: userId = parked alt resolves to that exact account, not active", async () => {
+    const client = new TestClient()
+    const a = await loginAs(client, uniqueEmail("res-parked-a"), "ResParkedA")
+    const { user: b } = await addAccount(client, uniqueEmail("res-parked-b"), "ResParkedB")
+
+    // B is active, A is parked. Asking for A by id must resolve to A.
+    const r = await client.get<{ ownerUserId: string }>(`/api/accounts/resolve?userId=${a.id}`)
+    expect(r.status).toBe(200)
+    expect(r.data).toEqual({ ownerUserId: a.id })
+    expect(r.data.ownerUserId).not.toBe(b.id)
+  })
+
+  test("identity form never substitutes a workspace-readable but not-signed-in account", async () => {
+    const client = new TestClient()
+    const a = await loginAs(client, uniqueEmail("res-sub-a"), "ResSubA")
+    const ws = await createWorkspace(client, "ResSub WS")
+    const { user: b } = await addAccount(client, uniqueEmail("res-sub-b"), "ResSubB")
+
+    // C exists and can read the workspace, but is NOT signed in on this
+    // browser. A and B are signed in and can also read W — the resolver must
+    // still refuse rather than fall back to either of them.
+    const cClient = new TestClient()
+    const c = await loginAs(cClient, uniqueEmail("res-sub-c"), "ResSubC")
+    await addMembership(ws.id, c.id)
+    await addMembership(ws.id, b.id)
+
+    const r = await client.get<{ ownerUserId?: string; code?: string; error?: string }>(
+      `/api/accounts/resolve?userId=${c.id}&workspaceId=${ws.id}`
+    )
+    expect(r.status).toBe(404)
+    expect(r.data).toEqual({ error: expect.any(String), code: "ACCOUNT_NOT_SIGNED_IN" })
+    expect([a.id, b.id]).not.toContain(r.data.ownerUserId)
+  })
+
+  test("identity form: signed-in account no longer a member 404s WORKSPACE_NOT_RESOLVABLE", async () => {
+    const client = new TestClient()
+    const a = await loginAs(client, uniqueEmail("res-stale-a"), "ResStaleA")
+
+    // A workspace A is NOT a member of (created by a throwaway account).
+    const owner = new TestClient()
+    await loginAs(owner, uniqueEmail("res-stale-owner"), "ResStaleOwner")
+    const ws = await createWorkspace(owner, "ResStale WS")
+
+    const r = await client.get<{ ownerUserId?: string; code?: string; error?: string }>(
+      `/api/accounts/resolve?userId=${a.id}&workspaceId=${ws.id}`
+    )
+    expect(r.status).toBe(404)
+    expect(r.data).toEqual({ error: expect.any(String), code: "WORKSPACE_NOT_RESOLVABLE" })
+  })
+
+  test("bare-workspace form: exactly one signed-in member resolves to it", async () => {
+    const client = new TestClient()
+    const a = await loginAs(client, uniqueEmail("res-uniq-a"), "ResUniqA")
+    const ws = await createWorkspace(client, "ResUniq WS")
+    const { user: b } = await addAccount(client, uniqueEmail("res-uniq-b"), "ResUniqB")
+
+    // A is the only member; B is active but not a member.
+    const r = await client.get<{ ownerUserId: string }>(`/api/accounts/resolve?workspaceId=${ws.id}`)
+    expect(r.status).toBe(200)
+    expect(r.data).toEqual({ ownerUserId: a.id })
+    expect(r.data.ownerUserId).not.toBe(b.id)
+  })
+
+  test("bare-workspace form: zero signed-in members 404s", async () => {
+    const client = new TestClient()
+    await loginAs(client, uniqueEmail("res-zero-a"), "ResZeroA")
+    await addAccount(client, uniqueEmail("res-zero-b"), "ResZeroB")
+
+    const owner = new TestClient()
+    await loginAs(owner, uniqueEmail("res-zero-owner"), "ResZeroOwner")
+    const ws = await createWorkspace(owner, "ResZero WS")
+
+    const r = await client.get<{ ownerUserId?: string; code?: string; error?: string }>(
+      `/api/accounts/resolve?workspaceId=${ws.id}`
+    )
+    expect(r.status).toBe(404)
+    expect(r.data).toEqual({ error: expect.any(String), code: "WORKSPACE_NOT_RESOLVABLE" })
+  })
+
+  test("bare-workspace form: 2+ signed-in members 404s without an arbitrary pick", async () => {
+    const client = new TestClient()
+    const a = await loginAs(client, uniqueEmail("res-multi-a"), "ResMultiA")
+    const ws = await createWorkspace(client, "ResMulti WS")
+    const { user: b } = await addAccount(client, uniqueEmail("res-multi-b"), "ResMultiB")
+    await addMembership(ws.id, b.id) // now both A and B are members
+
+    const r = await client.get<{ ownerUserId?: string; code?: string; error?: string }>(
+      `/api/accounts/resolve?workspaceId=${ws.id}`
+    )
+    expect(r.status).toBe(404)
+    expect(r.data).toEqual({ error: expect.any(String), code: "WORKSPACE_NOT_RESOLVABLE" })
+    expect([a.id, b.id]).not.toContain(r.data.ownerUserId)
+  })
+
+  test("handler rejects a query with neither userId nor workspaceId (400)", async () => {
+    const client = new TestClient()
+    await loginAs(client, uniqueEmail("res-bad"), "ResBad")
+
+    const r = await client.get<{ code?: string; error?: string }>("/api/accounts/resolve")
+    expect(r.status).toBe(400)
+    expect(r.data).toEqual({ error: expect.any(String), code: "VALIDATION_ERROR" })
+  })
+
+  test("unauthenticated resolve is rejected (401)", async () => {
+    const client = new TestClient()
+    expect((await client.get("/api/accounts/resolve?workspaceId=ws_anything")).status).toBe(401)
   })
 })
