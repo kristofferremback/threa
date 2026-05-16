@@ -39,8 +39,12 @@ export interface AuthService {
    *                    control-plane to support multiple origins (e.g. the
    *                    backoffice on a different TLD) without cookie-domain
    *                    gymnastics.
+   * @param options.prompt Passed through to WorkOS as the OIDC `prompt`. The
+   *                    add-account flow passes `"login"` to force an AuthKit
+   *                    re-prompt instead of silently reusing the existing
+   *                    hosted session.
    */
-  getAuthorizationUrl(redirectTo?: string, redirectUri?: string): string
+  getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { prompt?: string }): string
   /**
    * Build a WorkOS single-logout URL.
    *
@@ -165,12 +169,13 @@ export class WorkosAuthService implements AuthService {
     }
   }
 
-  getAuthorizationUrl(redirectTo?: string, redirectUri?: string): string {
+  getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { prompt?: string }): string {
     return this.workos.userManagement.getAuthorizationUrl({
       provider: "authkit",
       redirectUri: redirectUri ?? this.redirectUri,
       clientId: this.clientId,
       state: redirectTo ? Buffer.from(redirectTo).toString("base64") : undefined,
+      ...(options?.prompt ? { prompt: options.prompt } : {}),
     })
   }
 
