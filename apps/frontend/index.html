@@ -104,7 +104,9 @@
         // 401 resolves to null (unauthenticated). Other errors reject so
         // AuthProvider can fall through to a normal fetch with proper error handling.
         // Bounded so a dead/slow network rejects (→ cached identity) instead of
-        // leaving AuthProvider awaiting a promise that never settles.
+        // leaving AuthProvider awaiting a promise that never settles. Keep this
+        // 15000 in sync with AUTH_REVALIDATE_TIMEOUT_MS in src/auth/context.tsx
+        // — index.html can't import the TS constant, so the two are unlinked.
         var eagerAuthController = new AbortController()
         var eagerAuthTimeout = setTimeout(function () {
           eagerAuthController.abort()

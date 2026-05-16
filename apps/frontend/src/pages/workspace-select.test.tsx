@@ -177,7 +177,10 @@ describe("WorkspaceSelectPage", () => {
     expect(screen.queryByText("Loading...")).not.toBeInTheDocument()
   })
 
-  it("auto-redirects to a single cached workspace while the list query is still loading", async () => {
+  it("does not auto-redirect off a single cached workspace until the list is authoritative", async () => {
+    // A pending invitation isn't known until the network list resolves; the
+    // cached single workspace renders as a selectable entry meanwhile so the
+    // redirect can't skip an invite the user hasn't been shown yet.
     mockUseWorkspaces.mockReturnValue({
       workspaces: undefined,
       cachedWorkspaces: [makeWorkspace("workspace_solo", "Solo")],
@@ -188,7 +191,9 @@ describe("WorkspaceSelectPage", () => {
 
     renderPage()
 
-    expect(await screen.findByTestId("workspace-route")).toHaveTextContent("workspace_solo")
+    expect(await screen.findByRole("link", { name: "Solo" })).toHaveAttribute("href", "/w/workspace_solo")
+    expect(screen.queryByTestId("workspace-route")).not.toBeInTheDocument()
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument()
   })
 
   it("keeps showing the cached list when revalidation errors instead of blanking to the error screen", () => {

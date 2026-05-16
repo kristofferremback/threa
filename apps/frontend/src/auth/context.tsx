@@ -24,7 +24,9 @@ const PUSH_CLEANUP_TIMEOUT_MS = 2000
 
 // Identity revalidation is a background refresh — the UI already rendered from
 // the cached user — so its only job here is to never leak a hung request on a
-// dead network. Generous because it never blocks first paint.
+// dead network. Generous because it never blocks first paint. The eager
+// pre-bundle fetch in index.html bounds itself with the same value as a raw
+// 15000 (it can't import this constant) — keep the two in sync.
 const AUTH_REVALIDATE_TIMEOUT_MS = 15000
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
