@@ -1,5 +1,4 @@
 export { ImageThumbnailService } from "./service"
-export { StubImageThumbnailService } from "./service.stub"
 export type { ImageThumbnailServiceDeps } from "./service"
 export type { ImageThumbnailServiceLike } from "./types"
 export { createImageThumbnailWorker } from "./worker"

@@ -66,7 +66,7 @@ export type {
 export { ImageCaptionService, StubImageCaptionService, isImageAttachment } from "./image-caption"
 export type { ImageCaptionServiceDeps, ImageCaptionServiceLike } from "./image-caption"
 
-export { ImageThumbnailService, StubImageThumbnailService, shouldGenerateThumbnail } from "./image"
+export { ImageThumbnailService, shouldGenerateThumbnail } from "./image"
 export type { ImageThumbnailServiceDeps, ImageThumbnailServiceLike } from "./image"
 
 export { PdfProcessingService, StubPdfProcessingService, isPdfAttachment } from "./pdf"

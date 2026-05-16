@@ -108,7 +108,6 @@ import {
   ImageCaptionService,
   StubImageCaptionService,
   ImageThumbnailService,
-  StubImageThumbnailService,
   PdfProcessingService,
   StubPdfProcessingService,
   TextProcessingService,
@@ -676,12 +675,11 @@ export async function startServer(): Promise<ServerInstance> {
   })
 
   // Image thumbnail worker — independent of captioning so a caption failure
-  // never costs the thumbnail. No onDLQ: thumbnail failure is non-fatal (the
-  // raw image still serves via the ?variant=thumbnail fallback) and must not
-  // touch processing_status, which the extraction pipeline owns.
-  const imageThumbnailService = config.useStubAI
-    ? new StubImageThumbnailService()
-    : new ImageThumbnailService({ pool, storage })
+  // never costs the thumbnail. Pure sharp + S3 work with no AI dependency, so
+  // it is not gated behind useStubAI. No onDLQ: thumbnail failure is non-fatal
+  // (the raw image still serves via the ?variant=thumbnail fallback) and must
+  // not touch processing_status, which the extraction pipeline owns.
+  const imageThumbnailService = new ImageThumbnailService({ pool, storage })
   const imageThumbnailWorker = createImageThumbnailWorker({ imageThumbnailService })
   jobQueue.registerHandler(JobQueues.IMAGE_THUMBNAIL, imageThumbnailWorker, {
     tier: QueueTiers.HEAVY,
