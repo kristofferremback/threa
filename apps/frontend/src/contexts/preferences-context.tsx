@@ -5,6 +5,7 @@ import { preferencesApi } from "@/api"
 import { workspaceKeys } from "@/hooks/use-workspaces"
 import { useWorkspaceUserPreferences } from "@/stores/workspace-store"
 import { db } from "@/db"
+import { useAccountScopeOptional } from "@/auth/account-scope"
 import { applyPreferencesToDOM, getResolvedTheme } from "@/lib/apply-preferences"
 import type {
   UserPreferences,
@@ -18,8 +19,15 @@ const APPEARANCE_STORAGE_KEY = "threa-appearance"
 /**
  * Caches appearance-related preferences to localStorage for early application
  * before React mounts. See index.html inline script.
+ *
+ * Writes the account-scoped key (authoritative per account) AND the global
+ * key: the render-blocking inline script in index.html runs before any
+ * account is known, so it can only read the un-namespaced key. The global
+ * copy is therefore a one-frame pre-auth fallback (it may briefly show the
+ * prior account's theme); this provider re-applies the correct per-account
+ * appearance on mount.
  */
-function cacheAppearanceToLocalStorage(prefs: UserPreferences) {
+function cacheAppearanceToLocalStorage(prefs: UserPreferences, accountId: string | null) {
   const appearance = {
     theme: prefs.theme,
     fontSize: prefs.accessibility.fontSize,
@@ -28,7 +36,11 @@ function cacheAppearanceToLocalStorage(prefs: UserPreferences) {
     highContrast: prefs.accessibility.highContrast,
     messageDisplay: prefs.messageDisplay,
   }
-  localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(appearance))
+  const serialized = JSON.stringify(appearance)
+  localStorage.setItem(APPEARANCE_STORAGE_KEY, serialized)
+  if (accountId) {
+    localStorage.setItem(`${APPEARANCE_STORAGE_KEY}:${accountId}`, serialized)
+  }
 }
 
 interface PreferencesContextValue {
@@ -64,12 +76,14 @@ export function PreferencesProvider({ workspaceId, children }: PreferencesProvid
     return getResolvedTheme(preferences.theme)
   }, [preferences])
 
+  const accountId = useAccountScopeOptional()?.activeWorkosUserId ?? null
+
   // Apply preferences to DOM and cache for early application on next load
   useEffect(() => {
     if (!preferences) return
     applyPreferencesToDOM(preferences)
-    cacheAppearanceToLocalStorage(preferences)
-  }, [preferences])
+    cacheAppearanceToLocalStorage(preferences, accountId)
+  }, [preferences, accountId])
 
   // Listen for system theme changes when in "system" mode
   useEffect(() => {

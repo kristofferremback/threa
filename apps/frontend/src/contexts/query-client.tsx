@@ -4,8 +4,9 @@ import {
   QueryCache,
   MutationCache,
 } from "@tanstack/react-query"
-import { ReactNode, useState } from "react"
+import { ReactNode } from "react"
 import { ApiError, API_BASE } from "@/api/client"
+import { useAccountScope } from "@/auth/account-scope"
 
 const AUTH_REDIRECT_KEY = "auth_redirect_count"
 const AUTH_REDIRECT_TIMESTAMP_KEY = "auth_redirect_ts"
@@ -36,7 +37,7 @@ function handleGlobalError(error: Error) {
   }
 }
 
-function makeQueryClient() {
+export function makeQueryClient() {
   return new QueryClient({
     queryCache: new QueryCache({
       onError: handleGlobalError,
@@ -54,21 +55,17 @@ function makeQueryClient() {
   })
 }
 
-let queryClientSingleton: QueryClient | undefined = undefined
-
-export function getQueryClient() {
-  if (!queryClientSingleton) {
-    queryClientSingleton = makeQueryClient()
-  }
-  return queryClientSingleton
-}
-
-interface QueryClientProviderProps {
+interface AccountQueryClientProviderProps {
   children: ReactNode
 }
 
-export function QueryClientProvider({ children }: QueryClientProviderProps) {
-  const [queryClient] = useState(getQueryClient)
-
-  return <TanStackQueryClientProvider client={queryClient}>{children}</TanStackQueryClientProvider>
+// Mounts the *active account's* QueryClient. Rendered inside AccountScope's
+// keyed remount boundary, so an account switch tears this down and remounts
+// it bound to the new account's client — caches never share an instance
+// across accounts. The 401 redirect + its sessionStorage loop-guard in
+// handleGlobalError stay global and correct: only one account's client is
+// ever mounted at a time.
+export function AccountQueryClientProvider({ children }: AccountQueryClientProviderProps) {
+  const { getQueryClient } = useAccountScope()
+  return <TanStackQueryClientProvider client={getQueryClient()}>{children}</TanStackQueryClientProvider>
 }

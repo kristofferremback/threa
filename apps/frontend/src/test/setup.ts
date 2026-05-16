@@ -10,6 +10,55 @@ beforeEach(() => {
   __resetCollapseCacheForTests()
 })
 
+// In-memory BroadcastChannel (jsdom lacks it). Cross-instance delivery within
+// the process lets the AccountScope cross-tab switch test exercise two
+// provider trees over one channel. Messages dispatch async (microtask) to
+// match the real API's "not delivered to the sender, delivered to others".
+if (typeof globalThis.BroadcastChannel === "undefined") {
+  const registry = new Map<string, Set<TestBroadcastChannel>>()
+
+  class TestBroadcastChannel {
+    readonly name: string
+    onmessage: ((ev: MessageEvent) => void) | null = null
+    private closed = false
+
+    constructor(name: string) {
+      this.name = name
+      let peers = registry.get(name)
+      if (!peers) {
+        peers = new Set()
+        registry.set(name, peers)
+      }
+      peers.add(this)
+    }
+
+    postMessage(data: unknown): void {
+      if (this.closed) return
+      const peers = registry.get(this.name)
+      if (!peers) return
+      for (const peer of peers) {
+        if (peer === this || peer.closed) continue
+        queueMicrotask(() => {
+          if (!peer.closed) peer.onmessage?.({ data } as MessageEvent)
+        })
+      }
+    }
+
+    close(): void {
+      this.closed = true
+      registry.get(this.name)?.delete(this)
+    }
+
+    addEventListener(): void {}
+    removeEventListener(): void {}
+    dispatchEvent(): boolean {
+      return false
+    }
+  }
+
+  globalThis.BroadcastChannel = TestBroadcastChannel as unknown as typeof BroadcastChannel
+}
+
 // Mock scrollIntoView (not available in jsdom)
 Element.prototype.scrollIntoView = () => {}
 

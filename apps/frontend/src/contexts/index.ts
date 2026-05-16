@@ -1,4 +1,4 @@
-export { QueryClientProvider, getQueryClient } from "./query-client"
+export { AccountQueryClientProvider, makeQueryClient } from "./query-client"
 export {
   ServicesProvider,
   useServices,
