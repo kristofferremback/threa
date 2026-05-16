@@ -49,13 +49,20 @@ and replaces the hard-reload-on-switch approach with a properly scoped
 ### Cookie model (used by PR-1 / PR-3)
 
 One **active** session cookie `wos_session` (HttpOnly, read by the unchanged
-auth middleware) plus up to seven **parked alt** cookies
-`wos_session_alt_0..6` (HttpOnly, storage-only, read only by the four
-control-plane account endpoints). `MAX_ACCOUNTS = 8`, `MAX_ALT_SLOTS = 7`.
-Parking ≡ moving the current sealed session into a free alt slot; switching ≡
-swapping an alt into the active slot. WorkOS sealed-session size vs. the
-Cloudflare Workers request-header limit is measured and the cap finalized in
-PR-5.
+auth middleware) plus up to `MAX_ALT_SLOTS` **parked alt** cookies
+(`wos_session_alt_<n>`, HttpOnly, storage-only, read only by the four
+control-plane account endpoints). `MAX_ALT_SLOTS = MAX_ACCOUNTS - 1` — the two
+constants are always coupled. Parking ≡ moving the current sealed session into
+a free alt slot; switching ≡ swapping an alt into the active slot.
+
+`MAX_ACCOUNTS` ships from the very first slice that introduces the constant
+(PR-1) at a **conservative, measurement-backed default** — the WorkOS
+sealed-session size vs. the Cloudflare Workers request-header limit is measured
+in PR-1, and the constant is set to a value that provably fits. PR-5 may only
+**relax it upward** if PR-1's measurement showed headroom; it never first-sets
+an unvalidated cap. This ordering means no slice between PR-3 (which enforces
+the cap server-side) and PR-5 can ever create a production state that exceeds
+the header limit.
 
 ---
 
@@ -101,7 +108,11 @@ behavior change. The auth middleware is **not** touched.
 **Changes:**
 
 - `packages/backend-common/src/cookies.ts`:
-  - `MAX_ACCOUNTS = 8`, `MAX_ALT_SLOTS = 7`.
+  - `MAX_ACCOUNTS` set to a conservative, measurement-backed default (this
+    slice owns the constant — INV-33 source of truth — so the
+    sealed-session-vs-header-limit measurement happens here, not in PR-5);
+    `MAX_ALT_SLOTS = MAX_ACCOUNTS - 1`, always derived, never a separate
+    literal.
   - `altSessionCookieName(slot)`, `setAltSessionCookie`, `clearAltSessionCookie`,
     `readAltSessionCookies`, `assertSlot(slot)` (throws on out-of-range).
   - Host-only cookie clearing path when `COOKIE_DOMAIN` is set (so alt cookies
@@ -122,6 +133,9 @@ the new helpers share the same options factory (INV-33, INV-35).
 - `bun run test` over `backend-common` cookie + auth-service suites: round-trip
   set/read/clear for every slot, `assertSlot` rejects out-of-range,
   `getAuthorizationUrl` includes `prompt` only when passed.
+- Sealed-session size measured against the Cloudflare Workers request-header
+  limit; `MAX_ACCOUNTS` recorded with the measured worst-case header budget so
+  later slices inherit a provably-safe cap.
 - No endpoints, no migrations, no middleware change. Risk-free merge.
 
 ---
@@ -276,9 +290,11 @@ account data).
 - Reconcile slot visibility end-to-end: UI shows the server-issued opaque
   stable account id (PR-0/PR-3 decision); dead alts render a re-auth affordance
   using the stable placeholder id.
-- Finalize the account cap: measure real WorkOS sealed-session cookie size
-  against the Cloudflare Workers request-header limit and confirm or lower
-  `MAX_ACCOUNTS` accordingly; record the measured number in PR-0's doc.
+- Revisit the account cap: PR-1 already shipped a measurement-backed
+  conservative `MAX_ACCOUNTS`. This slice may only **relax it upward** if
+  PR-1's recorded header budget showed headroom (and re-measure to confirm);
+  it never first-sets or raises an unvalidated cap. Record the final value in
+  PR-0's doc.
 
 **Reuse:** PR-4a AccountScope + registries; PR-3 endpoints; existing Shadcn
 dialog/menu primitives (INV-14); navigation via links / actions via buttons
