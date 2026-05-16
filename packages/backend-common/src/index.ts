@@ -107,6 +107,13 @@ export {
   SESSION_COOKIE_CONFIG,
   setSessionCookie,
   clearSessionCookie,
+  MAX_ACCOUNTS,
+  MAX_ALT_SLOTS,
+  assertSlot,
+  altSessionCookieName,
+  setAltSessionCookie,
+  clearAltSessionCookie,
+  readAltSessionCookies,
 } from "./cookies"
 export type { SessionCookieOptions } from "./cookies"
 export { generateSlug, generateUniqueSlug } from "./slug"
