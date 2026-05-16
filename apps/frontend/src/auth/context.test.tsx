@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { act, render, spyOnExport } from "@/test"
+import { toast } from "sonner"
+import { act, render, spyOnExport, waitFor } from "@/test"
 import { AuthProvider, useAuth } from "@/auth"
 import * as dbModule from "@/db"
 
 let triggerLogout: () => void
+let captureLogin: ReturnType<typeof useAuth>["login"]
+
+function LoginProbe() {
+  captureLogin = useAuth().login
+  return null
+}
 
 function LogoutProbe() {
   triggerLogout = useAuth().logout
@@ -68,5 +75,107 @@ describe("AuthProvider logout", () => {
     })
 
     expect(window.location.href).toBe("/api/auth/logout")
+  })
+})
+
+describe("AuthProvider login / accountError", () => {
+  const originalLocation = window.location
+  let hrefValues: string[]
+
+  function stubLocation(search: string) {
+    hrefValues = []
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: {
+        pathname: "/w/workspace_1",
+        search,
+        hash: "",
+        set href(v: string) {
+          hrefValues.push(v)
+        },
+        get href() {
+          return hrefValues[hrefValues.length - 1] ?? ""
+        },
+      } as unknown as Location,
+    })
+  }
+
+  beforeEach(() => {
+    captureLogin = undefined as unknown as ReturnType<typeof useAuth>["login"]
+    // The mount effect calls /api/auth/me; keep it from throwing.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ status: 401, ok: false, json: async () => ({}) }) as unknown as Response)
+    )
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    Object.defineProperty(window, "location", { configurable: true, value: originalLocation })
+  })
+
+  it("threads intent=add onto the login URL", async () => {
+    stubLocation("")
+    render(
+      <AuthProvider>
+        <LoginProbe />
+      </AuthProvider>
+    )
+
+    await act(async () => {
+      captureLogin(undefined, { intent: "add" })
+    })
+
+    expect(hrefValues[hrefValues.length - 1]).toBe("/api/auth/login?intent=add")
+  })
+
+  it("builds a plain login URL with no options", async () => {
+    stubLocation("")
+    render(
+      <AuthProvider>
+        <LoginProbe />
+      </AuthProvider>
+    )
+
+    await act(async () => {
+      captureLogin()
+    })
+
+    expect(hrefValues[hrefValues.length - 1]).toBe("/api/auth/login")
+  })
+
+  it("surfaces accountError once and strips the param", async () => {
+    stubLocation("?accountError=MAX_ACCOUNTS_REACHED&foo=bar")
+    const toastSpy = vi.spyOn(toast, "error").mockReturnValue("" as ReturnType<typeof toast.error>)
+    const replaceSpy = vi.spyOn(window.history, "replaceState").mockImplementation(() => {})
+
+    render(
+      <AuthProvider>
+        <LoginProbe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledTimes(1)
+    })
+    expect(replaceSpy).toHaveBeenCalledWith(null, "", "/w/workspace_1?foo=bar")
+  })
+
+  it("does not toast when there is no accountError param", async () => {
+    stubLocation("?foo=bar")
+    const toastSpy = vi.spyOn(toast, "error").mockReturnValue("" as ReturnType<typeof toast.error>)
+
+    render(
+      <AuthProvider>
+        <LoginProbe />
+      </AuthProvider>
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(toastSpy).not.toHaveBeenCalled()
   })
 })

@@ -255,6 +255,47 @@ describe("Multi-account /api/accounts", () => {
     })
   })
 
+  test("removing a stale alt by its opaque slot id clears the slot without a revoke", async () => {
+    const client = new TestClient()
+    const aEmail = uniqueEmail("acc-stale-a")
+    const bEmail = uniqueEmail("acc-stale-b")
+    const a = await loginAs(client, aEmail, "Stale A")
+    const { user: b, client: subB } = await addAccount(client, bEmail, "Stale B")
+
+    // Make A active so B is the parked alt on `client`.
+    await client.post("/api/accounts/switch", { targetUserId: a.id })
+
+    // Revoke B's WorkOS session at the provider WITHOUT touching `client`'s
+    // cookie jar: subB independently holds B's real sealed session and removes
+    // its own active account. `client`'s alt slot still points at that now-dead
+    // sealed string, so the next read surfaces it as a stale alt.
+    const subRemoved = await subB.post<{ removedId: string }>("/api/accounts/remove", { targetUserId: b.id })
+    expect(subRemoved.status).toBe(200)
+
+    const stale = await client.get<AccountsResponse>("/api/accounts")
+    expect(stale.data).toEqual({
+      accounts: [
+        { id: a.id, email: aEmail, name: "Stale A", state: "active" },
+        { id: "stale:alt_0", email: "", name: "", state: "stale" },
+      ],
+      maxAccounts: MAX_ACCOUNTS,
+    })
+
+    // Removing by the opaque slot id clears the slot and echoes the id back —
+    // no revoke (the sealed session already failed validation).
+    const removed = await client.post<{ removedId: string }>("/api/accounts/remove", {
+      targetUserId: "stale:alt_0",
+    })
+    expect(removed.status).toBe(200)
+    expect(removed.data).toEqual({ removedId: "stale:alt_0" })
+
+    const after = await client.get<AccountsResponse>("/api/accounts")
+    expect(after.data).toEqual({
+      accounts: [{ id: a.id, email: aEmail, name: "Stale A", state: "active" }],
+      maxAccounts: MAX_ACCOUNTS,
+    })
+  })
+
   test("logout clears the active session and every parked alt", async () => {
     const client = new TestClient()
     const a = await loginAs(client, uniqueEmail("acc-logout-a"), "Logout A")
