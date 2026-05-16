@@ -4,7 +4,7 @@
 
 Threa's scratchpad experience currently treats Ariadne as a special active companion: when companion mode is enabled, she responds automatically in the scratchpad and in scratchpad-rooted threads. That works for the built-in assistant, but it does not generalize cleanly to user-owned bots such as a user-named Hermes-backed bot (for example `@hermit`), an OpenClaw-backed coding agent, or a local Pi bridge.
 
-Personal bots now have the backend foundation to be user-owned and tagged with traits such as `interactive`, but Threa still needs a product model for:
+Personal bots now have the backend foundation to be user-owned and tagged with traits such as `interactive`, but that trait is too coarse for the product model Threa needs:
 
 - mentioning an owned bot anywhere the user is allowed to talk,
 - creating a dedicated chat scratchpad for a user-named bot where that bot responds without being mentioned every time,
@@ -16,22 +16,41 @@ This note describes the product/runtime contract only. It intentionally contains
 
 ## Product direction
 
-Interactive bots should be modeled as actors that can be invoked in two ways:
+Bot interactivity should be split into separate capabilities instead of overloading one `interactive` trait for every conversational use case:
 
-1. **Active scratchpad participant** — a scratchpad can have one primary interactive actor that responds to normal user messages without requiring an `@mention`. This is the "Chat with <bot name>" experience.
-2. **Mention target** — any available interactive actor can be explicitly invoked with `@slug` from a scratchpad, thread, channel, or DM. This is how a user can mention `@ariadne` inside another bot's scratchpad or mention a user-named bot such as `@hermit` from an unrelated stream.
+1. **Mentionable** — an actor can be explicitly invoked with `@slug` for a one-shot response in the current context. This is how Ariadne works outside scratchpads today.
+2. **Active scratchpad participant** — an actor can be selected as the primary participant in a dedicated scratchpad and responds to normal user messages without requiring an `@mention`. This is the "Chat with <bot name>" experience.
 
-Ariadne becomes one implementation of this model rather than the only special companion path.
+Ariadne has both capabilities: she can be mentioned from arbitrary contexts, and she can be active in scratchpads. A user-owned bot should be able to support either one or both, depending on what its runtime can safely provide.
+
+## Capability granularity
+
+The capability split matters because the integration requirements are different:
+
+| Capability          | User experience                                                                               | Runtime requirements                                                                                             | Good fit                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `mentionable`       | User writes `@bot ...`; bot answers once in this context                                      | Resolve mention, create one invocation, read bounded context, post a reply                                       | Stateless helpers, PR/status bots, local tools that should not become ambient chat partners |
+| `active-scratchpad` | User opens a dedicated bot chat scratchpad; bot responds turn-by-turn without being mentioned | Persistent session binding, runtime presence, concurrency policy, thread inheritance, in-flight message handling | Ariadne-style companions, Hermes/OpenClaw/Pi coding sessions                                |
+
+The exact stored trait names are still provisional. One reasonable direction is to add a `mentionable` trait and reserve/rename `interactive` for active scratchpad participation. Another is to make both explicit (`mentionable`, `active-scratchpad`) so the product does not rely on implicit hierarchy. A fully interactive chat bot would normally have both traits, while a mentionable-only bot would not appear as a dedicated scratchpad companion.
 
 ## Vocabulary
 
 **Interactive actor**
 
-A persona or bot that is allowed to participate conversationally. Ariadne is a persona; personal/shared bots with the `interactive` trait are bot-backed actors.
+Umbrella term for a persona or bot with at least one conversational capability. Ariadne is a persona; personal/shared bots can become interactive actors when they carry `mentionable`, `active-scratchpad`, or equivalent traits.
+
+**Mentionable actor**
+
+A persona or bot that can be invoked by explicit `@slug` mention for a one-shot response in the current stream/thread context.
+
+**Active-capable actor**
+
+A persona or bot that can be attached to a scratchpad as the primary participant and respond without being mentioned on every turn.
 
 **Active actor**
 
-The primary interactive actor attached to a scratchpad. The active actor is invoked automatically for ordinary user messages in that scratchpad and its descendant threads.
+The primary active-capable actor attached to a scratchpad. The active actor is invoked automatically for ordinary user messages in that scratchpad and its descendant threads.
 
 **Mention invocation**
 
@@ -55,7 +74,7 @@ For a top-level scratchpad, `rootStreamId` and `activeStreamId` are the same. Fo
 
 ### 1. Mention your own bot anywhere
 
-A user who owns a personal interactive bot should be able to mention it by its user-chosen slug. For example, if the user created a bot named Hermit with slug `hermit`:
+A user who owns a personal mentionable bot should be able to mention it by its user-chosen slug. For example, if the user created a bot named Hermit with slug `hermit`:
 
 ```text
 @hermit can you look at this thread and summarize the plan?
@@ -70,7 +89,7 @@ Expected behavior:
 
 ### 2. Create a dedicated bot chat scratchpad
 
-When the user creates a scratchpad with an interactive bot selected, that bot becomes the active actor for the scratchpad.
+When the user creates a scratchpad with an active-scratchpad-capable bot selected, that bot becomes the active actor for the scratchpad.
 
 Expected behavior:
 
@@ -123,12 +142,12 @@ The active actor inherits from the scratchpad root. The reply target is the curr
 For each user-authored message, Threa should resolve invocations with a deterministic algorithm:
 
 1. Ignore messages authored by bots/personas/system actors to avoid loops.
-2. Resolve explicit `@slug` mentions against available personas and interactive bots.
+2. Resolve explicit `@slug` mentions against available personas and mentionable bots.
 3. Resolve the active actor, if any, from the current stream:
    - current stream is a scratchpad with an active actor, or
    - current stream is a thread whose `rootStreamId` points to a scratchpad with an active actor.
-4. If the message contains no explicit interactive-actor mentions, invoke the active actor if one exists.
-5. If the message contains explicit interactive-actor mentions:
+4. If the message contains no explicit mentionable-actor mentions, invoke the active actor if one exists.
+5. If the message contains explicit mentionable-actor mentions:
    - invoke each mentioned actor once,
    - do not additionally auto-invoke the active actor unless the active actor was explicitly mentioned.
 6. Pick the response target:
@@ -141,7 +160,7 @@ This keeps the common case simple while supporting multi-actor conversations whe
 
 ## Access and safety model
 
-Interactive bots are more powerful than decorative participants because they may read context, call tools, create PRs, and post as themselves. The product model should make access explicit enough to be safe without making normal use tedious.
+Mentionable and active-scratchpad bots are more powerful than decorative participants because they may read context, call tools, create PRs, and post as themselves. The product model should make access explicit enough to be safe without making normal use tedious.
 
 ### Personal bots
 
@@ -174,12 +193,15 @@ type BotInvocation = {
   responseStreamId: string
   actor: { type: "persona" | "bot"; id: string; slug: string }
   trigger: "active-scratchpad" | "mention"
+  requiredCapability: "active-scratchpad" | "mentionable"
   promptMarkdown: string
   authorUserId: string
   mentionedActorSlugs: string[]
   createdAt: string
 }
 ```
+
+`trigger` describes why the invocation exists. `requiredCapability` makes the scheduling requirement explicit: mention invocations require `mentionable`, while ambient scratchpad turns require `active-scratchpad`. A mentionable-only adapter may handle each invocation independently; an active-scratchpad adapter should expect persistent session and concurrency concerns.
 
 Adapter responsibilities:
 
@@ -198,7 +220,7 @@ The claim step is important for local Pi and Claude Code channel-style adapters 
 
 ### Custom Pi adapter
 
-A personal Pi bridge is an active local session adapter:
+A personal Pi bridge can be either mentionable-only or active-scratchpad-capable. The current local bridge prototype behaves like an active local session adapter:
 
 ```text
 Threa invocation
@@ -211,13 +233,15 @@ Threa invocation
 Constraints:
 
 - The local Pi instance must be online.
+- A mentionable-only Pi bot could fail fast when offline and avoid dedicated scratchpad/session semantics.
+- An active Pi bot needs persistent session binding, in-flight message handling, and visible presence.
 - Multiple Pi instances need claim/dedupe or instance targeting.
 - Process/worktree policy is local and should not be encoded in Threa.
 - This is the fastest iteration path for personal use.
 
 ### Hermes
 
-Hermes is best treated as a gateway/runtime adapter:
+Hermes is best treated as a gateway/runtime adapter. It likely supports both mentionable and active-scratchpad modes:
 
 ```text
 Threa invocation
@@ -230,12 +254,14 @@ Threa invocation
 Constraints:
 
 - Hermes owns sessions, memory, tools, background jobs, and process policy.
+- Mentionable Hermes invocations can map to one-off gateway turns.
+- Active Hermes scratchpads should map to stable Hermes sessions.
 - Threa maps scratchpads/threads to Hermes session keys.
 - A native Hermes platform adapter is the long-term fit; an OpenAI-compatible API bridge can be the quick prototype.
 
 ### OpenClaw
 
-OpenClaw is best treated as a native channel plugin:
+OpenClaw is best treated as a native channel plugin. Like Hermes, it can support both mentionable and active-scratchpad modes:
 
 ```text
 Threa invocation
@@ -249,13 +275,15 @@ Threa invocation
 Constraints:
 
 - OpenClaw owns workspace/session/tool/sandbox policy.
+- Mentionable OpenClaw invocations can route to a selected `agentId` for one response.
+- Active OpenClaw scratchpads should map to durable channel/session grammar for that `agentId`.
 - Threa bot identity can map to OpenClaw `agentId`.
 - Threa scratchpad/thread identity maps to OpenClaw channel session grammar.
 - Mention gating, sender gating, and reply-thread behavior should live in the OpenClaw channel plugin.
 
 ### Claude Code channels
 
-Claude Code channels are a useful protocol precedent for local active-session adapters:
+Claude Code channels are a useful protocol precedent for local active-session adapters. They also show why mentionable and active modes should be separate:
 
 ```text
 Threa event
@@ -271,13 +299,14 @@ Relevant ideas to borrow:
 - event notification: external events are injected into an active session as structured channel messages,
 - reply tool: the runtime sends outbound messages through a tool exposed by the channel,
 - sender gating: inbound messages must be authorized before reaching the agent,
-- permission relay: tool approval prompts can be mirrored to the remote chat while the local prompt stays open.
+- permission relay: tool approval prompts can be mirrored to the remote chat while the local prompt stays open,
+- a channel can be useful for one-shot mention delivery even if it should not become an ambient active scratchpad participant.
 
 Claude channels require an active Claude Code session and are currently research-preview functionality, so they should inform the contract rather than define the Threa product surface.
 
 ## Presence and availability
 
-Some interactive actors are always available from Threa's perspective, while others depend on an external runtime being online:
+Some mentionable/active actors are always available from Threa's perspective, while others depend on an external runtime being online:
 
 - Ariadne can be treated as available when Threa's own agent workers are healthy.
 - Hermes/OpenClaw bots are available when their gateway/adapter is connected.
@@ -298,6 +327,9 @@ type BotRuntimePresence = {
   acceptingInvocations: boolean
   lastSeenAt: string
   capabilities?: {
+    supportsMentionInvocations?: boolean
+    supportsActiveScratchpad?: boolean
+    supportsPersistentSessions?: boolean
     supportsStop?: boolean
     supportsPermissionRelay?: boolean
     supportsStreaming?: boolean
@@ -362,7 +394,7 @@ A first implementation should avoid a broad multi-agent orchestration platform. 
 
 1. **Generalize activation semantics**
    - keep one active actor slot for scratchpads,
-   - resolve mentions across personas and interactive bots,
+   - resolve mentions across personas and mentionable bots,
    - inherit the active actor into scratchpad-rooted threads,
    - suppress active auto-response when a different actor is explicitly mentioned.
 
@@ -387,6 +419,8 @@ A first implementation should avoid a broad multi-agent orchestration platform. 
 
 ## Open questions
 
+- Should the stored trait names be `mentionable` + `active-scratchpad`, or should the existing `interactive` name be preserved for active scratchpad participation?
+- Should `active-scratchpad` imply `mentionable` at validation time, or should fully interactive bots explicitly carry both traits?
 - Should personal bot mention in a shared channel create a persistent bot access grant, or should the first version send an invocation-scoped context snapshot only?
 - Should an active actor ever auto-comment on messages that mention a different actor, or is mention-suppression always the right default?
 - Should multiple active actors in one scratchpad ever be supported, or should multi-actor conversations stay explicit via mentions?
