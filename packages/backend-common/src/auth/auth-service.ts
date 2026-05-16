@@ -57,6 +57,13 @@ export interface AuthService {
    *                      it can't share cookies with the default.
    */
   getLogoutUrl(sealedSession: string, returnTo?: string): Promise<string | null>
+  /**
+   * Revoke the real WorkOS session backing a sealed session cookie. Used by
+   * the multi-account remove flow so a forgotten account's session is dead at
+   * WorkOS, not merely cookie-cleared. Returns `true` if a session was
+   * revoked, `false` if the value couldn't be unsealed/authenticated.
+   */
+  revokeSession(sealedSession: string): Promise<boolean>
 }
 
 export class WorkosAuthService implements AuthService {
@@ -191,6 +198,23 @@ export class WorkosAuthService implements AuthService {
     } catch (error) {
       logger.error({ err: error }, "Failed to get logout URL")
       return null
+    }
+  }
+
+  async revokeSession(sealedSession: string): Promise<boolean> {
+    if (!sealedSession) return false
+    try {
+      const session = this.workos.userManagement.loadSealedSession({
+        sessionData: sealedSession,
+        cookiePassword: this.cookiePassword,
+      })
+      const authRes = await session.authenticate()
+      if (!authRes.authenticated) return false
+      await this.workos.userManagement.revokeSession({ sessionId: authRes.sessionId })
+      return true
+    } catch (error) {
+      logger.error({ err: error }, "Failed to revoke WorkOS session")
+      return false
     }
   }
 }

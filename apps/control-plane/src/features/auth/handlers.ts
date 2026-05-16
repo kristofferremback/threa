@@ -3,12 +3,15 @@ import { z } from "zod/v4"
 import {
   HttpError,
   SESSION_COOKIE_NAME,
+  clearAltSessionCookie,
   clearSessionCookie,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
+  readAltSessionCookies,
   setSessionCookie,
   type AuthService,
 } from "@threa/backend-common"
+import type { AccountsService } from "../accounts"
 
 const callbackSchema = z.object({
   code: z.string().min(1),
@@ -35,6 +38,8 @@ function isAllowedForwardedHost(host: string, allowedDomain: string): boolean {
 
 interface Dependencies {
   authService: AuthService
+  /** Owns the park/coalesce cookie-mutation sequence for the add-account flow. */
+  accountsService: AccountsService
   /** Base URL of the frontend app (e.g. "https://threa-staging.pages.dev"). Empty string for same-origin. */
   frontendUrl: string
   /** Allowed staging domain for forwarded-host redirects (e.g. "staging.threa.io") */
@@ -55,8 +60,29 @@ function isTrustedHost(host: string, allowedDomain: string, dedicatedHosts: stri
   return false
 }
 
+/**
+ * Peel the optional `add|` multi-account sentinel off the OAuth `state`.
+ *
+ * `login` prefixes a literal `add|` onto the *plaintext* state when
+ * `intent=add`; `getAuthorizationUrl` then base64-encodes the whole thing.
+ * Here we decode once, strip the sentinel, and re-encode the inner plaintext
+ * so the existing host/path decode logic runs on a byte-identical payload.
+ * For the non-add path `innerState` is the original `state` untouched, keeping
+ * single-account decoding exactly as it was.
+ */
+function parseCallbackState(state: string | undefined): { isAdd: boolean; innerState: string | undefined } {
+  if (!state) return { isAdd: false, innerState: state }
+  const decoded = Buffer.from(state, "base64").toString("utf-8")
+  if (decoded.startsWith("add|")) {
+    const inner = decoded.slice("add|".length)
+    return { isAdd: true, innerState: Buffer.from(inner, "utf-8").toString("base64") }
+  }
+  return { isAdd: false, innerState: state }
+}
+
 export function createControlPlaneAuthHandlers({
   authService,
+  accountsService,
   frontendUrl,
   allowedRedirectDomain,
   dedicatedRedirectHosts,
@@ -84,7 +110,19 @@ export function createControlPlaneAuthHandlers({
         }
       }
 
-      const url = authService.getAuthorizationUrl(statePayload, redirectUriOverride)
+      // Multi-account add flow: prefix an `add|` sentinel onto the plaintext
+      // state (callback peels it back off) and force an AuthKit re-prompt so
+      // the hosted session isn't silently reused for the second account.
+      const isAdd = typeof req.query.intent === "string" && req.query.intent === "add"
+      if (isAdd) {
+        statePayload = `add|${statePayload ?? ""}`
+      }
+
+      const url = authService.getAuthorizationUrl(
+        statePayload,
+        redirectUriOverride,
+        isAdd ? { prompt: "login" } : undefined
+      )
       res.redirect(url)
     },
 
@@ -102,8 +140,10 @@ export function createControlPlaneAuthHandlers({
         throw new HttpError("Authentication failed", { status: 401, code: "AUTH_FAILED" })
       }
 
+      const { isAdd, innerState } = parseCallbackState(state)
+
       let redirectUrl: string
-      const decoded = state ? Buffer.from(state, "base64").toString("utf-8") : ""
+      const decoded = innerState ? Buffer.from(innerState, "base64").toString("utf-8") : ""
       const pipeIndex = decoded.indexOf("|")
 
       if (pipeIndex !== -1) {
@@ -116,11 +156,26 @@ export function createControlPlaneAuthHandlers({
           redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
         }
       } else {
-        const path = state ? decodeAndSanitizeRedirectState(state) : "/"
+        const path = innerState ? decodeAndSanitizeRedirectState(innerState) : "/"
         redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
       }
 
-      setSessionCookie(res, result.sealedSession)
+      if (isAdd) {
+        const parked = await accountsService.addAndParkActive(
+          res,
+          req.cookies,
+          req.cookies[SESSION_COOKIE_NAME] as string | undefined,
+          result.sealedSession,
+          result.user.id
+        )
+        if (!parked.ok) {
+          // No throw mid-OAuth-callback: the user keeps their existing session
+          // and the frontend surfaces the refusal from the query param.
+          redirectUrl += `${redirectUrl.includes("?") ? "&" : "?"}accountError=${parked.code}`
+        }
+      } else {
+        setSessionCookie(res, result.sealedSession)
+      }
       res.redirect(redirectUrl)
     },
 
@@ -128,6 +183,13 @@ export function createControlPlaneAuthHandlers({
       const session = req.cookies[SESSION_COOKIE_NAME]
 
       clearSessionCookie(res)
+
+      // Logout ≠ remove: clear every parked alt cookie too, but leave their
+      // WorkOS sessions intact (explicit revoke is the /api/accounts/remove
+      // path). This just empties the local cookie jar of all accounts.
+      for (const { slot } of readAltSessionCookies(req.cookies)) {
+        clearAltSessionCookie(res, slot)
+      }
 
       const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
 

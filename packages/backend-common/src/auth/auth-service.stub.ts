@@ -22,6 +22,7 @@ export interface DevLoginResult {
 export class StubAuthService implements AuthService {
   private users: Map<string, { id: string; email: string; firstName: string | null; lastName: string | null }> =
     new Map()
+  private revoked = new Set<string>()
 
   /**
    * Dev login endpoint - creates/ensures in-memory auth user and registers session.
@@ -64,6 +65,13 @@ export class StubAuthService implements AuthService {
 
   clearUsers(): void {
     this.users.clear()
+    this.revoked.clear()
+  }
+
+  async revokeSession(sealedSession: string): Promise<boolean> {
+    if (!/^test_session_(.+)$/.test(sealedSession)) return false
+    this.revoked.add(sealedSession)
+    return true
   }
 
   async authenticateSession(sealedSession: string): Promise<AuthResult> {
@@ -78,6 +86,10 @@ export class StubAuthService implements AuthService {
     const match = sealedSession.match(/^test_session_(.+)$/)
     if (!match) {
       return { success: false, refreshed: false, reason: "invalid_session_format" }
+    }
+
+    if (this.revoked.has(sealedSession)) {
+      return { success: false, refreshed: false, reason: "session_revoked" }
     }
 
     const userId = match[1]
