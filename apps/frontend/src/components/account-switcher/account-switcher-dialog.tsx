@@ -44,7 +44,12 @@ function AccountRow({ account, onSwitch, onRemove, onReauth }: AccountRowProps) 
           <LogIn className="mr-1.5 h-4 w-4" />
           Sign in again
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Remove account" onClick={() => onRemove(account.id)}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`Remove ${account.email || account.id || "account"}`}
+          onClick={() => onRemove(account.id)}
+        >
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
@@ -83,7 +88,12 @@ function AccountRow({ account, onSwitch, onRemove, onReauth }: AccountRowProps) 
           <p className="truncate text-xs text-muted-foreground">{account.email}</p>
         </div>
       </button>
-      <Button variant="ghost" size="icon" aria-label={`Remove ${account.name}`} onClick={() => onRemove(account.id)}>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={`Remove ${account.name || account.email || account.id || "account"}`}
+        onClick={() => onRemove(account.id)}
+      >
         <Trash2 className="h-4 w-4" />
       </Button>
     </div>

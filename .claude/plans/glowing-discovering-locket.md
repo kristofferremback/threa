@@ -202,7 +202,7 @@ this slice). Match the PR-3 / PR-4b sections' terseness.
 | `apps/frontend/src/pages/workspace-layout.tsx` | mount `<AccountSwitcherDialog />` after `:385` |
 | `apps/frontend/src/components/account-switcher/account-switcher-dialog.test.tsx` | **NEW** — render real component, states + actions |
 | `apps/frontend/src/auth/context.test.tsx` | extend — `intent=add` URL + `accountError` toast/strip |
-| `apps/control-plane/src/features/accounts/*.test.ts` | add a `remove("stale:alt_<slot>")` case if not already covered |
+| `apps/control-plane/tests/e2e/accounts.test.ts` | add/verify a `remove("stale:alt_<slot>")` case |
 | `docs/plans/multi-account-login-split.md` | append PR-5 section |
 
 **Reuse (no reimplementation):** PR-4a `useAccountScope().switchAccount` +

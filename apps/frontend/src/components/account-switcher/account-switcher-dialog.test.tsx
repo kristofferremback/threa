@@ -130,7 +130,7 @@ describe("AccountSwitcherDialog", () => {
 
     renderDialog()
 
-    await userEvent.click(await screen.findByRole("button", { name: "Remove account" }))
+    await userEvent.click(await screen.findByRole("button", { name: "Remove stale:alt_2" }))
 
     expect(removeSpy).toHaveBeenCalledWith("stale:alt_2")
   })

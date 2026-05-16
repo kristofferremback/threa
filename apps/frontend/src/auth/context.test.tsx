@@ -158,7 +158,9 @@ describe("AuthProvider login / accountError", () => {
     )
 
     await waitFor(() => {
-      expect(toastSpy).toHaveBeenCalledTimes(1)
+      expect(toastSpy).toHaveBeenCalledWith(
+        "You're signed in to the maximum number of accounts. Remove one to add another."
+      )
     })
     expect(replaceSpy).toHaveBeenCalledWith(null, "", "/w/workspace_1?foo=bar")
   })
