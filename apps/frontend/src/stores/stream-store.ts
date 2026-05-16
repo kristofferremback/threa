@@ -40,17 +40,21 @@ export async function loadStreamEvents(streamId: string, fromSequenceNum: number
   // (defensive — the current placeholder scheme uses `Date.now()` so they
   // sort to the very top and are already in-window). Re-sort the full list
   // so order is determined solely by `_sequenceNum`, not insertion path.
+  //
+  // Drive this off the `_status` index (Dexie only indexes rows where the
+  // value is present, so pending/failed is the entire keyspace here — a
+  // handful of unsent rows app-wide), then narrow to this stream in JS.
+  // The obvious `.where("streamId").equals(streamId).filter(...)` instead
+  // materialises and walks the stream's *entire* cached history on every
+  // call; `useLiveQuery` re-runs this on every write to `db.events`, so on
+  // a long chat that O(history) scan — paid repeatedly during the
+  // bootstrap/sync write burst when a chat opens — is what stalls the
+  // cached-events read past the skeleton delay.
   const loadedIds = new Set(reversed.map((e) => e.id))
-  const unsent = await db.events
-    .where("streamId")
-    .equals(streamId)
-    .filter(
-      (e) =>
-        (e._status === "pending" || e._status === "failed") &&
-        !loadedIds.has(e.id) &&
-        (fromSequenceNum == null || e._sequenceNum >= fromSequenceNum)
-    )
-    .toArray()
+  const unsent = (await db.events.where("_status").anyOf(["pending", "failed"]).toArray()).filter(
+    (e) =>
+      e.streamId === streamId && !loadedIds.has(e.id) && (fromSequenceNum == null || e._sequenceNum >= fromSequenceNum)
+  )
 
   const merged = unsent.length > 0 ? [...reversed, ...unsent] : reversed
   merged.sort((a, b) => a._sequenceNum - b._sequenceNum)
