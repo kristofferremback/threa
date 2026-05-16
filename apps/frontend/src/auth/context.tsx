@@ -15,6 +15,11 @@ interface AuthContextValue extends AuthState {
   refetch: () => Promise<void>
 }
 
+// Best-effort push cleanup must never delay the logout redirect for long.
+// When the SW is healthy this completes in well under a second; the cap only
+// fires when `serviceWorker.ready` never settles (stranded worker).
+const PUSH_CLEANUP_TIMEOUT_MS = 2000
+
 export const AuthContext = createContext<AuthContextValue | null>(null)
 
 interface AuthProviderProps {
@@ -82,7 +87,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Clean up push subscriptions on logout:
     // 1. Tell backend to remove all records for this browser's endpoint (cross-workspace)
     // 2. Unsubscribe from the browser push service to prevent post-logout notifications
-    try {
+    //
+    // `navigator.serviceWorker.ready` only resolves once a worker is active and
+    // never rejects, so a worker stranded in "installing" (common with the dev
+    // injectManifest module SW) would hang this step — and the redirect below —
+    // forever. Cap the whole best-effort block so logout always proceeds.
+    const pushCleanup = (async () => {
       const registration = await navigator.serviceWorker?.ready
       const subscription = await registration?.pushManager.getSubscription()
       if (subscription) {
@@ -94,9 +104,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }).catch(() => {})
         await subscription.unsubscribe()
       }
-    } catch {
-      // Best-effort — don't block logout if push cleanup fails
-    }
+    })()
+    await Promise.race([
+      pushCleanup,
+      new Promise<void>((resolve) => setTimeout(resolve, PUSH_CLEANUP_TIMEOUT_MS)),
+    ]).catch(() => {})
     await clearAllCachedData().catch(() => {})
     window.location.href = `${API_BASE}/api/auth/logout`
   }, [])
