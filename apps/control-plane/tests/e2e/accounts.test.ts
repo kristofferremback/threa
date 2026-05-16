@@ -152,26 +152,29 @@ describe("Multi-account /api/accounts", () => {
 
   test("reaching MAX_ACCOUNTS refuses the add gracefully (302, no error page)", async () => {
     const client = new TestClient()
-    const aEmail = uniqueEmail("acc-cap-a")
-    await loginAs(client, aEmail, "Cap A")
-    await addAccount(client, uniqueEmail("acc-cap-b"), "Cap B")
-    await addAccount(client, uniqueEmail("acc-cap-c"), "Cap C")
-    const { user: d } = await addAccount(client, uniqueEmail("acc-cap-d"), "Cap D")
+    const first = await loginAs(client, uniqueEmail("acc-cap-0"), "Cap 0")
+    // Fill every slot: 1 active + (MAX_ACCOUNTS - 1) parked alts. The last
+    // account added stays active and must survive the refused overflow add.
+    let lastActiveId = first.id
+    for (let i = 1; i < MAX_ACCOUNTS; i++) {
+      const { user } = await addAccount(client, uniqueEmail(`acc-cap-${i}`), `Cap ${i}`)
+      lastActiveId = user.id
+    }
 
-    // Four distinct accounts now occupy the active slot + all alt slots.
+    // Every slot occupied by a distinct account.
     const before = await client.get<AccountsResponse>("/api/accounts")
-    expect(before.data.accounts).toHaveLength(4)
+    expect(before.data.accounts).toHaveLength(MAX_ACCOUNTS)
 
-    const fifth = await addAccount(client, uniqueEmail("acc-cap-e"), "Cap E")
-    expect(fifth.res.status).toBe(302)
-    expect(fifth.res.headers.get("location")).toContain("accountError=MAX_ACCOUNTS_REACHED")
+    const overflow = await addAccount(client, uniqueEmail("acc-cap-overflow"), "Cap Overflow")
+    expect(overflow.res.status).toBe(302)
+    expect(overflow.res.headers.get("location")).toContain("accountError=MAX_ACCOUNTS_REACHED")
 
-    // The pre-add account is still active and no fifth account leaked in.
+    // The pre-add account is still active and no extra account leaked in.
     const me = await client.get<MeResponse>("/api/auth/me")
-    expect(me.data.id).toBe(d.id)
+    expect(me.data.id).toBe(lastActiveId)
     const after = await client.get<AccountsResponse>("/api/accounts")
-    expect(after.data.accounts).toHaveLength(4)
-    expect(after.data.accounts.some((acc) => acc.id === fifth.user.id)).toBe(false)
+    expect(after.data.accounts).toHaveLength(MAX_ACCOUNTS)
+    expect(after.data.accounts.some((acc) => acc.id === overflow.user.id)).toBe(false)
   })
 
   test("removing a parked account revokes its real WorkOS session", async () => {
