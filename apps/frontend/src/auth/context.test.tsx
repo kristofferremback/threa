@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { act, render } from "@/test"
-import { spyOnExport } from "@/test"
+import { act, render, spyOnExport } from "@/test"
 import { AuthProvider, useAuth } from "@/auth"
 import * as dbModule from "@/db"
 
