@@ -1,276 +1,297 @@
-# PR-4a — AccountScope foundation (frontend, no UI)
+# PR-4b — Cross-account entry resolver (backend primitive + frontend bare-link guard)
 
 ## Context
 
-Fourth implementation slice of the multi-account login split
-(`docs/plans/multi-account-login-split.md`, lines 264-308). PR-1 (#537,
-backend-common cookie/auth-URL primitives) and PR-3 (#538, `/api/accounts`
-contract + OAuth `intent=add` park/coalesce) are **merged to `origin/main`**
-(HEAD `44362916`). PR-4a is now unblocked.
+Fifth implementation slice of the multi-account login split
+(`docs/plans/multi-account-login-split.md`). Prior slices are **merged to
+`origin/main`** (HEAD `6782e487`): PR-1 (#537 cookie/auth primitives), PR-3
+(#538 `/api/accounts` contract + OAuth `intent=add`), and **PR-4a (#540
+AccountScope foundation — account-scoped data layer + in-place
+`switchAccount` + keyed remount, no UI)**. Offline-first boot (#539) is also
+merged and underneath PR-4a.
 
-**Why this slice exists / intended outcome:** give the frontend a reactive,
-fully account-isolated **AccountScope** so the active account can switch
-*in place with no page reload* and *zero cross-account data bleed* at the
-IndexedDB, TanStack-Query, and store layers — including across browser tabs.
-No switcher UI (that is PR-5); this slice only proves isolation + in-place
-switchability via a headline test.
+**Problem PR-4b solves:** opening an entry point that belongs to a *parked*
+(non-active) account dead-ends — the active account's workspace bootstrap
+returns `403/404` and `workspace-layout.tsx` bounces to `/workspaces` even
+though this browser is signed into an account that owns it. PR-4b adds the
+**resolve→flip→route primitive** so the right account can be flipped in
+place (PR-4a `switchAccount`, keyed remount, no reload), preserving the
+original deep link.
 
-**Two corrections to the spec's stated assumptions (verified against
-`origin/main`):** the spec was written as if the original monolithic PR #487
-had landed. It did not — only the split-plan doc (#535) merged. Therefore:
+**Two distinct entry points (the key correctness distinction):**
 
-- `resolveDbName()`, `ensureDbMatchesUser`, and any account-switch
-  `window.location.reload()` **do not exist** — nothing to delete. PR-4a is a
-  *greenfield* foundation, not a refactor of PR #487.
-- `window.__eagerAuthPromise` is **live and fully wired** (`index.html:106`
-  sets it; `auth/context.tsx:41-51` consumes it) — it is *not* dead code.
+1. **Member-scoped entry (notification — PR-6 reuses this).** A notification
+   is tied to an Activity already scoped to a *specific recipient member*,
+   so its payload carries that member's `workosUserId`. The resolver MUST
+   flip to **exactly that account** and **never substitute** a different
+   signed-in account that merely also has read access (e.g. signed into
+   both A and B, B also in the workspace, mention is A's — must land as A,
+   not B). If that exact account is not signed into this browser → 404 →
+   caller does a full login as that user (no silent substitution).
+2. **Bare workspace deep-link (PR-4b's only frontend trigger).** A shared
+   `/w/:workspaceId` link with *no* member context. Membership is the only
+   available selector and it can be ambiguous, so per product decision:
+   resolve **only if exactly one** signed-in account is a member; **0 or
+   2+ → 404** (caller keeps today's bounce; PR-5's switcher disambiguates
+   the multi-member case). Never guess an arbitrary account.
 
-**User decisions (this session):**
+So PR-4b's backend owns **one endpoint with two forms** — an exact-identity
+form (the PR-6 primitive, fully built+tested now though PR-4b has no
+notification UI) and a unique-membership form (consumed by PR-4b's frontend
+guard). PR-6 becomes a trivial caller of the identity form.
 
-1. **Keep `__eagerAuthPromise` untouched.** A sibling PR is open that reworks
-   the offline-first model and may touch this exact area; avoid churn there to
-   prevent merge conflicts. AccountScope derives the active id from
-   `useAuth().user?.id` (which already consumes the eager promise) — no change
-   to `index.html` or `auth/context.tsx`'s auth fetch.
-2. **Scope-proxy + keyed remount** (not the full 34-file importer rewrite).
-   Minimal blast radius, deliberately chosen to stay clear of the in-flight
-   offline-first PR.
+**Correction to the PR-4a follow-up sketch (verified against
+`origin/main`):** the sketch said the resolver "checks membership via the
+`/internal/workspaces/:id/members/:uid` path." That internal route is for
+the **regional backend → control plane** self-heal direction
+(`apps/control-plane/src/routes.ts:190`, `internalAuth`). The resolve
+endpoint itself lives **in the control plane**, the source of truth for
+`workspace_memberships` (`ControlPlaneWorkspaceService.isMember`,
+`apps/control-plane/src/features/workspaces/service.ts:69-71` →
+`WorkspaceRegistryRepository.isMember`). PR-4b calls `isMember`
+**in-process** — no internal HTTP hop, same data. Strictly better than the
+sketch; the only material deviation.
 
-## Approach (scope-proxy + keyed remount, minimal churn)
+## Approach
 
-### 1. `apps/frontend/src/db/database.ts` — name-parameterized class + scope-bound proxy
+### 1. Backend — `AccountsService.resolve` (control plane)
 
-- `class ThreaDatabase` constructor takes a name:
-  `constructor(name: string) { super(name) … }`. Every `this.version(...)`
-  block (28 of them, `:497-745`) stays **byte-identical** (reuse existing
-  schema — spec requirement).
-- Replace `export const db = new ThreaDatabase()` (`:751`) with a **proxy**
-  that forwards every property access to the AccountScope-active
-  `ThreaDatabase` instance. The ~30 modules doing `import { db } from "@/db"`
-  stay **completely untouched** (this is the whole point of the proxy: zero
-  churn in the offline-first model files the sibling PR touches).
-- The proxy reads through a module-level `activeDb` pointer that is **owned
-  and mutated solely by AccountScope**, set synchronously in the provider
-  body *before* the keyed subtree (and its `useLiveQuery`/sync engine) mounts
-  or remounts. Pre-auth (no account yet) the pointer defaults to a
-  `ThreaDatabase("threa")` handle so the pre-mount `hydrateCollapseCache()`
-  in `main.tsx` keeps working with **no change to `main.tsx` or
-  `collapse-cache.ts`** (another offline-first-area file left alone). Document
-  the INV-9 reasoning inline: this is not hidden state — it is the deliberate,
-  single-owner scope bridge that avoids a 30-file rewrite which would conflict
-  with the in-flight offline-first PR.
-- `clearAllCachedData()` / `clearPendingMessages()` (`:754-792`) keep working
-  against the proxy (i.e. the active account's db) — **no signature change**.
-  Their `finally` block already calls `resetWorkspaceStoreCache` /
-  `resetStreamStoreCache` / `resetDraftStoreCache` — reuse as-is (INV-35).
+`apps/control-plane/src/features/accounts/service.ts`
 
-### 2. `apps/frontend/src/auth/account-scope.tsx` (NEW) — context + provider
+- Add a narrow injected dep (avoids INV-52 cross-feature concrete coupling;
+  satisfies INV-10/12/13):
+  ```ts
+  interface MembershipChecker {
+    isMember(workspaceId: string, workosUserId: string): Promise<boolean>
+  }
+  interface Dependencies { authService: AuthService; membership: MembershipChecker }
+  ```
+  `ControlPlaneWorkspaceService` already structurally satisfies
+  `MembershipChecker` via its existing `isMember` — no new control-plane
+  code, just wiring.
+- One public method, branching on which form. Reuses the existing private
+  `resolveAlts` (`service.ts:62-71`) verbatim and the file's
+  **parallel-not-serial** idiom (INV-56):
+  ```ts
+  async resolve(
+    cookies: Record<string, string>,
+    activeUser: ActiveUser,
+    q: { userId?: string; workspaceId?: string }
+  ): Promise<{ ownerUserId: string }> {
+    const alts = await this.resolveAlts(cookies)
+    const seen = new Set<string>()
+    const signedInIds = [activeUser.id, ...alts.flatMap((a) => (a.ok && a.user ? [a.user.id] : []))]
+      .filter((id) => (seen.has(id) ? false : (seen.add(id), true)))
 
-API: `{ activeWorkosUserId, getDb(), getQueryClient(), getStores(),
-switchAccount(targetUserId), scopedKey(suffix) }`.
+    if (q.userId) {
+      // Identity form (PR-6 primitive): exact match, never substitute.
+      if (!signedInIds.includes(q.userId)) {
+        throw new HttpError("Account not signed in on this browser", {
+          status: 404, code: "ACCOUNT_NOT_SIGNED_IN",
+        })
+      }
+      // Defence-in-depth for a stale notification: the named account is
+      // signed in but was removed from the workspace.
+      if (q.workspaceId && !(await this.membership.isMember(q.workspaceId, q.userId))) {
+        throw new HttpError("Account can no longer access this workspace", {
+          status: 404, code: "WORKSPACE_NOT_RESOLVABLE",
+        })
+      }
+      return { ownerUserId: q.userId }
+    }
 
-- Reads `useAuth().user` (no eager-auth change). While `user` is
-  null/loading, renders children with a stable `"__no_account__"` key (login
-  /loading routes need no scope). Once `user.id` is known, provides the scope.
-- Per-account registries held as **provider instance state (`useRef` Maps)**,
-  not module-level (INV-9): `dbRegistry`, `qcRegistry`. `getDb(id)` lazily
-  `new ThreaDatabase("threa_" + id)`; `getQueryClient(id)` lazily
-  `makeQueryClient()` (exported from `query-client.tsx`).
-- Synchronously sets the `db` proxy's `activeDb` pointer to
-  `getDb(activeWorkosUserId)` in the provider body (idempotent registry
-  lookup) so it is correct *before* the keyed children render.
-- Renders a `<ScopedRoot key={activeWorkosUserId}>` remount boundary around
-  the per-account subtree. A switch ⇒ React unmounts the old subtree and
-  mounts a fresh one ⇒ atomic swap of db handle, QueryClient, socket,
-  SyncEngine, and all `useState`/`useRef`/`useLiveQuery` — the strongest
-  isolation guarantee (matches the acceptance bar; mirrors the spec's own
-  rejection of in-place key-prefixing).
-- `switchAccount(target)`: `POST ${API_BASE}/api/accounts/switch`
-  `{ targetUserId }` (PR-3 contract) → on `{ activeUserId }`: call
-  `resetWorkspaceStoreCache()` / `resetStreamStoreCache()` /
-  `resetDraftStoreCache()` (+ add a `resetShareHandoffStoreCache()` if
-  `share-handoff-store.ts` lacks one — small, colocated) to flush the
-  **module-level** store caches that survive a React remount, then
-  `setActiveWorkosUserId(activeUserId)` (triggers the keyed remount), then
-  `new BroadcastChannel("threa-auth").postMessage({ type:"switched",
-  activeWorkosUserId })`.
-- Cross-tab receiver (`useEffect`, `BroadcastChannel("threa-auth")`): on a
-  `switched` message for a different id → `qcRegistry.get(currentId)
-  ?.cancelQueries()` (abort in-flight on the now-stale client), reset the
-  module store caches, then `setActiveWorkosUserId(...)` → same keyed-remount
-  path. Storage isolation (distinct DB name + distinct QueryClient instance)
-  means late-resolving queries land in the orphaned client, never B's cache —
-  correctness is independent of flip timing (spec requirement).
+    // Bare workspace-link form (PR-4b): switch only if exactly one
+    // signed-in account is a member; 0 or 2+ -> caller bounces.
+    const wid = q.workspaceId!  // Zod refine guarantees one of the two
+    const flags = await Promise.all(signedInIds.map((id) => this.membership.isMember(wid, id)))
+    const members = signedInIds.filter((_, i) => flags[i])
+    if (members.length !== 1) {
+      throw new HttpError("No unique signed-in account can access this workspace", {
+        status: 404, code: "WORKSPACE_NOT_RESOLVABLE",
+      })
+    }
+    return { ownerUserId: members[0] }
+  }
+  ```
+  Active id is enumerated first then alts in slot order; coalesced alts that
+  repeat the active id are de-duped; stale alts (`ok:false`) skipped.
+  `HttpError`/codes per INV-32 (same pattern as `switch`).
 
-### 3. `apps/frontend/src/contexts/query-client.tsx` — per-account client
+### 2. Backend — handler + route
 
-- Keep + **export** `makeQueryClient()` and `handleGlobalError` (reuse).
-- Delete `queryClientSingleton` / `getQueryClient()` and the singleton
-  `QueryClientProvider`. Add `AccountQueryClientProvider` that takes the
-  client from `useAccountScope().getQueryClient()`. Verified: `getQueryClient`
-  has **no production consumers** beyond the `contexts/index.ts:1` re-export
-  and the provider itself — low churn. Update `contexts/index.ts:1`.
-- 401 redirect + its `sessionStorage` loop-guard keys stay global and
-  unchanged: only the active account's client is mounted at a time (keyed
-  remount), so the existing handler is correct as-is. Multi-client concurrent
-  401 handling is explicitly deferred to PR-5.
+- `apps/control-plane/src/features/accounts/handlers.ts`: add `resolve`
+  mirroring `list`/`switch` (INV-34 thin, INV-55 Zod **query**, INV-32):
+  ```ts
+  const resolveQuerySchema = z
+    .object({ userId: z.string().min(1).optional(), workspaceId: z.string().min(1).optional() })
+    .refine((d) => !!d.userId || !!d.workspaceId, { message: "userId or workspaceId required" })
+  async resolve(req, res) {
+    if (!req.workosUserId || !req.authUser)
+      throw new HttpError("Not authenticated", { status: 401, code: "NOT_AUTHENTICATED" })
+    const parsed = resolveQuerySchema.safeParse(req.query)
+    if (!parsed.success)
+      throw new HttpError("Invalid query", { status: 400, code: "VALIDATION_ERROR" })
+    res.json(await accountsService.resolve(req.cookies, req.authUser, parsed.data))
+  }
+  ```
+- `apps/control-plane/src/routes.ts`:
+  - `:71` → `new AccountsService({ authService, workspaceService })`
+    (`workspaceService` already a destructured `deps` member in scope, used
+    at `:79`/`:81`).
+  - Register in the multi-account group (after `:121`), extend the comment:
+    `app.get("/api/accounts/resolve", auth, authLimit, accounts.resolve)`.
 
-### 4. `apps/frontend/src/App.tsx` — provider tree
+### 3. Frontend — resolve API client (workspace form only)
 
-Wrap as: `AuthProvider > AccountScopeProvider > ScopedRoot
-key={activeWorkosUserId} > AccountQueryClientProvider > ServicesProvider >
-PendingMessagesProvider > TooltipProvider > RouterProvider`. AuthProvider
-stays **outside** scope (it owns the cookie-session identity that selects the
-account). QC/Services/PendingMessages/Router move **inside** the keyed
-boundary so they are per-account.
+`apps/frontend/src/api/accounts.ts` (**NEW**, mirrors `api/workspaces.ts:40-42`):
+```ts
+import { api } from "./client"
+export const accountsApi = {
+  resolve(workspaceId: string): Promise<{ ownerUserId: string }> {
+    return api.get(`/api/accounts/resolve?workspaceId=${encodeURIComponent(workspaceId)}`)
+  },
+}
+```
+PR-4b's frontend only uses the bare-workspace form (no notification UI).
+The identity (`userId`) form is backend-built + tested now but its frontend
+caller arrives in PR-6 — adding a `userId` param here with no consumer
+would be speculative (INV-36). `api.get` already does `API_BASE` +
+`credentials:"include"` + throws `ApiError` on non-2xx.
 
-### 5. Socket reconnect + bootstrap (INV-53) — structural, no socket-layer churn
+### 4. Frontend — replace the bounce with resolve→switch
 
-`SocketProvider` + `SyncEngine` live inside `workspace-layout.tsx`, inside the
-keyed subtree. A switch remounts that subtree ⇒ old socket `.close()`, fresh
-cookie-authed socket connects (PR-3 already promoted the new active cookie),
-fresh `SyncEngine` runs its first `onConnect` → `runBootstrap` → no event gap.
-INV-53 (subscribe paired with bootstrap, invalidated on resubscribe) is
-satisfied *structurally* by the remount — no `reconnectCount` plumbing change.
+`apps/frontend/src/pages/workspace-layout.tsx` — the `WorkspaceSyncHandler`
+terminal-error effect at **`:241-254`** is the documented seam. Extract the
+orchestration into a small colocated hook
+`useResolveOrBounce(workspaceId, syncEngine)` (keeps the component thin —
+INV-15 — and makes it unit-testable without mounting the full SyncEngine):
 
-### 6. Router seam for PR-4b (no behavior change in PR-4a)
+- Reads `useAccountScope()` for `switchAccount` + `activeWorkosUserId`
+  (`workspace-layout` is inside `AccountScopeProvider` per the PR-4a App
+  tree — confirmed available).
+- On `workspaceSyncStatus === "error"` and `syncEngine.lastWorkspaceError`
+  is an `ApiError` with `status` 403/404 (unchanged trigger):
+  1. Ref keyed to `workspaceId` so resolve is attempted **at most once per
+     workspace error**; `ignore`/cleanup flag drops a late result after
+     unmount/workspace-change.
+  2. `await accountsApi.resolve(workspaceId)`.
+     - `{ ownerUserId }` with `ownerUserId !== activeWorkosUserId` →
+       `await switchAccount(ownerUserId)`. Do **not** clear last-workspace,
+       do **not** navigate. PR-4a's keyed remount re-bootstraps the same
+       `workspaceId` (URL unchanged) under the owning account and succeeds.
+       INV-53 satisfied structurally by the remount.
+     - `ApiError` (404 — none **or** 2+ ambiguous; backend already enforced
+       "unique only", so the frontend needs no count logic), or
+       `ownerUserId === activeWorkosUserId` (defensive no-op-switch guard) →
+       the **exact current behavior**: guarded `clearLastWorkspaceId()` +
+       `navigate("/workspaces", { replace: true })`.
+- The "switch only if unique" rule lives **backend-side** (single source of
+  truth: returns 404 on 0 or 2+); the frontend stays simple. The bounce
+  branch keeps the `getLastWorkspaceId() === workspaceId` guard byte-identical.
 
-PR-4a does **not** implement cross-account deep-link resolution, but must not
-preclude it. Two seam guarantees:
+No router-config change (React Router v7, no loaders; route stays
+`/w/:workspaceId`). No reload anywhere.
 
-- `switchAccount(targetUserId)` is exposed on the AccountScope context so a
-  future router guard / route loader can `await` an account flip *before* the
-  workspace subtree mounts (the keyed-remount path already supports a
-  programmatic, non-UI trigger — it is identical to the cross-tab receiver
-  path).
-- The current terminal-error dead-end at `workspace-layout.tsx:240-246` (on a
-  workspace `403/404` it `navigate("/workspaces", { replace:true })`) is the
-  exact extension point PR-4b replaces. PR-4a leaves it **unchanged** (still
-  bounces) but documents it inline as the PR-4b seam so the behavior is a
-  known, intentional gap, not a silent regression.
+### 5. Doc
 
-### 7. localStorage re-keying (separate from the offline-first db model)
-
-| Concern | File | New key |
-|---|---|---|
-| Sidebar state | `contexts/sidebar-context.tsx:48,171,192` | `threa-sidebar-state:${workosUserId}:${workspaceId}` |
-| Push opt-out | `hooks/use-push-notifications.ts` `pushOptOutKey` | `threa:push-opted-out:${workosUserId}:${workspaceId}` |
-| Appearance | `contexts/preferences-context.tsx:16,31` (+ `index.html:82` pre-bundle reader) | authoritative `threa-appearance:${workosUserId}` **plus** retain global `threa-appearance` as a one-frame pre-auth fallback |
-
-Sidebar/push hooks are inside the scoped subtree → take `workosUserId` from
-`useAccountScope()`. Appearance: the render-blocking inline script at
-`index.html:82` runs before any account is known, so it cannot be
-account-keyed; `preferences-context` writes both the scoped (authoritative)
-key and the global fallback, reads the scoped key — the only cross-account
-sharing is a single pre-auth frame of the prior theme, which `preferences-
-context` immediately corrects on mount.
+Append a **PR-4b** section to `docs/plans/multi-account-login-split.md`
+(the split doc has no PR-4b section yet): the two-form resolve contract,
+the "never substitute on identity form" and "unique-only on bare-link
+form" rules, and that PR-6's notification-click is a trivial caller of the
+identity form. Match the PR-3 section's terseness.
 
 ## Critical files
 
 | File | Change |
 |---|---|
-| `apps/frontend/src/db/database.ts` (+ `db/index.ts`) | `ThreaDatabase(name)`; replace `db` singleton with scope-bound proxy + default `"threa"` pre-auth handle; export `ThreaDatabase` |
-| `apps/frontend/src/auth/account-scope.tsx` | **NEW** — context, per-account `getDb/getQueryClient/getStores`, `switchAccount`, keyed `ScopedRoot`, `threa-auth` BroadcastChannel |
-| `apps/frontend/src/contexts/query-client.tsx` (+ `contexts/index.ts`) | export `makeQueryClient`; delete singleton; add `AccountQueryClientProvider` |
-| `apps/frontend/src/App.tsx` | insert `AccountScopeProvider` + keyed `ScopedRoot`; move QC/Services/PendingMessages/Router inside |
-| `apps/frontend/src/pages/workspace-layout.tsx` | pass `workosUserId` into sidebar/push keys; relies on remount for socket+bootstrap |
-| `apps/frontend/src/contexts/sidebar-context.tsx`, `contexts/preferences-context.tsx`, `hooks/use-push-notifications.ts` | localStorage re-keying |
-| `apps/frontend/src/stores/share-handoff-store.ts` | add `resetShareHandoffStoreCache()` if absent (reuse pattern from `workspace-store.ts:98`) |
-| `apps/frontend/src/test/setup.ts` | add in-memory `BroadcastChannel` shim (jsdom lacks it) |
-| `apps/frontend/src/auth/account-scope.test.tsx` | **NEW** — headline isolation + cross-tab test |
-| `apps/frontend/src/db/database.test.ts` | update for `ThreaDatabase(name)` (currently constructs the singleton) |
+| `apps/control-plane/src/features/accounts/service.ts` | add `MembershipChecker` dep + `resolve()` (identity + unique-membership forms); reuse `resolveAlts` |
+| `apps/control-plane/src/features/accounts/handlers.ts` | add `resolve` handler (Zod query refine, `HttpError`) |
+| `apps/control-plane/src/routes.ts` | inject `workspaceService` into `AccountsService` (`:71`); register `GET /api/accounts/resolve` (after `:121`) |
+| `apps/frontend/src/api/accounts.ts` | **NEW** — `accountsApi.resolve(workspaceId)` (workspace form) |
+| `apps/frontend/src/pages/workspace-layout.tsx` | replace `:241-254` bounce with `useResolveOrBounce` |
+| `apps/control-plane/src/features/accounts/service.test.ts` | **NEW** — both forms incl. the never-substitute case |
+| `apps/control-plane/src/features/accounts/handlers.test.ts` | **NEW** — handler tests (mirror `workspaces/handlers.test.ts:1-57`) |
+| `apps/frontend/src/pages/use-resolve-or-bounce.test.tsx` | **NEW** — resolve→switch vs bounce |
+| `docs/plans/multi-account-login-split.md` | append PR-4b section |
 
-**Untouched on purpose (sibling offline-first PR safety):** `index.html`
-eager-auth block, `auth/context.tsx` auth fetch, `main.tsx`,
-`lib/markdown/collapse-cache.ts`, and the ~30 `import { db } from "@/db"`
-consumer modules — all keep working unchanged via the proxy.
+**Reuse (no reimplementation):** `AccountsService.resolveAlts`
+(`service.ts:62-71`); `ControlPlaneWorkspaceService.isMember`
+(`workspaces/service.ts:69-71`); PR-4a `useAccountScope().switchAccount` +
+keyed remount; `api.get`/`ApiError` (`api/client.ts`);
+`api/workspaces.ts:40-42` client shape; existing
+`clearLastWorkspaceId`/`getLastWorkspaceId` on the bounce path.
 
 ## Verification
 
-**First step:** `git fetch origin && git checkout -b
-claude/review-multi-account-auth-4eC4g origin/main` (branch fresh off updated
-`origin/main`, post-PR-3 #538 — current HEAD `44362916`). Develop and push
-only to `claude/review-multi-account-auth-4eC4g`.
+**First step (explicit user request — rebase on updated `origin/main`):**
+PR-4a is squash-merged as `origin/main` `6782e487`; the local branch's
+`2142f6a8`+`cc4f799a` are exactly that squashed work. Reset to a clean
+PR-4b base:
+```
+git fetch origin main
+git checkout claude/review-multi-account-auth-4eC4g
+git reset --hard origin/main      # discards only the pre-squash PR-4a commits, now in main
+git log --oneline -1              # expect 6782e487 (PR-4a #540)
+git diff origin/main -- apps/frontend/src/auth/account-scope.tsx  # expect empty
+```
+No work lost (PR-4a content is fully in `6782e487`). Develop/push **only**
+to `claude/review-multi-account-auth-4eC4g`.
 
-**Headline test** (`apps/frontend/src/auth/account-scope.test.tsx`, real
-components mounted — INV-39; `vi.spyOn`/`spyOnExport`, not `vi.mock` —
-INV-48; `fake-indexeddb/auto` already global via `test/setup.ts:1`):
+**Backend tests** (`bun:test`, mirror `workspaces/handlers.test.ts:1-57`
+mock-recorder; stub `authService.authenticateSession` per-alt + a
+`membership.isMember` mock; INV-23/24 assert content not counts):
+- Identity form: `userId` = active → `{ownerUserId: active}`; `userId` =
+  parked alt → `{ownerUserId: alt}`.
+- **Never-substitute (the case the user raised):** signed into A & B, both
+  members of W, ask `userId=C` → 404 `ACCOUNT_NOT_SIGNED_IN`; assert the
+  response is **not** A or B.
+- Identity + stale membership: `userId` signed in but `isMember(ws,userId)`
+  false → 404 `WORKSPACE_NOT_RESOLVABLE`.
+- Bare-workspace form: exactly one signed-in member → that id; zero members
+  → 404; **2+ members → 404** and response is **neither** id.
+- Stale alt (`ok:false`) skipped; coalesced alt duplicating active id
+  de-duped (one `isMember` per distinct id, issued in parallel).
+- Handler: neither `userId` nor `workspaceId` → 400 `VALIDATION_ERROR`;
+  unauthenticated → 401.
 
-1. Stub `fetch`: `/api/auth/me` → account A `{id:"workos_A",…}`;
-   `POST /api/accounts/switch {targetUserId:"workos_B"}` →
-   `{activeUserId:"workos_B"}` and flip `/api/auth/me` to B (mirrors the
-   `auth/context.test.tsx` fetch-stub pattern).
-2. Mount real `App`; seed A's layers: `getDb()` row, `getQueryClient()
-   .setQueryData(...)`, `getStores().seedWorkspaceCache(...)`.
-3. `switchAccount("workos_B")` via a probe; assert `window.location.reload`
-   and `window.location.href` were **never** assigned (no reload).
-4. Assert zero cross-account reads, three layers: B's `getDb()` →
-   `workspaces.count() === 0` while `threa_workos_A` still holds A's row
-   (isolation, not deletion; assert two DB names via
-   `indexedDB.databases()`); B's QueryClient `getQueryData` for A's key →
-   `undefined`; B's `getStores().hasSeededWorkspaceCache(A) === false`.
-5. Cross-tab: with the `BroadcastChannel` shim, mount two
-   `AccountScopeProvider` trees sharing the in-memory channel + the
-   process-shared fake-indexeddb backing; switch in tree 1 → assert tree 2
-   flipped to B, serves zero A data at all three layers, and tree 1's old
-   client had `cancelQueries()` called.
+**Frontend test** (`use-resolve-or-bounce.test.tsx`, real hook via
+`renderHook`; spy `useSyncStatus`/`useAccountScope` per
+`coordinated-loading-context.test.tsx`; stub `accountsApi.resolve`; assert
+no `window.location` assignment per `account-scope.test.tsx`):
+- 403 + resolve `{ownerUserId:"workos_B"}` (≠ active) → `switchAccount("workos_B")`
+  called, `navigate` **not** called, last-workspace **not** cleared.
+- 403 + resolve rejects `ApiError(404)` (none / ambiguous) →
+  `navigate("/workspaces",{replace:true})`, `switchAccount` **not** called,
+  guarded `clearLastWorkspaceId` preserved.
+- Resolve attempted at most once while status stays `"error"`.
 
-**Commands:** `bun run --cwd apps/frontend test` (incl. new + updated tests
-all green) and `bun run --cwd apps/frontend typecheck` (the `ThreaDatabase`
-name param + provider tree must be type-clean).
+**Commands:** `bun run --cwd apps/control-plane test`,
+`bun run --cwd apps/frontend test`, `bun run --cwd apps/control-plane typecheck`,
+`bun run --cwd apps/frontend typecheck` — all green incl. new tests. Then
+commit + push to `claude/review-multi-account-auth-4eC4g` (do **not** open
+a PR unless explicitly asked).
 
 ## Risks / accepted trade-offs
 
-- **R1 — Scope-proxy `activeDb` pointer is module-level.** Mitigated:
-  single-owner (AccountScope), set synchronously before the keyed subtree
-  mounts; documented inline. Deliberate trade vs. a 30-file rewrite that
-  would conflict with the in-flight offline-first PR.
-- **R2 — Switch = full keyed-subtree remount**, not a same-socket
-  re-handshake. Strongest isolation; a brief UI flash on switch is acceptable
-  for infra-only PR-4a (PR-5 owns switch UX).
-- **R3 — `threa-appearance` one pre-auth frame** may show the prior account's
-  theme before `preferences-context` corrects it (inline script can't be
-  account-keyed). Authoritative store is fully per-account.
-- **R4 — Cross-account collapse-cache warm-up** lands in the default `"threa"`
-  db pre-auth; reads switch to `threa_<id>` after activation. Message IDs are
-  distinct ULIDs so no meaningful bleed; cache self-heals (already tolerated).
-- **R5 — BroadcastChannel jsdom shim** is a required `test/setup.ts` addition;
-  fake-indexeddb is process-shared so the two-tab test shares one IDB backing
-  — realistic for the cross-tab assertion.
-- **R6 — Logout cache teardown** clears only the active account's db (via the
-  existing `clearAllCachedData` against the proxy). Deleting *all* per-account
-  DBs on logout is deferred to PR-5 (logout-all).
-
-## Follow-up: PR-4b — cross-account entry resolver (separate slice)
-
-A new slice between PR-4a and `{PR-5 ‖ PR-6}`, owning the **cold-entry**
-resolve→flip→route primitive (a shared link / bookmark to a workspace owned by
-a *parked* account must work, not bounce to `/workspaces`). This is the same
-primitive PR-6's notification-click needs, so PR-6 becomes a trivial caller.
-
-- **Backend (control-plane):** `GET /api/accounts/resolve?workspaceId=…` →
-  `{ ownerUserId }` or `404`. Reuses `AccountsService.resolveAlts` (active +
-  alt sealed sessions, exactly like `/api/accounts` via
-  `readAltSessionCookies`) to enumerate this browser's accounts, then checks
-  workspace membership per account via the existing
-  `workspace.confirmMembership` path (`/internal/workspaces/:id/members/:uid`
-  is already wired). Zod-validated query (INV-55), `HttpError` semantics
-  (INV-32), `auth`+`authLimit` like the other `/api/accounts/*` routes.
-- **Frontend:** a route guard replacing the `workspace-layout.tsx:240-246`
-  bounce — on a workspace `403/404`, call the resolver; if a parked account
-  owns it, `switchAccount(ownerUserId)` (PR-4a) and keep the original deep
-  link (no reload); only fall back to `/workspaces` when no account owns it.
-- **Reuse:** PR-4a `switchAccount` + keyed remount; PR-3 `AccountsService`
-  /`resolveAlts`; existing `confirmMembership`. **Consumed by** PR-5
-  (switcher) and PR-6 (notification-click resolves via the same endpoint).
-- **Verification:** while account A is active, open a link to a workspace
-  owned by parked account B → app flips to B and lands on the deep link, no
-  reload, no A-data flash; a link to a workspace no account owns still
-  bounces to `/workspaces`.
+- **R1 — Bare workspace deep-link with 2+ signed-in members → 404 (bounce)
+  by design.** No arbitrary-account guess; PR-5's switcher disambiguates.
+  Single-member links flip seamlessly.
+- **R2 — Identity form never substitutes.** A notification for an account
+  not signed into this browser → 404 → full login (no silent fallback to a
+  different account that can read the workspace). This is the intended
+  correctness behavior, not a regression.
+- **R3 — switch path is a full keyed-subtree remount** (inherited from
+  PR-4a): a brief UI flash on the cross-account deep-link flip. Acceptable
+  for this infra slice; PR-5 owns switch UX.
+- **R4 — single resolve attempt per workspace error** (ref-guarded).
+  Post-remount the fresh mount may resolve again and 404→bounce — terminal,
+  not a loop (`ownerUserId===active` guard prevents a self-switch loop).
+- **R5 — in-process `isMember`** vs the sketch's internal HTTP route:
+  documented in Context; strictly better (source-of-truth, no extra hop).
 
 ## Out of scope (later slices)
 
-Cold-deep-link / notification-click resolver + router guard (**PR-4b**, above);
-switcher UI, `intent=add` "Add account" entry point, account list rendering,
-the `MAX_ACCOUNTS` cap *relaxation* (PR-5); cross-account push +
-notification-click switch (PR-6); backoffice cookie rename (PR-2).
+Switcher UI, `intent=add` "Add account" entry point, account-list
+rendering, `MAX_ACCOUNTS` relaxation, logout-all (**PR-5**); cross-account
+push + notification-click — a thin caller of this slice's **identity**
+resolve form (**PR-6**); backoffice cookie rename (**PR-2**).

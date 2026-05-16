@@ -43,17 +43,30 @@ interface ResolvedAlt {
   user?: { id: string; email: string; firstName: string | null; lastName: string | null }
 }
 
+/**
+ * Membership source of truth. `ControlPlaneWorkspaceService` already
+ * structurally satisfies this via its existing `isMember`; injecting the
+ * narrow shape (not the concrete service) keeps the cross-feature coupling a
+ * single in-process method, not a backend HTTP hop.
+ */
+interface MembershipChecker {
+  isMember(workspaceId: string, workosUserId: string): Promise<boolean>
+}
+
 interface Dependencies {
   authService: AuthService
+  membership: MembershipChecker
 }
 
 const STALE_ID_RE = /^stale:alt_(\d+)$/
 
 export class AccountsService {
   private authService: AuthService
+  private membership: MembershipChecker
 
-  constructor({ authService }: Dependencies) {
+  constructor({ authService, membership }: Dependencies) {
     this.authService = authService
+    this.membership = membership
   }
 
   // Validate every parked alt cookie in parallel (never a serial loop). A
@@ -171,6 +184,69 @@ export class AccountsService {
     }
 
     return { accounts, maxAccounts: MAX_ACCOUNTS }
+  }
+
+  /**
+   * Cross-account entry resolver. Given an entry point that may belong to a
+   * *parked* account, return which signed-in account owns it so the caller
+   * can flip in place. Two mutually exclusive forms:
+   *
+   * - **Identity** (`userId`, the notification primitive): resolve to *that
+   *   exact* account and never substitute a different signed-in account that
+   *   merely also has read access. Not signed in here -> 404
+   *   `ACCOUNT_NOT_SIGNED_IN` (caller does a full login as that user). A
+   *   `workspaceId` is checked as defence-in-depth against a stale
+   *   notification for an account since removed from the workspace.
+   * - **Bare workspace link** (`workspaceId` only): membership is the only
+   *   selector and can be ambiguous, so resolve *only if exactly one*
+   *   signed-in account is a member; 0 or 2+ -> 404
+   *   `WORKSPACE_NOT_RESOLVABLE` (caller keeps its bounce; the switcher
+   *   disambiguates the multi-member case).
+   *
+   * Active id first, then alts in slot order; coalesced alts repeating an
+   * already-seen id are de-duped; stale alts (failed validation) skipped.
+   */
+  async resolve(
+    cookies: Record<string, string>,
+    activeUser: ActiveUser,
+    q: { userId?: string; workspaceId?: string }
+  ): Promise<{ ownerUserId: string }> {
+    const alts = await this.resolveAlts(cookies)
+    const seen = new Set<string>()
+    const signedInIds: string[] = []
+    for (const id of [activeUser.id, ...alts.flatMap((a) => (a.ok && a.user ? [a.user.id] : []))]) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      signedInIds.push(id)
+    }
+
+    if (q.userId) {
+      if (!signedInIds.includes(q.userId)) {
+        throw new HttpError("Account not signed in on this browser", {
+          status: 404,
+          code: "ACCOUNT_NOT_SIGNED_IN",
+        })
+      }
+      if (q.workspaceId && !(await this.membership.isMember(q.workspaceId, q.userId))) {
+        throw new HttpError("Account can no longer access this workspace", {
+          status: 404,
+          code: "WORKSPACE_NOT_RESOLVABLE",
+        })
+      }
+      return { ownerUserId: q.userId }
+    }
+
+    // Zod refine guarantees one of the two query params is present.
+    const wid = q.workspaceId!
+    const flags = await Promise.all(signedInIds.map((id) => this.membership.isMember(wid, id)))
+    const members = signedInIds.filter((_, i) => flags[i])
+    if (members.length !== 1) {
+      throw new HttpError("No unique signed-in account can access this workspace", {
+        status: 404,
+        code: "WORKSPACE_NOT_RESOLVABLE",
+      })
+    }
+    return { ownerUserId: members[0] }
   }
 
   async switch(

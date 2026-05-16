@@ -308,6 +308,58 @@ account data).
 
 ---
 
+### PR-4b — Cross-account entry resolver (depends PR-4a)
+
+**Scope:** The resolve→flip→route primitive so an entry point that belongs to
+a _parked_ account flips to that account in place (PR-4a `switchAccount`,
+keyed remount, no reload) instead of dead-ending on the active account's
+`403/404` bootstrap. Backend owns **one endpoint with two mutually exclusive
+forms**; PR-4b's frontend uses only the bare-link form.
+
+**Backend — `GET /api/accounts/resolve` (control plane):**
+
+- **Identity form** (`?userId=`, the PR-6 notification primitive, built+tested
+  now): resolve to _that exact_ signed-in account and **never substitute** a
+  different signed-in account that merely also has read access. Not signed in
+  on this browser → `404 ACCOUNT_NOT_SIGNED_IN` (caller does a full login as
+  that user). An optional `workspaceId` is checked as defence-in-depth against
+  a stale notification → `404 WORKSPACE_NOT_RESOLVABLE`.
+- **Bare-workspace form** (`?workspaceId=` only, PR-4b's frontend trigger):
+  membership is the only (ambiguous) selector, so resolve **only if exactly
+  one** signed-in account is a member; `0` or `2+` → `404
+WORKSPACE_NOT_RESOLVABLE` (caller keeps today's bounce; PR-5's switcher
+  disambiguates the multi-member case). Never guess an arbitrary account.
+- `AccountsService.resolve` reuses the existing `resolveAlts` and the file's
+  parallel-not-serial idiom; membership is the in-process
+  `ControlPlaneWorkspaceService.isMember` (control plane is the source of
+  truth — no internal HTTP hop), injected as a narrow `MembershipChecker`.
+
+**Frontend — replace the terminal-error bounce with resolve→flip:**
+
+- `apps/frontend/src/api/accounts.ts` (new): `accountsApi.resolve(workspaceId)`
+  (bare-workspace form only; the `userId` form has no caller until PR-6).
+- `useResolveOrBounce(workspaceId, syncEngine)` (new, colocated with
+  `workspace-layout`): on a terminal `403/404`, resolve once per workspace
+  error; a _different_ owner → `switchAccount` (no navigation, last-workspace
+  preserved — PR-4a's keyed remount re-bootstraps the same URL under the
+  owner); otherwise the unchanged guarded bounce to `/workspaces`.
+
+**Reuse:** `AccountsService.resolveAlts`; `ControlPlaneWorkspaceService.isMember`;
+PR-4a `useAccountScope().switchAccount` + keyed remount; `api.get`/`ApiError`.
+
+**Verification:** Backend e2e — identity active/parked; never-substitute (a
+workspace-readable but not-signed-in account → 404, not a fallback);
+identity + stale membership → 404; bare-link unique-member → owner; bare-link
+`0`/`2+` members → 404 (no arbitrary pick); handler 400/401. Frontend — the
+hook flips on a different owner (no navigate, last-workspace kept), bounces on
+backend 404 / self-owner, and attempts resolve at most once per workspace
+error.
+
+**PR-6 becomes a trivial caller of the identity form** (notification payload
+carries the recipient member's `workosUserId`).
+
+---
+
 ### PR-5 — Account switcher UX (depends PR-4a)
 
 **Scope:** The user-facing switcher on top of the AccountScope foundation.
@@ -344,7 +396,7 @@ dialog/menu primitives (INV-14); navigation via links / actions via buttons
 
 ---
 
-### PR-6 — Cross-account push + notification-click switch (depends PR-3 + PR-4a; parallel with PR-5)
+### PR-6 — Cross-account push + notification-click switch (depends PR-4b; parallel with PR-5)
 
 **Scope:** Make push notifications multi-account aware. This is **net-new**
 work — PR #487's service worker navigates to `/w/${workspaceId}/…` with no
@@ -354,9 +406,11 @@ identity awareness and `PushData` carries no `workosUserId`.
 
 - Push payload carries the **target account identity** (at least
   `workosUserId` + `workspaceId`).
-- `apps/frontend/src/sw.ts` `notificationclick`: resolve the target account,
-  **flip AccountScope** (PR-4a) to that account if it is parked, then route to
-  the deep link. No reload.
+- `apps/frontend/src/sw.ts` `notificationclick`: call PR-4b's resolve
+  **identity form** (`?userId=`) with the payload's `workosUserId`, **flip
+  AccountScope** (PR-4a) to that account if it is parked, then route to the
+  deep link. No reload. Not signed in here → full login as that user (the
+  resolver never substitutes a different readable account).
 - Per-`(account, workspace)` push opt-out re-key (matches PR-4a localStorage
   re-keying).
 - Single sign-out does a **surgical push-row cleanup** for that account only
@@ -367,7 +421,7 @@ identity awareness and `PushData` carries no `workosUserId`.
 
 **Reuse:** Existing `push_subscriptions` schema (`UNIQUE (workspace_id,
 user_id, endpoint)` already account-scoped — **no migration**); existing
-endpoint-cleanup query; PR-4a AccountScope flip.
+endpoint-cleanup query; PR-4b resolve identity form; PR-4a AccountScope flip.
 
 **Verification:**
 
@@ -389,14 +443,15 @@ PR-2  (backoffice cookie rename) — independent, any time
 PR-1  (backend-common primitives)
   └── PR-3  (/api/accounts contract + intent=add)
         └── PR-4a (AccountScope foundation)
-              ├── PR-5  (switcher UX)
-              └── PR-6  (cross-account push)        ‖ PR-5
+              └── PR-4b (cross-account entry resolver)
+                    ├── PR-5  (switcher UX)
+                    └── PR-6  (cross-account push)  ‖ PR-5
 ```
 
 ## Recommended merge order
 
-`PR-0 → PR-1 → PR-3 → PR-4a → { PR-5 ‖ PR-6 }`, with `PR-2` slotted in any
-time.
+`PR-0 → PR-1 → PR-3 → PR-4a → PR-4b → { PR-5 ‖ PR-6 }`, with `PR-2` slotted
+in any time.
 
 Rationale:
 
@@ -409,7 +464,10 @@ Rationale:
   contract is correct from day one.
 - **PR-4a** before any switcher UI so isolation is proven (the headline
   zero-cross-account-read test) before users can trigger switches.
-- **PR-5 and PR-6 in parallel** on top of PR-4a — both consume the AccountScope
+- **PR-4b** next — the resolve→flip primitive that turns a parked-account deep
+  link into an in-place switch; PR-6's notification-click is a trivial caller
+  of its identity form and PR-5 inherits the modified bounce path.
+- **PR-5 and PR-6 in parallel** on top of PR-4b — both consume the AccountScope
   flip; neither depends on the other.
 - **PR-2 anytime** — it only renames the backoffice cookie and shares nothing
   with the product account model.
