@@ -1514,6 +1514,15 @@ function VirtuosoMessageList({
 
   return (
     <Virtuoso
+      // Remount per stream. Virtuoso's hidden-until-stable reveal gate is
+      // mount-only; navigating between streams reuses this instance (only the
+      // streamId prop changes — see the empty-state comment above), so the
+      // gate never re-arms and the new stream's content paints at the wrong
+      // offset then scroll-corrects (the "loads in too low then jumps" report).
+      // A fresh mount re-runs the exact cold-boot path: mounts with an empty
+      // sizeTree (gate closed), measures the window while hidden, reveals only
+      // once scroll-to-LAST settles on real sizes.
+      key={streamId}
       ref={virtuosoRef}
       scrollerRef={handleVirtuosoScrollerRef}
       className={cn("h-full", batch?.enabled && "select-none")}
