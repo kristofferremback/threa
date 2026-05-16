@@ -12,7 +12,7 @@ Personal bots now have the backend foundation to be user-owned and tagged with t
 - keeping the same behavior in threads under the scratchpad,
 - routing those invocations to provider-specific runtimes without making Threa know whether the other side is Hermes, OpenClaw, Claude Code channels, or a custom Pi adapter.
 
-This note describes the product/runtime contract only. It intentionally contains no implementation.
+This note describes the product/runtime contract only. It intentionally contains no implementation. For a concrete staged implementation plan focused on the local Pi remote adapter, see [`pi-remote-protocol-implementation.md`](./pi-remote-protocol-implementation.md).
 
 ## Product direction
 
