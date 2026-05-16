@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching"
+import { cleanupOutdatedCaches, matchPrecache, precacheAndRoute } from "workbox-precaching"
 import { AuthorTypes, type LastMessagePreview, type StreamEvent } from "@threa/types"
 import { resolveTag } from "./lib/sw-notification-format"
 import {
@@ -51,29 +51,42 @@ self.addEventListener("activate", (event) => {
 // linger and consume storage quota.
 cleanupOutdatedCaches()
 
-// Network-first for navigation requests. This is the critical fix for the
-// "unstyled page" bug: workbox's precacheAndRoute uses cache-first for
-// everything, including index.html. When a new build deploys with different
-// asset filenames, a stale precache serves old HTML that references old
-// CSS/JS filenames which no longer exist on the server — resulting in 404s
-// and an unstyled page. By handling navigations network-first, users always
-// get the latest HTML with correct asset references. The precache still
-// serves as an offline fallback.
+// Serve the build-atomic precached app shell for navigations. workbox's
+// precache manifest pins index.html and the content-hashed JS/CSS it
+// references to the same build, so a returning launch can never get build-A's
+// HTML against build-B's now-missing assets — the post-deploy "unstyled page"
+// failure (where _redirects' `/* /index.html 200` SPA fallback serves HTML in
+// place of deleted asset URLs, so React never mounts). Zero network on the
+// boot critical path; post-deploy freshness comes from the SW update
+// lifecycle (skipWaiting/clients.claim above) surfaced by the in-app
+// version.json update toast.
 self.addEventListener("fetch", (event) => {
   // Only app-shell GET navigations belong here. Web Share Target launches use
   // a POST navigation to /share, which must fall through to the handler below.
   if (event.request.mode !== "navigate" || event.request.method !== "GET") return
 
+  // Real server navigations must reach the network, not the SPA shell:
+  // /api/* (OAuth redirect), /recover (the SW-unregister recovery page,
+  // deliberately excluded from the precache), and the SW/version probes.
+  const { pathname } = new URL(event.request.url)
+  if (
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/recover") ||
+    pathname === "/sw.js" ||
+    pathname === "/version.json"
+  ) {
+    return
+  }
+
   event.respondWith(
-    fetch(event.request).catch(async () => {
-      // Offline: fall back to precached HTML
-      const cached = await caches.match(event.request)
-      if (cached) return cached
-      // Last resort: try precached index.html for SPA routing
-      const fallback = await caches.match("/index.html")
-      if (fallback) return fallback
-      return Response.error()
-    })
+    (async () => {
+      // matchPrecache resolves workbox's revisioned cache key, so this is the
+      // exact index.html that ships with the precached asset bundle.
+      const precached = await matchPrecache("/index.html")
+      if (precached) return precached
+      // First ever launch / precache unavailable — go to network.
+      return fetch(event.request)
+    })()
   )
 })
 

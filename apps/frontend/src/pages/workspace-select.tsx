@@ -22,7 +22,12 @@ function getCreateWorkspaceErrorMessage(error: unknown): string | null {
 
 export function WorkspaceSelectPage() {
   const { user, loading: authLoading } = useAuth()
-  const { workspaces, pendingInvitations, isLoading: workspacesLoading, error } = useWorkspaces()
+  const { workspaces, cachedWorkspaces, pendingInvitations, isLoading: workspacesLoading, error } = useWorkspaces()
+  // Prefer the freshly fetched list; fall back to the IDB-cached one so a
+  // returning user sees their workspaces instantly while the list query
+  // revalidates in the background instead of staring at a full-screen spinner
+  // on a slow network.
+  const displayWorkspaces = workspaces ?? cachedWorkspaces
   const { data: regions } = useRegions()
   const createWorkspace = useCreateWorkspace()
   const acceptInvitation = useAcceptInvitation()
@@ -63,9 +68,9 @@ export function WorkspaceSelectPage() {
     return <Navigate to="/login" replace />
   }
 
-  const isLoading = authLoading || workspacesLoading
-
-  if (isLoading) {
+  // Only block on a spinner for a genuinely cold visit — no cached list to
+  // render yet. With a cache we render it immediately and revalidate behind it.
+  if ((authLoading || workspacesLoading) && !displayWorkspaces) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -76,7 +81,9 @@ export function WorkspaceSelectPage() {
     )
   }
 
-  if (error) {
+  // A failed revalidation must not blank out a usable cached list (offline /
+  // flaky network). Only surface the hard error when there's nothing to show.
+  if (error && !displayWorkspaces?.length) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
@@ -88,8 +95,8 @@ export function WorkspaceSelectPage() {
   }
 
   // Auto-redirect when there's exactly one workspace and no pending invitations
-  if (workspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId) {
-    return <Navigate to={`/w/${workspaces[0].id}`} replace />
+  if (displayWorkspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId) {
+    return <Navigate to={`/w/${displayWorkspaces[0].id}`} replace />
   }
 
   return (
@@ -121,9 +128,9 @@ export function WorkspaceSelectPage() {
           </div>
         )}
 
-        {workspaces && workspaces.length > 0 && (
+        {displayWorkspaces && displayWorkspaces.length > 0 && (
           <div className="flex flex-col gap-2">
-            {workspaces.map((workspace) => (
+            {displayWorkspaces.map((workspace) => (
               <Button key={workspace.id} asChild variant="outline" className="w-64 justify-start">
                 <Link to={`/w/${workspace.id}`}>
                   <span className="truncate">{workspace.name}</span>

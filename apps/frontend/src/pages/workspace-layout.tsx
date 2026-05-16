@@ -52,6 +52,7 @@ import {
   useBackgroundBootstrapSync,
 } from "@/hooks"
 import { usePageResume } from "@/hooks/use-page-resume"
+import { setLastWorkspaceId } from "@/lib/last-workspace"
 import { useAuth } from "@/auth"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { SyncEngine, SyncEngineContext } from "@/sync/sync-engine"
@@ -320,6 +321,16 @@ export function WorkspaceLayout() {
   const streams = useWorkspaceStreams(workspaceId ?? "")
 
   usePersistLastStream(workspaceId, streamId)
+
+  // Remember the workspace the user is in so the `/` entry route can redirect
+  // straight here on a returning launch (renders from IndexedDB) instead of
+  // routing through the control-plane workspace list. Only once auth resolved
+  // to a real user so a pre-auth render can't pin a workspace.
+  useEffect(() => {
+    if (workspaceId && user) {
+      setLastWorkspaceId(workspaceId)
+    }
+  }, [workspaceId, user])
 
   const openSwitcher = useCallback((mode: QuickSwitcherMode) => {
     setSwitcherMode(mode)

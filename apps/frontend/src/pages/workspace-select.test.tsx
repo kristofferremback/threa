@@ -161,6 +161,51 @@ describe("WorkspaceSelectPage", () => {
     expect(screen.getByRole("link", { name: "Beta" })).toHaveAttribute("href", "/w/workspace_2")
   })
 
+  it("renders the IDB-cached workspaces instead of a spinner while the list query is still loading", () => {
+    mockUseWorkspaces.mockReturnValue({
+      workspaces: undefined,
+      cachedWorkspaces: [makeWorkspace("workspace_1", "Alpha"), makeWorkspace("workspace_2", "Beta")],
+      pendingInvitations: [],
+      isLoading: true,
+      error: null,
+    })
+
+    renderPage()
+
+    expect(screen.getByRole("link", { name: "Alpha" })).toHaveAttribute("href", "/w/workspace_1")
+    expect(screen.getByRole("link", { name: "Beta" })).toHaveAttribute("href", "/w/workspace_2")
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument()
+  })
+
+  it("auto-redirects to a single cached workspace while the list query is still loading", async () => {
+    mockUseWorkspaces.mockReturnValue({
+      workspaces: undefined,
+      cachedWorkspaces: [makeWorkspace("workspace_solo", "Solo")],
+      pendingInvitations: [],
+      isLoading: true,
+      error: null,
+    })
+
+    renderPage()
+
+    expect(await screen.findByTestId("workspace-route")).toHaveTextContent("workspace_solo")
+  })
+
+  it("keeps showing the cached list when revalidation errors instead of blanking to the error screen", () => {
+    mockUseWorkspaces.mockReturnValue({
+      workspaces: undefined,
+      cachedWorkspaces: [makeWorkspace("workspace_1", "Alpha"), makeWorkspace("workspace_2", "Beta")],
+      pendingInvitations: [],
+      isLoading: false,
+      error: new Error("network down"),
+    })
+
+    renderPage()
+
+    expect(screen.getByRole("link", { name: "Alpha" })).toBeInTheDocument()
+    expect(screen.queryByText("Failed to load workspaces")).not.toBeInTheDocument()
+  })
+
   it("should show invite-only message when invite is required", () => {
     mockUseWorkspaces.mockReturnValue({
       workspaces: [],

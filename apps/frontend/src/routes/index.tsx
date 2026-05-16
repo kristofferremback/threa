@@ -4,6 +4,7 @@ import { ErrorBoundary } from "@/components/error-boundary"
 import { FallbackLoader } from "@/components/fallback-loader"
 import { useSidebar } from "@/contexts"
 import { useLastStream } from "@/hooks"
+import { getLastWorkspaceId } from "@/lib/last-workspace"
 
 // Route-level code splitting: each page lazy-loads its own chunk so heavy
 // dependencies (tiptap/prosemirror, recharts, limax/pinyin-pro, etc.) ride
@@ -11,7 +12,7 @@ import { useLastStream } from "@/hooks"
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: <Navigate to="/workspaces" replace />,
+    element: <RootRedirect />,
     errorElement: <ErrorBoundary />,
   },
   {
@@ -115,6 +116,20 @@ export const router = createBrowserRouter([
     ],
   },
 ])
+
+// PWA `start_url` is `/`. A returning user almost always wants the workspace
+// they last had open, which renders instantly from IndexedDB — so jump
+// straight there instead of routing through `/workspaces` and blocking on the
+// control-plane list round trip just to rediscover it. Purely a navigation
+// hint: WorkspaceLayout still enforces auth/membership and a stale/unknown id
+// falls back to the normal bootstrap path. No cached id ⇒ unchanged behavior.
+export function RootRedirect() {
+  const lastWorkspaceId = getLastWorkspaceId()
+  if (lastWorkspaceId) {
+    return <Navigate to={`/w/${lastWorkspaceId}`} replace />
+  }
+  return <Navigate to="/workspaces" replace />
+}
 
 /** Workspace index route — redirects to a stream or opens the sidebar. */
 export function WorkspaceHome() {

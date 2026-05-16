@@ -1,6 +1,8 @@
 import { createContext, useCallback, useEffect, useState, type ReactNode } from "react"
 import { API_BASE } from "@/api/client"
 import { clearAllCachedData } from "@/db"
+import { getCachedUser, setCachedUser, clearCachedUser } from "@/lib/cached-user"
+import { clearLastWorkspaceId } from "@/lib/last-workspace"
 import type { AuthState, User } from "./types"
 
 declare global {
@@ -20,6 +22,11 @@ interface AuthContextValue extends AuthState {
 // fires when `serviceWorker.ready` never settles (stranded worker).
 const PUSH_CLEANUP_TIMEOUT_MS = 2000
 
+// Identity revalidation is a background refresh — the UI already rendered from
+// the cached user — so its only job here is to never leak a hung request on a
+// dead network. Generous because it never blocks first paint.
+const AUTH_REVALIDATE_TIMEOUT_MS = 15000
+
 export const AuthContext = createContext<AuthContextValue | null>(null)
 
 interface AuthProviderProps {
@@ -27,33 +34,68 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    loading: true,
-    error: null,
+  // Render instantly from the cached display identity (the httpOnly cookie is
+  // still the credential — this is display-only). `loading` stays true only
+  // for a genuinely cold first visit so the app doesn't gate on the network.
+  const [state, setState] = useState<AuthState>(() => {
+    const cachedUser = getCachedUser()
+    return { user: cachedUser, loading: !cachedUser, error: null }
   })
 
   const fetchUser = useCallback(async () => {
+    // A 401 is the only authoritative "you are signed out" signal: clear the
+    // cached identity and drop to the login redirect.
+    const onUnauthenticated = () => {
+      clearCachedUser()
+      setState({ user: null, loading: false, error: null })
+    }
+    // Network failure / timeout / 5xx during background revalidation must not
+    // sign a returning user out — keep the cached identity so the app stays
+    // usable offline. Only a cold visit with no cache falls through to login.
+    const onRevalidateFailure = (message: string) => {
+      const cachedUser = getCachedUser()
+      setState({
+        user: cachedUser,
+        loading: false,
+        error: cachedUser ? null : message,
+      })
+    }
+
     try {
-      // Consume the eager auth promise started in index.html before the bundle loaded.
-      // If the eager promise rejected (network error, 500, etc.) we fall through
-      // to a fresh fetch so error handling works correctly.
+      // Consume the eager auth promise started in index.html before the bundle
+      // loaded. It resolves to the User, or null on 401; it rejects on network
+      // error / 5xx, in which case we fall through to a fresh, bounded fetch.
       const eagerPromise = window.__eagerAuthPromise
       if (eagerPromise) {
         window.__eagerAuthPromise = undefined
         try {
           const user = await eagerPromise
-          setState({ user, loading: false, error: null })
+          if (user) {
+            setCachedUser(user)
+            setState({ user, loading: false, error: null })
+          } else {
+            onUnauthenticated()
+          }
           return
         } catch {
           // Eager fetch failed — fall through to regular fetch
         }
       }
 
-      const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: "include" })
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), AUTH_REVALIDATE_TIMEOUT_MS)
+      let res: Response
+      try {
+        res = await fetch(`${API_BASE}/api/auth/me`, {
+          credentials: "include",
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(timeout)
+      }
 
       if (res.status === 401) {
-        setState({ user: null, loading: false, error: null })
+        onUnauthenticated()
         return
       }
 
@@ -62,13 +104,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       const user: User = await res.json()
+      setCachedUser(user)
       setState({ user, loading: false, error: null })
     } catch (err) {
-      setState({
-        user: null,
-        loading: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      })
+      onRevalidateFailure(err instanceof Error ? err.message : "Unknown error")
     }
   }, [])
 
@@ -109,6 +148,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       pushCleanup,
       new Promise<void>((resolve) => setTimeout(resolve, PUSH_CLEANUP_TIMEOUT_MS)),
     ]).catch(() => {})
+    clearCachedUser()
+    clearLastWorkspaceId()
     await clearAllCachedData().catch(() => {})
     window.location.href = `${API_BASE}/api/auth/logout`
   }, [])

@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
-import { LegacyMemoRedirect, WorkspaceHome } from "./index"
+import { LegacyMemoRedirect, RootRedirect, WorkspaceHome } from "./index"
 import * as useLastStreamModule from "@/hooks/use-last-stream"
 import * as sidebarContextModule from "@/contexts/sidebar-context"
+import { clearLastWorkspaceId, setLastWorkspaceId } from "@/lib/last-workspace"
 
 const mockUseLastStream = vi.fn()
 const mockTogglePinned = vi.fn()
@@ -12,6 +13,44 @@ function SearchEcho() {
   const location = useLocation()
   return <div data-testid="search">{location.search}</div>
 }
+
+function PathEcho() {
+  const location = useLocation()
+  return <div data-testid="path">{location.pathname}</div>
+}
+
+describe("RootRedirect", () => {
+  beforeEach(() => clearLastWorkspaceId())
+
+  it("sends a returning user straight to their last workspace", async () => {
+    setLastWorkspaceId("ws_abc")
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/w/:workspaceId" element={<PathEcho />} />
+          <Route path="/workspaces" element={<PathEcho />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByTestId("path")).toHaveTextContent("/w/ws_abc")
+  })
+
+  it("falls back to the workspace picker when no last workspace is recorded", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/w/:workspaceId" element={<PathEcho />} />
+          <Route path="/workspaces" element={<PathEcho />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByTestId("path")).toHaveTextContent("/workspaces")
+  })
+})
 
 describe("WorkspaceHome", () => {
   beforeEach(() => {
