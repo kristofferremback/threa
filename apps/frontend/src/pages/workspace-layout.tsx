@@ -52,6 +52,7 @@ import {
   useBackgroundBootstrapSync,
 } from "@/hooks"
 import { usePageResume } from "@/hooks/use-page-resume"
+import { clearLastWorkspaceId, getLastWorkspaceId, setLastWorkspaceId } from "@/lib/last-workspace"
 import { useAuth } from "@/auth"
 import { useWorkspaceStreams } from "@/stores/workspace-store"
 import { SyncEngine, SyncEngineContext } from "@/sync/sync-engine"
@@ -241,9 +242,16 @@ function WorkspaceSyncHandler({
     if (workspaceSyncStatus !== "error") return
     const err = syncEngine.lastWorkspaceError
     if (err && ApiError.isApiError(err) && (err.status === 404 || err.status === 403)) {
+      // This workspace is terminally inaccessible for this user (removed /
+      // deleted). Stop pinning it as the "last workspace" or the `/` entry
+      // route would bounce back through this failing bootstrap on every cold
+      // launch. Guarded so a concurrently-set id isn't clobbered.
+      if (getLastWorkspaceId() === workspaceId) {
+        clearLastWorkspaceId()
+      }
       navigate("/workspaces", { replace: true })
     }
-  }, [workspaceSyncStatus, syncEngine, navigate])
+  }, [workspaceSyncStatus, syncEngine, navigate, workspaceId])
 
   return <SyncEngineContext.Provider value={syncEngine}>{children}</SyncEngineContext.Provider>
 }
@@ -320,6 +328,16 @@ export function WorkspaceLayout() {
   const streams = useWorkspaceStreams(workspaceId ?? "")
 
   usePersistLastStream(workspaceId, streamId)
+
+  // Remember the workspace the user is in so the `/` entry route can redirect
+  // straight here on a returning launch (renders from IndexedDB) instead of
+  // routing through the control-plane workspace list. Only once auth resolved
+  // to a real user so a pre-auth render can't pin a workspace.
+  useEffect(() => {
+    if (workspaceId && user) {
+      setLastWorkspaceId(workspaceId)
+    }
+  }, [workspaceId, user])
 
   const openSwitcher = useCallback((mode: QuickSwitcherMode) => {
     setSwitcherMode(mode)

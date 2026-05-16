@@ -48,16 +48,55 @@ export async function parseApiError(
  */
 export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ""
 
+// Bound every request so a flaky/slow network can't leave a fetch hanging
+// forever — background revalidations must settle (to cached state) instead of
+// piling up. Generous because it's a safety net, not a latency budget;
+// override per-call via `options.timeoutMs`.
+const DEFAULT_TIMEOUT_MS = 20000
+
+export type ApiRequestInit = RequestInit & { timeoutMs?: number }
+
 // Base fetch wrapper with error handling
-async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    credentials: "include", // Include cookies for auth
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  })
+async function apiFetch<T>(path: string, options: ApiRequestInit = {}): Promise<T> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: callerSignal, ...init } = options
+
+  const controller = new AbortController()
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+
+  const onCallerAbort = () => controller.abort()
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort()
+    else callerSignal.addEventListener("abort", onCallerAbort, { once: true })
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: "include", // Include cookies for auth
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...init.headers,
+      },
+    })
+  } catch (err) {
+    // A timeout is a network-like failure, not an auth signal. Throw a plain
+    // Error (NOT an ApiError) so `handleGlobalError` can't mistake it for a
+    // 401 and bounce the user to login — queries fall back to cached/IDB
+    // state instead. A caller-driven abort rethrows unchanged.
+    if (timedOut) {
+      throw new Error(`Request timed out after ${timeoutMs}ms`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timeout)
+    if (callerSignal) callerSignal.removeEventListener("abort", onCallerAbort)
+  }
 
   // Handle non-JSON responses (like 204 No Content)
   if (response.status === 204) {
@@ -80,11 +119,11 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 // HTTP method helpers
 export const api = {
-  get<T>(path: string, options?: RequestInit): Promise<T> {
+  get<T>(path: string, options?: ApiRequestInit): Promise<T> {
     return apiFetch<T>(path, { ...options, method: "GET" })
   },
 
-  post<T>(path: string, body?: unknown, options?: RequestInit): Promise<T> {
+  post<T>(path: string, body?: unknown, options?: ApiRequestInit): Promise<T> {
     return apiFetch<T>(path, {
       ...options,
       method: "POST",
@@ -92,7 +131,7 @@ export const api = {
     })
   },
 
-  patch<T>(path: string, body?: unknown, options?: RequestInit): Promise<T> {
+  patch<T>(path: string, body?: unknown, options?: ApiRequestInit): Promise<T> {
     return apiFetch<T>(path, {
       ...options,
       method: "PATCH",
@@ -100,7 +139,7 @@ export const api = {
     })
   },
 
-  put<T>(path: string, body?: unknown, options?: RequestInit): Promise<T> {
+  put<T>(path: string, body?: unknown, options?: ApiRequestInit): Promise<T> {
     return apiFetch<T>(path, {
       ...options,
       method: "PUT",
@@ -108,7 +147,7 @@ export const api = {
     })
   },
 
-  delete<T>(path: string, options?: RequestInit): Promise<T> {
+  delete<T>(path: string, options?: ApiRequestInit): Promise<T> {
     return apiFetch<T>(path, { ...options, method: "DELETE" })
   },
 }

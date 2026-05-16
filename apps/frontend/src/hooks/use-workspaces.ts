@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useLiveQuery } from "dexie-react-hooks"
 import { useSocket, useWorkspaceService } from "@/contexts"
 import { useUser } from "@/auth"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
@@ -37,9 +38,15 @@ export function useWorkspaces() {
     },
   })
 
+  // Read back the IDB cache the query above writes — this closes the
+  // previously write-only loop so a returning user can render their
+  // workspaces instantly while the list query revalidates in the background.
+  const cachedWorkspaces = useLiveQuery(() => db.workspaces.toArray(), [])
+
   return {
     ...query,
     workspaces: query.data?.workspaces,
+    cachedWorkspaces,
     pendingInvitations: query.data?.pendingInvitations ?? [],
   }
 }

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useRef, type ReactNode 
 import { io, Socket } from "socket.io-client"
 import { HEARTBEAT_INTERACTION_THROTTLE_MS } from "@threa/types"
 import { api } from "@/api/client"
+import { getCachedWsConfig, setCachedWsConfig } from "@/lib/cached-ws-config"
 import { usePageActivity } from "@/hooks/use-page-activity"
 import { usePageInteraction } from "@/hooks/use-page-interaction"
 
@@ -56,77 +57,119 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
 
   useEffect(() => {
     let cancelled = false
-    let newSocket: Socket | null = null
+    let activeSocket: Socket | null = null
+    // Raw (pre-dev-rewrite) wsUrl the active socket was built from, so a
+    // background revalidation can tell whether it actually moved.
+    let activeWsUrl: string | null = null
     let retryTimer: ReturnType<typeof setTimeout> | null = null
 
-    async function connect(attempt = 0) {
+    function buildSocket(config: WorkspaceConfig): Socket {
+      // In dev, the router returns ws://localhost:PORT but we may be accessing
+      // from a different host (e.g. phone over WiFi). Rewrite to match the actual host.
+      const wsUrl = import.meta.env.DEV ? config.wsUrl.replace("localhost", window.location.hostname) : config.wsUrl
+
+      const s = io(wsUrl, {
+        path: "/socket.io/",
+        withCredentials: true,
+        autoConnect: true,
+      })
+
+      // Only the socket that is still the active instance may drive provider
+      // state. A socket that was superseded (wsUrl moved → start() built a
+      // replacement) or torn down (workspace change) still emits a
+      // close-disconnect; without this guard that stale instance would
+      // backfire status/reconnectCount onto the socket that replaced it.
+      const isStale = () => cancelled || activeSocket !== s
+
+      s.on("connect", () => {
+        if (isStale()) return
+        const wasReconnecting = hasEverConnectedRef.current
+        hasEverConnectedRef.current = true
+        setStatus("connected")
+
+        if (wasReconnecting) {
+          setReconnectCount((c) => c + 1)
+          console.log("[Socket] Reconnected successfully")
+        } else {
+          console.log("[Socket] Connected to", config.region)
+        }
+      })
+
+      s.on("disconnect", (reason) => {
+        if (isStale()) return
+        if (hasEverConnectedRef.current) {
+          setStatus("reconnecting")
+          console.log("[Socket] Disconnected:", reason)
+        } else {
+          setStatus("disconnected")
+        }
+      })
+
+      s.on("error", (error: { message: string }) => {
+        if (isStale()) return
+        console.error("[Socket] Error:", error.message)
+      })
+
+      // Socket.io manager events for reconnection tracking
+      s.io.on("reconnect_attempt", (socketAttempt) => {
+        if (isStale()) return
+        setStatus("reconnecting")
+        console.log(`[Socket] Reconnect attempt ${socketAttempt}`)
+      })
+
+      s.io.on("reconnect_error", (error) => {
+        if (isStale()) return
+        console.error("[Socket] Reconnect error:", error.message)
+      })
+
+      s.io.on("reconnect_failed", () => {
+        if (isStale()) return
+        console.error("[Socket] Reconnect failed - giving up")
+        setStatus("disconnected")
+      })
+
+      return s
+    }
+
+    function start(config: WorkspaceConfig) {
+      // Swap the active ref to the replacement before closing the previous
+      // socket, so the previous socket's synchronous close-disconnect is
+      // rejected by isStale() instead of clobbering the new socket's status.
+      const previous = activeSocket
+      activeSocket = buildSocket(config)
+      activeWsUrl = config.wsUrl
+      previous?.close()
+      setSocket(activeSocket)
+    }
+
+    async function fetchConfig(attempt = 0) {
       try {
         const config = await api.get<WorkspaceConfig>(`/api/workspaces/${workspaceId}/config`)
         if (cancelled) return
+        setCachedWsConfig(workspaceId, config)
 
-        // In dev, the router returns ws://localhost:PORT but we may be accessing
-        // from a different host (e.g. phone over WiFi). Rewrite to match the actual host.
-        const wsUrl = import.meta.env.DEV ? config.wsUrl.replace("localhost", window.location.hostname) : config.wsUrl
-
-        newSocket = io(wsUrl, {
-          path: "/socket.io/",
-          withCredentials: true,
-          autoConnect: true,
-        })
-
-        newSocket.on("connect", () => {
-          const wasReconnecting = hasEverConnectedRef.current
-          hasEverConnectedRef.current = true
-          setStatus("connected")
-
-          if (wasReconnecting) {
-            setReconnectCount((c) => c + 1)
-            console.log("[Socket] Reconnected successfully")
-          } else {
-            console.log("[Socket] Connected to", config.region)
-          }
-        })
-
-        newSocket.on("disconnect", (reason) => {
-          if (hasEverConnectedRef.current) {
-            setStatus("reconnecting")
-            console.log("[Socket] Disconnected:", reason)
-          } else {
-            setStatus("disconnected")
-          }
-        })
-
-        newSocket.on("error", (error: { message: string }) => {
-          console.error("[Socket] Error:", error.message)
-        })
-
-        // Socket.io manager events for reconnection tracking
-        newSocket.io.on("reconnect_attempt", (socketAttempt) => {
-          setStatus("reconnecting")
-          console.log(`[Socket] Reconnect attempt ${socketAttempt}`)
-        })
-
-        newSocket.io.on("reconnect_error", (error) => {
-          console.error("[Socket] Reconnect error:", error.message)
-        })
-
-        newSocket.io.on("reconnect_failed", () => {
-          console.error("[Socket] Reconnect failed - giving up")
-          setStatus("disconnected")
-        })
-
-        setSocket(newSocket)
+        // Cold boot (no cache) ⇒ connect now. Warm boot ⇒ only swap if the
+        // (effectively immutable) URL actually moved; otherwise keep the
+        // socket that already connected from cache — no needless reconnect.
+        if (!activeSocket || config.wsUrl !== activeWsUrl) {
+          start(config)
+        }
       } catch (error) {
         console.error("[Socket] Failed to fetch workspace config:", error)
         if (cancelled) return
 
-        // Retry with exponential backoff (1s, 2s, 4s, then give up)
+        // A warm boot already has a working socket from the cached config — a
+        // failed background revalidation is harmless, so don't churn status or
+        // burn retries; the socket's own reconnection logic handles drops.
+        if (activeSocket) return
+
+        // Cold boot: retry with exponential backoff (1s, 2s, 4s, then give up)
         if (attempt < 3) {
           const delay = 1000 * Math.pow(2, attempt)
           console.log(`[Socket] Retrying config fetch in ${delay}ms (attempt ${attempt + 1}/3)`)
           setStatus("reconnecting")
           retryTimer = setTimeout(() => {
-            if (!cancelled) connect(attempt + 1)
+            if (!cancelled) fetchConfig(attempt + 1)
           }, delay)
         } else {
           console.error("[Socket] Config fetch failed after 3 retries — giving up")
@@ -135,13 +178,20 @@ export function SocketProvider({ workspaceId, children }: SocketProviderProps) {
       }
     }
 
-    connect()
+    // The region/wsUrl is assigned at workspace creation and effectively
+    // immutable, so a cached value lets the socket connect with zero round
+    // trip on a returning launch. The fetch still runs to revalidate.
+    const cached = getCachedWsConfig(workspaceId)
+    if (cached) {
+      start(cached)
+    }
+    fetchConfig()
 
     return () => {
       cancelled = true
       hasEverConnectedRef.current = false
       if (retryTimer) clearTimeout(retryTimer)
-      newSocket?.close()
+      activeSocket?.close()
       setSocket(null)
       setStatus("connecting")
       setReconnectCount(0)

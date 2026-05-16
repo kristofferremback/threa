@@ -22,7 +22,15 @@ function getCreateWorkspaceErrorMessage(error: unknown): string | null {
 
 export function WorkspaceSelectPage() {
   const { user, loading: authLoading } = useAuth()
-  const { workspaces, pendingInvitations, isLoading: workspacesLoading, error } = useWorkspaces()
+  const { workspaces, cachedWorkspaces, pendingInvitations, isLoading: workspacesLoading, error } = useWorkspaces()
+  // Prefer the freshly fetched list; fall back to the IDB-cached one so a
+  // returning user sees their workspaces instantly while the list query
+  // revalidates in the background instead of staring at a full-screen spinner
+  // on a slow network. `useLiveQuery` yields `undefined` until the IDB read
+  // resolves, then an array (possibly empty) — that distinction is
+  // load-bearing in the loading states below so neither boot path flashes.
+  const cacheResolved = cachedWorkspaces !== undefined
+  const displayWorkspaces = workspaces ?? cachedWorkspaces
   const { data: regions } = useRegions()
   const createWorkspace = useCreateWorkspace()
   const acceptInvitation = useAcceptInvitation()
@@ -63,20 +71,31 @@ export function WorkspaceSelectPage() {
     return <Navigate to="/login" replace />
   }
 
-  const isLoading = authLoading || workspacesLoading
-
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <ThreaLogo size="lg" className="animate-pulse" />
-          <p className="text-muted-foreground text-sm">Loading...</p>
+  if (!displayWorkspaces?.length && !error) {
+    // First tick of a warm boot: the IDB read hasn't resolved yet and there's
+    // no fresh data, but a cached list is about to appear. Render nothing for
+    // that sub-frame (~16ms, imperceptible) rather than a spinner we'd
+    // immediately replace — flashing the spinner on and off *is* the flicker.
+    if (workspaces === undefined && !cacheResolved && workspacesLoading && !authLoading) {
+      return null
+    }
+    // Genuine cold visit: auth still resolving, or the IDB cache resolved
+    // empty and we're still waiting on the network. Nothing to show → spinner.
+    if (authLoading || workspacesLoading) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-4">
+            <ThreaLogo size="lg" className="animate-pulse" />
+            <p className="text-muted-foreground text-sm">Loading...</p>
+          </div>
         </div>
-      </div>
-    )
+      )
+    }
   }
 
-  if (error) {
+  // A failed revalidation must not blank out a usable cached list (offline /
+  // flaky network). Only surface the hard error when there's nothing to show.
+  if (error && !displayWorkspaces?.length) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
@@ -87,7 +106,11 @@ export function WorkspaceSelectPage() {
     )
   }
 
-  // Auto-redirect when there's exactly one workspace and no pending invitations
+  // Auto-redirect when there's exactly one workspace and no pending
+  // invitations. Gate on the *authoritative* network list, not the cached
+  // one: redirecting off the cache while `pendingInvitations` is still its
+  // pre-fetch `[]` default would skip the invitation UI for a returning user
+  // who has one workspace and a freshly-issued invite.
   if (workspaces?.length === 1 && pendingInvitations.length === 0 && !acceptingId) {
     return <Navigate to={`/w/${workspaces[0].id}`} replace />
   }
@@ -121,9 +144,9 @@ export function WorkspaceSelectPage() {
           </div>
         )}
 
-        {workspaces && workspaces.length > 0 && (
+        {displayWorkspaces && displayWorkspaces.length > 0 && (
           <div className="flex flex-col gap-2">
-            {workspaces.map((workspace) => (
+            {displayWorkspaces.map((workspace) => (
               <Button key={workspace.id} asChild variant="outline" className="w-64 justify-start">
                 <Link to={`/w/${workspace.id}`}>
                   <span className="truncate">{workspace.name}</span>
