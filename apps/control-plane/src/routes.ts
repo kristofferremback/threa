@@ -9,6 +9,7 @@ import {
   StubAuthService,
 } from "@threa/backend-common"
 import { createControlPlaneAuthHandlers, createAuthStubHandlers } from "./features/auth"
+import { createAccountsHandlers, AccountsService } from "./features/accounts"
 import { createIntegrationHandlers } from "./features/integrations"
 import { createWorkspaceHandlers, type ControlPlaneWorkspaceService } from "./features/workspaces"
 import { createInvitationShadowHandlers, type InvitationShadowService } from "./features/invitation-shadows"
@@ -79,6 +80,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const backoffice = createBackofficeHandlers({ backofficeService })
   const backofficeAuthz = createBackofficeAuthzAdminHandlers({ pool, adminService: workosAuthzAdminService })
   const internalAuthz = createInternalAuthzAdminHandlers({ pool, adminService: workosAuthzAdminService })
+  const accountsService = new AccountsService({ authService })
+  const accounts = createAccountsHandlers({ accountsService })
 
   // Readiness probe
   app.get("/readyz", (_, res) => res.json({ status: "ok" }))
@@ -108,6 +111,13 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/auth/me", auth, authHandlers.me)
   app.get("/api/integrations/github/callback", auth, integrations.githubCallback)
   app.get("/api/integrations/linear/callback", auth, integrations.linearCallback)
+
+  // Multi-account: list/switch/remove run *after* the existing `auth`
+  // middleware, which validates only the single active session cookie. Parked
+  // alt slots are storage-only and read solely by these handlers.
+  app.get("/api/accounts", auth, authLimit, accounts.list)
+  app.post("/api/accounts/switch", auth, authLimit, accounts.switch)
+  app.post("/api/accounts/remove", auth, authLimit, accounts.remove)
 
   // Workspace routes
   app.get("/api/workspaces", auth, workspace.list)

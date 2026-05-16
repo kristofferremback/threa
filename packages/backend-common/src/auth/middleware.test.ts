@@ -16,6 +16,9 @@ class FakeAuthService implements AuthService {
   async getLogoutUrl(): Promise<string | null> {
     return null
   }
+  async revokeSession(): Promise<boolean> {
+    return false
+  }
 }
 
 function makeRes(): Response {

@@ -2,11 +2,16 @@ import type { Request, Response } from "express"
 import { z } from "zod/v4"
 import {
   HttpError,
+  MAX_ALT_SLOTS,
   SESSION_COOKIE_NAME,
+  clearAltSessionCookie,
   clearSessionCookie,
   decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
+  readAltSessionCookies,
+  setAltSessionCookie,
   setSessionCookie,
+  type AuthResult,
   type AuthService,
 } from "@threa/backend-common"
 
@@ -55,6 +60,104 @@ function isTrustedHost(host: string, allowedDomain: string, dedicatedHosts: stri
   return false
 }
 
+/**
+ * Peel the optional `add|` multi-account sentinel off the OAuth `state`.
+ *
+ * `login` prefixes a literal `add|` onto the *plaintext* state when
+ * `intent=add`; `getAuthorizationUrl` then base64-encodes the whole thing.
+ * Here we decode once, strip the sentinel, and re-encode the inner plaintext
+ * so the existing host/path decode logic runs on a byte-identical payload.
+ * For the non-add path `innerState` is the original `state` untouched, keeping
+ * single-account decoding exactly as it was.
+ */
+function parseCallbackState(state: string | undefined): { isAdd: boolean; innerState: string | undefined } {
+  if (!state) return { isAdd: false, innerState: state }
+  const decoded = Buffer.from(state, "base64").toString("utf-8")
+  if (decoded.startsWith("add|")) {
+    const inner = decoded.slice("add|".length)
+    return { isAdd: true, innerState: Buffer.from(inner, "utf-8").toString("base64") }
+  }
+  return { isAdd: false, innerState: state }
+}
+
+/**
+ * Add-account: park the current active session into a free alt slot and make
+ * the newly authenticated session active. Idempotently re-resolves the cookie
+ * jar each call (no server-side account state) and coalesces duplicates of the
+ * same WorkOS user. Returns `MAX_ACCOUNTS_REACHED` instead of throwing when
+ * every slot is taken by a distinct account, so the OAuth callback can 302
+ * gracefully rather than render an error page mid-flight.
+ */
+async function parkActiveAndSetNew(
+  authService: AuthService,
+  req: Request,
+  res: Response,
+  result: AuthResult
+): Promise<{ ok: true } | { ok: false; code: "MAX_ACCOUNTS_REACHED" }> {
+  const newSealed = result.sealedSession as string
+  const newUserId = result.user!.id
+  const prevActiveSealed = req.cookies[SESSION_COOKIE_NAME] as string | undefined
+
+  // No prior session — treat as a normal first login (no slot consumed).
+  if (!prevActiveSealed) {
+    setSessionCookie(res, newSealed)
+    return { ok: true }
+  }
+
+  const prevAuth = await authService.authenticateSession(prevActiveSealed)
+  // Prev cookie no longer valid: nothing worth parking, just replace it.
+  if (!prevAuth.success || !prevAuth.user) {
+    setSessionCookie(res, newSealed)
+    return { ok: true }
+  }
+
+  // Re-auth of the same account: refresh in place, no new slot.
+  if (prevAuth.user.id === newUserId) {
+    setSessionCookie(res, newSealed)
+    return { ok: true }
+  }
+
+  const alts = readAltSessionCookies(req.cookies)
+  const altAuths = await Promise.all(alts.map((a) => authService.authenticateSession(a.sealed)))
+  const validAlts = alts
+    .map((a, i) => ({ slot: a.slot, sealed: a.sealed, auth: altAuths[i] }))
+    .filter((a) => a.auth.success && a.auth.user)
+
+  // The new account is already parked: promote it, park the previous active
+  // into the slot it vacated, and clear any duplicate slots of the new user.
+  const existing = validAlts.find((a) => a.auth.user!.id === newUserId)
+  if (existing) {
+    setSessionCookie(res, newSealed)
+    setAltSessionCookie(res, existing.slot, prevActiveSealed)
+    for (const a of validAlts) {
+      if (a.slot !== existing.slot && a.auth.user!.id === newUserId) {
+        clearAltSessionCookie(res, a.slot)
+      }
+    }
+    return { ok: true }
+  }
+
+  // Lowest free slot. A slot whose cookie failed validation is reclaimable
+  // (not "occupied"), self-healing corrupt/expired alts.
+  const occupied = new Set(validAlts.map((a) => a.slot))
+  let freeSlot = -1
+  for (let s = 0; s < MAX_ALT_SLOTS; s++) {
+    if (!occupied.has(s)) {
+      freeSlot = s
+      break
+    }
+  }
+  if (freeSlot === -1) {
+    // Every slot holds a distinct valid account — adding would exceed
+    // MAX_ACCOUNTS. Refuse gracefully; the prev-active cookie is untouched.
+    return { ok: false, code: "MAX_ACCOUNTS_REACHED" }
+  }
+
+  setAltSessionCookie(res, freeSlot, prevActiveSealed)
+  setSessionCookie(res, newSealed)
+  return { ok: true }
+}
+
 export function createControlPlaneAuthHandlers({
   authService,
   frontendUrl,
@@ -84,7 +187,19 @@ export function createControlPlaneAuthHandlers({
         }
       }
 
-      const url = authService.getAuthorizationUrl(statePayload, redirectUriOverride)
+      // Multi-account add flow: prefix an `add|` sentinel onto the plaintext
+      // state (callback peels it back off) and force an AuthKit re-prompt so
+      // the hosted session isn't silently reused for the second account.
+      const isAdd = typeof req.query.intent === "string" && req.query.intent === "add"
+      if (isAdd) {
+        statePayload = `add|${statePayload ?? ""}`
+      }
+
+      const url = authService.getAuthorizationUrl(
+        statePayload,
+        redirectUriOverride,
+        isAdd ? { prompt: "login" } : undefined
+      )
       res.redirect(url)
     },
 
@@ -102,8 +217,10 @@ export function createControlPlaneAuthHandlers({
         throw new HttpError("Authentication failed", { status: 401, code: "AUTH_FAILED" })
       }
 
+      const { isAdd, innerState } = parseCallbackState(state)
+
       let redirectUrl: string
-      const decoded = state ? Buffer.from(state, "base64").toString("utf-8") : ""
+      const decoded = innerState ? Buffer.from(innerState, "base64").toString("utf-8") : ""
       const pipeIndex = decoded.indexOf("|")
 
       if (pipeIndex !== -1) {
@@ -116,11 +233,20 @@ export function createControlPlaneAuthHandlers({
           redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
         }
       } else {
-        const path = state ? decodeAndSanitizeRedirectState(state) : "/"
+        const path = innerState ? decodeAndSanitizeRedirectState(innerState) : "/"
         redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
       }
 
-      setSessionCookie(res, result.sealedSession)
+      if (isAdd) {
+        const parked = await parkActiveAndSetNew(authService, req, res, result)
+        if (!parked.ok) {
+          // No throw mid-OAuth-callback: the user keeps their existing session
+          // and the frontend surfaces the refusal from the query param.
+          redirectUrl += `${redirectUrl.includes("?") ? "&" : "?"}accountError=${parked.code}`
+        }
+      } else {
+        setSessionCookie(res, result.sealedSession)
+      }
       res.redirect(redirectUrl)
     },
 
@@ -128,6 +254,13 @@ export function createControlPlaneAuthHandlers({
       const session = req.cookies[SESSION_COOKIE_NAME]
 
       clearSessionCookie(res)
+
+      // Logout ≠ remove: clear every parked alt cookie too, but leave their
+      // WorkOS sessions intact (explicit revoke is the /api/accounts/remove
+      // path). This just empties the local cookie jar of all accounts.
+      for (const { slot } of readAltSessionCookies(req.cookies)) {
+        clearAltSessionCookie(res, slot)
+      }
 
       const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
 
