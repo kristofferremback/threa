@@ -72,6 +72,7 @@ export type OutboxEventType =
   | "link_preview:ready"
   | "link_preview:dismissed"
   | "attachment:transcoded"
+  | "attachment:thumbnailed"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -112,6 +113,7 @@ export type WorkspaceScopedEventType =
   | "bot:created"
   | "bot:updated"
   | "attachment:transcoded"
+  | "attachment:thumbnailed"
 
 /**
  * Base fields for stream-scoped events.
@@ -251,6 +253,20 @@ export interface AttachmentUploadedOutboxPayload extends WorkspaceScopedPayload 
 export interface AttachmentTranscodedOutboxPayload extends WorkspaceScopedPayload {
   attachmentId: string
   processingStatus: string
+  streamId?: string
+  messageId?: string
+}
+
+/**
+ * Fired when the image thumbnail worker finishes resizing an uploaded image.
+ * Carries the orientation-corrected dimensions so clients can reserve the
+ * image box (and switch from the raw fallback to the thumbnail variant) even
+ * when the message was sent before the worker completed.
+ */
+export interface AttachmentThumbnailedOutboxPayload extends WorkspaceScopedPayload {
+  attachmentId: string
+  width: number
+  height: number
   streamId?: string
   messageId?: string
 }
@@ -544,6 +560,7 @@ export interface OutboxEventPayloadMap {
   "link_preview:ready": LinkPreviewReadyOutboxPayload
   "link_preview:dismissed": LinkPreviewDismissedOutboxPayload
   "attachment:transcoded": AttachmentTranscodedOutboxPayload
+  "attachment:thumbnailed": AttachmentThumbnailedOutboxPayload
   "attachment:extraction_completed": AttachmentExtractionCompletedOutboxPayload
 }
 

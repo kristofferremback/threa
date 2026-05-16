@@ -79,9 +79,9 @@ describe("AttachmentList", () => {
       })
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />, renderOpts)
 
-      // Image thumbnail should load
+      // Inline view requests the small thumbnail variant, not the original
       await waitFor(() => {
-        expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "img_1")
+        expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "img_1", { variant: "thumbnail" })
       })
 
       // Image should be present with alt text for accessibility
@@ -106,7 +106,7 @@ describe("AttachmentList", () => {
       rerender(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} deferHydration={false} />)
 
       await waitFor(() => {
-        expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "img_1")
+        expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "img_1", { variant: "thumbnail" })
       })
     })
 

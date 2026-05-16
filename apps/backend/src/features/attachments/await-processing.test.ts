@@ -39,6 +39,9 @@ describe("awaitAttachmentProcessing", () => {
       storagePath: "/test/path",
       processingStatus: "completed",
       safetyStatus: "clean",
+      thumbnailStoragePath: null,
+      width: null,
+      height: null,
       createdAt: new Date(),
     }
 
@@ -68,6 +71,9 @@ describe("awaitAttachmentProcessing", () => {
       storagePath: "/test/path",
       processingStatus: "failed",
       safetyStatus: "clean",
+      thumbnailStoragePath: null,
+      width: null,
+      height: null,
       createdAt: new Date(),
     }
 
@@ -98,6 +104,9 @@ describe("awaitAttachmentProcessing", () => {
         storagePath: "/test/path1",
         processingStatus: "completed",
         safetyStatus: "clean",
+        thumbnailStoragePath: null,
+        width: null,
+        height: null,
         createdAt: new Date(),
       },
       {
@@ -113,6 +122,9 @@ describe("awaitAttachmentProcessing", () => {
         storagePath: "/test/path2",
         processingStatus: "failed",
         safetyStatus: "clean",
+        thumbnailStoragePath: null,
+        width: null,
+        height: null,
         createdAt: new Date(),
       },
     ]
@@ -141,6 +153,9 @@ describe("awaitAttachmentProcessing", () => {
       storagePath: "/test/path",
       processingStatus: "pending",
       safetyStatus: "clean",
+      thumbnailStoragePath: null,
+      width: null,
+      height: null,
       createdAt: new Date(),
     }
 
@@ -183,6 +198,9 @@ describe("hasPendingAttachmentProcessing", () => {
       storagePath: "/test/path",
       processingStatus: "completed",
       safetyStatus: "clean",
+      thumbnailStoragePath: null,
+      width: null,
+      height: null,
       createdAt: new Date(),
     }
 
@@ -208,6 +226,9 @@ describe("hasPendingAttachmentProcessing", () => {
       storagePath: "/test/path",
       processingStatus: "pending",
       safetyStatus: "clean",
+      thumbnailStoragePath: null,
+      width: null,
+      height: null,
       createdAt: new Date(),
     }
 
@@ -233,6 +254,9 @@ describe("hasPendingAttachmentProcessing", () => {
       storagePath: "/test/path",
       processingStatus: "processing",
       safetyStatus: "clean",
+      thumbnailStoragePath: null,
+      width: null,
+      height: null,
       createdAt: new Date(),
     }
 

@@ -21,6 +21,9 @@ function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
     storagePath: "k",
     processingStatus: "completed",
     safetyStatus: AttachmentSafetyStatuses.CLEAN,
+    thumbnailStoragePath: null,
+    width: null,
+    height: null,
     createdAt: new Date(),
     ...overrides,
   }
@@ -135,6 +138,9 @@ describe("AttachmentService", () => {
       storagePath: params.storagePath,
       processingStatus: "pending",
       safetyStatus: AttachmentSafetyStatuses.PENDING_SCAN,
+      thumbnailStoragePath: null,
+      width: null,
+      height: null,
       createdAt: new Date(),
     }))
     spyOn(AttachmentRepository, "updateSafetyStatus").mockResolvedValue(true)

@@ -334,6 +334,13 @@ export interface AttachmentSummary {
   sizeBytes: number
   /** Present for video attachments so the frontend knows transcoding state */
   processingStatus?: ProcessingStatus
+  /**
+   * Orientation-corrected intrinsic pixel dimensions for image attachments.
+   * Present once the thumbnail worker has run; lets the UI reserve the image
+   * box before any bytes load (no layout shift, no progressive reveal).
+   */
+  width?: number
+  height?: number
 }
 
 /**

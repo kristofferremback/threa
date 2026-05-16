@@ -1,0 +1,6 @@
+export { ImageThumbnailService } from "./service"
+export type { ImageThumbnailServiceDeps } from "./service"
+export type { ImageThumbnailServiceLike } from "./types"
+export { createImageThumbnailWorker } from "./worker"
+export type { ImageThumbnailWorkerDeps } from "./worker"
+export { IMAGE_THUMBNAIL_MAX_DIMENSION, IMAGE_THUMBNAIL_WEBP_QUALITY, shouldGenerateThumbnail } from "./config"

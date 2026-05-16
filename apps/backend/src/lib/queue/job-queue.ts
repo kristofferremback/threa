@@ -25,6 +25,7 @@ export const JobQueues = {
   MEMO_BATCH_PROCESS: "memo.batch-process",
   COMMAND_EXECUTE: "command.execute",
   IMAGE_CAPTION: "image.caption",
+  IMAGE_THUMBNAIL: "image.thumbnail",
   PDF_PREPARE: "pdf.prepare",
   PDF_PROCESS_PAGE: "pdf.process_page",
   PDF_ASSEMBLE: "pdf.assemble",
@@ -92,6 +93,15 @@ export interface CommandExecuteJobData {
 }
 
 export interface ImageCaptionJobData {
+  attachmentId: string
+  workspaceId: string
+  filename: string
+  mimeType: string
+  storagePath: string
+}
+
+/** Image thumbnail job - resizes an uploaded image into a small WebP variant */
+export interface ImageThumbnailJobData {
   attachmentId: string
   workspaceId: string
   filename: string
@@ -241,6 +251,7 @@ export interface JobDataMap {
   [JobQueues.MEMO_BATCH_PROCESS]: MemoBatchProcessJobData
   [JobQueues.COMMAND_EXECUTE]: CommandExecuteJobData
   [JobQueues.IMAGE_CAPTION]: ImageCaptionJobData
+  [JobQueues.IMAGE_THUMBNAIL]: ImageThumbnailJobData
   [JobQueues.PDF_PREPARE]: PdfPrepareJobData
   [JobQueues.PDF_PROCESS_PAGE]: PdfProcessPageJobData
   [JobQueues.PDF_ASSEMBLE]: PdfAssembleJobData

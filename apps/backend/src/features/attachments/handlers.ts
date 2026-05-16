@@ -7,6 +7,7 @@ import { AttachmentRepository, type AttachmentSearchCursor, type AttachmentSearc
 import { AttachmentExtractionRepository } from "./extraction-repository"
 import type { StreamService } from "../streams"
 import { VideoTranscodeJobRepository } from "./video"
+import { isImageAttachment } from "./image-caption"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import { ATTACHMENT_CATEGORIES, type AttachmentCategory } from "@threa/types"
 
@@ -104,8 +105,21 @@ export function createAttachmentHandlers({ attachmentService, streamService, sto
       if (!parsed.success) return res.status(400).json({ error: "Invalid query parameters" })
       const { download, variant } = parsed.data
 
-      // For video variants (processed/thumbnail), look up the transcode job
-      if (variant === "processed" || variant === "thumbnail") {
+      // Image thumbnail: serve the sharp-generated WebP variant when ready.
+      // Generated asynchronously by the IMAGE_THUMBNAIL worker; if not yet
+      // available, fall through to the raw original.
+      if (variant === "thumbnail" && isImageAttachment(attachment.mimeType, attachment.filename)) {
+        if (attachment.thumbnailStoragePath) {
+          const responseContentDisposition =
+            download === "true" ? buildContentDisposition(attachment.filename) : undefined
+          const url = await storage.getSignedDownloadUrl(attachment.thumbnailStoragePath, {
+            responseContentDisposition,
+          })
+          return res.json({ url, expiresIn: 900 })
+        }
+        // Thumbnail not generated yet — fall through to raw original.
+      } else if (variant === "processed" || variant === "thumbnail") {
+        // For video variants (processed/thumbnail), look up the transcode job
         const job = await VideoTranscodeJobRepository.findByAttachmentId(pool, attachmentId)
         const path = variant === "processed" ? job?.processedStoragePath : job?.thumbnailStoragePath
         if (job?.status === "completed" && path) {

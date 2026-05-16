@@ -72,6 +72,9 @@ function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
     storagePath: "ws_1/att_1",
     processingStatus: "completed",
     safetyStatus: "clean",
+    thumbnailStoragePath: null,
+    width: null,
+    height: null,
     createdAt: new Date("2026-04-22T09:00:00Z"),
     ...overrides,
   }
