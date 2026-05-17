@@ -176,7 +176,7 @@ export function createControlPlaneAuthHandlers({
         } else {
           // No throw mid-OAuth-callback: the user keeps their existing session
           // and the frontend surfaces the refusal from the query param.
-          redirectPath += `${redirectPath.includes("?") ? "&" : "?"}accountError=${parked.code}`
+          redirectPath += `${redirectPath.includes("?") ? "&" : "?"}accountError=${encodeURIComponent(parked.code)}`
         }
       } else {
         setSessionCookie(res, result.sealedSession)
