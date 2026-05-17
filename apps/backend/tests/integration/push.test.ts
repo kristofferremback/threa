@@ -337,6 +337,7 @@ describe("Push Notifications", () => {
         lookups: {
           getUserNotificationLevel: async () => PrefNotificationLevels.ALL,
           getStreamType: async () => StreamTypes.CHANNEL,
+          getWorkosUserId: async () => null,
         },
       })
     }
@@ -473,6 +474,7 @@ describe("Push Notifications", () => {
     function createServiceWithLookups(overrides?: {
       notificationLevel?: PrefNotificationLevel
       streamType?: StreamType | null
+      workosUserId?: string | null
     }) {
       return new PushService({
         pool,
@@ -484,6 +486,7 @@ describe("Push Notifications", () => {
         lookups: {
           getUserNotificationLevel: async () => overrides?.notificationLevel ?? PrefNotificationLevels.ALL,
           getStreamType: async (_workspaceId) => overrides?.streamType ?? StreamTypes.CHANNEL,
+          getWorkosUserId: async () => overrides?.workosUserId ?? null,
         },
       })
     }
@@ -621,6 +624,46 @@ describe("Push Notifications", () => {
       expect(sendSpy.mock.calls[0][0]).toMatchObject({
         endpoint: "https://push.example.com/sub/all-activity",
       })
+    })
+
+    test("activity payload carries the recipient's workosUserId for cross-account routing", async () => {
+      const service = createServiceWithLookups({ workosUserId: "user_01HRECIPIENTWORKOS" })
+
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/workos-id",
+        p256dh: "p",
+        auth: "a",
+        deviceKey: "d",
+      })
+      await createRecentInactiveSession(testWorkspaceId, testUserId)
+
+      await service.deliverPushForActivity(makePayload())
+
+      expect(sendSpy).toHaveBeenCalledTimes(1)
+      const payload = JSON.parse(sendSpy.mock.calls[0][1] as string)
+      expect(payload.data.workosUserId).toBe("user_01HRECIPIENTWORKOS")
+    })
+
+    test("activity payload omits workosUserId when the recipient is unresolvable", async () => {
+      const service = createServiceWithLookups({ workosUserId: null })
+
+      await PushSubscriptionRepository.insert(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        endpoint: "https://push.example.com/sub/no-workos-id",
+        p256dh: "p",
+        auth: "a",
+        deviceKey: "d",
+      })
+      await createRecentInactiveSession(testWorkspaceId, testUserId)
+
+      await service.deliverPushForActivity(makePayload())
+
+      expect(sendSpy).toHaveBeenCalledTimes(1)
+      const payload = JSON.parse(sendSpy.mock.calls[0][1] as string)
+      expect(payload.data).not.toHaveProperty("workosUserId")
     })
 
     test("focused device with recent interaction → only pushes to that device", async () => {
@@ -1087,6 +1130,7 @@ describe("Push Notifications", () => {
         lookups: {
           getUserNotificationLevel: async () => PrefNotificationLevels.ALL,
           getStreamType: async () => StreamTypes.CHANNEL,
+          getWorkosUserId: async () => null,
         },
       })
     }
@@ -1170,6 +1214,7 @@ describe("Push Notifications", () => {
         lookups: {
           getUserNotificationLevel: async () => PrefNotificationLevels.ALL,
           getStreamType: async () => StreamTypes.CHANNEL,
+          getWorkosUserId: async () => null,
         },
       })
       await expect(service.deliverTestPush(testWorkspaceId, testUserId)).rejects.toThrow(/not enabled/i)

@@ -21,6 +21,7 @@ import {
   AvatarProcessingService,
   createAvatarProcessWorker,
   createAvatarProcessOnDLQ,
+  UserRepository,
 } from "./features/workspaces"
 import { InvitationService, InvitationShadowSyncHandler } from "./features/invitations"
 import { WorkosOrgServiceImpl, StubWorkosOrgService } from "@threa/backend-common"
@@ -441,6 +442,11 @@ export async function startServer(): Promise<ServerInstance> {
         const stream = await streamService.getStreamById(streamId)
         if (!stream || stream.workspaceId !== workspaceId) return null
         return stream.type
+      },
+      getWorkosUserId: async (workspaceId, userId) => {
+        // Single query (INV-30): pass the pool directly, no withClient.
+        const user = await UserRepository.findById(pool, workspaceId, userId)
+        return user?.workosUserId ?? null
       },
     },
   })

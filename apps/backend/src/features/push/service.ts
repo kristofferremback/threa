@@ -53,6 +53,12 @@ interface CrossFeatureLookups {
   getUserNotificationLevel: (workspaceId: string, userId: string) => Promise<PrefNotificationLevel>
   /** Resolve a stream's type by ID within a workspace. Returns null if not found. */
   getStreamType: (workspaceId: string, streamId: string) => Promise<StreamType | null>
+  /**
+   * Resolve the workspace-scoped user's global WorkOS user id. Stamped on the
+   * push payload so the recipient device can flip to the right signed-in
+   * account before opening the deep link. Returns null if the user is not found.
+   */
+  getWorkosUserId: (workspaceId: string, userId: string) => Promise<string | null>
 }
 
 interface PushServiceDeps {
@@ -276,6 +282,12 @@ export class PushService {
       return
     }
 
+    // Recipient's global WorkOS user id — lets the SW flip the active account
+    // before opening the deep link when this push is for a parked account.
+    // Resolved after the no-subscriptions early-return so we never pay the
+    // lookup for a delivery that won't happen.
+    const recipientWorkosUserId = await this.lookups.getWorkosUserId(workspaceId, targetUserId)
+
     // 4. Build structured push payload — display text is formatted by the service worker (INV-46)
     const context = activity.context as
       | { contentPreview?: string; streamName?: string; authorName?: string }
@@ -284,6 +296,7 @@ export class PushService {
     const pushPayload = JSON.stringify({
       data: {
         workspaceId,
+        workosUserId: recipientWorkosUserId ?? undefined,
         streamId: activity.streamId,
         messageId: activity.messageId,
         activityType: activity.activityType,

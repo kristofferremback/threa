@@ -444,6 +444,14 @@ self.addEventListener("fetch", (event) => {
 /** Structured push payload — display text is formatted here, not on the backend (INV-46). */
 interface PushData {
   workspaceId?: string
+  /**
+   * Recipient account's WorkOS user id. Lets the app flip the active account
+   * in place before opening the deep link when the click lands under a
+   * different signed-in account. Stamped by the backend (push/service.ts);
+   * duplicated here because there is no shared types package for this wire
+   * contract (mirrors the rest of PushData).
+   */
+  workosUserId?: string
   streamId?: string
   messageId?: string
   activityType?: string
@@ -601,7 +609,11 @@ self.addEventListener("notificationclick", (event) => {
       for (const client of clients) {
         if (new URL(client.url).origin === self.location.origin) {
           await client.focus()
-          client.postMessage({ type: SW_MSG_NOTIFICATION_CLICK, url: targetUrl })
+          client.postMessage({
+            type: SW_MSG_NOTIFICATION_CLICK,
+            url: targetUrl,
+            workosUserId: data?.workosUserId,
+          })
           return
         }
       }

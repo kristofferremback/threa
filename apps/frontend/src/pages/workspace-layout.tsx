@@ -68,6 +68,7 @@ import { TraceDialog } from "@/components/trace"
 import { useQueryClient } from "@tanstack/react-query"
 import { SyncStatusStore, SyncStatusContext } from "@/sync/sync-status"
 import { useResolveOrBounce } from "./use-resolve-or-bounce"
+import { useNotificationAccountSwitch } from "./use-notification-account-switch"
 
 interface WorkspaceKeyboardHandlerProps {
   onOpenSwitcher: (mode: QuickSwitcherMode) => void
@@ -234,6 +235,10 @@ function WorkspaceSyncHandler({
   // No destroy effect — StrictMode's effect cleanup cycle would destroy the
   // engine before the socket connect effect re-runs. The engine is destroyed
   // on workspace change (line above) and on page unload (browser handles it).
+
+  // A push for a parked account stashes its recipient id (notification-intent);
+  // flip the active account in place before this deep link bootstraps wrong.
+  useNotificationAccountSwitch(workspaceId)
 
   // Terminal workspace error (404/403): a different signed-in account may own
   // this deep link — resolve→flip in place, else bounce to the list.
