@@ -91,8 +91,13 @@ export function createControlPlaneAuthHandlers({
       }
 
       // Multi-account add flow: prefix an `add|` sentinel onto the plaintext
-      // state (callback peels it back off) and force an AuthKit re-prompt so
-      // the hosted session isn't silently reused for the second account.
+      // state (callback peels it back off) and force an account chooser.
+      // `login` alone re-authenticates the *existing* hosted session silently
+      // (no account/username field when a session is live), so the callback
+      // gets the same WorkOS user and the add coalesces in place. The
+      // OIDC-standard space-delimited `login select_account` forces both a
+      // fresh credential prompt and the account picker so a *different*
+      // account can actually be added.
       const isAdd = typeof req.query.intent === "string" && req.query.intent === "add"
       if (isAdd) {
         statePayload = `add|${statePayload ?? ""}`
@@ -101,7 +106,7 @@ export function createControlPlaneAuthHandlers({
       const url = authService.getAuthorizationUrl(
         statePayload,
         redirectUriOverride,
-        isAdd ? { prompt: "login" } : undefined
+        isAdd ? { prompt: "login select_account" } : undefined
       )
       res.redirect(url)
     },

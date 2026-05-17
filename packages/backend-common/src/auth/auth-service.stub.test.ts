@@ -12,14 +12,16 @@ describe("StubAuthService.getAuthorizationUrl prompt plumbing", () => {
     expect(params.get("redirect_uri")).toBe("https://app.example.com/callback")
   })
 
-  test("encodes prompt into the stub login URL when provided", () => {
+  test("encodes a space-delimited multi-value prompt into the stub login URL", () => {
     const svc = new StubAuthService()
     const url = svc.getAuthorizationUrl("/redirect-here", "https://app.example.com/callback", {
-      prompt: "login",
+      prompt: "login select_account",
     })
     const params = new URLSearchParams(url.split("?")[1])
 
-    expect(params.get("prompt")).toBe("login")
+    // The add-account flow sends the OIDC space-delimited form; the space
+    // must survive URL encoding and decode back intact.
+    expect(params.get("prompt")).toBe("login select_account")
     expect(params.get("state")).toBe(Buffer.from("/redirect-here").toString("base64"))
     expect(params.get("redirect_uri")).toBe("https://app.example.com/callback")
   })
