@@ -164,6 +164,17 @@ export class BotRuntimeService {
     return BotInvocationRepository.findActiveClaim(this.pool, params)
   }
 
+  async renewInvocationClaim(params: {
+    workspaceId: string
+    botId: string
+    invocationId: string
+    instanceId: string
+    claimToken: string
+    claimTtlSeconds: number
+  }): Promise<BotInvocation | null> {
+    return BotInvocationRepository.renewClaim(this.pool, params)
+  }
+
   async completeInvocation(params: {
     workspaceId: string
     botId: string
