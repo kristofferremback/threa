@@ -9,6 +9,7 @@ function Harness() {
   const location = useLocation()
   return (
     <div>
+      <span data-testid="path">{location.pathname}</span>
       <span data-testid="search">{location.search}</span>
       <button onClick={() => openMedia("a")}>open-a</button>
       <button onClick={() => openMedia("b")}>open-b</button>
@@ -17,9 +18,9 @@ function Harness() {
   )
 }
 
-function renderHarness(initialEntries: string[]) {
+function renderHarness(initialEntries: string[], initialIndex?: number) {
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
+    <MemoryRouter initialEntries={initialEntries} initialIndex={initialIndex}>
       <MediaGalleryProvider>
         <Routes>
           <Route path="/w/:workspaceId" element={<Harness />} />
@@ -39,8 +40,9 @@ describe("MediaGalleryProvider", () => {
     await user.click(screen.getByText("open-a"))
     expect(screen.getByTestId("search").textContent).toBe("?media=a")
 
+    // If open had replaced instead of pushed there would be nothing to pop
+    // and the param would survive the close; reaching "" proves the pop.
     await user.click(screen.getByText("close"))
-    // navigate(-1) returned to the pre-open entry rather than rewriting it
     expect(screen.getByTestId("search").textContent).toBe("")
   })
 
@@ -58,14 +60,18 @@ describe("MediaGalleryProvider", () => {
     expect(screen.getByTestId("search").textContent).toBe("")
   })
 
-  it("strips the param in place for deep-linked opens without escaping the app", async () => {
+  it("strips the param in place for deep-linked opens without popping history", async () => {
     const user = userEvent.setup()
-    renderHarness(["/w/ws_1?media=a"])
+    // Prior entry is a distinct path: a buggy navigate(-1) would land there.
+    renderHarness(["/w/other", "/w/ws_1?media=a"], 1)
 
+    expect(screen.getByTestId("path").textContent).toBe("/w/ws_1")
     expect(screen.getByTestId("search").textContent).toBe("?media=a")
 
     await user.click(screen.getByText("close"))
+    // Stayed on the current entry with the param removed instead of popping
+    // back to /w/other (which would also risk escaping the app).
+    expect(screen.getByTestId("path").textContent).toBe("/w/ws_1")
     expect(screen.getByTestId("search").textContent).toBe("")
-    expect(window.location.pathname).not.toBe("about:blank")
   })
 })
