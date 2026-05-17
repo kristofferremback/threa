@@ -84,6 +84,31 @@ export class BotInvocationOutboxHandler implements OutboxHandler {
 
     const rootStreamId = stream.rootStreamId ?? stream.id
     const rootStream = rootStreamId === stream.id ? stream : await StreamRepository.findById(this.pool, rootStreamId)
+    const invocationRootStreamId = rootStream?.id ?? stream.id
+    const mentionedSlugs = extractMentionSlugs(message.event.payload.contentMarkdown)
+    const mentionableBots = (await BotRepository.findBySlugs(this.pool, message.workspaceId, mentionedSlugs)).filter(
+      (mentionedBot) =>
+        botHasCapability(mentionedBot, "mentionable") &&
+        (mentionedBot.type === "shared" || mentionedBot.ownerUserId === message.event.actorId)
+    )
+
+    for (const mentionedBot of mentionableBots) {
+      await this.service.createInvocation({
+        workspaceId: message.workspaceId,
+        rootStreamId: invocationRootStreamId,
+        activeStreamId: stream.id,
+        sourceMessageId: message.event.payload.messageId,
+        responseStreamId: stream.id,
+        actorId: mentionedBot.id,
+        trigger: "mention",
+        requiredCapability: "mentionable",
+        promptMarkdown: message.event.payload.contentMarkdown,
+        authorUserId: message.event.actorId,
+        mentionedActorSlugs: mentionedSlugs,
+        metadata: {},
+      })
+    }
+
     if (!rootStream || rootStream.type !== StreamTypes.SCRATCHPAD || rootStream.archivedAt) return
 
     const active = await StreamActiveActorRepository.findByRootStream(this.pool, message.workspaceId, rootStream.id)
@@ -91,11 +116,7 @@ export class BotInvocationOutboxHandler implements OutboxHandler {
 
     const bot = await BotRepository.findById(this.pool, message.workspaceId, active.actorId)
     if (!bot || bot.archivedAt || !botHasCapability(bot, "active-scratchpad")) return
-
-    const mentionedSlugs = extractMentionSlugs(message.event.payload.contentMarkdown)
-    const mentionedBots = await BotRepository.findBySlugs(this.pool, message.workspaceId, mentionedSlugs)
-    const explicitMentionableBot = mentionedBots.some((mentionedBot) => botHasCapability(mentionedBot, "mentionable"))
-    if (explicitMentionableBot && bot.slug != null && !mentionedSlugs.includes(bot.slug)) return
+    if (mentionableBots.length > 0) return
 
     let link = await BotRuntimeSessionLinkRepository.findActiveByStream(this.pool, {
       workspaceId: message.workspaceId,
