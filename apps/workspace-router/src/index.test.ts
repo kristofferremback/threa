@@ -227,6 +227,12 @@ describe("workspace-router", () => {
       expect(await getJson<{ error: string }>(res)).toEqual({ error: "Not found" })
     })
 
+    test("account routes return 404 when no CONTROL_PLANE_URL", async () => {
+      const res = await worker.fetch(makeRequest("/api/accounts"), makeEnv())
+      expect(res.status).toBe(404)
+      expect(await getJson<{ error: string }>(res)).toEqual({ error: "Not found" })
+    })
+
     test("unknown paths return 404", async () => {
       const res = await worker.fetch(makeRequest("/api/unknown"), makeEnv())
       expect(res.status).toBe(404)
@@ -325,6 +331,53 @@ describe("workspace-router", () => {
       try {
         await worker.fetch(makeRequest("/api/regions"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
         expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/regions")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies GET /api/accounts to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/accounts"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/accounts")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies GET /api/accounts/resolve (with query) to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(
+          makeRequest("/api/accounts/resolve?workspaceId=ws_123"),
+          makeEnv({ CONTROL_PLANE_URL: CP_URL })
+        )
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/accounts/resolve?workspaceId=ws_123")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies POST /api/accounts/switch to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/accounts/switch", "POST"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/accounts/switch")
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    test("proxies POST /api/accounts/remove to control-plane", async () => {
+      const originalFetch = globalThis.fetch
+      const fn = mockFetchFn()
+      try {
+        await worker.fetch(makeRequest("/api/accounts/remove", "POST"), makeEnv({ CONTROL_PLANE_URL: CP_URL }))
+        expect(getProxiedUrl(fn)).toBe("http://localhost:3003/api/accounts/remove")
       } finally {
         globalThis.fetch = originalFetch
       }
