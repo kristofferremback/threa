@@ -91,9 +91,13 @@ the final rows are filtered, because it still:
 - poisons any shared cache with rows the next viewer cannot see.
 
 This is the same structural reason gbrain pushes its source-isolation predicate
-into the inner CTE of its two-stage hybrid search and keys its query cache on a
-`knobs_hash`. Threa's analogue is: the predicate is the viewer's accessible
-stream set, and the cache key must include a hash of that set.
+into the inner CTE of its two-stage hybrid search (before Reciprocal Rank Fusion
+with `k = 60` collapses the keyword and vector lists) and keys its query cache
+on the tuple `(source_id, query_text, knobs_hash)` — rows whose `knobs_hash` is
+absent are treated as cache _misses_, never served. Threa's analogue is exact:
+the predicate is the viewer's accessible stream set, it goes in the inner scan
+before fusion, and the cache key tuple must gain a hash of that set with the
+same "absent ⇒ miss, never serve" rule.
 
 `listAccessibleStreamIds` is already a single SQL round-trip producing exactly
 this set. The work is to make it the inner predicate of every new retrieval
@@ -211,9 +215,13 @@ every new query path.
 Threa's memo search today is semantic, with a full-text fallback only on
 empty/failed semantic results (`MemoExplorerService.search`) — never both fused.
 gbrain runs keyword + vector in parallel and fuses with Reciprocal Rank Fusion
-(`1/(k+rank)`, no score normalization needed), then per-page dedup, then
-rerank, then token budget. This is a clear retrieval-quality upgrade for the
-memo explorer and for Ariadne retrieval. Reframed access treatment is the whole
+(`1/(k+rank)` summed per list, `k = 60`, no score normalization needed), then
+per-page dedup, then rerank, then token budget. A useful refinement worth
+copying: gbrain does not use one fixed `k` — the intent classifier (B4) yields
+per-list weights that bend the _effective_ `k` for the keyword vs vector list
+independently, so a temporal query leans on keyword recall and an entity query
+leans on vector recall through the same fusion. This is a clear
+retrieval-quality upgrade for the memo explorer and for Ariadne retrieval. Reframed access treatment is the whole
 point: the accessible-stream-id predicate must be pushed into **both** inner
 scans (the keyword CTE and the vector CTE) _before_ RRF. gbrain's two-stage CTE
 trick (inner CTE ordered by `embedding <=> vec` so the HNSW index stays usable,
@@ -270,14 +278,19 @@ low-priority curation tool once a memo link graph exists (depends on A1).
 **B7. Search modes + cost model — Adapt.**
 gbrain bundles correlated knobs (token budget, expansion on/off, search limit)
 behind one `mode` key (conservative/balanced/tokenmax) and keys its query cache
-on a `knobs_hash` so a tokenmax write cannot be served to a conservative read.
-Adopt the bundle-behind-one-key idea and tie the tiers to Threa's plan
-(free/pro/max) so retrieval cost tracks billing. **Critical reframing of the
-cache key**: gbrain keys the cache on `source_id + knobs_hash`; Threa must key
-it on `workspace_id + knobs_hash + a hash of the viewer's accessible-stream-id
-set`. Without the access-scope component, a cached result computed for one
-member is served to another with different stream access — a §3.5 leak. This
-is the single most important correctness note in the retrieval cluster.
+on the tuple `(source_id, query_text, knobs_hash)` so a tokenmax write cannot be
+served to a conservative read — and a row whose `knobs_hash` is absent (written
+before the partitioning migration) is treated as a miss and silently
+re-populated, never served stale. Adopt both: the bundle-behind-one-key idea
+tied to Threa's plan (free/pro/max) so retrieval cost tracks billing, and the
+"absent key component ⇒ miss, never serve" rule as the safe default.
+**Critical reframing of the cache key**: Threa must key the cache on
+`workspace_id + query_text + knobs_hash + a hash of the viewer's
+accessible-stream-id set`, with a missing or stale access-scope component
+treated as a miss exactly like gbrain treats a missing `knobs_hash`. Without
+the access-scope component, a cached result computed for one member is served
+to another with different stream access — a §3.5 leak. This is the single most
+important correctness note in the retrieval cluster.
 
 ### C. Maintenance & synthesis
 
@@ -397,7 +410,12 @@ directly relevant. The transferable principles, described functionally: (a) make
 "is this caller untrusted/remote" a **required, typed, fail-closed** input on
 the operations that cross Threa's untrusted boundary (public API, MCP/agent
 surfaces), not an optional flag that defaults open — this aligns with INV-11
-(fail loudly, no silent fallback); (b) apply the access predicate as a
+(fail loudly, no silent fallback). The concrete discipline gbrain uses is an
+asymmetric check worth copying verbatim in spirit: the trusted path is granted
+only on the _exact_ value (`remote === false`), while the strict/untrusted path
+fires on _anything that is not exactly that value_ (`remote !== false`, so
+`undefined`/`null`/`true` all stay untrusted). A missing trust signal can never
+accidentally land on the trusted branch. (b) apply the access predicate as a
 **required non-defaulting parameter** at the serialization boundary, so a memo/
 message rendered to an external caller carries content only from streams in the
 caller's resolved scope. gbrain's own design notes cite an incident where a
