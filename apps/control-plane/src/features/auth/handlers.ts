@@ -142,22 +142,19 @@ export function createControlPlaneAuthHandlers({
 
       const { isAdd, innerState } = parseCallbackState(state)
 
-      let redirectUrl: string
+      let appOrigin: string
+      let redirectPath: string
       const decoded = innerState ? Buffer.from(innerState, "base64").toString("utf-8") : ""
       const pipeIndex = decoded.indexOf("|")
 
       if (pipeIndex !== -1) {
         // State contains "host|path" — redirect to the original forwarded host
         const host = decoded.substring(0, pipeIndex)
-        const path = decodeAndSanitizeRedirectState(Buffer.from(decoded.substring(pipeIndex + 1)).toString("base64"))
-        if (isTrustedHost(host, allowedRedirectDomain, dedicatedRedirectHosts)) {
-          redirectUrl = `https://${host}${path}`
-        } else {
-          redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
-        }
+        redirectPath = decodeAndSanitizeRedirectState(Buffer.from(decoded.substring(pipeIndex + 1)).toString("base64"))
+        appOrigin = isTrustedHost(host, allowedRedirectDomain, dedicatedRedirectHosts) ? `https://${host}` : frontendUrl
       } else {
-        const path = innerState ? decodeAndSanitizeRedirectState(innerState) : "/"
-        redirectUrl = frontendUrl ? `${frontendUrl}${path}` : path
+        redirectPath = innerState ? decodeAndSanitizeRedirectState(innerState) : "/"
+        appOrigin = frontendUrl
       }
 
       if (isAdd) {
@@ -168,15 +165,23 @@ export function createControlPlaneAuthHandlers({
           result.sealedSession,
           result.user.id
         )
-        if (!parked.ok) {
+        if (parked.ok) {
+          // A successful add makes the just-authenticated account active. The
+          // pre-add state path belongs to the previous (now parked) account;
+          // routing there 403s and bounces straight back via the workspace
+          // resolve→switchAccount path, silently undoing the add. Land on the
+          // workspace picker instead; ?accountAdded=1 lets the app drop its
+          // stale last-workspace pointer so it can't redirect into the old account.
+          redirectPath = "/workspaces?accountAdded=1"
+        } else {
           // No throw mid-OAuth-callback: the user keeps their existing session
           // and the frontend surfaces the refusal from the query param.
-          redirectUrl += `${redirectUrl.includes("?") ? "&" : "?"}accountError=${parked.code}`
+          redirectPath += `${redirectPath.includes("?") ? "&" : "?"}accountError=${parked.code}`
         }
       } else {
         setSessionCookie(res, result.sealedSession)
       }
-      res.redirect(redirectUrl)
+      res.redirect(`${appOrigin}${redirectPath}`)
     },
 
     async logout(req: Request, res: Response) {

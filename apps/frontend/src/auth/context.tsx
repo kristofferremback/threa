@@ -23,6 +23,11 @@ interface AuthContextValue extends AuthState {
 const ACCOUNT_ERROR_PARAM = "accountError"
 const MAX_ACCOUNTS_REACHED = "MAX_ACCOUNTS_REACHED"
 
+// A successful add-account redirect carries this (control plane sends the
+// browser to /workspaces?accountAdded=1 so the app drops its stale
+// last-workspace pointer instead of routing back into the old account).
+const ACCOUNT_ADDED_PARAM = "accountAdded"
+
 // Best-effort push cleanup must never delay the logout redirect for long.
 // When the SW is healthy this completes in well under a second; the cap only
 // fires when `serviceWorker.ready` never settles (stranded worker).
@@ -123,14 +128,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
     fetchUser()
   }, [fetchUser])
 
-  // AuthProvider sits above the router, so the add-account refusal can't be
-  // read via useSearchParams. Surface it once and strip the param so a
-  // refresh doesn't re-toast.
+  // AuthProvider sits above the router, so the add-account callback outcome
+  // can't be read via useSearchParams. Handle it once on mount and strip the
+  // param so a refresh doesn't re-fire.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if (params.get(ACCOUNT_ERROR_PARAM) !== MAX_ACCOUNTS_REACHED) return
-    toast.error("You're signed in to the maximum number of accounts. Remove one to add another.")
-    params.delete(ACCOUNT_ERROR_PARAM)
+    let changed = false
+
+    if (params.get(ACCOUNT_ERROR_PARAM) === MAX_ACCOUNTS_REACHED) {
+      toast.error("You're signed in to the maximum number of accounts. Remove one to add another.")
+      params.delete(ACCOUNT_ERROR_PARAM)
+      changed = true
+    }
+
+    // A successful add makes the just-added account the active session. The
+    // last-workspace pointer still names the *previous* account's workspace;
+    // clearing it stops RootRedirect from routing into a workspace the new
+    // account can't see (which 403s and bounces back to the old account).
+    if (params.get(ACCOUNT_ADDED_PARAM) === "1") {
+      clearLastWorkspaceId()
+      params.delete(ACCOUNT_ADDED_PARAM)
+      changed = true
+    }
+
+    if (!changed) return
     const query = params.toString()
     window.history.replaceState(
       null,
