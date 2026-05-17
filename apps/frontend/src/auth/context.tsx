@@ -161,9 +161,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [])
 
   const login = useCallback((redirectTo?: string, opts?: { intent?: "add" }) => {
+    // The add-account flow hands off to the in-app picker first — AuthKit's
+    // hosted UI silent-refreshes through its own session cookie, so the only
+    // reliable way to add a *different* account is to bypass AuthKit. The
+    // picker exposes provider-direct social buttons and a Magic Auth fallback.
+    // Plain sign-in still goes straight to `/api/auth/login`.
+    if (opts?.intent === "add") {
+      const query = new URLSearchParams()
+      if (redirectTo) query.set("redirect_to", redirectTo)
+      const qs = query.toString()
+      window.location.href = `/add-account${qs ? `?${qs}` : ""}`
+      return
+    }
     const query = new URLSearchParams()
     if (redirectTo) query.set("redirect_to", redirectTo)
-    if (opts?.intent === "add") query.set("intent", "add")
     const qs = query.toString()
     window.location.href = `${API_BASE}/api/auth/login${qs ? `?${qs}` : ""}`
   }, [])

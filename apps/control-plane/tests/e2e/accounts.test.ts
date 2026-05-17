@@ -83,22 +83,36 @@ describe("Multi-account /api/accounts", () => {
     })
   })
 
-  test("GET /api/auth/login?intent=add forces an account chooser and an add| state", async () => {
+  test("GET /api/auth/login?intent=add hands off to the in-app picker", async () => {
     const client = new TestClient()
 
+    // Bare `intent=add` can't reliably use AuthKit (its hosted UI
+    // silent-refreshes through its own session cookie), so the backend
+    // redirects to the SPA `/add-account` page which exposes provider-direct
+    // social buttons + a Magic Auth fallback.
     const add = await client.get("/api/auth/login?intent=add")
     expect(add.status).toBe(302)
-    const addUrl = new URL(add.headers.get("location")!, "http://localhost")
-    // `login` alone silently re-auths the live session; `select_account`
-    // forces the picker so a *different* account can be added.
-    expect(addUrl.searchParams.get("prompt")).toBe("login select_account")
-    expect(Buffer.from(addUrl.searchParams.get("state") || "", "base64").toString()).toBe("add|")
+    expect(add.headers.get("location")).toContain("/add-account")
 
-    // Non-add login is unchanged: no prompt forced.
+    // Non-add login is unchanged: it goes to WorkOS (the stub URL prefix here).
     const plain = await client.get("/api/auth/login")
     expect(plain.status).toBe(302)
-    const plainUrl = new URL(plain.headers.get("location")!, "http://localhost")
-    expect(plainUrl.searchParams.get("prompt")).toBeNull()
+    expect(plain.headers.get("location")).toContain("/test-auth-login")
+  })
+
+  test("GET /api/auth/login?intent=add&provider=GoogleOAuth bypasses the picker", async () => {
+    const client = new TestClient()
+
+    // Social provider passed through (the in-app picker hits this with
+    // `provider=GoogleOAuth` after the user clicks "Continue with Google").
+    // The stub auth service records the provider on the redirect URL so we
+    // can assert it survives the round trip.
+    const add = await client.get("/api/auth/login?intent=add&provider=GoogleOAuth")
+    expect(add.status).toBe(302)
+    const url = new URL(add.headers.get("location")!, "http://localhost")
+    expect(url.pathname).toBe("/test-auth-login")
+    expect(url.searchParams.get("provider")).toBe("GoogleOAuth")
+    expect(Buffer.from(url.searchParams.get("state") || "", "base64").toString()).toBe("add|")
   })
 
   test("adding a second account parks the first", async () => {
@@ -138,15 +152,20 @@ describe("Multi-account /api/accounts", () => {
   test("interactive stub add-account form parks the previous account", async () => {
     // The interactive stub login form is the only add-account entry point on
     // stub-auth environments (dev / staging / PR previews). Driving it end to
-    // end (login?intent=add -> /test-auth-login POST) proves it runs the same
-    // park/coalesce + ?accountAdded=1 redirect as the real WorkOS callback,
-    // instead of silently overwriting the active session.
+    // end (login?intent=add&provider=… -> /test-auth-login POST) proves it
+    // runs the same park/coalesce + ?accountAdded=1 redirect as the real
+    // WorkOS callback, instead of silently overwriting the active session.
+    //
+    // The picker page sits in front of `login?intent=add` in the browser
+    // flow; we skip it here and hit the provider-direct path the picker
+    // buttons emit. Bare `intent=add` (no provider) is covered by the
+    // separate "hands off to the in-app picker" test.
     const client = new TestClient()
     const aEmail = uniqueEmail("acc-form-a")
     const bEmail = uniqueEmail("acc-form-b")
     const a = await loginAs(client, aEmail, "Form A")
 
-    const add = await client.get("/api/auth/login?intent=add")
+    const add = await client.get("/api/auth/login?intent=add&provider=GoogleOAuth")
     expect(add.status).toBe(302)
     const stubUrl = new URL(add.headers.get("location")!, "http://localhost")
     const state = stubUrl.searchParams.get("state")!
@@ -166,6 +185,54 @@ describe("Multi-account /api/accounts", () => {
       ],
       maxAccounts: MAX_ACCOUNTS,
     })
+  })
+
+  test("magic auth add-account parks the previous account", async () => {
+    // The Magic Auth path is the cross-IdP fallback when the second account
+    // wasn't signed up via a social provider. End-to-end coverage that
+    // /api/auth/magic/send + /api/auth/magic/verify runs the same
+    // park/coalesce + accountAdded redirect as the OAuth callback.
+    const client = new TestClient()
+    const aEmail = uniqueEmail("acc-magic-a")
+    const bEmail = uniqueEmail("acc-magic-b")
+    const a = await loginAs(client, aEmail, "Magic A")
+
+    const send = await client.post("/api/auth/magic/send", { email: bEmail })
+    expect(send.status).toBe(200)
+
+    const verify = await client.post<{ ok: boolean; redirectPath: string }>("/api/auth/magic/verify", {
+      email: bEmail,
+      code: "123456",
+      intent: "add",
+    })
+    expect(verify.status).toBe(200)
+    expect(verify.data.redirectPath).toBe("/workspaces?accountAdded=1")
+
+    const me = await client.get<MeResponse>("/api/auth/me")
+    expect(me.data.email).toBe(bEmail)
+
+    const accounts = await client.get<AccountsResponse>("/api/accounts")
+    expect(accounts.data).toEqual({
+      accounts: [
+        { id: me.data.id, email: bEmail, name: expect.any(String), state: "active" },
+        { id: a.id, email: aEmail, name: "Magic A", state: "parked" },
+      ],
+      maxAccounts: MAX_ACCOUNTS,
+    })
+  })
+
+  test("magic auth verify rejects a wrong code", async () => {
+    const client = new TestClient()
+    const bEmail = uniqueEmail("acc-magic-bad")
+
+    await client.post("/api/auth/magic/send", { email: bEmail })
+
+    const verify = await client.post("/api/auth/magic/verify", {
+      email: bEmail,
+      code: "000000",
+      intent: "add",
+    })
+    expect(verify.status).toBe(401)
   })
 
   test("switch promotes a parked account and parks the previously active one", async () => {

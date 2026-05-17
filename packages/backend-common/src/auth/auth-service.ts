@@ -26,6 +26,21 @@ export interface AuthResult {
   reason?: string
 }
 
+/**
+ * Social IdPs that bypass AuthKit's hosted UI entirely.
+ *
+ * `provider=authkit` is AuthKit's hosted UI, which holds its own session cookie
+ * on `cheerful-refuge-87.authkit.app` and silent-refreshes whenever that cookie
+ * is live — silently re-authenticating the existing user regardless of the
+ * `prompt` claim on the authorize URL. That makes the add-account flow
+ * impossible through AuthKit.
+ *
+ * Passing one of these provider names routes WorkOS straight to the IdP, which
+ * natively honors `prompt=select_account` and lets the user pick a different
+ * account.
+ */
+export type SocialProvider = "GoogleOAuth" | "MicrosoftOAuth"
+
 export interface AuthService {
   authenticateSession(sealedSession: string): Promise<AuthResult>
   authenticateWithCode(code: string): Promise<AuthResult>
@@ -39,14 +54,30 @@ export interface AuthService {
    *                    control-plane to support multiple origins (e.g. the
    *                    backoffice on a different TLD) without cookie-domain
    *                    gymnastics.
-   * @param options.prompt Passed through to WorkOS as the OIDC `prompt`. The
-   *                    add-account flow passes `"login select_account"` (the
-   *                    space-delimited OIDC form) to force both a fresh
-   *                    credential prompt and the account picker, so the
-   *                    existing hosted session isn't silently reused for the
-   *                    second account.
+   * @param options.provider Bypass AuthKit and route directly to a social IdP.
+   *                    The add-account flow needs this because AuthKit's
+   *                    hosted UI silent-refreshes through its own session
+   *                    cookie regardless of `prompt`. When set, we also pass
+   *                    `prompt=select_account` to the IdP so the user can
+   *                    actually pick a different account.
    */
-  getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { prompt?: string }): string
+  getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { provider?: SocialProvider }): string
+  /**
+   * Send a 6-digit Magic Auth code to the given email.
+   *
+   * Used as the universal fallback for the custom add-account flow when the
+   * user didn't sign up via Google/Microsoft. WorkOS auto-creates a user if
+   * none exists for the email — that's intentional: the verify step proves
+   * email ownership, which is equivalent to a sign-up.
+   */
+  sendMagicAuthCode(email: string): Promise<{ ok: true } | { ok: false; reason: string }>
+  /**
+   * Verify a Magic Auth code and produce a sealed session for the user.
+   *
+   * Mirrors {@link authenticateWithCode} shape so the add-account path can
+   * funnel both OAuth and Magic Auth through the same park/coalesce logic.
+   */
+  authenticateWithMagicAuth(email: string, code: string): Promise<AuthResult>
   /**
    * Build a WorkOS single-logout URL.
    *
@@ -178,14 +209,72 @@ export class WorkosAuthService implements AuthService {
     }
   }
 
-  getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { prompt?: string }): string {
+  getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { provider?: SocialProvider }): string {
+    // Social providers bypass AuthKit's hosted UI. We forward `prompt=select_account`
+    // via `providerQueryParams` so the IdP renders its native account picker —
+    // the only reliable way to add a *different* account when the user already
+    // has a live session at the IdP.
+    if (options?.provider) {
+      return this.workos.userManagement.getAuthorizationUrl({
+        provider: options.provider,
+        providerQueryParams: { prompt: "select_account" },
+        redirectUri: redirectUri ?? this.redirectUri,
+        clientId: this.clientId,
+        state: redirectTo ? Buffer.from(redirectTo).toString("base64") : undefined,
+      })
+    }
     return this.workos.userManagement.getAuthorizationUrl({
       provider: "authkit",
       redirectUri: redirectUri ?? this.redirectUri,
       clientId: this.clientId,
       state: redirectTo ? Buffer.from(redirectTo).toString("base64") : undefined,
-      ...(options?.prompt ? { prompt: options.prompt } : {}),
     })
+  }
+
+  async sendMagicAuthCode(email: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    try {
+      await this.workos.userManagement.sendMagicAuthCode({ email })
+      return { ok: true }
+    } catch (error) {
+      logger.error({ err: error }, "Failed to send magic auth code")
+      return { ok: false, reason: "send_failed" }
+    }
+  }
+
+  async authenticateWithMagicAuth(email: string, code: string): Promise<AuthResult> {
+    try {
+      const { user, sealedSession } = await this.workos.userManagement.authenticateWithMagicAuth({
+        email,
+        code,
+        clientId: this.clientId,
+        session: { sealSession: true, cookiePassword: this.cookiePassword },
+      })
+
+      logger.info({ email: user.email, sealedSession: !!sealedSession }, "User authenticated with magic auth")
+
+      return {
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          // Same as the OAuth callback path: no JWT permission claim is in the
+          // initial authenticate response. The next authenticated request
+          // through authenticateSession will populate it.
+          permissions: null,
+        },
+        sealedSession: sealedSession!,
+        refreshed: false,
+      }
+    } catch (error) {
+      logger.error({ err: error }, "Authentication with magic auth failed")
+      return {
+        success: false,
+        refreshed: false,
+        reason: "authentication_failed",
+      }
+    }
   }
 
   async getLogoutUrl(sealedSession: string, returnTo?: string): Promise<string | null> {

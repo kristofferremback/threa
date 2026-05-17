@@ -117,7 +117,7 @@ describe("AuthProvider login / accountError", () => {
     Object.defineProperty(window, "location", { configurable: true, value: originalLocation })
   })
 
-  it("threads intent=add onto the login URL", async () => {
+  it("routes intent=add to the in-app add-account picker", async () => {
     stubLocation("")
     render(
       <AuthProvider>
@@ -129,7 +129,10 @@ describe("AuthProvider login / accountError", () => {
       captureLogin(undefined, { intent: "add" })
     })
 
-    expect(hrefValues[hrefValues.length - 1]).toBe("/api/auth/login?intent=add")
+    // The picker bypasses AuthKit — AuthKit's hosted UI silent-refreshes and
+    // can't reliably show an account picker. The page itself routes the user
+    // to a provider-direct OAuth URL or magic-auth verify.
+    expect(hrefValues[hrefValues.length - 1]).toBe("/add-account")
   })
 
   it("builds a plain login URL with no options", async () => {
