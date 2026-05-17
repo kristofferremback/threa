@@ -3,7 +3,7 @@ import { accountsApi } from "@/api"
 import { ApiError } from "@/api/client"
 import { useAccountScope } from "@/auth/account-scope"
 import { useAuth } from "@/auth"
-import { takeNotificationIntent } from "@/lib/notification-intent"
+import { setNotificationIntent, takeNotificationIntent } from "@/lib/notification-intent"
 
 /**
  * Cross-account notification-click handler. A push for a *parked* account
@@ -27,7 +27,10 @@ import { takeNotificationIntent } from "@/lib/notification-intent"
  *
  * The intent is one-shot (`takeNotificationIntent` clears it), so the effect
  * re-running can't re-trigger; a cleanup flag drops a late resolve after
- * unmount or workspace change. Mirrors `useResolveOrBounce`.
+ * unmount or workspace change. If the effect tears down before the attempt
+ * settles (StrictMode's throwaway first mount, or a fast unmount), the cleanup
+ * hands the unconsumed intent back so the retained mount still sees it.
+ * Mirrors `useResolveOrBounce`.
  */
 export function useNotificationAccountSwitch(workspaceId: string): void {
   const { switchAccount, activeWorkosUserId } = useAccountScope()
@@ -38,19 +41,25 @@ export function useNotificationAccountSwitch(workspaceId: string): void {
     if (!intentUserId || intentUserId === activeWorkosUserId) return
 
     let ignore = false
+    let settled = false
     void (async () => {
       try {
         const { ownerUserId } = await accountsApi.resolveIdentity(intentUserId, workspaceId)
-        if (ignore || ownerUserId === activeWorkosUserId) return
+        if (ignore) return
+        settled = true
+        if (ownerUserId === activeWorkosUserId) return
         await switchAccount(ownerUserId)
       } catch (e) {
-        if (!ignore && ApiError.isApiError(e) && e.code === "ACCOUNT_NOT_SIGNED_IN") {
+        if (ignore) return
+        settled = true
+        if (ApiError.isApiError(e) && e.code === "ACCOUNT_NOT_SIGNED_IN") {
           login(`/w/${workspaceId}`)
         }
       }
     })()
     return () => {
       ignore = true
+      if (!settled) setNotificationIntent(workspaceId, intentUserId)
     }
   }, [workspaceId, activeWorkosUserId, switchAccount, login])
 }

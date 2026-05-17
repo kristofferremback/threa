@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { StrictMode } from "react"
 import { renderHook, waitFor } from "@testing-library/react"
 import { useNotificationAccountSwitch } from "./use-notification-account-switch"
 import { ApiError } from "@/api/client"
@@ -135,6 +136,17 @@ describe("useNotificationAccountSwitch", () => {
     await Promise.resolve()
 
     expect(switchAccountMock).not.toHaveBeenCalled()
+    expect(loginMock).not.toHaveBeenCalled()
+  })
+
+  it("survives StrictMode's throwaway first mount (intent handed back, switch still fires)", async () => {
+    setNotificationIntent(WS, "workos_B")
+    const resolveSpy = vi.spyOn(accountsApi, "resolveIdentity").mockResolvedValue({ ownerUserId: "workos_B" })
+
+    renderHook(() => useNotificationAccountSwitch(WS), { wrapper: StrictMode })
+
+    await waitFor(() => expect(switchAccountMock).toHaveBeenCalledWith("workos_B"))
+    expect(resolveSpy).toHaveBeenCalledWith("workos_B", WS)
     expect(loginMock).not.toHaveBeenCalled()
   })
 })
