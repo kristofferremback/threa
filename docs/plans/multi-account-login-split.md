@@ -420,35 +420,55 @@ never hardcoded. No new backend code (PR-3/PR-4a contracts only).
 work — PR #487's service worker navigates to `/w/${workspaceId}/…` with no
 identity awareness and `PushData` carries no `workosUserId`.
 
-**Changes:**
+**Shipped:**
 
-- Push payload carries the **target account identity** (at least
-  `workosUserId` + `workspaceId`).
-- `apps/frontend/src/sw.ts` `notificationclick`: call PR-4b's resolve
-  **identity form** (`?userId=`) with the payload's `workosUserId`, **flip
-  AccountScope** (PR-4a) to that account if it is parked, then route to the
-  deep link. No reload. Not signed in here → full login as that user (the
-  resolver never substitutes a different readable account).
-- Per-`(account, workspace)` push opt-out re-key (matches PR-4a localStorage
-  re-keying).
-- Single sign-out does a **surgical push-row cleanup** for that account only
-  (the existing `deleteByEndpointForUser` join via `workos_user_id` already
-  scopes correctly — confirmed no migration needed).
-- On add-account, subscribe the existing browser push endpoint for the newly
-  added account so its notifications arrive without re-granting permission.
+- Activity push payload carries `workosUserId` (recipient member's WorkOS id)
+  alongside `workspaceId`. Resolved once per target user via the existing
+  `UserRepository.findById` behind a new `CrossFeatureLookups.getWorkosUserId`
+  seam (INV-52/35); no migration. Only the activity payload — `clear` /
+  `session_expired` / `test` / reminder payloads have no cross-account deep
+  link so they carry no identity.
+- `apps/frontend/src/sw.ts` `notificationclick` (warm path) forwards
+  `workosUserId` in the `SW_MSG_NOTIFICATION_CLICK` postMessage. `main.tsx`
+  stashes it via a one-shot, workspace-keyed `notification-intent` module
+  **before** `router.navigate(url)` (the SW message handler has no React
+  context — same hand-off shape as the existing `pushsubscriptionchanged`
+  forward). `useNotificationAccountSwitch(workspaceId)` (colocated with
+  `workspace-layout`, mounted beside `useResolveOrBounce`) reads the intent,
+  calls PR-4b's resolve **identity form** (`accountsApi.resolveIdentity`), and
+  on a different owner flips in place via PR-4a `switchAccount` — the keyed
+  remount re-bootstraps the already-navigated URL, no extra navigation. Not
+  signed in here (`404 ACCOUNT_NOT_SIGNED_IN`) → full re-login back to the deep
+  link; `WORKSPACE_NOT_RESOLVABLE` / network → benign no-op
+  (`useResolveOrBounce` remains the safety net).
+- Per-`(account, workspace)` push opt-out re-key — **verify-only, already on
+  `main`** (`use-push-notifications.ts` `pushOptOutKey(workspaceId, accountId)`
+  via `useAccountScopeOptional()`).
+- Surgical single sign-out push-row cleanup — **verify-only, already on
+  `main`**: `deleteByEndpointForUser` scopes by `endpoint AND user_id IN
+(… workos_user_id = $2)`, i.e. one account across workspaces. No migration.
+- Auto-subscribe a newly added account's push endpoint — **deferred**.
+  `usePushNotifications` mounts only in the notification-settings panel; there
+  is no always-on subscribe path, so add-account auto-subscribe is a separate
+  subscribe-lifecycle change. The new account subscribes on next settings
+  open, exactly as a new workspace does today — no regression.
 
 **Reuse:** Existing `push_subscriptions` schema (`UNIQUE (workspace_id,
 user_id, endpoint)` already account-scoped — **no migration**); existing
-endpoint-cleanup query; PR-4b resolve identity form; PR-4a AccountScope flip.
+endpoint-cleanup query; PR-4b resolve identity form; PR-4a AccountScope flip;
+`useResolveOrBounce` ignore-flag/attempt-once structure; the `main.tsx`
+SW-message → hand-off pattern.
 
-**Verification:**
-
-- Notification for parked account B while A is active → click → app flips to B
-  and lands on the correct deep link, no reload, no A-data flash.
-- Opt-out is per `(account, workspace)`; toggling one does not affect another.
-- Sign out of A only → A's push rows gone, B's intact, B still receives push.
-- Add account on a browser with push already granted → new account receives
-  push without a second permission prompt.
+**Verification (shipped):** Backend push suite — an activity delivery's
+serialized `data.workosUserId` equals the target's `workos_user_id`, and is
+omitted when unresolvable. Frontend — `notification-intent` is one-shot and
+workspace-keyed; `resolveIdentity` requests the `?userId=&workspaceId=`
+form URL-encoded; `useNotificationAccountSwitch` flips on a parked owner, is a
+no-op with no intent / intent === active, re-logins on
+`ACCOUNT_NOT_SIGNED_IN`, no-ops on `WORKSPACE_NOT_RESOLVABLE`/network, and
+drops a late resolve after unmount. Manual two-account smoke — notification for
+parked B while A is focused → click flips to B in place (no reload), lands on
+the deep link; single-account navigation unaffected.
 
 ---
 

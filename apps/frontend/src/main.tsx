@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 import { App } from "./App"
 import { router } from "./routes"
 import { SW_MSG_NOTIFICATION_CLICK, SW_MSG_SUBSCRIPTION_CHANGED } from "./lib/sw-messages"
+import { setNotificationIntent } from "./lib/notification-intent"
 import { hydrateCollapseCache } from "./lib/markdown/collapse-cache"
 import { applyPersistedComposerHeight } from "./lib/composer-height-storage"
 import "./index.css"
@@ -18,6 +19,14 @@ navigator.serviceWorker?.addEventListener("message", (event) => {
     // Client-side navigation preserves React tree, TanStack Query cache, and socket connection
     const url = event.data.url as string
     if (url.startsWith("/")) {
+      // Stash the notification's intended recipient *before* navigating so the
+      // freshly-mounted WorkspaceLayout's switch hook sees it. The hook flips
+      // the active account in place if the click landed under a different one.
+      const workosUserId = event.data.workosUserId as string | undefined
+      const workspaceMatch = /^\/w\/([^/]+)/.exec(url)
+      if (workosUserId && workspaceMatch) {
+        setNotificationIntent(workspaceMatch[1], workosUserId)
+      }
       router.navigate(url)
     }
   }
