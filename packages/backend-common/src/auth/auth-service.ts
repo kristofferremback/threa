@@ -40,9 +40,11 @@ export interface AuthService {
    *                    backoffice on a different TLD) without cookie-domain
    *                    gymnastics.
    * @param options.prompt Passed through to WorkOS as the OIDC `prompt`. The
-   *                    add-account flow passes `"login"` to force an AuthKit
-   *                    re-prompt instead of silently reusing the existing
-   *                    hosted session.
+   *                    add-account flow passes `"login select_account"` (the
+   *                    space-delimited OIDC form) to force both a fresh
+   *                    credential prompt and the account picker, so the
+   *                    existing hosted session isn't silently reused for the
+   *                    second account.
    */
   getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { prompt?: string }): string
   /**

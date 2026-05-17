@@ -83,13 +83,15 @@ describe("Multi-account /api/accounts", () => {
     })
   })
 
-  test("GET /api/auth/login?intent=add forces prompt=login and an add| state", async () => {
+  test("GET /api/auth/login?intent=add forces an account chooser and an add| state", async () => {
     const client = new TestClient()
 
     const add = await client.get("/api/auth/login?intent=add")
     expect(add.status).toBe(302)
     const addUrl = new URL(add.headers.get("location")!, "http://localhost")
-    expect(addUrl.searchParams.get("prompt")).toBe("login")
+    // `login` alone silently re-auths the live session; `select_account`
+    // forces the picker so a *different* account can be added.
+    expect(addUrl.searchParams.get("prompt")).toBe("login select_account")
     expect(Buffer.from(addUrl.searchParams.get("state") || "", "base64").toString()).toBe("add|")
 
     // Non-add login is unchanged: no prompt forced.
