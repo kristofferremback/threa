@@ -5,13 +5,13 @@ import {
   SESSION_COOKIE_NAME,
   clearAltSessionCookie,
   clearSessionCookie,
-  decodeAndSanitizeRedirectState,
   displayNameFromWorkos,
   readAltSessionCookies,
   setSessionCookie,
   type AuthService,
 } from "@threa/backend-common"
 import type { AccountsService } from "../accounts"
+import { parseCallbackState, splitInnerState } from "./callback-state"
 
 const callbackSchema = z.object({
   code: z.string().min(1),
@@ -58,26 +58,6 @@ function isTrustedHost(host: string, allowedDomain: string, dedicatedHosts: stri
   if (dedicatedHosts.includes(host)) return true
   if (allowedDomain && isAllowedForwardedHost(host, allowedDomain)) return true
   return false
-}
-
-/**
- * Peel the optional `add|` multi-account sentinel off the OAuth `state`.
- *
- * `login` prefixes a literal `add|` onto the *plaintext* state when
- * `intent=add`; `getAuthorizationUrl` then base64-encodes the whole thing.
- * Here we decode once, strip the sentinel, and re-encode the inner plaintext
- * so the existing host/path decode logic runs on a byte-identical payload.
- * For the non-add path `innerState` is the original `state` untouched, keeping
- * single-account decoding exactly as it was.
- */
-function parseCallbackState(state: string | undefined): { isAdd: boolean; innerState: string | undefined } {
-  if (!state) return { isAdd: false, innerState: state }
-  const decoded = Buffer.from(state, "base64").toString("utf-8")
-  if (decoded.startsWith("add|")) {
-    const inner = decoded.slice("add|".length)
-    return { isAdd: true, innerState: Buffer.from(inner, "utf-8").toString("base64") }
-  }
-  return { isAdd: false, innerState: state }
 }
 
 export function createControlPlaneAuthHandlers({
@@ -142,20 +122,12 @@ export function createControlPlaneAuthHandlers({
 
       const { isAdd, innerState } = parseCallbackState(state)
 
-      let appOrigin: string
-      let redirectPath: string
-      const decoded = innerState ? Buffer.from(innerState, "base64").toString("utf-8") : ""
-      const pipeIndex = decoded.indexOf("|")
-
-      if (pipeIndex !== -1) {
-        // State contains "host|path" — redirect to the original forwarded host
-        const host = decoded.substring(0, pipeIndex)
-        redirectPath = decodeAndSanitizeRedirectState(Buffer.from(decoded.substring(pipeIndex + 1)).toString("base64"))
-        appOrigin = isTrustedHost(host, allowedRedirectDomain, dedicatedRedirectHosts) ? `https://${host}` : frontendUrl
-      } else {
-        redirectPath = innerState ? decodeAndSanitizeRedirectState(innerState) : "/"
-        appOrigin = frontendUrl
-      }
+      const { host, redirectPath: basePath } = splitInnerState(innerState)
+      let redirectPath = basePath
+      // "host|path" state redirects back to the original forwarded host when
+      // it's trusted; otherwise fall back to the canonical frontend origin.
+      const appOrigin =
+        host && isTrustedHost(host, allowedRedirectDomain, dedicatedRedirectHosts) ? `https://${host}` : frontendUrl
 
       if (isAdd) {
         const parked = await accountsService.addAndParkActive(

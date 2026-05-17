@@ -44,10 +44,12 @@ interface AccountsResponse {
 }
 
 /**
- * Drive the OAuth add-account flow for `main`. A throwaway client registers the
- * user in the shared stub (devLogin), then we hit the callback directly with an
- * `add|`-prefixed state — the stub's `/test-auth-login` page bypasses the
- * callback, so the park/coalesce path must be exercised through `/api/auth/callback`.
+ * Drive the OAuth add-account flow for `main` through the WorkOS callback. A
+ * throwaway client registers the user in the shared stub (devLogin), then we
+ * hit `/api/auth/callback` directly with an `add|`-prefixed state. The
+ * interactive stub login form (`/test-auth-login`) runs the identical
+ * park/coalesce sequence — that path is covered separately by
+ * "interactive stub add-account form parks the previous account".
  * Returns the registered user, the registering client (its jar still holds that
  * user's real sealed session — used to prove revoke), and the callback response.
  */
@@ -129,6 +131,39 @@ describe("Multi-account /api/accounts", () => {
     // pointer (?accountAdded=1) instead of routing into the old account.
     expect(res.status).toBe(302)
     expect(res.headers.get("location")).toContain("/workspaces?accountAdded=1")
+  })
+
+  test("interactive stub add-account form parks the previous account", async () => {
+    // The interactive stub login form is the only add-account entry point on
+    // stub-auth environments (dev / staging / PR previews). Driving it end to
+    // end (login?intent=add -> /test-auth-login POST) proves it runs the same
+    // park/coalesce + ?accountAdded=1 redirect as the real WorkOS callback,
+    // instead of silently overwriting the active session.
+    const client = new TestClient()
+    const aEmail = uniqueEmail("acc-form-a")
+    const bEmail = uniqueEmail("acc-form-b")
+    const a = await loginAs(client, aEmail, "Form A")
+
+    const add = await client.get("/api/auth/login?intent=add")
+    expect(add.status).toBe(302)
+    const stubUrl = new URL(add.headers.get("location")!, "http://localhost")
+    const state = stubUrl.searchParams.get("state")!
+
+    const submitted = await client.post("/test-auth-login", { email: bEmail, name: "Form B", state })
+    expect(submitted.status).toBe(302)
+    expect(submitted.headers.get("location")).toContain("/workspaces?accountAdded=1")
+
+    const me = await client.get<MeResponse>("/api/auth/me")
+    expect(me.data.email).toBe(bEmail)
+
+    const accounts = await client.get<AccountsResponse>("/api/accounts")
+    expect(accounts.data).toEqual({
+      accounts: [
+        { id: me.data.id, email: bEmail, name: "Form B", state: "active" },
+        { id: a.id, email: aEmail, name: "Form A", state: "parked" },
+      ],
+      maxAccounts: MAX_ACCOUNTS,
+    })
   })
 
   test("switch promotes a parked account and parks the previously active one", async () => {

@@ -103,6 +103,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
     const authStub = createAuthStubHandlers({
       authStubService: authService,
+      accountsService,
     })
     app.get("/test-auth-login", authStub.getLoginPage)
     app.post("/test-auth-login", authLimit, authStub.handleLogin)
