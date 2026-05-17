@@ -395,6 +395,23 @@ dialog/menu primitives (INV-14); navigation via links / actions via buttons
 - Dead alt → re-auth affordance works and re-coalesces the account.
 - Header-size measurement documented; cap confirmed.
 
+**Implementation (this slice):** Sidebar-footer "Switch account" entry →
+`?account-switcher` URL param opens `AccountSwitcherDialog`
+(`apps/frontend/src/components/account-switcher/`), mirroring the
+`WorkspaceSettingsDialog` direct-`setSearchParams` pattern (no context).
+List via `GET /api/accounts` (`accountsApi.list`); active row =
+non-interactive check; parked row = click → PR-4a
+`useAccountScope().switchAccount` (no reload, keyed remount); parked/stale
+"Remove" → `POST /api/accounts/remove` (`accountsApi.remove`, verbatim
+`stale:alt_<slot>` id) + list invalidate; stale "Sign in again" and footer
+"Add account" → `login(undefined, { intent: "add" })`. The
+`?accountError=MAX_ACCOUNTS_REACHED` callback param is surfaced once as a
+toast from `AuthProvider` (above the router → `window.location` +
+`history.replaceState` to strip it). **`MAX_ACCOUNTS` stays 4** — the
+cookie-size compile-time guard (`packages/backend-common/src/cookies.ts`)
+has no headroom; the cap is read from the `list` response's `maxAccounts`,
+never hardcoded. No new backend code (PR-3/PR-4a contracts only).
+
 ---
 
 ### PR-6 — Cross-account push + notification-click switch (depends PR-4b; parallel with PR-5)

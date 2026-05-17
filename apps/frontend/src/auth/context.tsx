@@ -1,4 +1,5 @@
 import { createContext, useCallback, useEffect, useState, type ReactNode } from "react"
+import { toast } from "sonner"
 import { API_BASE } from "@/api/client"
 import { clearAllCachedData } from "@/db"
 import { getCachedUser, setCachedUser, clearCachedUser } from "@/lib/cached-user"
@@ -12,10 +13,15 @@ declare global {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (redirectTo?: string) => void
+  login: (redirectTo?: string, opts?: { intent?: "add" }) => void
   logout: () => void
   refetch: () => Promise<void>
 }
+
+// The OAuth add-account callback appends this when every alt slot is full
+// (control plane returns it gracefully rather than erroring mid-flight).
+const ACCOUNT_ERROR_PARAM = "accountError"
+const MAX_ACCOUNTS_REACHED = "MAX_ACCOUNTS_REACHED"
 
 // Best-effort push cleanup must never delay the logout redirect for long.
 // When the SW is healthy this completes in well under a second; the cap only
@@ -117,11 +123,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
     fetchUser()
   }, [fetchUser])
 
-  const login = useCallback((redirectTo?: string) => {
-    const url = redirectTo
-      ? `${API_BASE}/api/auth/login?redirect_to=${encodeURIComponent(redirectTo)}`
-      : `${API_BASE}/api/auth/login`
-    window.location.href = url
+  // AuthProvider sits above the router, so the add-account refusal can't be
+  // read via useSearchParams. Surface it once and strip the param so a
+  // refresh doesn't re-toast.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get(ACCOUNT_ERROR_PARAM) !== MAX_ACCOUNTS_REACHED) return
+    toast.error("You're signed in to the maximum number of accounts. Remove one to add another.")
+    params.delete(ACCOUNT_ERROR_PARAM)
+    const query = params.toString()
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`
+    )
+  }, [])
+
+  const login = useCallback((redirectTo?: string, opts?: { intent?: "add" }) => {
+    const query = new URLSearchParams()
+    if (redirectTo) query.set("redirect_to", redirectTo)
+    if (opts?.intent === "add") query.set("intent", "add")
+    const qs = query.toString()
+    window.location.href = `${API_BASE}/api/auth/login${qs ? `?${qs}` : ""}`
   }, [])
 
   const logout = useCallback(async () => {

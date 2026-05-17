@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useMemo, useState, type ComponentPropsWithoutRef } from "react"
-import { ChevronUp, DollarSign, LogOut, Settings, User as UserIcon } from "lucide-react"
+import { ChevronUp, DollarSign, LogOut, Settings, User as UserIcon, Users } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useAuth } from "@/auth"
 import { useSettings, useSidebar } from "@/contexts"
@@ -93,6 +93,18 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
     )
   }, [collapseOnMobile, setSearchParams])
 
+  const openAccountSwitcher = useCallback(() => {
+    collapseOnMobile()
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set("account-switcher", "")
+        return next
+      },
+      { replace: true }
+    )
+  }, [collapseOnMobile, setSearchParams])
+
   const avatarSrc = currentUser ? getAvatarUrl(workspaceId, currentUser.avatarUrl, 64) : null
   const menuActions = useMemo<SidebarActionItem[]>(
     () => [
@@ -123,14 +135,20 @@ export function SidebarFooter({ workspaceId, currentUser }: SidebarFooterProps) 
         separatorBefore: true,
       },
       {
+        id: "switch-account",
+        label: "Switch account",
+        icon: Users,
+        onSelect: openAccountSwitcher,
+        separatorBefore: true,
+      },
+      {
         id: "logout",
         label: "Log out",
         icon: LogOut,
         onSelect: () => logout(),
-        separatorBefore: true,
       },
     ],
-    [handleOpenSettings, openWorkspaceSettings, collapseOnMobile, logout, workspaceId]
+    [handleOpenSettings, openWorkspaceSettings, openAccountSwitcher, collapseOnMobile, logout, workspaceId]
   )
 
   if (!currentUser) return null
