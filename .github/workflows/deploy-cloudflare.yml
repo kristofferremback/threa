@@ -41,7 +41,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name threa-frontend --branch main
+          command: pages deploy dist --project-name threa-frontend --branch main --commit-hash ${{ github.event.workflow_run.head_sha }} --commit-message "deploy ${{ github.event.workflow_run.head_sha }}" --commit-dirty=true
           workingDirectory: apps/frontend
           packageManager: bun
 
@@ -114,7 +114,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name threa-backoffice --branch main
+          command: pages deploy dist --project-name threa-backoffice --branch main --commit-hash ${{ github.event.workflow_run.head_sha }} --commit-message "deploy ${{ github.event.workflow_run.head_sha }}" --commit-dirty=true
           workingDirectory: apps/backoffice
           packageManager: bun
 
@@ -187,7 +187,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name threa-backoffice-staging --branch main
+          command: pages deploy dist --project-name threa-backoffice-staging --branch main --commit-hash ${{ github.event.workflow_run.head_sha }} --commit-message "deploy ${{ github.event.workflow_run.head_sha }}" --commit-dirty=true
           workingDirectory: apps/backoffice
           packageManager: bun
 
@@ -265,7 +265,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name threa-staging --branch main
+          command: pages deploy dist --project-name threa-staging --branch main --commit-hash ${{ github.event.workflow_run.head_sha }} --commit-message "deploy ${{ github.event.workflow_run.head_sha }}" --commit-dirty=true
           workingDirectory: apps/frontend
           packageManager: bun
 
