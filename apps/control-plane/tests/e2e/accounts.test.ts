@@ -117,6 +117,20 @@ describe("Multi-account /api/accounts", () => {
     })
   })
 
+  test("a successful add redirects to the workspace picker with ?accountAdded=1", async () => {
+    const client = new TestClient()
+    await loginAs(client, uniqueEmail("acc-redirect-a"), "Redirect A")
+    const { res } = await addAccount(client, uniqueEmail("acc-redirect-b"), "Redirect B")
+
+    // The add makes the new account active. The pre-add state path belongs to
+    // the previous account; routing there 403s and bounces straight back via
+    // resolve→switchAccount, silently undoing the add. The callback must land
+    // on the workspace picker so the app can drop its stale last-workspace
+    // pointer (?accountAdded=1) instead of routing into the old account.
+    expect(res.status).toBe(302)
+    expect(res.headers.get("location")).toContain("/workspaces?accountAdded=1")
+  })
+
   test("switch promotes a parked account and parks the previously active one", async () => {
     const client = new TestClient()
     const aEmail = uniqueEmail("acc-switch-a")

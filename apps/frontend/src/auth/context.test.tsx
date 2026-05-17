@@ -113,6 +113,7 @@ describe("AuthProvider login / accountError", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+    localStorage.clear()
     Object.defineProperty(window, "location", { configurable: true, value: originalLocation })
   })
 
@@ -163,6 +164,23 @@ describe("AuthProvider login / accountError", () => {
       )
     })
     expect(replaceSpy).toHaveBeenCalledWith(null, "", "/w/workspace_1?foo=bar")
+  })
+
+  it("clears the stale last-workspace pointer on accountAdded and strips the param", async () => {
+    stubLocation("?accountAdded=1&foo=bar")
+    localStorage.setItem("threa-last-workspace", "workspace_old")
+    const replaceSpy = vi.spyOn(window.history, "replaceState").mockImplementation(() => {})
+
+    render(
+      <AuthProvider>
+        <LoginProbe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(replaceSpy).toHaveBeenCalledWith(null, "", "/w/workspace_1?foo=bar")
+    })
+    expect(localStorage.getItem("threa-last-workspace")).toBeNull()
   })
 
   it("does not toast when there is no accountError param", async () => {
