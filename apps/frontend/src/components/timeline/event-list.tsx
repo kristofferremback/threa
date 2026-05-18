@@ -200,6 +200,24 @@ export function findFirstMessageId(items: TimelineItem[]): string | undefined {
   return undefined
 }
 
+/**
+ * Index of the timeline item whose event renders `messageId`, or -1 when the
+ * message is not in `items`.
+ *
+ * Deep-link scroll resolves this against the *current* timeline on every retry
+ * tick, not once up front: the event window shifts under the retry loop
+ * (infinite-scroll prepends, live messages, a jump-window swap), so a stale
+ * captured index can fall outside the array Virtuoso currently holds. Feeding
+ * an out-of-range index to `scrollToIndex` drives react-virtuoso's offset-tree
+ * binary search to an undefined node and crashes the whole route, so callers
+ * must re-resolve and bounds-check before every imperative scroll.
+ */
+export function findMessageItemIndex(items: TimelineItem[], messageId: string): number {
+  return items.findIndex(
+    (item) => item.type === "event" && (item.event.payload as { messageId?: string })?.messageId === messageId
+  )
+}
+
 /** Returns a stable key string for a timeline item */
 export function getTimelineItemKey(item: TimelineItem): string {
   switch (item.type) {

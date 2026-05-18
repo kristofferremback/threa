@@ -56,6 +56,7 @@ import {
   groupTimelineItems,
   annotateAuthorGroups,
   findFirstMessageId,
+  findMessageItemIndex,
   getTimelineItemKey,
   filterVisibleItems,
   type TimelineItem,
@@ -634,6 +635,13 @@ export function StreamContent({
     [timelineItems, useVirtualized, isChannel]
   )
 
+  // Mirror of `visibleItems` for the long-lived scrollToMessage retry loop:
+  // its closure is created once per scroll but runs for up to ~1.2s, during
+  // which the event window can shift. Reading the ref keeps each retry tick
+  // resolving the target index against the array Virtuoso currently holds.
+  const visibleItemsRef = useRef(visibleItems)
+  visibleItemsRef.current = visibleItems
+
   const getItemKey = useCallback(
     (index: number) => {
       const item = visibleItems[index]
@@ -705,11 +713,7 @@ export function StreamContent({
   const scrollToMessage = useCallback(
     (messageId: string) => {
       if (!useVirtualized) return false
-      const idx = visibleItems.findIndex((item) => {
-        if (item.type !== "event") return false
-        return (item.event.payload as { messageId?: string })?.messageId === messageId
-      })
-      if (idx < 0) return false
+      if (findMessageItemIndex(visibleItems, messageId) < 0) return false
 
       // Cancel any previous retry loop
       if (scrollRetryTimerRef.current !== null) {
@@ -779,8 +783,27 @@ export function StreamContent({
             stableFrames = 0
           }
         } else {
-          // Target is virtualized out — ask Virtuoso to render it (0-based index)
-          virtuosoRef.current?.scrollToIndex({ index: idx, align: "center", behavior: "auto" })
+          // Target is virtualized out — ask Virtuoso to render it (0-based
+          // index). Re-resolve against the live timeline every tick: the
+          // window can shift under this loop, and a stale/out-of-range index
+          // makes react-virtuoso's offset-tree binary search dereference an
+          // undefined node, throwing "Cannot read properties of undefined
+          // (reading 'index')" which crashes the whole route.
+          const liveIdx = findMessageItemIndex(visibleItemsRef.current, messageId)
+          // liveIdx < 0 means the target is transiently out of the window
+          // (e.g. a jump-window swap mid-flight). Skip this tick rather than
+          // scroll to a wrong index; a later tick retries once it reappears,
+          // and MAX_MS still bounds the loop if it never does.
+          if (liveIdx >= 0) {
+            try {
+              virtuosoRef.current?.scrollToIndex({ index: liveIdx, align: "center", behavior: "auto" })
+            } catch {
+              // react-virtuoso can still throw internally on a freshly
+              // mounted, not-yet-measured list (no defaultItemHeight).
+              // Non-fatal: the next tick retries once the size tree is
+              // populated, or the DOM path takes over once the row renders.
+            }
+          }
           stableFrames = 0
         }
 
