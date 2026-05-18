@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react"
 import { toast } from "sonner"
 import { usePageActivity } from "./use-page-activity"
 import { useSocketReconnectCount } from "@/contexts"
+import { getNotifiedVersion, setNotifiedVersion } from "@/lib/app-update-version"
 
 const POLL_INTERVAL = 300_000 // 5 minutes
 const TOAST_ID = "app-update"
@@ -79,13 +80,32 @@ async function reloadForUpdate(): Promise<void> {
   }
 }
 
+/**
+ * Whether to surface the update toast. True only for a build that is both newer
+ * than what's running and not one we've already notified the user about — so a
+ * remount or a refocus/reconnect/poll on an already-announced deploy stays
+ * silent, while a genuinely newer build (whose version matches neither the
+ * running bundle nor the persisted marker) still notifies.
+ */
+export function shouldNotifyUpdate(
+  serverVersion: string,
+  runningVersion: string,
+  notifiedVersion: string | null
+): boolean {
+  return Boolean(serverVersion) && serverVersion !== runningVersion && serverVersion !== notifiedVersion
+}
+
 export function useAppUpdate(): void {
-  const toastShownRef = useRef(false)
   const { isVisible } = usePageActivity()
   const reconnectCount = useSocketReconnectCount()
+  // In-memory fallback so dedup still holds for this mount when localStorage is
+  // unavailable (private mode / disabled) — the persisted marker is the
+  // cross-mount/session guard; this keeps the no-storage path no worse than
+  // the previous per-mount ref.
+  const toastedVersionRef = useRef<string | null>(null)
 
   const checkForUpdate = useCallback(async () => {
-    if (IS_DEV || toastShownRef.current) return
+    if (IS_DEV) return
 
     try {
       // Trigger SW update check in parallel with version check
@@ -95,8 +115,9 @@ export function useAppUpdate(): void {
       if (!res.ok) return
 
       const { version } = (await res.json()) as { version: string }
-      if (version && version !== __APP_VERSION__) {
-        toastShownRef.current = true
+      if (toastedVersionRef.current !== version && shouldNotifyUpdate(version, __APP_VERSION__, getNotifiedVersion())) {
+        toastedVersionRef.current = version
+        setNotifiedVersion(version)
         toast("A new version of Threa is available", {
           id: TOAST_ID,
           duration: Infinity,
