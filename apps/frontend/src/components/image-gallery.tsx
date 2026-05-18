@@ -192,8 +192,8 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
   const [containerWidth, setContainerWidth] = useState(0)
 
   // Mobile strip refs — all DOM manipulation goes through these to avoid re-render jank
-  const containerRef = useRef<HTMLDivElement>(null)
-  const stripRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const stripRef = useRef<HTMLDivElement | null>(null)
   const dismissWrapperRef = useRef<HTMLDivElement>(null)
 
   // Zoom/pan state for the current slide. Only reflects the active image.
@@ -240,9 +240,13 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
 
   // Only sync currentIndex when the gallery opens — not on every initialIndex
   // change, which can shift due to late-loading images growing galleryImages.
+  // A layout effect (not passive) so currentIndex is corrected synchronously
+  // when isOpen flips, before Radix Presence's own layout effect mounts the
+  // dialog content — that ordering guarantees the strip callback ref (below)
+  // sees the opened item's index, not the previous one, on reopen.
   const prevOpen = useRef(false)
   const justOpened = useRef(false)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isOpen && !prevOpen.current) {
       setCurrentIndex(initialIndex)
       justOpened.current = true
@@ -271,15 +275,19 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" })
   }, [currentIndex])
 
-  // Measure container width synchronously before first paint so slides size correctly
-  useLayoutEffect(() => {
-    if (!isOpen || !isMobile || !containerRef.current) return
-    setContainerWidth(containerRef.current.offsetWidth)
-  }, [isOpen, isMobile])
-
-  // Re-anchor the strip on resize (e.g. screen rotation)
-  useEffect(() => {
-    if (!isMobile || !containerRef.current) return
+  // Measure the container and watch it for resize via a callback ref. Radix
+  // Presence mounts the dialog content one render *after* `open` flips, so an
+  // effect keyed on [isOpen] runs before the node exists and never re-fires to
+  // pick up the late mount — leaving containerWidth at 0 and the strip stuck on
+  // slide 0. A callback ref fires exactly on (re)mount, which is precisely when
+  // the width becomes measurable.
+  const roRef = useRef<ResizeObserver | null>(null)
+  const setContainerNode = useCallback((node: HTMLDivElement | null) => {
+    roRef.current?.disconnect()
+    roRef.current = null
+    containerRef.current = node
+    if (!node) return
+    if (node.offsetWidth > 0) setContainerWidth(node.offsetWidth)
     const ro = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width
       if (w <= 0) return
@@ -289,18 +297,34 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
         stripRef.current.style.transform = `translateX(${-currentIndexRef.current * w}px)`
       }
     })
-    ro.observe(containerRef.current)
-    return () => ro.disconnect()
-  }, [isMobile])
+    ro.observe(node)
+    roRef.current = ro
+  }, [])
 
-  // Position the strip at the current index whenever the gallery opens or the
-  // container dimensions first become known. currentIndex is intentionally
-  // excluded so that in-progress swipe animations aren't interrupted by state updates.
+  // Anchor the strip on the opened item the instant it mounts. currentIndex is
+  // already synced to the opened item by the open-sync layout effect above
+  // (which runs before Presence mounts this node), so currentIndexRef is fresh
+  // here even on reopen. Width is read from the parent (the container) directly:
+  // its DOM node exists in this commit even though setContainerNode's state
+  // update hasn't been applied yet.
+  const setStripNode = useCallback((node: HTMLDivElement | null) => {
+    stripRef.current = node
+    if (!node) return
+    const w = node.parentElement?.offsetWidth ?? 0
+    if (w <= 0) return
+    setContainerWidth(w)
+    node.style.transition = "none"
+    node.style.transform = `translateX(${-currentIndexRef.current * w}px)`
+  }, [])
+
+  // Re-anchor when the gallery reopens without the content remounting (a close
+  // interrupted by a fast reopen keeps the Presence node alive, so the callback
+  // ref above doesn't re-fire) and when the width changes (rotation). Reads
+  // currentIndexRef so an in-progress swipe animation isn't interrupted.
   useLayoutEffect(() => {
-    if (!isOpen || !isMobile || containerWidth === 0 || !stripRef.current) return
+    if (!isMobile || containerWidth === 0 || !stripRef.current) return
     stripRef.current.style.transition = "none"
-    stripRef.current.style.transform = `translateX(${-currentIndex * containerWidth}px)`
-    // currentIndex intentionally excluded — position only on open/resize, not on every nav
+    stripRef.current.style.transform = `translateX(${-currentIndexRef.current * containerWidth}px)`
   }, [isOpen, isMobile, containerWidth])
 
   const current = items[currentIndex] ?? null
@@ -639,7 +663,7 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
                 {actionBar}
 
                 <div
-                  ref={containerRef}
+                  ref={setContainerNode}
                   className="absolute inset-0 overflow-hidden"
                   onTouchStart={handleTouchStart}
                   onTouchMove={handleTouchMove}
@@ -647,7 +671,7 @@ export function MediaGallery({ isOpen, onClose, items, initialIndex, workspaceId
                   onClick={handleMobileTap}
                 >
                   {/* Strip: all slides laid out horizontally; transform moves them as one */}
-                  <div ref={stripRef} className="flex h-full" style={{ willChange: "transform" }}>
+                  <div ref={setStripNode} className="flex h-full" style={{ willChange: "transform" }}>
                     {items.map((item, i) => (
                       <div
                         key={item.attachmentId}
