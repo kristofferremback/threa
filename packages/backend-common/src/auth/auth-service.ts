@@ -1,4 +1,5 @@
 import { WorkOS } from "@workos-inc/node"
+import type { SocialProvider } from "@threa/types"
 import { logger } from "../logger"
 import type { WorkosConfig } from "./types"
 
@@ -25,21 +26,6 @@ export interface AuthResult {
   refreshed: boolean
   reason?: string
 }
-
-/**
- * Social IdPs that bypass AuthKit's hosted UI entirely.
- *
- * `provider=authkit` is AuthKit's hosted UI, which holds its own session cookie
- * on `cheerful-refuge-87.authkit.app` and silent-refreshes whenever that cookie
- * is live — silently re-authenticating the existing user regardless of the
- * `prompt` claim on the authorize URL. That makes the add-account flow
- * impossible through AuthKit.
- *
- * Passing one of these provider names routes WorkOS straight to the IdP, which
- * natively honors `prompt=select_account` and lets the user pick a different
- * account.
- */
-export type SocialProvider = "GoogleOAuth" | "MicrosoftOAuth"
 
 export interface AuthService {
   authenticateSession(sealedSession: string): Promise<AuthResult>

@@ -1,4 +1,5 @@
-import type { AuthResult, AuthService, SocialProvider } from "./auth-service"
+import type { SocialProvider } from "@threa/types"
+import type { AuthResult, AuthService } from "./auth-service"
 
 // Stub sessions deliberately surface no JWT permission claim
 // (`permissions: null`). Production OAuth-callback sessions also start with

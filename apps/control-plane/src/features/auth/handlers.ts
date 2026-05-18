@@ -9,8 +9,8 @@ import {
   readAltSessionCookies,
   setSessionCookie,
   type AuthService,
-  type SocialProvider,
 } from "@threa/backend-common"
+import { MAGIC_CODE_LENGTH, SOCIAL_PROVIDERS } from "@threa/types"
 import type { AccountsService } from "../accounts"
 import { parseCallbackState, splitInnerState } from "./callback-state"
 
@@ -19,17 +19,16 @@ const callbackSchema = z.object({
   state: z.string().optional(),
 })
 
-const SOCIAL_PROVIDERS = ["GoogleOAuth", "MicrosoftOAuth"] as const satisfies readonly SocialProvider[]
-
 const magicSendSchema = z.object({
   email: z.email(),
 })
 
+// `intent=add` is required: today the verify endpoint only powers the
+// add-account flow. If a plain magic-auth sign-in ever lands, widen this.
 const magicVerifySchema = z.object({
   email: z.email(),
-  code: z.string().min(4).max(10),
-  intent: z.literal("add").optional(),
-  redirectTo: z.string().optional(),
+  code: z.string().length(MAGIC_CODE_LENGTH),
+  intent: z.literal("add"),
 })
 
 /**
@@ -254,36 +253,28 @@ export function createControlPlaneAuthHandlers({
       if (!parsed.success) {
         throw new HttpError("Invalid verification payload", { status: 400, code: "INVALID_VERIFY" })
       }
-      const { email, code, intent, redirectTo } = parsed.data
+      const { email, code } = parsed.data
 
       const result = await authService.authenticateWithMagicAuth(email, code)
       if (!result.success || !result.user || !result.sealedSession) {
         throw new HttpError("Invalid or expired code", { status: 401, code: "INVALID_CODE" })
       }
 
-      if (intent === "add") {
-        const parked = await accountsService.addAndParkActive(
-          res,
-          req.cookies,
-          req.cookies[SESSION_COOKIE_NAME] as string | undefined,
-          result.sealedSession,
-          result.user.id
-        )
-        if (!parked.ok) {
-          // Surface the same code the OAuth callback uses so the frontend can
-          // render the same toast ("max accounts reached") without branching.
-          return res.status(409).json({ ok: false, code: parked.code })
-        }
-        // Mirror the OAuth callback's post-add landing: workspace picker with
-        // `accountAdded=1` so the SPA drops its stale last-workspace pointer.
-        return res.json({ ok: true, redirectPath: "/workspaces?accountAdded=1" })
+      const parked = await accountsService.addAndParkActive(
+        res,
+        req.cookies,
+        req.cookies[SESSION_COOKIE_NAME] as string | undefined,
+        result.sealedSession,
+        result.user.id
+      )
+      if (!parked.ok) {
+        // Surface the same code the OAuth callback uses so the frontend can
+        // render the same toast ("max accounts reached") without branching.
+        return res.status(409).json({ ok: false, code: parked.code })
       }
-
-      // Plain sign-in via magic auth (not yet wired in the UI — only the
-      // add-account flow links here today). Set the active session cookie and
-      // let the caller decide where to land.
-      setSessionCookie(res, result.sealedSession)
-      res.json({ ok: true, redirectPath: redirectTo || "/" })
+      // Mirror the OAuth callback's post-add landing: workspace picker with
+      // `accountAdded=1` so the SPA drops its stale last-workspace pointer.
+      res.json({ ok: true, redirectPath: "/workspaces?accountAdded=1" })
     },
   }
 }

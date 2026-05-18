@@ -172,6 +172,10 @@ export {
   BOT_TRAITS,
   type BotTrait,
   BotTraits,
+  // Auth (social providers + magic auth)
+  SOCIAL_PROVIDERS,
+  type SocialProvider,
+  MAGIC_CODE_LENGTH,
 } from "./constants"
 
 // Domain entities (wire format)
