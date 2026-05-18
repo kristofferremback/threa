@@ -236,7 +236,7 @@ export class WorkosAuthService implements AuthService {
         session: { sealSession: true, cookiePassword: this.cookiePassword },
       })
 
-      logger.info({ email: user.email, sealedSession: !!sealedSession }, "User authenticated with magic auth")
+      logger.info({ userId: user.id, sealedSession: !!sealedSession }, "User authenticated with magic auth")
 
       return {
         success: true,

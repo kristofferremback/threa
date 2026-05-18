@@ -225,7 +225,8 @@ describe("Multi-account /api/accounts", () => {
     const client = new TestClient()
     const bEmail = uniqueEmail("acc-magic-bad")
 
-    await client.post("/api/auth/magic/send", { email: bEmail })
+    const send = await client.post("/api/auth/magic/send", { email: bEmail })
+    expect(send.status).toBe(200)
 
     const verify = await client.post("/api/auth/magic/verify", {
       email: bEmail,

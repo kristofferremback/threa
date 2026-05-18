@@ -177,13 +177,15 @@ export class StubAuthService implements AuthService {
     this.magicCodes.delete(normalized)
 
     // Auto-create the user the same way devLogin does so subsequent
-    // authenticateSession calls find them.
-    const fakeWorkosUserId = `workos_test_${Buffer.from(email).toString("base64url")}`
+    // authenticateSession calls find them. Key off the normalized address so a
+    // case-only variant resolves to the same in-memory user that the magic
+    // code was issued against, instead of forking a second record.
+    const fakeWorkosUserId = `workos_test_${Buffer.from(normalized).toString("base64url")}`
     const existing = this.users.get(fakeWorkosUserId)
     const user = existing ?? {
       id: fakeWorkosUserId,
-      email,
-      firstName: email.split("@")[0] ?? null,
+      email: normalized,
+      firstName: normalized.split("@")[0] ?? null,
       lastName: null,
     }
     this.users.set(fakeWorkosUserId, user)
