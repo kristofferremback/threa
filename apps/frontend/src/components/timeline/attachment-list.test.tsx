@@ -259,6 +259,25 @@ describe("AttachmentList", () => {
       })
     })
 
+    it("should open the lightbox on the clicked image, not the first", async () => {
+      const user = userEvent.setup()
+      const attachments = [
+        createAttachment({ id: "img_1", filename: "photo1.png", mimeType: "image/png" }),
+        createAttachment({ id: "img_2", filename: "photo2.png", mimeType: "image/png" }),
+        createAttachment({ id: "img_3", filename: "photo3.png", mimeType: "image/png" }),
+      ]
+      render(<AttachmentList attachments={attachments} workspaceId={workspaceId} />, renderOpts)
+
+      const thirdImage = await screen.findByRole("button", { name: /photo3\.png/i })
+      await user.click(thirdImage)
+
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      // Counter is "<index+1> / <total>" — clicking the third image must land on 3.
+      expect(screen.getByText("3 / 3")).toBeInTheDocument()
+    })
+
     it("should close lightbox when close button is clicked", async () => {
       const user = userEvent.setup()
       const attachment = createAttachment({
