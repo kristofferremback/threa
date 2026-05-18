@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react"
+import { useEffect, useRef, useCallback } from "react"
 import { toast } from "sonner"
 import { usePageActivity } from "./use-page-activity"
 import { useSocketReconnectCount } from "@/contexts"
@@ -98,6 +98,11 @@ export function shouldNotifyUpdate(
 export function useAppUpdate(): void {
   const { isVisible } = usePageActivity()
   const reconnectCount = useSocketReconnectCount()
+  // In-memory fallback so dedup still holds for this mount when localStorage is
+  // unavailable (private mode / disabled) — the persisted marker is the
+  // cross-mount/session guard; this keeps the no-storage path no worse than
+  // the previous per-mount ref.
+  const toastedVersionRef = useRef<string | null>(null)
 
   const checkForUpdate = useCallback(async () => {
     if (IS_DEV) return
@@ -110,7 +115,8 @@ export function useAppUpdate(): void {
       if (!res.ok) return
 
       const { version } = (await res.json()) as { version: string }
-      if (shouldNotifyUpdate(version, __APP_VERSION__, getNotifiedVersion())) {
+      if (toastedVersionRef.current !== version && shouldNotifyUpdate(version, __APP_VERSION__, getNotifiedVersion())) {
+        toastedVersionRef.current = version
         setNotifiedVersion(version)
         toast("A new version of Threa is available", {
           id: TOAST_ID,
