@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest"
 import type { StreamEvent } from "@threa/types"
-import { annotateAuthorGroups, findFirstMessageId, groupTimelineItems, type TimelineItem } from "./event-list"
+import {
+  annotateAuthorGroups,
+  findFirstMessageId,
+  findMessageItemIndex,
+  groupTimelineItems,
+  type TimelineItem,
+} from "./event-list"
 
 interface CreateEventParams {
   id: string
@@ -333,5 +339,51 @@ describe("findFirstMessageId", () => {
 
   it("returns undefined for an empty timeline so the badge stays in the composer strip", () => {
     expect(findFirstMessageId([])).toBeUndefined()
+  })
+})
+
+describe("findMessageItemIndex", () => {
+  function eventItem(id: string, messageId: string): TimelineItem {
+    return {
+      type: "event",
+      event: createEvent({ id, sequence: id, eventType: "message_created", payload: { messageId } }),
+    }
+  }
+
+  it("returns the index of the timeline item rendering the message", () => {
+    const items: TimelineItem[] = [
+      eventItem("evt_1", "msg_a"),
+      eventItem("evt_2", "msg_b"),
+      eventItem("evt_3", "msg_c"),
+    ]
+    expect(findMessageItemIndex(items, "msg_b")).toBe(1)
+  })
+
+  it("returns -1 when the message is not in the window (so callers never feed Virtuoso a stale index)", () => {
+    // The crash this guards: scrollToIndex with an out-of-range index drives
+    // react-virtuoso's offset-tree binary search to an undefined node.
+    const items: TimelineItem[] = [eventItem("evt_1", "msg_a")]
+    expect(findMessageItemIndex(items, "msg_gone")).toBe(-1)
+  })
+
+  it("returns -1 for an empty timeline (mid jump-window swap)", () => {
+    expect(findMessageItemIndex([], "msg_a")).toBe(-1)
+  })
+
+  it("skips command_group / session_group items when locating the message", () => {
+    const items: TimelineItem[] = [
+      { type: "command_group", commandId: "cmd_1", events: [] },
+      { type: "session_group", sessionId: "sess_1", sessionVersion: 1, events: [] },
+      eventItem("evt_1", "msg_target"),
+    ]
+    expect(findMessageItemIndex(items, "msg_target")).toBe(2)
+  })
+
+  it("ignores events without a messageId payload", () => {
+    const items: TimelineItem[] = [
+      { type: "event", event: createEvent({ id: "evt_1", sequence: "1", eventType: "member_joined", payload: {} }) },
+      eventItem("evt_2", "msg_real"),
+    ]
+    expect(findMessageItemIndex(items, "msg_real")).toBe(1)
   })
 })
