@@ -563,6 +563,16 @@ self.addEventListener("push", (event) => {
           vibrate: THREA_VIBRATION_PATTERN,
         }
 
+        // Re-alerting a replaced same-tag notification depends on `renotify`,
+        // which Firefox, iOS/Safari, and some Chromium builds ignore — they
+        // swap the tray entry silently, so every message after the first in a
+        // stream arrives with no sound/vibration/banner. Closing the
+        // predecessor (its message history is already lifted into `messages`
+        // above, so the grouped body/count survives) means showNotification has
+        // no same-tag entry to silently replace and reliably re-alerts on every
+        // platform.
+        for (const n of existing) n.close()
+
         await self.registration.showNotification(title, options)
 
         // Queue a Background Sync to prefetch stream + workspace bootstrap so
