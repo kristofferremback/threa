@@ -654,7 +654,6 @@ export const MemoRepository = {
 
     const streamIds = filters?.streamIds
     const hasStreamFilter = streamIds && streamIds.length > 0
-    if (hasStreamFilter && streamIds.length === 0) return []
     const hasMemoTypeFilter = Boolean(filters?.memoTypes?.length)
     const hasKnowledgeTypeFilter = Boolean(filters?.knowledgeTypes?.length)
     const hasTagFilter = Boolean(filters?.tags?.length)
