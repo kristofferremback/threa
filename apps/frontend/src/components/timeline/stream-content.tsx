@@ -1562,7 +1562,16 @@ function VirtuosoMessageList({
       className={cn("h-full", batch?.enabled && "select-none")}
       data-suppress-pull-refresh="true"
       firstItemIndex={firstItemIndex}
-      initialTopMostItemIndex={initialTopMostItemIndex}
+      // Passing `initialTopMostItemIndex={undefined}` is NOT the same as
+      // omitting it: the prop key is still present, so react-virtuoso
+      // publishes `undefined` into its internal index stream (overwriting the
+      // safe numeric default), and a later reactive listState recompute runs
+      // its index normalizer on that `undefined` -> "Cannot read properties
+      // of undefined (reading 'index')", which crashes the whole route via
+      // the error boundary. During deep-link (?m=) jumps the hook
+      // intentionally returns `undefined` here, so spread the prop only when
+      // it has a value and let react-virtuoso keep its default otherwise.
+      {...(initialTopMostItemIndex !== undefined ? { initialTopMostItemIndex } : {})}
       data={visibleItems}
       // Intentionally no defaultItemHeight: it makes Virtuoso skip the probe
       // measure and reveal the list using the estimate, so a tall code block
