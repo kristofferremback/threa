@@ -5,6 +5,8 @@ import { ConversationRepository } from "../conversations"
 import { MessageRepository, type Message } from "../messaging"
 import { MemoRepository, type Memo, type MemoSearchFilters } from "./repository"
 import { classifyMemoQueryIntent } from "./query-intent"
+import { resolveMemoSearchMode, DEFAULT_MEMO_SEARCH_MODE, MEMO_RERANKER_CANDIDATE_LIMIT } from "./config"
+import type { RerankerLike } from "./reranker"
 import type { EmbeddingServiceLike } from "./embedding-service"
 import { StreamRepository, type Stream } from "../streams"
 import { PersonaRepository } from "../agents"
@@ -65,15 +67,18 @@ export interface MemoExplorerDetail extends MemoExplorerResult {
 export interface MemoExplorerServiceDeps {
   pool: Pool
   embeddingService: EmbeddingServiceLike
+  reranker: RerankerLike
 }
 
 export class MemoExplorerService {
   private readonly pool: Pool
   private readonly embeddingService: EmbeddingServiceLike
+  private readonly reranker: RerankerLike
 
   constructor(deps: MemoExplorerServiceDeps) {
     this.pool = deps.pool
     this.embeddingService = deps.embeddingService
+    this.reranker = deps.reranker
   }
 
   async search(params: MemoExplorerSearchParams): Promise<MemoExplorerResult[]> {
@@ -118,18 +123,22 @@ export class MemoExplorerService {
       })
 
       const intent = classifyMemoQueryIntent(query)
+      const mode = resolveMemoSearchMode(DEFAULT_MEMO_SEARCH_MODE)
+
       const hybridResults = await MemoRepository.hybridSearch(this.pool, {
         workspaceId,
         query,
         embedding,
         filters: repoFilters,
-        limit,
+        limit: Math.max(limit, mode.candidatePoolSize),
         keywordWeight: intent.keywordWeight,
         semanticWeight: intent.semanticWeight,
+        applyStructuralBoost: intent.intent !== "temporal",
       })
 
       if (hybridResults.length > 0) {
-        return hybridResults
+        const ranked = mode.rerank ? await this.applyRerank(workspaceId, query, hybridResults) : hybridResults
+        return ranked.slice(0, limit)
       }
     } catch (error) {
       logger.warn({ error, workspaceId, query }, "Memo explorer hybrid search failed, falling back to text search")
@@ -141,6 +150,31 @@ export class MemoExplorerService {
       filters: repoFilters,
       limit,
     })
+  }
+
+  /**
+   * B3: reorder the top window with the fail-open reranker and append the
+   * un-reranked tail unchanged (recall protection). The reranker only sees
+   * rows that already passed the §3.1 access-scoped scan, so it can
+   * reorder but never widen visibility; on any failure it returns identity
+   * order and results are unchanged.
+   */
+  private async applyRerank(
+    workspaceId: string,
+    query: string,
+    results: MemoExplorerResult[]
+  ): Promise<MemoExplorerResult[]> {
+    const window = Math.min(MEMO_RERANKER_CANDIDATE_LIMIT, results.length)
+    if (window <= 1) return results
+
+    const head = results.slice(0, window)
+    const tail = results.slice(window)
+    const order = await this.reranker.rerank(
+      query,
+      head.map((r) => ({ title: r.memo.title, abstract: r.memo.abstract })),
+      { workspaceId }
+    )
+    return [...order.map((i) => head[i]), ...tail]
   }
 
   async getById(

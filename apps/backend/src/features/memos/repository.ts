@@ -1,5 +1,29 @@
 import { sql, type Querier } from "../../db"
 import type { MemoType, KnowledgeType, MemoStatus } from "@threa/types"
+import { MEMO_KNOWLEDGE_TYPE_BOOST, MEMO_STREAM_TYPE_BOOST, MEMO_BOOST_DEFAULT } from "./config"
+
+/**
+ * B2 structural boost expression, generated from the config maps (single
+ * source of truth, INV-33). Emitted into the *outer* stage of hybrid
+ * search only — the inner access-scoped CTEs are untouched, so the boost
+ * can reorder but never widen visibility (§3.1). `m.knowledge_type` and
+ * the resolved stream type are plain columns/expressions here; the values
+ * are numeric literals from a typed constant, so raw interpolation is safe.
+ */
+function buildBoostExpression(apply: boolean): ReturnType<typeof sql.raw> {
+  if (!apply) return sql.raw("1.0")
+
+  const caseFor = (column: string, map: Record<string, number>): string => {
+    const arms = Object.entries(map)
+      .map(([key, factor]) => `WHEN '${key.replace(/'/g, "''")}' THEN ${Number(factor)}`)
+      .join(" ")
+    return `CASE ${column} ${arms} ELSE ${Number(MEMO_BOOST_DEFAULT)} END`
+  }
+
+  const knowledge = caseFor("m.knowledge_type", MEMO_KNOWLEDGE_TYPE_BOOST)
+  const stream = caseFor("COALESCE(msg_stream.type, conv_stream.type)", MEMO_STREAM_TYPE_BOOST)
+  return sql.raw(`(${knowledge}) * (${stream})`)
+}
 
 interface MemoRow {
   id: string
@@ -129,6 +153,8 @@ export interface HybridSearchParams {
   semanticWeight?: number
   k?: number
   semanticDistanceThreshold?: number
+  /** B2: apply the structural knowledge/stream-type boost (default true; bypassed for temporal intent). */
+  applyStructuralBoost?: boolean
 }
 
 function mapRowToMemo(row: MemoRow): Memo {
@@ -621,6 +647,7 @@ export const MemoRepository = {
       semanticWeight = 0.5,
       k = 60,
       semanticDistanceThreshold = 0.8,
+      applyStructuralBoost = true,
     } = params
 
     if (!query.trim()) return []
@@ -646,6 +673,9 @@ export const MemoRepository = {
 
     // Per-list candidate cap before fusion (matches the message hybrid path).
     const internalLimit = 50
+
+    // B2: structural boost, applied only in the outer hydrate stage.
+    const boost = buildBoostExpression(applyStructuralBoost)
 
     const result = await db.query<MemoSearchRow & { score: number }>(sql`
       WITH keyword_ranked AS (
@@ -703,7 +733,7 @@ export const MemoRepository = {
       )
       SELECT
         ${sql.raw(SELECT_FIELDS_PREFIXED)},
-        f.score,
+        (f.score * ${boost}) as score,
         COALESCE(msg_stream.id, conv_stream.id) as stream_id,
         COALESCE(msg_stream.type, conv_stream.type) as stream_type,
         COALESCE(msg_stream.display_name, msg_stream.slug, conv_stream.display_name, conv_stream.slug) as stream_name,
@@ -713,7 +743,7 @@ export const MemoRepository = {
       FROM fused f
       JOIN memos m ON m.id = f.id
       ${streamJoins}
-      ORDER BY f.score DESC
+      ORDER BY (f.score * ${boost}) DESC
       LIMIT ${limit}
     `)
 

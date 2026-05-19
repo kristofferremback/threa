@@ -1070,10 +1070,13 @@ Each query must have:
           functionId: "ws-memo-embed",
         })
         // Hybrid keyword + vector with RRF fusion (B1); the intent
-        // classifier (B4) bends the per-list weights. The accessible-stream
+        // classifier (B4) bends the per-list weights and the B2 structural
+        // boost (bypassed for temporal intent). The accessible-stream
         // predicate is the agent-invocation scope resolved upstream and is
         // pushed into both inner CTEs before fusion (§3.1). Single query
-        // (INV-30).
+        // (INV-30). The B3 reranker is intentionally not run on this
+        // latency-budgeted multi-search loop — the plan cost-gates rerank
+        // to the user-facing surface.
         const intent = classifyMemoQueryIntent(query.query)
         const hybridResults = await MemoRepository.hybridSearch(pool, {
           workspaceId,
@@ -1083,6 +1086,7 @@ Each query must have:
           limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
           keywordWeight: intent.keywordWeight,
           semanticWeight: intent.semanticWeight,
+          applyStructuralBoost: intent.intent !== "temporal",
           semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
         })
         const results =

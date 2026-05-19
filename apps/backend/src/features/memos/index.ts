@@ -56,6 +56,11 @@ export type {
   MemoStreamRef,
 } from "./explorer-service"
 
+export { MemoReranker } from "./reranker"
+export type { RerankerLike, RerankCandidate, RerankContext, RerankerServiceConfig } from "./reranker"
+
+export { StubReranker } from "./reranker.stub"
+
 export { EmbeddingService } from "./embedding-service"
 export type { EmbeddingServiceLike, EmbeddingServiceConfig, EmbeddingContext } from "./embedding-service"
 
