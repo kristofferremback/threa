@@ -670,8 +670,10 @@ export const MemoRepository = {
       LEFT JOIN streams root_stream ON root_stream.id = COALESCE(msg_stream.root_stream_id, conv_stream.root_stream_id)
     `)
 
-    // Per-list candidate cap before fusion (matches the message hybrid path).
-    const internalLimit = 50
+    // Per-list candidate cap before fusion. The 50 floor matches the
+    // message hybrid path; widen to the requested pool so a larger
+    // configured candidate pool is actually filled before rerank/trim.
+    const internalLimit = Math.max(limit, 50)
 
     // B2: structural boost, applied only in the outer hydrate stage.
     const boost = buildBoostExpression(applyStructuralBoost)

@@ -19,9 +19,9 @@ export interface MemoQueryIntentResult {
   semanticWeight: number
 }
 
-// Year (1900-2099), ISO-ish date, or any standalone digit run. All
-// language-neutral — digits are not script-specific.
-const HAS_DIGITS = /\d/
+// Any Unicode decimal digit (dates, version numbers, ids). `\p{Nd}` keeps
+// this script-neutral so non-ASCII numerals also count as temporal (INV-54).
+const HAS_DIGITS = /\p{Nd}/u
 
 export function classifyMemoQueryIntent(query: string): MemoQueryIntentResult {
   const trimmed = query.trim()

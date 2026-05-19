@@ -1105,8 +1105,23 @@ Each query must have:
           sourceStream: r.sourceStream,
         }))
       } catch (error) {
-        logger.warn({ error, query: query.query }, "Memo hybrid search failed")
-        return []
+        logger.warn({ error, query: query.query }, "Memo hybrid search failed; falling back to full-text")
+        try {
+          const fallback = await MemoRepository.fullTextSearch(pool, {
+            workspaceId,
+            query: query.query,
+            filters: { streamIds: accessibleStreamIds },
+            limit: WORKSPACE_AGENT_MAX_RESULTS_PER_SEARCH,
+          })
+          return fallback.map((r) => ({
+            memo: r.memo,
+            distance: r.distance,
+            sourceStream: r.sourceStream,
+          }))
+        } catch (fallbackError) {
+          logger.warn({ fallbackError, query: query.query }, "Memo full-text fallback failed")
+          return []
+        }
       }
     }
 

@@ -26,6 +26,15 @@ describe("classifyMemoQueryIntent", () => {
     expect(result.keywordWeight).toBeGreaterThan(result.semanticWeight)
   })
 
+  it("detects non-ASCII numerals as temporal (script-neutral digits, INV-54)", () => {
+    // Arabic-Indic 2024 and Devanagari 2025 must classify like ASCII digits.
+    for (const q of ["مذكرة ٢٠٢٤", "निर्णय २०२५"]) {
+      const result = classifyMemoQueryIntent(q)
+      expect(result.intent).toBe("temporal")
+      expect(result.keywordWeight).toBeGreaterThan(result.semanticWeight)
+    }
+  })
+
   it("treats a longer conceptual query as general (balanced)", () => {
     const result = classifyMemoQueryIntent("how do we handle workspace access derivation")
     expect(result.intent).toBe("general")
