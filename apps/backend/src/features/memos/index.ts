@@ -8,7 +8,11 @@ export type {
   MemoSearchResult,
   SemanticSearchParams,
   FullTextSearchParams,
+  HybridSearchParams,
 } from "./repository"
+
+export { classifyMemoQueryIntent } from "./query-intent"
+export type { MemoQueryIntent, MemoQueryIntentResult } from "./query-intent"
 
 export { PendingItemRepository } from "./pending-item-repository"
 export type { PendingMemoItem, QueuePendingItemParams } from "./pending-item-repository"

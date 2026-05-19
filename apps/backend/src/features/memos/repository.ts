@@ -119,6 +119,18 @@ export interface FullTextSearchParams {
   limit?: number
 }
 
+export interface HybridSearchParams {
+  workspaceId: string
+  query: string
+  embedding: number[]
+  filters?: MemoSearchFilters
+  limit?: number
+  keywordWeight?: number
+  semanticWeight?: number
+  k?: number
+  semanticDistanceThreshold?: number
+}
+
 function mapRowToMemo(row: MemoRow): Memo {
   return {
     id: row.id,
@@ -581,6 +593,131 @@ export const MemoRepository = {
     `)
 
     return result.rows.map((row) => mapMemoSearchResult(row, 1 - row.rank))
+  },
+
+  /**
+   * Hybrid memo search: keyword (full-text) + semantic (vector) candidate
+   * lists fused with Reciprocal Rank Fusion (gbrain concept B1).
+   *
+   * Access discipline (§3.1): the accessible-stream predicate is pushed into
+   * **both** inner candidate CTEs *before* RRF, never as a post-filter — a
+   * private high-scorer must not displace a public result the viewer should
+   * have seen, and the internal per-list LIMIT must be filled from
+   * accessible rows only. Thread memos inherit access from their root stream,
+   * same as the other memo search paths.
+   *
+   * RRF score(d) = Σ(weight / (k + rank(d))); higher score = better. The
+   * returned `distance` is `1 / (1 + score)` so the existing "lower is
+   * better" contract holds, though rows are already SQL-ordered.
+   */
+  async hybridSearch(db: Querier, params: HybridSearchParams): Promise<MemoSearchResult[]> {
+    const {
+      workspaceId,
+      query,
+      embedding,
+      filters,
+      limit = 10,
+      keywordWeight = 0.5,
+      semanticWeight = 0.5,
+      k = 60,
+      semanticDistanceThreshold = 0.8,
+    } = params
+
+    if (!query.trim()) return []
+
+    const streamIds = filters?.streamIds
+    const hasStreamFilter = streamIds && streamIds.length > 0
+    if (hasStreamFilter && streamIds.length === 0) return []
+    const hasMemoTypeFilter = Boolean(filters?.memoTypes?.length)
+    const hasKnowledgeTypeFilter = Boolean(filters?.knowledgeTypes?.length)
+    const hasTagFilter = Boolean(filters?.tags?.length)
+
+    const embeddingLiteral = `[${embedding.join(",")}]`
+    const tsvector = sql.raw(
+      "to_tsvector('english', m.title || ' ' || m.abstract || ' ' || array_to_string(m.key_points, ' '))"
+    )
+    const streamJoins = sql.raw(`
+      LEFT JOIN messages msg ON m.source_message_id = msg.id
+      LEFT JOIN streams msg_stream ON msg.stream_id = msg_stream.id
+      LEFT JOIN conversations conv ON m.source_conversation_id = conv.id
+      LEFT JOIN streams conv_stream ON conv.stream_id = conv_stream.id
+      LEFT JOIN streams root_stream ON root_stream.id = COALESCE(msg_stream.root_stream_id, conv_stream.root_stream_id)
+    `)
+
+    // Per-list candidate cap before fusion (matches the message hybrid path).
+    const internalLimit = 50
+
+    const result = await db.query<MemoSearchRow & { score: number }>(sql`
+      WITH keyword_ranked AS (
+        SELECT
+          m.id,
+          ROW_NUMBER() OVER (
+            ORDER BY ts_rank(${tsvector}, websearch_to_tsquery('english', ${query})) DESC
+          ) as rank
+        FROM memos m
+        ${streamJoins}
+        WHERE m.workspace_id = ${workspaceId}
+          AND m.status = 'active'
+          AND (
+            ${!hasStreamFilter}
+            OR COALESCE(msg_stream.id, conv_stream.id) = ANY(${streamIds ?? []})
+            OR root_stream.id = ANY(${streamIds ?? []})
+          )
+          AND (${!hasMemoTypeFilter} OR m.memo_type = ANY(${filters?.memoTypes ?? []}))
+          AND (${!hasKnowledgeTypeFilter} OR m.knowledge_type = ANY(${filters?.knowledgeTypes ?? []}))
+          AND (${!hasTagFilter} OR m.tags && ${filters?.tags ?? []})
+          AND (${filters?.before === undefined} OR m.created_at < ${filters?.before ?? new Date()})
+          AND (${filters?.after === undefined} OR m.created_at >= ${filters?.after ?? new Date(0)})
+          AND ${tsvector} @@ websearch_to_tsquery('english', ${query})
+        LIMIT ${internalLimit}
+      ),
+      semantic_ranked AS (
+        SELECT
+          m.id,
+          ROW_NUMBER() OVER (ORDER BY m.embedding <=> ${embeddingLiteral}::vector) as rank
+        FROM memos m
+        ${streamJoins}
+        WHERE m.workspace_id = ${workspaceId}
+          AND m.status = 'active'
+          AND m.embedding IS NOT NULL
+          AND m.embedding <=> ${embeddingLiteral}::vector < ${semanticDistanceThreshold}
+          AND (
+            ${!hasStreamFilter}
+            OR COALESCE(msg_stream.id, conv_stream.id) = ANY(${streamIds ?? []})
+            OR root_stream.id = ANY(${streamIds ?? []})
+          )
+          AND (${!hasMemoTypeFilter} OR m.memo_type = ANY(${filters?.memoTypes ?? []}))
+          AND (${!hasKnowledgeTypeFilter} OR m.knowledge_type = ANY(${filters?.knowledgeTypes ?? []}))
+          AND (${!hasTagFilter} OR m.tags && ${filters?.tags ?? []})
+          AND (${filters?.before === undefined} OR m.created_at < ${filters?.before ?? new Date()})
+          AND (${filters?.after === undefined} OR m.created_at >= ${filters?.after ?? new Date(0)})
+        LIMIT ${internalLimit}
+      ),
+      fused AS (
+        SELECT
+          COALESCE(kr.id, sr.id) as id,
+          COALESCE(${keywordWeight}::float / (${k}::float + kr.rank), 0) +
+          COALESCE(${semanticWeight}::float / (${k}::float + sr.rank), 0) as score
+        FROM keyword_ranked kr
+        FULL OUTER JOIN semantic_ranked sr ON kr.id = sr.id
+      )
+      SELECT
+        ${sql.raw(SELECT_FIELDS_PREFIXED)},
+        f.score,
+        COALESCE(msg_stream.id, conv_stream.id) as stream_id,
+        COALESCE(msg_stream.type, conv_stream.type) as stream_type,
+        COALESCE(msg_stream.display_name, msg_stream.slug, conv_stream.display_name, conv_stream.slug) as stream_name,
+        root_stream.id as root_stream_id,
+        root_stream.type as root_stream_type,
+        COALESCE(root_stream.display_name, root_stream.slug) as root_stream_name
+      FROM fused f
+      JOIN memos m ON m.id = f.id
+      ${streamJoins}
+      ORDER BY f.score DESC
+      LIMIT ${limit}
+    `)
+
+    return result.rows.map((row) => mapMemoSearchResult(row, 1 / (1 + row.score)))
   },
 
   async exactSearch(db: Querier, params: FullTextSearchParams): Promise<MemoSearchResult[]> {

@@ -4,6 +4,7 @@ import { logger } from "../../lib/logger"
 import { ConversationRepository } from "../conversations"
 import { MessageRepository, type Message } from "../messaging"
 import { MemoRepository, type Memo, type MemoSearchFilters } from "./repository"
+import { classifyMemoQueryIntent } from "./query-intent"
 import type { EmbeddingServiceLike } from "./embedding-service"
 import { StreamRepository, type Stream } from "../streams"
 import { PersonaRepository } from "../agents"
@@ -116,18 +117,22 @@ export class MemoExplorerService {
         functionId: "memo-explorer-query",
       })
 
-      const semanticResults = await MemoRepository.semanticSearch(this.pool, {
+      const intent = classifyMemoQueryIntent(query)
+      const hybridResults = await MemoRepository.hybridSearch(this.pool, {
         workspaceId,
+        query,
         embedding,
         filters: repoFilters,
         limit,
+        keywordWeight: intent.keywordWeight,
+        semanticWeight: intent.semanticWeight,
       })
 
-      if (semanticResults.length > 0) {
-        return semanticResults
+      if (hybridResults.length > 0) {
+        return hybridResults
       }
     } catch (error) {
-      logger.warn({ error, workspaceId, query }, "Memo explorer semantic search failed, falling back to text search")
+      logger.warn({ error, workspaceId, query }, "Memo explorer hybrid search failed, falling back to text search")
     }
 
     return MemoRepository.fullTextSearch(this.pool, {
