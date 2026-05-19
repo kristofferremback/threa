@@ -1353,6 +1353,24 @@ function VirtuosoMessageList({
   // would never get `isFirstMessage=true` and the badge would silently drop.
   const firstMessageId = useMemo(() => findFirstMessageId(visibleItems), [visibleItems])
 
+  // On a deep-link (?m=) jump the scroll hook returns `initialTopMostItemIndex:
+  // undefined` so it can drive the jump imperatively via scrollToMessage. But
+  // an absent prop leaves react-virtuoso's internal index stream at its `0`
+  // default, so the listState anchors the freshly-remounted (per-stream key)
+  // window at index 0 — the *top* of the loaded window — and the scroller
+  // lands far above the target, fighting scrollToMessage until it gives up.
+  // When the linked message is already in the loaded window, anchor the
+  // initial window on it so the cold-boot mount renders centered on the
+  // target; scrollToMessage then only has to refine. Falls back to the hook's
+  // value when the target isn't loaded yet (the jumpToEvent fetch path).
+  const effectiveInitialTopMostItemIndex = useMemo(() => {
+    if (highlightMessageId) {
+      const idx = findMessageItemIndex(visibleItems, highlightMessageId)
+      if (idx >= 0) return { index: idx, align: "center" } as const
+    }
+    return initialTopMostItemIndex
+  }, [highlightMessageId, visibleItems, initialTopMostItemIndex])
+
   const renderCtx = useMemo<TimelineItemRenderContext>(
     () => ({
       workspaceId,
@@ -1568,10 +1586,13 @@ function VirtuosoMessageList({
       // safe numeric default), and a later reactive listState recompute runs
       // its index normalizer on that `undefined` -> "Cannot read properties
       // of undefined (reading 'index')", which crashes the whole route via
-      // the error boundary. During deep-link (?m=) jumps the hook
-      // intentionally returns `undefined` here, so spread the prop only when
-      // it has a value and let react-virtuoso keep its default otherwise.
-      {...(initialTopMostItemIndex !== undefined ? { initialTopMostItemIndex } : {})}
+      // the error boundary. The hook returns `undefined` on deep-link jumps;
+      // effectiveInitialTopMostItemIndex substitutes the linked message's
+      // index when it is loaded. Spread the prop only when it has a value and
+      // let react-virtuoso keep its default otherwise.
+      {...(effectiveInitialTopMostItemIndex !== undefined
+        ? { initialTopMostItemIndex: effectiveInitialTopMostItemIndex }
+        : {})}
       data={visibleItems}
       // Intentionally no defaultItemHeight: it makes Virtuoso skip the probe
       // measure and reveal the list using the estimate, so a tall code block
