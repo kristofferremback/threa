@@ -19,6 +19,12 @@ class FakeAuthService implements AuthService {
   async revokeSession(): Promise<boolean> {
     return false
   }
+  async sendMagicAuthCode(): Promise<{ ok: true } | { ok: false; reason: string }> {
+    return { ok: true }
+  }
+  async authenticateWithMagicAuth(): Promise<AuthResult> {
+    return this.result
+  }
 }
 
 function makeRes(): Response {

@@ -28,6 +28,16 @@ export const router = createBrowserRouter([
     errorElement: <ErrorBoundary />,
   },
   {
+    // Custom add-account picker. Sits in front of `/api/auth/login?intent=add`
+    // because AuthKit's hosted UI silent-refreshes and can't reliably show an
+    // account picker. Buttons hit provider-direct social URLs or the magic
+    // auth endpoints — see apps/control-plane/src/features/auth/handlers.ts.
+    path: "/add-account",
+    HydrateFallback: FallbackLoader,
+    lazy: async () => ({ Component: (await import("@/pages/add-account")).AddAccountPage }),
+    errorElement: <ErrorBoundary />,
+  },
+  {
     path: "/share",
     HydrateFallback: FallbackLoader,
     lazy: async () => ({ Component: (await import("@/pages/share-target")).ShareTargetPage }),

@@ -621,3 +621,14 @@ export type BotTrait = (typeof BOT_TRAITS)[number]
 export const BotTraits = {
   INTERACTIVE: "interactive",
 } as const satisfies Record<string, BotTrait>
+
+// Social IdPs that bypass AuthKit's hosted UI. Used by the add-account flow
+// where AuthKit silent-refreshes through its own session cookie regardless of
+// `prompt`, making provider-direct the only reliable way to route a different
+// account through the IdP's native account picker.
+export const SOCIAL_PROVIDERS = ["GoogleOAuth", "MicrosoftOAuth"] as const
+export type SocialProvider = (typeof SOCIAL_PROVIDERS)[number]
+
+// Length of the WorkOS Magic Auth code. Shared between the backend Zod schema
+// and the frontend OTP input so both sides accept the same shape.
+export const MAGIC_CODE_LENGTH = 6

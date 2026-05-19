@@ -94,6 +94,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/auth/login", authLimit, authHandlers.login)
   app.all("/api/auth/callback", authLimit, authHandlers.callback)
   app.get("/api/auth/logout", authHandlers.logout)
+  // Custom add-account fallback. The hosted AuthKit UI silent-refreshes
+  // through its own cookie, so the add-account picker exposes Magic Auth as
+  // the cross-IdP fallback alongside provider-direct social buttons.
+  app.post("/api/auth/magic/send", authLimit, authHandlers.magicSend)
+  app.post("/api/auth/magic/verify", authLimit, authHandlers.magicVerify)
 
   // Dev/test auth stub routes
   if (authService instanceof StubAuthService) {

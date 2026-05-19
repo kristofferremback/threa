@@ -10,12 +10,25 @@ import {
   setSessionCookie,
   type AuthService,
 } from "@threa/backend-common"
+import { MAGIC_CODE_LENGTH, SOCIAL_PROVIDERS } from "@threa/types"
 import type { AccountsService } from "../accounts"
 import { parseCallbackState, splitInnerState } from "./callback-state"
 
 const callbackSchema = z.object({
   code: z.string().min(1),
   state: z.string().optional(),
+})
+
+const magicSendSchema = z.object({
+  email: z.email(),
+})
+
+// `intent=add` is required: today the verify endpoint only powers the
+// add-account flow. If a plain magic-auth sign-in ever lands, widen this.
+const magicVerifySchema = z.object({
+  email: z.email(),
+  code: z.string().length(MAGIC_CODE_LENGTH),
+  intent: z.literal("add"),
 })
 
 /**
@@ -77,6 +90,23 @@ export function createControlPlaneAuthHandlers({
       const forwardedHost = req.headers["x-forwarded-host"] as string | undefined
       const hostTrusted = !!forwardedHost && isTrustedHost(forwardedHost, allowedRedirectDomain, dedicatedRedirectHosts)
 
+      const isAdd = typeof req.query.intent === "string" && req.query.intent === "add"
+      const providerRaw = typeof req.query.provider === "string" ? req.query.provider : undefined
+      const provider = SOCIAL_PROVIDERS.find((p) => p === providerRaw)
+
+      // Bare `intent=add` with no provider: hand off to the in-app picker. The
+      // hosted AuthKit UI silent-refreshes through its own session cookie, so
+      // we can't reliably force an account picker through it. The picker page
+      // lets the user choose Google / Microsoft (provider-direct, bypasses
+      // AuthKit) or Email code (Magic Auth) instead.
+      if (isAdd && !provider) {
+        const targetOrigin = hostTrusted && forwardedHost ? `https://${forwardedHost}` : frontendUrl
+        const qs = new URLSearchParams()
+        if (redirectTo) qs.set("redirect_to", redirectTo)
+        const q = qs.toString()
+        return res.redirect(`${targetOrigin}/add-account${q ? `?${q}` : ""}`)
+      }
+
       let statePayload = redirectTo
       let redirectUriOverride: string | undefined
       if (hostTrusted && forwardedHost) {
@@ -91,14 +121,10 @@ export function createControlPlaneAuthHandlers({
       }
 
       // Multi-account add flow: prefix an `add|` sentinel onto the plaintext
-      // state (callback peels it back off) and force an account chooser.
-      // `login` alone re-authenticates the *existing* hosted session silently
-      // (no account/username field when a session is live), so the callback
-      // gets the same WorkOS user and the add coalesces in place. The
-      // OIDC-standard space-delimited `login select_account` forces both a
-      // fresh credential prompt and the account picker so a *different*
-      // account can actually be added.
-      const isAdd = typeof req.query.intent === "string" && req.query.intent === "add"
+      // state so the callback peels it back off and runs the park/coalesce
+      // path. With a social provider the IdP itself shows an account picker
+      // (we pass `prompt=select_account` through `getAuthorizationUrl`), so
+      // a *different* WorkOS user can actually land in the callback.
       if (isAdd) {
         statePayload = `add|${statePayload ?? ""}`
       }
@@ -106,7 +132,7 @@ export function createControlPlaneAuthHandlers({
       const url = authService.getAuthorizationUrl(
         statePayload,
         redirectUriOverride,
-        isAdd ? { prompt: "login select_account" } : undefined
+        provider ? { provider } : undefined
       )
       res.redirect(url)
     },
@@ -208,6 +234,47 @@ export function createControlPlaneAuthHandlers({
         email: authUser.email,
         name,
       })
+    },
+
+    async magicSend(req: Request, res: Response) {
+      const parsed = magicSendSchema.safeParse(req.body)
+      if (!parsed.success) {
+        throw new HttpError("Invalid email", { status: 400, code: "INVALID_EMAIL" })
+      }
+      // Always reply 200 regardless of the underlying outcome — leaking
+      // "no user for this email" turns this into an account-existence oracle.
+      // Errors are logged inside the service.
+      await authService.sendMagicAuthCode(parsed.data.email)
+      res.json({ ok: true })
+    },
+
+    async magicVerify(req: Request, res: Response) {
+      const parsed = magicVerifySchema.safeParse(req.body)
+      if (!parsed.success) {
+        throw new HttpError("Invalid verification payload", { status: 400, code: "INVALID_VERIFY" })
+      }
+      const { email, code } = parsed.data
+
+      const result = await authService.authenticateWithMagicAuth(email, code)
+      if (!result.success || !result.user || !result.sealedSession) {
+        throw new HttpError("Invalid or expired code", { status: 401, code: "INVALID_CODE" })
+      }
+
+      const parked = await accountsService.addAndParkActive(
+        res,
+        req.cookies,
+        req.cookies[SESSION_COOKIE_NAME] as string | undefined,
+        result.sealedSession,
+        result.user.id
+      )
+      if (!parked.ok) {
+        // Surface the same code the OAuth callback uses so the frontend can
+        // render the same toast ("max accounts reached") without branching.
+        return res.status(409).json({ ok: false, code: parked.code })
+      }
+      // Mirror the OAuth callback's post-add landing: workspace picker with
+      // `accountAdded=1` so the SPA drops its stale last-workspace pointer.
+      res.json({ ok: true, redirectPath: "/workspaces?accountAdded=1" })
     },
   }
 }

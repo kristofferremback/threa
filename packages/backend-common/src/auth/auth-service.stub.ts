@@ -1,3 +1,4 @@
+import type { SocialProvider } from "@threa/types"
 import type { AuthResult, AuthService } from "./auth-service"
 
 // Stub sessions deliberately surface no JWT permission claim
@@ -23,6 +24,14 @@ export class StubAuthService implements AuthService {
   private users: Map<string, { id: string; email: string; firstName: string | null; lastName: string | null }> =
     new Map()
   private revoked = new Set<string>()
+  // Issued magic codes, keyed by lowercase email. One code per email at a time
+  // — a fresh send overwrites the previous one, mirroring real Magic Auth.
+  private magicCodes = new Map<string, string>()
+  /**
+   * Test seam: the fixed code the stub returns to every `sendMagicAuthCode` so
+   * e2e tests don't have to inspect emails. Defaults to "123456".
+   */
+  magicCodeForTests = "123456"
 
   /**
    * Dev login endpoint - creates/ensures in-memory auth user and registers session.
@@ -66,6 +75,7 @@ export class StubAuthService implements AuthService {
   clearUsers(): void {
     this.users.clear()
     this.revoked.clear()
+    this.magicCodes.clear()
   }
 
   async revokeSession(sealedSession: string): Promise<boolean> {
@@ -137,19 +147,55 @@ export class StubAuthService implements AuthService {
     }
   }
 
-  getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { prompt?: string }): string {
-    // Encode state, optional redirect_uri, and optional prompt into the stub
+  getAuthorizationUrl(redirectTo?: string, redirectUri?: string, options?: { provider?: SocialProvider }): string {
+    // Encode state, optional redirect_uri, and optional provider into the stub
     // login URL so tests can assert on any of them. The stub login page
-    // ignores redirect_uri and prompt.
+    // ignores redirect_uri and provider.
     const state = redirectTo ? Buffer.from(redirectTo).toString("base64") : ""
     const params = new URLSearchParams({ state })
     if (redirectUri) {
       params.set("redirect_uri", redirectUri)
     }
-    if (options?.prompt) {
-      params.set("prompt", options.prompt)
+    if (options?.provider) {
+      params.set("provider", options.provider)
     }
     return `/test-auth-login?${params.toString()}`
+  }
+
+  async sendMagicAuthCode(email: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (!email) return { ok: false, reason: "send_failed" }
+    this.magicCodes.set(email.toLowerCase(), this.magicCodeForTests)
+    return { ok: true }
+  }
+
+  async authenticateWithMagicAuth(email: string, code: string): Promise<AuthResult> {
+    const normalized = email.toLowerCase()
+    const expected = this.magicCodes.get(normalized)
+    if (!expected || expected !== code) {
+      return { success: false, refreshed: false, reason: "authentication_failed" }
+    }
+    this.magicCodes.delete(normalized)
+
+    // Auto-create the user the same way devLogin does so subsequent
+    // authenticateSession calls find them. Key off the normalized address so a
+    // case-only variant resolves to the same in-memory user that the magic
+    // code was issued against, instead of forking a second record.
+    const fakeWorkosUserId = `workos_test_${Buffer.from(normalized).toString("base64url")}`
+    const existing = this.users.get(fakeWorkosUserId)
+    const user = existing ?? {
+      id: fakeWorkosUserId,
+      email: normalized,
+      firstName: normalized.split("@")[0] ?? null,
+      lastName: null,
+    }
+    this.users.set(fakeWorkosUserId, user)
+
+    return {
+      success: true,
+      user: { ...user, permissions: null },
+      sealedSession: `test_session_${fakeWorkosUserId}`,
+      refreshed: false,
+    }
   }
 
   async getLogoutUrl(_sealedSession: string, returnTo?: string): Promise<string | null> {
