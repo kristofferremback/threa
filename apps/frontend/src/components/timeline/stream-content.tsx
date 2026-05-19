@@ -107,6 +107,10 @@ export function StreamContent({
   // re-trigger the scroll — react-router generates a fresh key on every
   // navigation even when the URL is identical, which it auto-replaces.
   const jumpTriggeredKeyRef = useRef<string | null>(null)
+  // Set when a deep-link (?m=) jump can never resolve (target deleted / no
+  // access / fetch failed). Releases the deep-link mount hold so the timeline
+  // falls back to the loaded window instead of holding the skeleton forever.
+  const [deepLinkGaveUp, setDeepLinkGaveUp] = useState(false)
   const user = useUser()
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [batchMode, setBatchMode] = useState(false)
@@ -884,6 +888,8 @@ export function StreamContent({
     if (!highlightMessageId || isLoading || isDraft) return
     if (jumpTriggeredKeyRef.current === location.key) return
     jumpTriggeredKeyRef.current = location.key
+    // Fresh navigation: re-arm the mount hold for this target.
+    setDeepLinkGaveUp(false)
 
     // Disable auto-scroll so highlight scroll-into-view isn't overridden
     disableAutoScroll()
@@ -905,10 +911,12 @@ export function StreamContent({
         .then((success) => {
           if (!success) {
             pendingScrollTarget.current = null
+            setDeepLinkGaveUp(true)
           }
         })
         .catch(() => {
           pendingScrollTarget.current = null
+          setDeepLinkGaveUp(true)
         })
     }
   }, [highlightMessageId, location.key, isLoading, isDraft, events, jumpToEvent, disableAutoScroll, scrollToMessage])
@@ -921,6 +929,7 @@ export function StreamContent({
     jumpTriggeredKeyRef.current = null
     scrollAbortRef.current?.()
     pendingScrollTarget.current = null
+    setDeepLinkGaveUp(false)
     exitJumpMode()
     setIsSearchOpen(false)
     clearSearch()
@@ -1006,6 +1015,30 @@ export function StreamContent({
     [editLastMessageCtx, scrollToMessage]
   )
 
+  // Deep-link (?m=) mount hold. On a push-notification / Activities deep link
+  // the latest window loads first; the jump effect then fetches the window
+  // around the target and swaps `events` wholesale. react-virtuoso only
+  // honors initialTopMostItemIndex at mount, so a Virtuoso instance mounted
+  // on the latest window can't re-anchor onto the jump window — scrollToMessage
+  // fights the stale anchor and the user lands far from the target ("scrolled
+  // to hell"). Holding the skeleton until the target is actually in the loaded
+  // window makes the single keyed mount land already-anchored on it. Uses the
+  // raw ?m= id (not the search-active id) so in-stream search is unaffected,
+  // and releases via deepLinkGaveUp / the 3s ?m= clear so it never hangs.
+  const deepLinkTargetLoaded = useMemo(
+    () =>
+      !highlightMessageId ||
+      events.some((e) => (e.payload as { messageId?: string })?.messageId === highlightMessageId),
+    [events, highlightMessageId]
+  )
+  const holdForDeepLink =
+    !!highlightMessageId &&
+    !deepLinkTargetLoaded &&
+    !deepLinkGaveUp &&
+    !isLoading &&
+    !isConfirmedEmpty &&
+    events.length > 0
+
   return (
     <EditLastMessageContext.Provider value={editLastMessageCtxWithScroll}>
       <QuoteReplyProvider>
@@ -1048,6 +1081,7 @@ export function StreamContent({
                   <VirtuosoMessageList
                     visibleItems={visibleItems}
                     isLoading={isLoading}
+                    holdForDeepLink={holdForDeepLink}
                     isConfirmedEmpty={isConfirmedEmpty}
                     virtuosoRef={virtuosoRef}
                     virtuosoScrollerRef={virtuosoScrollerRef}
@@ -1261,6 +1295,7 @@ export function StreamContent({
 function VirtuosoMessageList({
   visibleItems,
   isLoading,
+  holdForDeepLink,
   isConfirmedEmpty,
   virtuosoRef,
   virtuosoScrollerRef,
@@ -1290,6 +1325,9 @@ function VirtuosoMessageList({
 }: {
   visibleItems: TimelineItem[]
   isLoading: boolean
+  /** Hold the skeleton until a deep-link (?m=) target is in the loaded window
+   *  so the keyed Virtuoso instance mounts already anchored on it. */
+  holdForDeepLink: boolean
   /** True only when we've fully resolved IDB and bootstrap and the stream is
    *  actually empty. During mid-switch transitions this is false, so we avoid
    *  flashing the "No messages yet" state before useLiveQuery catches up. */
@@ -1521,7 +1559,7 @@ function VirtuosoMessageList({
     [reservedTopSpacer]
   )
 
-  if (isLoading) {
+  if (isLoading || holdForDeepLink) {
     return (
       <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
         <div className="flex gap-3">
