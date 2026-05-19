@@ -887,7 +887,8 @@ export function StreamContent({
   useEffect(() => {
     if (!highlightMessageId || isLoading || isDraft) return
     if (jumpTriggeredKeyRef.current === location.key) return
-    jumpTriggeredKeyRef.current = location.key
+    const navigationKey = location.key
+    jumpTriggeredKeyRef.current = navigationKey
     // Fresh navigation: re-arm the mount hold for this target.
     setDeepLinkGaveUp(false)
 
@@ -909,12 +910,17 @@ export function StreamContent({
       pendingScrollTarget.current = highlightMessageId
       jumpToEvent(highlightMessageId)
         .then((success) => {
+          // A newer navigation may have superseded this request while it was
+          // in flight; its stale completion must not clear the new target or
+          // release the new mount hold.
+          if (jumpTriggeredKeyRef.current !== navigationKey) return
           if (!success) {
             pendingScrollTarget.current = null
             setDeepLinkGaveUp(true)
           }
         })
         .catch(() => {
+          if (jumpTriggeredKeyRef.current !== navigationKey) return
           pendingScrollTarget.current = null
           setDeepLinkGaveUp(true)
         })
